@@ -1,0 +1,238 @@
+name: OrcaSlicer WebAssembly CI
+
+on:
+  push:
+    paths:
+      - 'wasm/**'
+      - 'src/libslic3r/**'
+  pull_request:
+    paths:
+      - 'wasm/**'
+      - 'src/libslic3r/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build WASM Engine
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.11
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Verify Emscripten environment
+        run: |
+          # Ensure ~/emsdk symlink exists so wasm/scripts/env.sh resolves emsdk_env.sh
+          if [ -n "$EMSDK" ] && [ ! -d "$HOME/emsdk" ]; then
+            ln -s "$EMSDK" "$HOME/emsdk"
+          fi
+          source wasm/scripts/env.sh
+          emcc --version
+          ninja --version
+          node -v
+
+      - name: Cache WASM dependencies prefix
+        id: cache-prefix
+        uses: actions/cache@v4
+        with:
+          path: wasm/build/prefix-wasm64
+          key: prefix-wasm64-${{ hashFiles('wasm/deps/**', 'wasm/scripts/env.sh') }}
+
+      - name: Build dependencies
+        if: steps.cache-prefix.outputs.cache-hit != 'true'
+        run: |
+          source wasm/scripts/env.sh
+          # Dependency build order: zlib, png, jpeg, expat, eigen, cereal, nlopt, libnoise, gmp, mpfr, cgal, tbb, boost
+          bash wasm/deps/build_zlib.sh
+          bash wasm/deps/build_png.sh
+          bash wasm/deps/build_jpeg.sh
+          bash wasm/deps/build_expat.sh
+          bash wasm/deps/build_eigen.sh
+          bash wasm/deps/build_cereal.sh
+          bash wasm/deps/build_nlopt.sh
+          bash wasm/deps/build_libnoise.sh
+          bash wasm/deps/build_gmp.sh
+          bash wasm/deps/build_mpfr.sh
+          bash wasm/deps/build_cgal.sh
+          bash wasm/deps/build_tbb.sh
+          bash wasm/deps/build_boost.sh
+
+      - name: Build OrcaSlicer WebAssembly
+        run: |
+          bash wasm/scripts/build_orca.sh
+
+      - name: Pack vendor profiles
+        run: |
+          node wasm/web/tools/pack_profiles.mjs . wasm/build/web
+          node wasm/web/tools/pack_profiles.mjs . wasm/build/tests-node Voron OrcaFilamentLibrary BBL Prusa
+
+      - name: Upload engine and driver artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orca-wasm-engine
+          path: |
+            wasm/build/orca-wasm64/wasm/engine/orca_engine.mjs
+            wasm/build/orca-wasm64/wasm/engine/orca_engine.wasm
+            wasm/build/orca-wasm64/wasm/spike/orca_slice_driver.js
+            wasm/build/orca-wasm64/wasm/spike/orca_slice_driver.wasm
+          retention-days: 7
+
+      - name: Upload packed profiles
+        uses: actions/upload-artifact@v4
+        with:
+          name: orca-wasm-profiles
+          path: |
+            wasm/build/web
+            wasm/build/tests-node
+          retention-days: 7
+
+  test-node:
+    name: Test Node.js & Parity
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Download engine and driver artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: orca-wasm-engine
+          path: wasm/build/orca-wasm64/wasm
+
+      - name: Download packed profiles
+        uses: actions/download-artifact@v4
+        with:
+          name: orca-wasm-profiles
+          path: wasm/build
+
+      - name: Setup test models
+        run: |
+          bash wasm/tests/data/fetch_models.sh
+
+      - name: Setup native Linux OrcaSlicer CLI for parity check
+        run: |
+          mkdir -p /tmp/orca-native
+          curl -fsSL "https://github.com/OrcaSlicer/OrcaSlicer/releases/download/nightly-builds/OrcaSlicer_Linux_AppImage_Ubuntu2404_nightly.AppImage" \
+            -o /tmp/orca-native/OrcaSlicer.AppImage
+          chmod +x /tmp/orca-native/OrcaSlicer.AppImage
+          cd /tmp/orca-native
+          ./OrcaSlicer.AppImage --appimage-extract
+
+      - name: Run Node test suite
+        run: |
+          node --test wasm/tests/node/
+
+      - name: Run parity test suite
+        run: |
+          node wasm/tests/parity/run_parity.mjs
+
+  test-browser:
+    name: Test Browser (Playwright)
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Download engine and driver artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: orca-wasm-engine
+          path: wasm/build/orca-wasm64/wasm
+
+      - name: Download packed profiles
+        uses: actions/download-artifact@v4
+        with:
+          name: orca-wasm-profiles
+          path: wasm/build
+
+      - name: Setup test models
+        run: |
+          bash wasm/tests/data/fetch_models.sh
+
+      - name: Install Playwright and server dependencies
+        run: |
+          npm --prefix wasm/tests ci
+          npx --prefix wasm/tests playwright install --with-deps chromium firefox
+
+      - name: Run browser test suite
+        run: |
+          node wasm/tests/browser/run.mjs
+
+      - name: Upload browser test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-results
+          path: wasm/build/tests-browser
+          if-no-files-found: ignore
+
+  refs-macos:
+    name: Generate macOS References
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Rosetta 2
+        run: |
+          softwareupdate --install-rosetta --agree-to-license || true
+
+      - name: Download and mount native OrcaSlicer macOS DMG
+        run: |
+          mkdir -p /tmp/orca-native/mount
+          curl -fsSL "https://github.com/OrcaSlicer/OrcaSlicer/releases/download/nightly-builds/OrcaSlicer_Mac_universal_nightly.dmg" \
+            -o /tmp/orca-native/OrcaSlicer_Mac_universal_nightly.dmg
+          hdiutil attach /tmp/orca-native/OrcaSlicer_Mac_universal_nightly.dmg \
+            -mountpoint /tmp/orca-native/mount -nobrowse -readonly
+          cp -R /tmp/orca-native/mount/OrcaSlicer.app /tmp/orca-native/OrcaSlicer.app
+          hdiutil detach /tmp/orca-native/mount
+
+      - name: Setup test models
+        run: |
+          bash wasm/tests/data/fetch_models.sh
+
+      - name: Generate macOS x86_64 reference G-codes
+        run: |
+          bash wasm/tests/parity/make_refs_macos.sh /tmp/orca-native/OrcaSlicer.app/Contents/MacOS/OrcaSlicer
+
+      - name: Upload macOS references artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: refs-macos-x86_64
+          path: wasm/tests/parity/refs-macos-x86_64

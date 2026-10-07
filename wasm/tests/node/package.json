@@ -1,0 +1,5 @@
+{
+  "name": "orca-wasm-node-tests",
+  "type": "module",
+  "main": "index.js"
+}

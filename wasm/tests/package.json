@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "playwright": "^1.63.0",
+    "serve": "^14.2.6"
+  },
+  "name": "wasm-tests",
+  "private": true
+}

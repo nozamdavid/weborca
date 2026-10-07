@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrcaSlicer WebAssembly Engine Demo</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --danger: #dc2626;
+      --success: #16a34a;
+      --warning: #d97706;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    header {
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: 1.75rem;
+      margin-bottom: 8px;
+    }
+    .banner {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .banner.success {
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+    }
+    .banner.error {
+      background: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+    select, input, textarea {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      background: #fff;
+      color: var(--text);
+    }
+    select:disabled, input:disabled, textarea:disabled {
+      background: #f1f5f9;
+      cursor: not-allowed;
+    }
+    textarea {
+      font-family: monospace;
+      resize: vertical;
+    }
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+    }
+    button {
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    button.primary {
+      background: var(--primary);
+      color: #fff;
+    }
+    button.primary:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+    button.danger {
+      background: var(--danger);
+      color: #fff;
+    }
+    button.danger:hover:not(:disabled) {
+      background: #b91c1c;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .progress-bar-container {
+      background: #e2e8f0;
+      border-radius: 6px;
+      height: 16px;
+      overflow: hidden;
+      margin-top: 12px;
+      position: relative;
+    }
+    .progress-bar-fill {
+      background: var(--primary);
+      height: 100%;
+      width: 0%;
+      transition: width 0.15s linear;
+    }
+    .status-text {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .stat-card {
+      background: #f8fafc;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .stat-value {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .download-btn {
+      display: inline-block;
+      margin-top: 16px;
+      padding: 10px 20px;
+      background: var(--success);
+      color: #fff;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+    .download-btn:hover {
+      background: #15803d;
+    }
+    .error-list {
+      color: var(--danger);
+      font-size: 0.85rem;
+      margin-top: 6px;
+    }
+    #log-panel {
+      font-family: monospace;
+      font-size: 0.8rem;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 12px;
+      border-radius: 6px;
+      max-height: 150px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>OrcaSlicer WebAssembly Engine</h1>
+      <div id="isolation-banner" class="banner error">Checking Cross-Origin Isolation...</div>
+    </header>
+
+    <div class="card">
+      <div class="card-title">Configuration & Preset Selection</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="vendor-select">Vendor</label>
+          <select id="vendor-select">
+            <option value="">Select a vendor...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="printer-select">Printer Preset</label>
+          <select id="printer-select" disabled>\n            <option value="">Select printer...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="process-select">Process Preset</label>
+          <select id="process-select" disabled>\n            <option value="">Select process...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="filament-select">Filament Preset</label>
+          <select id="filament-select" disabled>\n            <option value="">Select filament...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="threads-input">Threads</label>
+          <input type="number" id="threads-input" min="1" max="32" value="4">
+        </div>
+        <div class="form-group">
+          <label for="model-file">3D Model File (STL, OBJ, 3MF, AMF)</label>
+          <input type="file" id="model-file" accept=".stl,.obj,.3mf,.amf">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="options-text">Option Overrides (key = value lines)</label>
+        <textarea id="options-text" rows="3" placeholder="layer_height = 0.2&#10;initial_layer_print_height = 0.25"></textarea>
+        <div id="options-errors" class="error-list"></div>
+      </div>
+
+      <div class="button-group">
+        <button id="slice-btn" class="primary" disabled>Slice Model</button>
+        <button id="cancel-btn" class="danger" disabled>Cancel</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Slicing Status & Progress</div>
+      <div class="status-text" id="status-text">Status: Engine initializing...</div>
+      <div class="progress-bar-container">
+        <div id="progress-bar" class="progress-bar-fill"></div>
+      </div>
+
+      <div id="stats-section" style="display: none;">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Total Layers</div>
+            <div class="stat-value" id="stat-layers">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Print Time</div>
+            <div class="stat-value" id="stat-time">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Filament Length</div>
+            <div class="stat-value" id="stat-filament-mm">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Filament Weight</div>
+            <div class="stat-value" id="stat-filament-g">-</div>
+          </div>
+        </div>
+
+        <div style="margin-top: 16px;">
+          <a id="download-link" class="download-btn" href="#" download="sliced_model.gcode">Download G-code</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Engine Activity Log</div>
+      <div id="log-panel"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/wasm/web/demo/demo.js"></script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+[
+  {
+    "id": "cube-voron",
+    "model": "tests/data/20mm_cube.obj",
+    "printer": "Voron 2.4 300 0.4 nozzle",
+    "process": "0.20mm Standard @Voron",
+    "filaments": [
+      "Generic PLA @System"
+    ]
+  },
+  {
+    "id": "benchy-voron",
+    "model": "wasm/build/models/3DBenchy.stl",
+    "printer": "Voron 2.4 300 0.4 nozzle",
+    "process": "0.20mm Standard @Voron",
+    "filaments": [
+      "Generic PLA @System"
+    ]
+  },
+  {
+    "id": "extruder_idler-voron",
+    "model": "tests/data/extruder_idler.obj",
+    "printer": "Voron 2.4 300 0.4 nozzle",
+    "process": "0.20mm Standard @Voron",
+    "filaments": [
+      "Generic PLA @System"
+    ]
+  },
+  {
+    "id": "frog_legs-voron",
+    "model": "tests/data/frog_legs.obj",
+    "printer": "Voron 2.4 300 0.4 nozzle",
+    "process": "0.20mm Standard @Voron",
+    "filaments": [
+      "Generic PLA @System"
+    ]
+  },
+  {
+    "id": "cube-bbl",
+    "model": "tests/data/20mm_cube.obj",
+    "printer": "Bambu Lab X1 Carbon 0.4 nozzle",
+    "process": "0.20mm Standard @BBL X1C",
+    "filaments": [
+      "Bambu PLA Basic @BBL X1C"
+    ]
+  },
+  {
+    "id": "benchy-bbl",
+    "model": "wasm/build/models/3DBenchy.stl",
+    "printer": "Bambu Lab X1 Carbon 0.4 nozzle",
+    "process": "0.20mm Standard @BBL X1C",
+    "filaments": [
+      "Bambu PLA Basic @BBL X1C"
+    ]
+  },
+  {
+    "id": "cube-prusa",
+    "model": "tests/data/20mm_cube.obj",
+    "printer": "Prusa MK4 0.4 nozzle",
+    "process": "0.20mm Standard @MK4",
+    "filaments": [
+      "Generic PLA @Prusa MK4"
+    ]
+  },
+  {
+    "id": "benchy-prusa",
+    "model": "wasm/build/models/3DBenchy.stl",
+    "printer": "Prusa MK4 0.4 nozzle",
+    "process": "0.20mm Standard @MK4",
+    "filaments": [
+      "Generic PLA @Prusa MK4"
+    ]
+  }
+]

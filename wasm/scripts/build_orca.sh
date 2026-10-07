@@ -25,4 +25,4 @@ emcmake cmake -S . -B wasm/build/orca-wasm64 -G Ninja \
     -DCMAKE_C_FLAGS="$WASM_CFLAGS" \
     -DCMAKE_CXX_FLAGS="$WASM_CFLAGS"
 
-cmake --build wasm/build/orca-wasm64 --target orca_slice_driver -j "$WASM_JOBS"
+cmake --build wasm/build/orca-wasm64 --target orca_slice_driver --target orca_engine -j "$WASM_JOBS"
