@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrcaSlicer WebGL2 G-Code Preview Spike</title>
+  <style>
+    :root {
+      --bg: #1e1e24;
+      --card-bg: #282830;
+      --text: #f0f0f4;
+      --text-muted: #a0a0ab;
+      --primary: #009688;
+      --primary-hover: #00796b;
+      --border: #3c3c46;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      padding: 10px 20px;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    h1 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--primary);
+    }
+    #status {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .layout {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 50px);
+      overflow: hidden;
+    }
+    #viewport-container {
+      flex: 1;
+      position: relative;
+      background: #121316;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+    }
+    #canvas:active {
+      cursor: grabbing;
+    }
+    .sidebar {
+      width: 320px;
+      background: var(--card-bg);
+      border-left: 1px solid var(--border);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+    select, input[type="file"], button {
+      background: #33333d;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    button.primary {
+      background: var(--primary);
+      color: white;
+      font-weight: 600;
+      border: none;
+    }
+    button.primary:hover {
+      background: var(--primary-hover);
+    }
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--primary);
+    }
+    .badge {
+      font-size: 0.85rem;
+      font-family: monospace;
+      color: #80cbc4;
+    }
+    .info-card {
+      background: #1c1c22;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 12px;
+      font-size: 0.85rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .info-card div span {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+    .info-card div strong {
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>OrcaSlicer WebGL2 G-Code Preview</h1>
+    <div id="status">Loading WebAssembly module...</div>
+  </header>
+  <div class="layout">
+    <div id="viewport-container">
+      <canvas id="canvas"></canvas>
+    </div>
+    <div class="sidebar">
+      <div class="control-group">
+        <label>Load G-Code</label>
+        <button id="btn-load-voron" class="primary">Load Voron Cube Demo</button>
+        <input type="file" id="file-input" accept=".gcode">
+      </div>
+
+      <div class="control-group">
+        <label>View Type</label>
+        <select id="view-type">
+          <option value="feature_type" selected>Feature Type</option>
+          <option value="height">Height</option>
+          <option value="width">Width</option>
+          <option value="speed">Speed</option>
+          <option value="actual_speed">Actual Speed</option>
+          <option value="tool">Tool</option>
+          <option value="color_print">Color Print</option>
+          <option value="fan_speed">Fan Speed</option>
+          <option value="temperature">Temperature</option>
+          <option value="volumetric_flow_rate">Volumetric Flow</option>
+          <option value="acceleration">Acceleration</option>
+          <option value="jerk">Jerk</option>
+          <option value="layer_time">Layer Time</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label>Layers: <span id="layer-range-text" class="badge">0 - 0</span></label>
+        <div class="range-row">
+          <span>Min:</span>
+          <input type="range" id="layer-min" min="0" max="0" value="0">
+        </div>
+        <div class="range-row">
+          <span>Max:</span>
+          <input type="range" id="layer-max" min="0" max="0" value="0">
+        </div>
+        <button id="btn-reset-layers">Show All Layers</button>
+      </div>
+
+      <div class="control-group">
+        <label>Camera</label>
+        <button id="btn-reset-camera">Reset View</button>
+      </div>
+
+      <div class="info-card">
+        <div>
+          <span>LAYERS</span>
+          <strong id="info-layers">-</strong>
+        </div>
+        <div>
+          <span>TOTAL MOVES</span>
+          <strong id="info-moves">-</strong>
+        </div>
+        <div>
+          <span>EST. TIME</span>
+          <strong id="info-time">-</strong>
+        </div>
+        <div>
+          <span>FILE</span>
+          <strong id="info-file">-</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="demo.js"></script>
+</body>
+</html>
