@@ -9,7 +9,12 @@ source "$REPO_ROOT/wasm/scripts/env.sh"
 
 DEP_NAME="expat"
 SRC_DIR="$REPO_ROOT/wasm/build/src/${DEP_NAME}"
-BUILD_DIR="$REPO_ROOT/wasm/build/${DEP_NAME}-build"
+_PREFIX_BASE="$(basename "$WASM_PREFIX")"
+BUILD_SUFFIX=""
+if [ "$_PREFIX_BASE" != "prefix-wasm${WASM_ARCH:-64}" ]; then
+    BUILD_SUFFIX="-${_PREFIX_BASE#prefix-}"
+fi
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/wasm/build/${DEP_NAME}-build${BUILD_SUFFIX}}"
 
 mkdir -p "$REPO_ROOT/wasm/build/src"
 

@@ -9,15 +9,17 @@ import { createEngineCore } from '../../web/engine-core.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 
-const modulePath = path.join(
-  repoRoot,
-  'wasm',
-  'build',
-  'orca-wasm64',
-  'wasm',
-  'engine',
-  'orca_engine.mjs'
-);
+const modulePath = process.env.ORCA_ENGINE_MODULE
+  ? path.resolve(process.env.ORCA_ENGINE_MODULE)
+  : path.join(
+      repoRoot,
+      'wasm',
+      'build',
+      'orca-wasm64',
+      'wasm',
+      'engine',
+      'orca_engine.mjs'
+    );
 
 const bundleDir = path.join(repoRoot, 'wasm', 'build', 'tests-node');
 

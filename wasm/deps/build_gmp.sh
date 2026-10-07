@@ -13,7 +13,12 @@ GMP_URL="https://github.com/SoftFever/OrcaSlicer_deps/releases/download/gmp-6.2.
 GMP_FALLBACK_URL="https://ftp.gnu.org/gnu/gmp/${GMP_TARBALL}"
 
 SRC_DIR="$REPO_ROOT/wasm/build/src"
-BUILD_DIR="$REPO_ROOT/wasm/build/gmp-build"
+_PREFIX_BASE="$(basename "$WASM_PREFIX")"
+BUILD_SUFFIX=""
+if [ "$_PREFIX_BASE" != "prefix-wasm${WASM_ARCH:-64}" ]; then
+    BUILD_SUFFIX="-${_PREFIX_BASE#prefix-}"
+fi
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/wasm/build/gmp-build${BUILD_SUFFIX}}"
 
 mkdir -p "$SRC_DIR"
 

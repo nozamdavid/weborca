@@ -12,7 +12,12 @@ VERSION="1.2.13"
 ARCHIVE_URL="https://github.com/madler/zlib/archive/refs/tags/v1.2.13.zip"
 SRC_ARCHIVE="$REPO_ROOT/wasm/build/src/${DEP_NAME}-${VERSION}.zip"
 SRC_DIR="$REPO_ROOT/wasm/build/src/${DEP_NAME}-${VERSION}"
-BUILD_DIR="$REPO_ROOT/wasm/build/${DEP_NAME}-build"
+_PREFIX_BASE="$(basename "$WASM_PREFIX")"
+BUILD_SUFFIX=""
+if [ "$_PREFIX_BASE" != "prefix-wasm${WASM_ARCH:-64}" ]; then
+    BUILD_SUFFIX="-${_PREFIX_BASE#prefix-}"
+fi
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/wasm/build/${DEP_NAME}-build${BUILD_SUFFIX}}"
 PATCH_FILE="$REPO_ROOT/deps/ZLIB/0001-Respect-BUILD_SHARED_LIBS.patch"
 
 mkdir -p "$REPO_ROOT/wasm/build/src"

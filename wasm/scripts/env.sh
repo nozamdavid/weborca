@@ -37,15 +37,17 @@ fi
 # Target architecture (default 64)
 export WASM_ARCH="${WASM_ARCH:-64}"
 
+export WASM_MEMORY64_FLAG="${WASM_MEMORY64_FLAG:--sMEMORY64=1}"
+
 if [ "$WASM_ARCH" = "64" ]; then
-    export WASM_CFLAGS="-sMEMORY64=1 -pthread -fwasm-exceptions -O2"
+    export WASM_CFLAGS="${WASM_MEMORY64_FLAG} -pthread -fwasm-exceptions -O2"
 elif [ "$WASM_ARCH" = "32" ]; then
     export WASM_CFLAGS="-pthread -fwasm-exceptions -O2"
 else
-    export WASM_CFLAGS="-sMEMORY64=1 -pthread -fwasm-exceptions -O2"
+    export WASM_CFLAGS="${WASM_MEMORY64_FLAG} -pthread -fwasm-exceptions -O2"
 fi
 
-export WASM_PREFIX="${_REPO_ROOT}/wasm/build/prefix-wasm${WASM_ARCH}"
+export WASM_PREFIX="${WASM_PREFIX:-${_REPO_ROOT}/wasm/build/prefix-wasm${WASM_ARCH}}"
 mkdir -p "$WASM_PREFIX"
 
 export WASM_JOBS="${WASM_JOBS:-10}"

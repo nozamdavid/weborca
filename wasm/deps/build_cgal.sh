@@ -12,7 +12,12 @@ VERSION="5.6.3"
 ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v5.6.3/CGAL-5.6.3.zip"
 SRC_ARCHIVE="$REPO_ROOT/wasm/build/src/CGAL-${VERSION}.zip"
 SRC_DIR="$REPO_ROOT/wasm/build/src/CGAL-${VERSION}"
-BUILD_DIR="$REPO_ROOT/wasm/build/${DEP_NAME}-build"
+_PREFIX_BASE="$(basename "$WASM_PREFIX")"
+BUILD_SUFFIX=""
+if [ "$_PREFIX_BASE" != "prefix-wasm${WASM_ARCH:-64}" ]; then
+    BUILD_SUFFIX="-${_PREFIX_BASE#prefix-}"
+fi
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/wasm/build/${DEP_NAME}-build${BUILD_SUFFIX}}"
 
 mkdir -p "$REPO_ROOT/wasm/build/src"
 

@@ -12,7 +12,12 @@ VERSION="1.6.35"
 ARCHIVE_URL="https://github.com/glennrp/libpng/archive/refs/tags/v1.6.35.zip"
 SRC_ARCHIVE="$REPO_ROOT/wasm/build/src/libpng-${VERSION}.zip"
 SRC_DIR="$REPO_ROOT/wasm/build/src/libpng-${VERSION}"
-BUILD_DIR="$REPO_ROOT/wasm/build/${DEP_NAME}-build"
+_PREFIX_BASE="$(basename "$WASM_PREFIX")"
+BUILD_SUFFIX=""
+if [ "$_PREFIX_BASE" != "prefix-wasm${WASM_ARCH:-64}" ]; then
+    BUILD_SUFFIX="-${_PREFIX_BASE#prefix-}"
+fi
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/wasm/build/${DEP_NAME}-build${BUILD_SUFFIX}}"
 PATCH_PNG="$REPO_ROOT/deps/PNG/PNG.patch"
 PATCH_CLANG19="$REPO_ROOT/deps/PNG/0002-clang19-macos.patch"
 

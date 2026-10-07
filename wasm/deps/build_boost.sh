@@ -10,7 +10,12 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$REPO_ROOT/wasm/scripts/env.sh"
 
 SRC_DIR="$REPO_ROOT/wasm/build/src"
-BUILD_DIR="$REPO_ROOT/wasm/build/boost-build"
+_PREFIX_BASE="$(basename "$WASM_PREFIX")"
+BUILD_SUFFIX=""
+if [ "$_PREFIX_BASE" != "prefix-wasm${WASM_ARCH:-64}" ]; then
+    BUILD_SUFFIX="-${_PREFIX_BASE#prefix-}"
+fi
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/wasm/build/boost-build${BUILD_SUFFIX}}"
 BOOST_VERSION="1.84.0"
 BOOST_DIRNAME="boost-${BOOST_VERSION}"
 BOOST_TARBALL="boost-${BOOST_VERSION}.tar.gz"

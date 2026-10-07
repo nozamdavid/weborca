@@ -12,7 +12,12 @@ VERSION="1.0"
 ARCHIVE_URL="https://github.com/SoftFever/Orca-deps-libnoise/archive/refs/tags/1.0.zip"
 SRC_ARCHIVE="$REPO_ROOT/wasm/build/src/${DEP_NAME}-${VERSION}.zip"
 SRC_DIR="$REPO_ROOT/wasm/build/src/Orca-deps-libnoise-${VERSION}"
-BUILD_DIR="$REPO_ROOT/wasm/build/${DEP_NAME}-build"
+_PREFIX_BASE="$(basename "$WASM_PREFIX")"
+BUILD_SUFFIX=""
+if [ "$_PREFIX_BASE" != "prefix-wasm${WASM_ARCH:-64}" ]; then
+    BUILD_SUFFIX="-${_PREFIX_BASE#prefix-}"
+fi
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/wasm/build/${DEP_NAME}-build${BUILD_SUFFIX}}"
 
 mkdir -p "$REPO_ROOT/wasm/build/src"
 

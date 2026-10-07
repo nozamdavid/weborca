@@ -8,7 +8,16 @@ source "$REPO_ROOT/wasm/scripts/env.sh"
 
 cd "$REPO_ROOT"
 
-emcmake cmake -S . -B wasm/build/orca-wasm64-tests -G Ninja \
+if [ -z "${ORCA_TESTS_BUILD_DIR:-}" ]; then
+    _PREFIX_BASE="$(basename "$WASM_PREFIX")"
+    if [ "$_PREFIX_BASE" != "prefix-wasm${WASM_ARCH:-64}" ]; then
+        ORCA_TESTS_BUILD_DIR="wasm/build/orca-${_PREFIX_BASE#prefix-}-tests"
+    else
+        ORCA_TESTS_BUILD_DIR="wasm/build/orca-wasm64-tests"
+    fi
+fi
+
+emcmake cmake -S . -B "$ORCA_TESTS_BUILD_DIR" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_TESTS=ON \
     -DSLIC3R_GUI=OFF \
@@ -26,5 +35,5 @@ emcmake cmake -S . -B wasm/build/orca-wasm64-tests -G Ninja \
     -DCMAKE_C_FLAGS="$WASM_CFLAGS" \
     -DCMAKE_CXX_FLAGS="$WASM_CFLAGS"
 
-cmake --build wasm/build/orca-wasm64-tests --target libslic3r_tests -j "$WASM_JOBS"
-cmake --build wasm/build/orca-wasm64-tests --target fff_print_tests -j "$WASM_JOBS"
+cmake --build "$ORCA_TESTS_BUILD_DIR" --target libslic3r_tests -j "$WASM_JOBS"
+cmake --build "$ORCA_TESTS_BUILD_DIR" --target fff_print_tests -j "$WASM_JOBS"

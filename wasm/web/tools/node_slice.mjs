@@ -12,15 +12,17 @@ import { execSync } from 'node:child_process';
 import { createEngineCore } from '../engine-core.js';
 
 const repoRoot = path.resolve('.');
-const modulePath = path.join(
-  repoRoot,
-  'wasm',
-  'build',
-  'orca-wasm64',
-  'wasm',
-  'engine',
-  'orca_engine.mjs'
-);
+const modulePath = process.env.ORCA_ENGINE_MODULE
+  ? path.resolve(process.env.ORCA_ENGINE_MODULE)
+  : path.join(
+      repoRoot,
+      'wasm',
+      'build',
+      'orca-wasm64',
+      'wasm',
+      'engine',
+      'orca_engine.mjs'
+    );
 
 if (!fs.existsSync(modulePath)) {
   console.log(`WebAssembly engine module does not exist at ${modulePath}. Skipping node slice check.`);

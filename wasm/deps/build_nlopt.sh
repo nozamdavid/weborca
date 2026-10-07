@@ -12,7 +12,12 @@ VERSION="2.5.0"
 ARCHIVE_URL="https://github.com/stevengj/nlopt/archive/v2.5.0.tar.gz"
 SRC_ARCHIVE="$REPO_ROOT/wasm/build/src/${DEP_NAME}-${VERSION}.tar.gz"
 SRC_DIR="$REPO_ROOT/wasm/build/src/${DEP_NAME}-${VERSION}"
-BUILD_DIR="$REPO_ROOT/wasm/build/${DEP_NAME}-build"
+_PREFIX_BASE="$(basename "$WASM_PREFIX")"
+BUILD_SUFFIX=""
+if [ "$_PREFIX_BASE" != "prefix-wasm${WASM_ARCH:-64}" ]; then
+    BUILD_SUFFIX="-${_PREFIX_BASE#prefix-}"
+fi
+BUILD_DIR="${BUILD_DIR:-$REPO_ROOT/wasm/build/${DEP_NAME}-build${BUILD_SUFFIX}}"
 
 mkdir -p "$REPO_ROOT/wasm/build/src"
 

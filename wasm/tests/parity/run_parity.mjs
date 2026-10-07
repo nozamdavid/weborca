@@ -16,24 +16,30 @@ import { createEngineCore } from '../../web/engine-core.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 
-const modulePath = path.join(
-  repoRoot,
-  'wasm',
-  'build',
-  'orca-wasm64',
-  'wasm',
-  'engine',
-  'orca_engine.mjs'
-);
-const driverPath = path.join(
-  repoRoot,
-  'wasm',
-  'build',
-  'orca-wasm64',
-  'wasm',
-  'spike',
-  'orca_slice_driver.js'
-);
+const modulePath = process.env.ORCA_ENGINE_MODULE
+  ? path.resolve(process.env.ORCA_ENGINE_MODULE)
+  : path.join(
+      repoRoot,
+      'wasm',
+      'build',
+      'orca-wasm64',
+      'wasm',
+      'engine',
+      'orca_engine.mjs'
+    );
+const driverPath = process.env.ORCA_DRIVER_MODULE
+  ? path.resolve(process.env.ORCA_DRIVER_MODULE)
+  : process.env.ORCA_ENGINE_MODULE
+  ? path.resolve(path.dirname(process.env.ORCA_ENGINE_MODULE), '../spike/orca_slice_driver.js')
+  : path.join(
+      repoRoot,
+      'wasm',
+      'build',
+      'orca-wasm64',
+      'wasm',
+      'spike',
+      'orca_slice_driver.js'
+    );
 const compareScript = path.join(repoRoot, 'wasm', 'spike', 'compare_gcode.sh');
 const nativeCli = '/tmp/orca-native/squashfs-root/AppRun';
 
@@ -214,6 +220,9 @@ async function main() {
         const procFile = findPresetFile('process', c.process);
         const filFiles = c.filaments.map((f) => findPresetFile('filament', f)).join(';');
 
+        const scratchDir = path.join(bundleDir, 'scratch');
+        fs.mkdirSync(scratchDir, { recursive: true });
+
         // Export config with native CLI
         const exportRes = spawnSync(nativeCli, [
           '--load-settings',
@@ -222,7 +231,7 @@ async function main() {
           filFiles,
           '--export-settings',
           flatJsonPath
-        ], { encoding: 'utf8' });
+        ], { encoding: 'utf8', cwd: scratchDir });
 
         if (exportRes.status !== 0) {
           throw new Error(`Native CLI export failed (exit ${exportRes.status}): ${exportRes.stderr || exportRes.stdout}`);
