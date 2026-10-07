@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Source environment
+source "$REPO_ROOT/wasm/scripts/env.sh"
+
+DEP_NAME="oneTBB"
+VERSION="2023.1.0"
+ARCHIVE_URL="https://github.com/oneapi-src/oneTBB/archive/refs/tags/v${VERSION}.tar.gz"
+SRC_ARCHIVE="$REPO_ROOT/wasm/build/src/${DEP_NAME}-${VERSION}.tar.gz"
+SRC_DIR="$REPO_ROOT/wasm/build/src/${DEP_NAME}-${VERSION}"
+BUILD_DIR="$REPO_ROOT/wasm/build/tbb-build"
+
+mkdir -p "$REPO_ROOT/wasm/build/src"
+
+if [ ! -f "$SRC_ARCHIVE" ]; then
+    echo "Downloading $DEP_NAME $VERSION..."
+    curl -fsSL "$ARCHIVE_URL" -o "$SRC_ARCHIVE"
+fi
+
+if [ ! -d "$SRC_DIR" ]; then
+    echo "Extracting $DEP_NAME $VERSION..."
+    tar -xzf "$SRC_ARCHIVE" -C "$REPO_ROOT/wasm/build/src"
+fi
+
+mkdir -p "$BUILD_DIR"
+
+echo "Configuring $DEP_NAME..."
+emcmake cmake -G Ninja \
+    -S "$SRC_DIR" \
+    -B "$BUILD_DIR" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_FLAGS="$WASM_CFLAGS" \
+    -DCMAKE_CXX_FLAGS="$WASM_CFLAGS" \
+    -DCMAKE_PREFIX_PATH="$WASM_PREFIX" \
+    -DCMAKE_INSTALL_PREFIX="$WASM_PREFIX" \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DTBB_TEST=OFF \
+    -DTBB_STRICT=OFF \
+    -DTBB_DISABLE_HWLOC_AUTOMATIC_SEARCH=ON \
+    -DTBB_EXAMPLES=OFF
+
+echo "Building and installing $DEP_NAME..."
+cmake --build "$BUILD_DIR" --target install -j "$WASM_JOBS"
+
+echo "Replacing libtbbmalloc.a with shim..."
+emcc $WASM_CFLAGS -I"$WASM_PREFIX/include" -c "$SCRIPT_DIR/tbbmalloc_shim.c" -o "$BUILD_DIR/tbbmalloc_shim.o"
+rm -f "$WASM_PREFIX/lib/libtbbmalloc.a"
+emar rcs "$WASM_PREFIX/lib/libtbbmalloc.a" "$BUILD_DIR/tbbmalloc_shim.o"
+
+echo "$DEP_NAME installed to $WASM_PREFIX"
+

@@ -34,7 +34,9 @@
 #include <boost/date_time.hpp>
 #include "boost/date_time/posix_time/ptime.hpp"
 
+#ifndef SLIC3R_NO_OPENSSL
 #include <openssl/md5.h>
+#endif
 #include <vector>
 
 #include "libslic3r.h"

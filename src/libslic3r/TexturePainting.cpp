@@ -1,5 +1,7 @@
 #include "TexturePainting.hpp"
 
+#ifndef SLIC3R_NO_OPENCV
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -735,3 +737,70 @@ bool sample_original_face_colors(
 }
 
 } // namespace Slic3r
+
+#else // SLIC3R_NO_OPENCV
+
+
+namespace Slic3r {
+
+bool texture_to_painting(
+    const TexturedMesh& /*textured*/,
+    PaintedMesh& /*painted*/,
+    const TexturePaintingSettings& /*settings*/,
+    PaintProgressCallback /*progress*/,
+    PaintCancelCallback /*cancel*/)
+{
+    return false;
+}
+
+bool face_colors_to_painting(
+    const TexturedMesh& /*mesh*/,
+    PaintedMesh& /*painted*/,
+    const TexturePaintingSettings& /*settings*/,
+    PaintProgressCallback /*progress*/,
+    PaintCancelCallback /*cancel*/)
+{
+    return false;
+}
+
+std::vector<FilamentMatch> match_clusters_to_filaments(
+    const std::vector<std::array<std::size_t,3>>& /*cluster_colors*/,
+    const std::vector<std::array<float,4>>& /*filament_colors*/,
+    const std::vector<std::string>& /*filament_names*/)
+{
+    return {};
+}
+
+double compute_delta_e(
+    const std::array<std::size_t,3>& /*rgb1*/,
+    const std::array<float,4>& /*rgba2*/)
+{
+    return 0.0;
+}
+
+bool apply_painted_mesh_to_volume(
+    const PaintedMesh& /*painted*/,
+    const std::vector<FilamentMatch>& /*matches*/,
+    ModelVolume& /*volume*/)
+{
+    return false;
+}
+
+bool decode_texture_to_pixels(
+    const TextureImage& /*img*/,
+    std::vector<unsigned char>& /*out_pixels*/,
+    int& /*out_w*/, int& /*out_h*/)
+{
+    return false;
+}
+
+bool sample_original_face_colors(
+    const TexturedMesh& /*textured*/,
+    std::vector<std::array<std::size_t,3>>& /*out_face_colors*/)
+{
+    return false;
+}
+
+} // namespace Slic3r
+
+#endif // SLIC3R_NO_OPENCV

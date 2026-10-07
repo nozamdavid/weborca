@@ -111,9 +111,24 @@ endif()
 option(SLIC3R_STATIC            "Compile OrcaSlicer with static libraries (Boost, TBB)" ${SLIC3R_STATIC_INITIAL})
 option(SLIC3R_GUI               "Compile OrcaSlicer with GUI components (OpenGL, wxWidgets)" 1)
 option(SLIC3R_CAD               "Compile OrcaSlicer with the parametric Design/CAD tab (needs OCCT ModelingAlgorithms)" 1)
+option(SLIC3R_WITH_OCCT         "Compile OrcaSlicer with OpenCASCADE support" ON)
+option(SLIC3R_WITH_OPENCV       "Compile OrcaSlicer with OpenCV support" ON)
+option(SLIC3R_WITH_ASSIMP       "Compile OrcaSlicer with Assimp support" ON)
+option(SLIC3R_WITH_DRACO        "Compile OrcaSlicer with Draco support" ON)
+option(SLIC3R_WITH_OPENSSL      "Compile OrcaSlicer with OpenSSL support" ON)
+option(SLIC3R_WITH_FREETYPE     "Compile OrcaSlicer with FreeType support (for OCCT)" ON)
+
+if (SLIC3R_CAD AND NOT SLIC3R_WITH_OCCT)
+    message(FATAL_ERROR "SLIC3R_CAD=ON requires SLIC3R_WITH_OCCT=ON")
+endif ()
 option(SLIC3R_FHS               "Assume OrcaSlicer is to be installed in a FHS directory structure" 0)
 option(SLIC3R_PROFILE           "Compile OrcaSlicer with an invasive Shiny profiler" 0)
-option(SLIC3R_PCH               "Use precompiled headers" 1)
+if (EMSCRIPTEN)
+    set(SLIC3R_PCH_DEFAULT 0)
+else ()
+    set(SLIC3R_PCH_DEFAULT 1)
+endif ()
+option(SLIC3R_PCH               "Use precompiled headers" ${SLIC3R_PCH_DEFAULT})
 option(SLIC3R_WARNINGS          "Emit compiler warnings for OrcaSlicer sources" 1)
 option(SLIC3R_BUNDLED_WARNINGS  "Emit compiler warnings for bundled third-party sources" 0)
 option(SLIC3R_MSVC_COMPILE_PARALLEL "Compile on Visual Studio in parallel" 1)
@@ -152,6 +167,7 @@ if(ORCA_BUNDLED_UV_EXECUTABLE MATCHES "/\\.uv/")
     set(ORCA_BUNDLED_UV_EXECUTABLE "" CACHE FILEPATH "Path to the auto-downloaded uv executable" FORCE)
 endif()
 
+if(NOT EMSCRIPTEN)
 if(NOT ORCA_BUNDLED_UV_EXECUTABLE)
     if(NOT EXISTS "${ORCA_UV_BINARY}")
         # Select uv by TARGET arch. On macOS universal builds each leg sets a single
@@ -231,6 +247,7 @@ if(NOT ORCA_BUNDLED_UV_EXECUTABLE)
         set(ORCA_BUNDLED_UV_EXECUTABLE "${ORCA_UV_BINARY}")
     endif()
 endif()
+endif()
 
 # Resolve ORCA_BUNDLED_UV_EXECUTABLE -> ORCA_BUNDLED_UV_EXECUTABLE_CONFIG / ORCA_BUNDLED_UV_FILENAME
 # Must run before add_subdirectory(src) so target_compile_definitions sees it.
@@ -257,6 +274,9 @@ set(OPENVDB_FIND_MODULE_PATH "" CACHE PATH "Path to OpenVDB installation's find 
 set(SLIC3R_GTK "3" CACHE STRING "GTK version to use with wxWidgets on Linux")
 
 set(IS_CROSS_COMPILE FALSE)
+if (CMAKE_CROSSCOMPILING OR EMSCRIPTEN)
+    set(IS_CROSS_COMPILE TRUE)
+endif()
 
 option (COLORED_OUTPUT "Always produce ANSI-colored output (GNU/Clang only)." OFF)
 if (${COLORED_OUTPUT})
@@ -303,7 +323,7 @@ if (FLATPAK)
     set(SLIC3R_DESKTOP_INTEGRATION OFF CACHE BOOL "" FORCE)
 endif ()
 
-if (IS_CROSS_COMPILE)
+if (IS_CROSS_COMPILE AND NOT EMSCRIPTEN)
     message("Detected cross compilation setup. Tests and encoding checks will be forcedly disabled!")
     set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
 endif ()
@@ -607,6 +627,8 @@ if ((NOT MSVC OR IS_CLANG_CL) AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR 
     # GCC is not built in CI, so don't throw errors CI won't catch.
     if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         add_compile_options(-Werror=return-type)
+    elseif (EMSCRIPTEN)
+        # Disable -Werror under Emscripten rather than fixing warnings
     else ()
         # Turn everything else into an error. Dependency headers are exempt because the
         # SYSTEM include flag (-imsvc on clang-cl, -isystem elsewhere) keeps their
@@ -836,9 +858,15 @@ find_package(TBB REQUIRED)
 # The Intel TBB library will use the std::exception_ptr feature of C++11.
 # add_definitions(-DTBB_USE_CAPTURED_EXCEPTION=0)
 
+if (SLIC3R_WITH_OPENSSL OR SLIC3R_GUI)
 find_package(OpenSSL REQUIRED)
+endif ()
+if (SLIC3R_GUI OR ORCA_TOOLS)
 find_package(CURL REQUIRED)
+endif ()
+if (SLIC3R_WITH_FREETYPE)
 find_package(Freetype REQUIRED)
+endif ()
 
 if (SLIC3R_GUI)
     # LibDataChannel's installed export references its bundled dependencies,
@@ -872,10 +900,11 @@ if (SLIC3R_GUI)
 endif()
 
 
+find_package(ZLIB REQUIRED)
+
+if (TARGET CURL::libcurl)
 add_library(libcurl INTERFACE)
 target_link_libraries(libcurl INTERFACE CURL::libcurl)
-
-find_package(ZLIB REQUIRED)
 target_link_libraries(libcurl INTERFACE ZLIB::ZLIB)
 
 # Fixing curl's cmake config script bugs
@@ -898,12 +927,15 @@ if (SLIC3R_STATIC AND NOT SLIC3R_STATIC_EXCLUDE_CURL)
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         # As of now, our build system produces a statically linked libcurl,
         # which links the OpenSSL library dynamically.
-        find_package(OpenSSL REQUIRED)
+        if (SLIC3R_WITH_OPENSSL OR SLIC3R_GUI)
+find_package(OpenSSL REQUIRED)
+endif ()
         message("OpenSSL include dir: ${OPENSSL_INCLUDE_DIR}")
         message("OpenSSL libraries: ${OPENSSL_LIBRARIES}")
         target_include_directories(libcurl SYSTEM INTERFACE ${OPENSSL_INCLUDE_DIR})
         target_link_libraries(libcurl INTERFACE ${OPENSSL_LIBRARIES})
     endif()
+endif()
 endif()
 
 ## OPTIONAL packages
@@ -926,6 +958,7 @@ endif ()
 
 find_package(PNG REQUIRED)
 
+if (SLIC3R_GUI)
 set(OpenGL_GL_PREFERENCE "LEGACY")
 find_package(OpenGL REQUIRED)
 
@@ -934,6 +967,7 @@ if(APPLE AND CMAKE_VERSION VERSION_GREATER_EQUAL "4.0")
 endif()
 
 find_package(glfw3 REQUIRED)
+endif()
 
 # Find the Cereal serialization library
 find_package(cereal REQUIRED)
@@ -951,7 +985,6 @@ add_custom_target(gettext_make_pot
     COMMAND xgettext --keyword=L --keyword=_L --keyword=_u8L --keyword=L_CONTEXT:1,2c --keyword=_L_CONTEXT:1,2c --keyword=_u8L_CONTEXT:1,2c --keyword=_L_PLURAL:1,2 --add-comments=TRN --from-code=UTF-8 --no-location --debug --boost
         -f "${BBL_L18N_DIR}/list.txt"
         -o "${BBL_L18N_DIR}/OrcaSlicer.pot"
-    COMMAND hintsToPot ${SLIC3R_RESOURCES_DIR} ${BBL_L18N_DIR}
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
     COMMENT "Generate pot file from strings in the source tree"
 )
@@ -986,6 +1019,7 @@ endforeach()
 
 find_package(NLopt 1.4 REQUIRED)
 
+if (NOT EMSCRIPTEN)
 # Use bundled Python from deps instead of system Python
 set(_bundled_python_version "3.12.13")
 set(_bundled_python_abi "312")
@@ -1065,8 +1099,15 @@ add_library(pybind11_embed INTERFACE)
 target_link_libraries(pybind11_embed INTERFACE pybind11_headers Python3::Python)
 target_compile_definitions(pybind11_embed INTERFACE PYBIND11_SIMPLE_GIL_MANAGEMENT)
 add_library(pybind11::embed ALIAS pybind11_embed)
+endif()
 
 
+option(SLIC3R_WITH_OPENVDB "Compile OrcaSlicer with OpenVDB support" ON)
+if (EMSCRIPTEN)
+    set(SLIC3R_WITH_OPENVDB OFF CACHE BOOL "" FORCE)
+endif ()
+
+if (SLIC3R_WITH_OPENVDB)
 if(SLIC3R_STATIC)
     set(OPENVDB_USE_STATIC_LIBS ON)
     set(USE_BLOSC TRUE)
@@ -1081,7 +1122,9 @@ else ()
                    "You can try to specify the find module location of your "
                    "OpenVDB installation with the OPENVDB_FIND_MODULE_PATH cache variable.")
 endif ()
+endif ()
 
+if (SLIC3R_GUI)
 find_path(SPNAV_INCLUDE_DIR spnav.h)
 if (SPNAV_INCLUDE_DIR)
     find_library(SPNAV_LIB NAMES libspnav.a) # Force linking libspnav statically
@@ -1093,6 +1136,7 @@ if (SPNAV_INCLUDE_DIR)
     endif()
 else()
     message(STATUS "SPNAV library NOT found, Spacenavd not supported")
+endif()
 endif()
 
 set(TOP_LEVEL_PROJECT_DIR ${PROJECT_SOURCE_DIR})
@@ -1128,6 +1172,7 @@ function(orcaslicer_copy_dlls target config postfix output_dlls)
 
     # Stage the OCCT toolkits libslic3r links (published as OCCT_LIBS), not whatever the
     # deps prefix happens to hold, and fail the configure if one of them is missing.
+    if (SLIC3R_WITH_OCCT)
     if (NOT OCCT_LIBS)
         message(FATAL_ERROR "OCCT_LIBS is not set; libslic3r must be configured first.")
     endif ()
@@ -1149,6 +1194,7 @@ function(orcaslicer_copy_dlls target config postfix output_dlls)
             "OCCT DLLs missing from ${_occt_bin}/: ${_missing_occt}\n"
             "Rebuild the dependencies (build_release_vs2022.bat deps) with the same "
             "SLIC3R_CAD setting as this project.")
+    endif ()
     endif ()
     file(COPY ${_occt_dlls}
             ${CMAKE_PREFIX_PATH}/bin/freetype.dll
@@ -1281,7 +1327,13 @@ endif ()
 add_subdirectory(src)
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT OrcaSlicer_app_gui)
 
+if (EMSCRIPTEN)
+    add_subdirectory(wasm)
+endif ()
+
+if (TARGET hintsToPot)
 add_dependencies(gettext_make_pot hintsToPot)
+endif ()
 
 if(SLIC3R_BUILD_SANDBOXES)
     add_subdirectory(sandboxes)
@@ -1295,7 +1347,7 @@ if(BUILD_TESTS)
     endif ()
 endif()
 
-if (NOT WIN32 AND NOT APPLE)
+if (NOT WIN32 AND NOT APPLE AND NOT EMSCRIPTEN)
     set(SLIC3R_APP_CMD "orca-slicer")
     configure_file(${LIBDIR}/dev-utils/platform/unix/build_appimage.sh.in ${CMAKE_CURRENT_BINARY_DIR}/build_appimage.sh USE_SOURCE_PERMISSIONS @ONLY)
 endif()

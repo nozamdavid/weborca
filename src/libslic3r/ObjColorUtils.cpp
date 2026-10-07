@@ -8,10 +8,14 @@ bool obj_color_deal_algo(std::vector<Slic3r::RGBA> & input_colors,
                          char &                     cluster_number,
                          int                        max_cluster)
 {
+#ifndef SLIC3R_NO_OPENCV
     QuantKMeans quant(10);
     quant.apply(input_colors, cluster_colors_from_algo, cluster_labels_from_algo, (int) cluster_number, max_cluster);
     if (cluster_number == -1) {
         return false;
     }
     return true;
+#else
+    return false;
+#endif
 }

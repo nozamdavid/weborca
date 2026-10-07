@@ -30,6 +30,19 @@ if (APPLE)
     target_link_libraries(test_common INTERFACE "-liconv -framework IOKit" "-framework CoreFoundation" -lc++)
 endif()
 
+if (EMSCRIPTEN)
+    target_link_options(test_common INTERFACE
+        -sALLOW_MEMORY_GROWTH=1
+        -sMAXIMUM_MEMORY=8GB
+        -sPROXY_TO_PTHREAD
+        -sEXIT_RUNTIME=1
+        -sPTHREAD_POOL_SIZE=8
+        -sNODERAWFS=1
+        -sSTACK_SIZE=8MB
+        -sDEFAULT_PTHREAD_STACK_SIZE=8MB
+    )
+endif ()
+
 # Copies runtime shared libraries next to each test executable. Handles both
 # single-config generators (CMAKE_BUILD_TYPE set) and multi-config generators
 # (Ninja Multi-Config, Visual Studio) where CMAKE_BUILD_TYPE is empty and DLLs
@@ -85,19 +98,24 @@ endfunction()
 
 # Register Catch2 tags as CTest labels so `ctest -L`/`-LE` can filter by tag.
 function(orcaslicer_discover_tests TARGET)
-    catch_discover_tests(${TARGET} ADD_TAGS_AS_LABELS)
+    if (NOT EMSCRIPTEN)
+        catch_discover_tests(${TARGET} ADD_TAGS_AS_LABELS)
+    endif ()
 endfunction()
 
 add_subdirectory(libnest2d)
 add_subdirectory(libslic3r)
+if (NOT EMSCRIPTEN)
 add_subdirectory(slic3rutils)
+endif ()
 add_subdirectory(fff_print)
+if (NOT EMSCRIPTEN)
 add_subdirectory(sla_print)
+endif ()
 add_subdirectory(filament_group)
 
 # End-to-end checks of the orca-slicer binary. Linux only: they read result.json, which the CLI
 # writes on Linux only. src/ is added before tests/, so the target is known here.
-if (UNIX AND NOT APPLE AND TARGET OrcaSlicer)
+if (UNIX AND NOT APPLE AND NOT EMSCRIPTEN AND TARGET OrcaSlicer)
     add_subdirectory(cli)
 endif ()
-

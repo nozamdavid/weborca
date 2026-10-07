@@ -1,13 +1,17 @@
 #ifndef slic3r_Format_STEP_hpp_
 #define slic3r_Format_STEP_hpp_
+#ifndef SLIC3R_NO_OCCT
 #include "XCAFDoc_DocumentTool.hxx"
 #include "XCAFApp_Application.hxx"
 #include "XCAFDoc_ShapeTool.hxx"
 #include <Standard_TypeDef.hxx>
 #include <Standard_Handle.hxx>
+#endif
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem.hpp>
+#ifndef SLIC3R_NO_OCCT
 #include <Message_ProgressIndicator.hxx>
+#endif
 #include <atomic>
 #include <functional>
 #include <string>
@@ -34,6 +38,7 @@ const int LOAD_STEP_STAGE_UNIT_NUM           = 5;
 typedef std::function<void(int load_stage, int current, int total, bool& cancel)> ImportStepProgressFn;
 typedef std::function<void(bool isUtf8)> StepIsUtf8Fn;
 
+#ifndef SLIC3R_NO_OCCT
 struct NamedSolid
 {
     NamedSolid(const TopoDS_Shape& s,
@@ -43,6 +48,7 @@ struct NamedSolid
     const std::string  name;
     int tri_face_cout = 0;
 };
+#endif
 
 //BBS: Load an step file into a provided model.
 extern bool load_step(const char *path, Model *model,
@@ -79,6 +85,7 @@ private:
     EncodedType m_encode_type = EncodedType::UTF8;
 };
 
+#ifndef SLIC3R_NO_OCCT
 class StepProgressIncdicator : public Message_ProgressIndicator
 {
 public:
@@ -92,6 +99,7 @@ public:
 private:
     std::atomic<bool>& should_stop;
 };
+#endif
 
 class Step
 {
@@ -122,10 +130,12 @@ private:
     std::string m_path;
     ImportStepProgressFn m_stepFn;
     StepIsUtf8Fn m_utf8Fn;
+#ifndef SLIC3R_NO_OCCT
     Handle(XCAFApp_Application) m_app = XCAFApp_Application::GetApplication();
     Handle(TDocStd_Document) m_doc;
     Handle(XCAFDoc_ShapeTool) m_shape_tool;
     std::vector<NamedSolid> m_name_solids;
+#endif
 };
 
 }; // namespace Slic3r

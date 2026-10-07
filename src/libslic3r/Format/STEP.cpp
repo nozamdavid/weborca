@@ -11,6 +11,7 @@
 #include <ios>
 #include <ostream>
 #include <cstddef>
+#ifndef SLIC3R_NO_OCCT
 #include <Standard_Handle.hxx>
 #include <Standard_TypeDef.hxx>
 #include <TopAbs_ShapeEnum.hxx>
@@ -24,6 +25,7 @@
 #include <gp_Pnt.hxx>
 #include <TopAbs_Orientation.hxx>
 #include <Poly_Triangle.hxx>
+#endif
 #include <string>
 #include <boost/nowide/cstdio.hpp>
 #include <boost/nowide/iostream.hpp>
@@ -34,6 +36,7 @@
 #include <vector>
 #include <utility>
 
+#ifndef SLIC3R_NO_OCCT
 #ifdef _WIN32
 #define DIR_SEPARATOR '\\'
 #else
@@ -59,6 +62,7 @@
 #include "BRep_Tool.hxx"
 #include "BRepTools.hxx"
 #include <IMeshTools_Parameters.hxx>
+#endif
 
 namespace fs = boost::filesystem;
 
@@ -201,6 +205,7 @@ int StepPreProcessor::preNum(const unsigned char byte) {
     return num;
 }
 
+#ifndef SLIC3R_NO_OCCT
 static void getNamedSolids(const TopLoc_Location& location,
                            const std::string& prefix,
                            unsigned int& id,
@@ -780,4 +785,52 @@ unsigned int Step::get_triangle_num_tbb(double linear_deflection, double angle_d
     return tri_num;
 }
 
+#else // SLIC3R_NO_OCCT
+
+Step::Step(boost::filesystem::path path, ImportStepProgressFn stepFn, StepIsUtf8Fn isUtf8Fn)
+    : m_path(path.string()), m_stepFn(stepFn), m_utf8Fn(isUtf8Fn) {}
+
+Step::Step(std::string path, ImportStepProgressFn stepFn, StepIsUtf8Fn isUtf8Fn)
+    : m_path(std::move(path)), m_stepFn(stepFn), m_utf8Fn(isUtf8Fn) {}
+
+Step::~Step() = default;
+
+Step::Step_Status Step::load()
+{
+    return Step_Status::LOAD_ERROR;
+}
+
+unsigned int Step::get_triangle_num(double /*linear_deflection*/, double /*angle_deflection*/)
+{
+    return 0;
+}
+
+unsigned int Step::get_triangle_num_tbb(double /*linear_deflection*/, double /*angle_deflection*/)
+{
+    return 0;
+}
+
+void Step::clean_mesh_data() {}
+
+Step::Step_Status Step::mesh(Model* /*model*/, bool& /*is_cancel*/, bool /*isSplitCompound*/,
+                             double /*linear_deflection*/, double /*angle_deflection*/)
+{
+    return Step_Status::LOAD_ERROR;
+}
+
+void Step::update_process(int /*load_stage*/, int /*current*/, int /*total*/, bool& /*cancel*/) {}
+
+bool load_step(const char* /*path*/, Model* /*model*/,
+               bool& /*is_cancel*/,
+               double /*linear_deflection*/,
+               double /*angle_deflection*/,
+               bool /*isSplitCompound*/,
+               ImportStepProgressFn /*proFn*/,
+               StepIsUtf8Fn /*isUtf8Fn*/,
+               long& /*mesh_face_num*/)
+{
+    return false;
+}
+
+#endif // SLIC3R_NO_OCCT
 }; // namespace Slic3r

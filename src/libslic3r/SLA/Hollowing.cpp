@@ -14,10 +14,11 @@
 #include <limits>
 #include <mutex>
 #include <numeric>
-#include <openvdb/openvdb.h>
 #include <optional>
-
+#ifndef SLIC3R_NO_OPENVDB
+#include <openvdb/openvdb.h>
 #include <libslic3r/OpenVDBUtils.hpp>
+#endif
 #include <libslic3r/TriangleMesh.hpp>
 #include <libslic3r/TriangleMeshSlicer.hpp>
 #include <libslic3r/SLA/Hollowing.hpp>
@@ -43,8 +44,10 @@ namespace sla {
 
 struct Interior {
     indexed_triangle_set mesh;
+#ifndef SLIC3R_NO_OPENVDB
     openvdb::FloatGrid::Ptr gridptr;
     mutable std::optional<openvdb::FloatGrid::ConstAccessor> accessor;
+#endif
 
     double closing_distance = 0.;
     double thickness = 0.;
@@ -53,11 +56,12 @@ struct Interior {
     double nb_out = 3.; // narrow band width outwards
     // Full narrow band is the sum of the two above values.
 
-    void reset_accessor() const  // This resets the accessor and its cache
-    // Not a thread safe call!
+    void reset_accessor() const
     {
+#ifndef SLIC3R_NO_OPENVDB
         if (gridptr)
             accessor = gridptr->getConstAccessor();
+#endif
     }
 };
 
@@ -82,6 +86,10 @@ static InteriorPtr generate_interior_verbose(const TriangleMesh & mesh,
                                              double voxel_scale,
                                              double closing_dist)
 {
+#ifdef SLIC3R_NO_OPENVDB
+    return {};
+}
+#else
     double offset = voxel_scale * min_thickness;
     double D = voxel_scale * closing_dist;
     float  out_range = 0.1f * float(offset);
@@ -126,6 +134,7 @@ static InteriorPtr generate_interior_verbose(const TriangleMesh & mesh,
 
     return interior;
 }
+#endif
 
 InteriorPtr generate_interior(const TriangleMesh &   mesh,
                               const HollowingConfig &hc,
@@ -332,8 +341,10 @@ void hollow_mesh(TriangleMesh &mesh, const Interior &interior, int flags)
 {
     if (mesh.empty() || interior.mesh.empty()) return;
 
+    #ifndef SLIC3R_NO_OPENVDB
     if (flags & hfRemoveInsideTriangles && interior.gridptr)
         remove_inside_triangles(mesh, interior);
+#endif
 
     mesh.merge(TriangleMesh{interior.mesh});
 }
@@ -343,6 +354,10 @@ void hollow_mesh(TriangleMesh &mesh, const Interior &interior, int flags)
 // the model surface.
 static double get_distance_raw(const Vec3f &p, const Interior &interior)
 {
+#ifdef SLIC3R_NO_OPENVDB
+    return 0.0;
+}
+#else
     assert(interior.gridptr);
 
     if (!interior.accessor) interior.reset_accessor();
@@ -353,6 +368,7 @@ static double get_distance_raw(const Vec3f &p, const Interior &interior)
 
     return interior.accessor->getValue(grididx) ;
 }
+#endif
 
 struct TriangleBubble { Vec3f center; double R; };
 

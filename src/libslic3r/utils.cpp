@@ -36,7 +36,9 @@
 #include <cstdarg>
 #include <iostream>
 #include <map>
+#ifndef SLIC3R_NO_OPENSSL
 #include <openssl/md5.h>
+#endif
 #include <set>
 #include <stdio.h>
 #include <filesystem>
@@ -1902,6 +1904,7 @@ bool makedir(const std::string path) {
 
 bool bbl_calc_md5(std::string &filename, std::string &md5_out)
 {
+#ifndef SLIC3R_NO_OPENSSL
     unsigned char digest[16];
     MD5_CTX       ctx;
     MD5_Init(&ctx);
@@ -1919,6 +1922,10 @@ bool bbl_calc_md5(std::string &filename, std::string &md5_out)
     for (int j = 0; j < 16; j++) { sprintf(&md5_str[j * 2], "%02X", (unsigned int) digest[j]); }
     md5_out = std::string(md5_str);
     return true;
+#else
+    md5_out.clear();
+    return false;
+#endif
 }
 
 // SoftFever: copy directory recursively

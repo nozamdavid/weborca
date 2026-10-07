@@ -87,6 +87,10 @@ void detect_platform()
 			::fclose(f);
 		}
 	}
+#elif defined(__EMSCRIPTEN__)
+    BOOST_LOG_TRIVIAL(info) << "Platform: WebAssembly";
+	s_platform 		  = Platform::Unknown;
+	s_platform_flavor = PlatformFlavor::Generic;
 #elif defined(__OpenBSD__)
     BOOST_LOG_TRIVIAL(info) << "Platform: OpenBSD";
 	s_platform 		  = Platform::BSDUnix;
@@ -112,7 +116,9 @@ PlatformFlavor platform_flavor()
 
 std::string platform_os_type()
 {
-#if defined(_WIN32)
+#if defined(__EMSCRIPTEN__)
+    return "wasm";
+#elif defined(_WIN32)
     return "win";
 #elif defined(__APPLE__)
     return "macos";
@@ -125,7 +131,9 @@ std::string platform_os_type()
 
 std::string platform_architecture()
 {
-#if defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
+#if defined(__EMSCRIPTEN__)
+    return sizeof(void*) == 8 ? "wasm64" : "wasm32";
+#elif defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
     return "arm64";
 #elif defined(__x86_64__) || defined(__x86_64) || defined(__amd64__) || defined(__amd64) || defined(_M_X64) || defined(_M_AMD64)
     return "x86_64";

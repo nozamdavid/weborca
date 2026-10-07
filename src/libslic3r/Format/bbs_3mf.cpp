@@ -88,7 +88,9 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/xml_parser.hpp>
 #include <boost/foreach.hpp>
+#ifndef SLIC3R_NO_OPENSSL
 #include <openssl/md5.h>
+#endif
 #include <string>
 #include <vector>
 #include <utility>
@@ -6608,6 +6610,7 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
         }
 
         // add plate_N.gcode.md5 to file
+#ifndef SLIC3R_NO_OPENSSL
         if (!m_skip_static && m_save_gcode) {
             for (int i = 0; i < plate_data_list.size(); i++) {
                 PlateData *plate_data = plate_data_list[i];
@@ -6639,6 +6642,7 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
                 }
             }
         }
+#endif
 
         // Adds gcode files ("Metadata/plate_1.gcode, plate_2.gcode, ...)
         // Before _add_model_config_file_to_archive, because we modify plate_data

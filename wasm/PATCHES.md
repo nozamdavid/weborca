@@ -1,0 +1,24 @@
+# OrcaSlicer Patches for WASM Support
+
+- `CMakeLists.txt`: Add build options (`SLIC3R_WITH_*`), Emscripten flags, cross-compile test gating, optional dependency lookups, and `wasm` subdirectory.
+- `deps_src/CMakeLists.txt`: Guard GUI-only dependency subdirectories (`hidapi`, `hints`, `imgui`, `imguizmo`, `md4c`, `mdns`, `minilzo`) behind `if (SLIC3R_GUI)`.
+- `src/CMakeLists.txt`: Early return under `EMSCRIPTEN` before desktop executable and install targets.
+- `src/libslic3r/CMakeLists.txt`: Conditionally gate optional dependencies, compile definitions (`SLIC3R_NO_*`), Apple-only sources, and embed conditional library lists in original link order.
+- `src/libslic3r/Format/AssimpImport.cpp`: Guard Assimp implementation behind `SLIC3R_NO_ASSIMP`, providing a stub that returns false and sets error message.
+- `src/libslic3r/Format/DRC.cpp`: Guard Draco implementation behind `SLIC3R_NO_DRACO`, providing load/store stubs that return false.
+- `src/libslic3r/Format/STEP.cpp`: Guard OpenCASCADE implementation behind `SLIC3R_NO_OCCT` while keeping `StepPreProcessor` compiled, providing stubs returning failure status.
+- `src/libslic3r/Format/STEP.hpp`: Guard OpenCASCADE headers and OCCT types behind `SLIC3R_NO_OCCT`.
+- `src/libslic3r/Format/bbs_3mf.cpp`: Guard OpenSSL MD5 header include and plate G-code MD5 calculation behind `SLIC3R_NO_OPENSSL`.
+- `src/libslic3r/Format/svg.cpp`: Guard OpenCASCADE implementation behind `SLIC3R_NO_OCCT`, providing a stub `load_svg` that returns false and sets error message.
+- `src/libslic3r/ObjColorUtils.cpp`: Guard OpenCV `QuantKMeans` clustering implementation in `obj_color_deal_algo` behind `SLIC3R_NO_OPENCV`, returning false when disabled.
+- `src/libslic3r/ObjColorUtils.hpp`: Guard OpenCV includes and `QuantKMeans` class declaration behind `SLIC3R_NO_OPENCV`.
+- `src/libslic3r/Platform.cpp`: Add Emscripten detection in `detect_platform()`, returning "wasm" for OS and "wasm64" or "wasm32" based on pointer size for architecture.
+- `src/libslic3r/SLA/Hollowing.cpp`: Guard OpenVDB headers, grid accessor members, and volume processing behind `SLIC3R_NO_OPENVDB`.
+- `src/libslic3r/Shape/TextShape.cpp`: Guard OpenCASCADE implementation behind `SLIC3R_NO_OCCT`, providing empty stub implementations for font lookup and shape loading.
+- `src/libslic3r/TexturePainting.cpp`: Guard OpenCV implementation behind `SLIC3R_NO_OPENCV`, providing stubs returning false or empty defaults.
+- `src/libslic3r/Thread.cpp`: Guard thread naming under `__EMSCRIPTEN__` with no-op stubs returning false or nullopt.
+- `src/libslic3r/Utils.hpp`: Guard OpenSSL MD5 header include behind `SLIC3R_NO_OPENSSL`.
+- `src/libslic3r/utils.cpp`: Guard OpenSSL MD5 header include and `bbl_calc_md5` implementation behind `SLIC3R_NO_OPENSSL`, returning false when disabled.
+- `tests/CMakeLists.txt`: Propagate Emscripten link options via `test_common`, disable Catch2 auto-discovery, and guard non-WASM test directories.
+- `tests/catch2/CMakeLists.txt`: Lower `cmake_minimum_required` to `VERSION 3.13` to support root project CMake version.
+- `tests/libslic3r/CMakeLists.txt`: Guard `test_drc.cpp` source, `find_package(Draco REQUIRED)`, and Draco linkage behind `if (SLIC3R_WITH_DRACO)`.

@@ -4,6 +4,8 @@
 
 #include "TextShape.hpp"
 
+#ifndef SLIC3R_NO_OCCT
+
 #include <map>
 #include <Standard_Handle.hxx>
 #include <TColStd_SequenceOfHAsciiString.hxx>
@@ -293,3 +295,29 @@ void load_text_shape(const char*text, const char* font, const float text_height,
 }
 
 }; // namespace Slic3r
+
+#else // SLIC3R_NO_OCCT
+
+
+namespace Slic3r {
+
+std::vector<std::string> init_occt_fonts()
+{
+    return {};
+}
+
+void load_text_shape(const char* /*text*/, const char* /*font*/, const float /*text_height*/,
+                     const float /*thickness*/, bool /*is_bold*/, bool /*is_italic*/,
+                     TextResult& /*text_result*/)
+{
+    
+}
+
+std::map<std::string, std::string> get_occt_fonts_maps()
+{
+    return {};
+}
+
+} // namespace Slic3r
+
+#endif // SLIC3R_NO_OCCT

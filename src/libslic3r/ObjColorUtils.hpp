@@ -3,6 +3,7 @@
 #include <array>
 #include <iostream>
 #include <ctime>
+#ifndef SLIC3R_NO_OPENCV
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/matx.hpp>
 #include <opencv2/core.hpp>
@@ -10,7 +11,9 @@
 #include <opencv2/imgproc.hpp>
 
 #include "opencv2/opencv.hpp"
+#endif
 #include "libslic3r/Color.hpp"
+#ifndef SLIC3R_NO_OPENCV
 class QuantKMeans
 {
 public:
@@ -267,6 +270,7 @@ public:
         return image8UC3;
     }
 };
+#endif // SLIC3R_NO_OPENCV
 
 bool obj_color_deal_algo(std::vector<Slic3r::RGBA> &input_colors,
                          std::vector<Slic3r::RGBA>&   cluster_colors_from_algo,

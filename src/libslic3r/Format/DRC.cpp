@@ -1,3 +1,6 @@
+#include "DRC.hpp"
+
+#ifndef SLIC3R_NO_DRACO
 #include <draco/core/decoder_buffer.h>
 #include <draco/compression/config/compression_shared.h>
 #include <draco/core/status.h>
@@ -190,3 +193,37 @@ bool store_drc(const char *path, Model *model, int bits, int speed)
 }
 
 }; // namespace Slic3r
+
+#else // SLIC3R_NO_DRACO
+
+
+namespace Slic3r {
+
+bool load_drc(const char* /*path*/, TriangleMesh* /*meshptr*/)
+{
+    return false;
+}
+
+bool load_drc(const char* /*path*/, Model* /*model*/, const char* /*object_name*/)
+{
+    return false;
+}
+
+bool store_drc(const char* /*path*/, TriangleMesh* /*mesh*/, int /*bits*/, int /*speed*/)
+{
+    return false;
+}
+
+bool store_drc(const char* /*path*/, ModelObject* /*model_object*/, int /*bits*/, int /*speed*/)
+{
+    return false;
+}
+
+bool store_drc(const char* /*path*/, Model* /*model*/, int /*bits*/, int /*speed*/)
+{
+    return false;
+}
+
+} // namespace Slic3r
+
+#endif // SLIC3R_NO_DRACO

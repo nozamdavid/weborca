@@ -190,10 +190,6 @@ set(lisbslic3r_sources
     ColorDecomposeRecipe.hpp
     TexturePainting.hpp
     TexturePainting.cpp
-    TextureToColor/TextureToColor.hpp
-    TextureToColor/TextureToColor.cpp
-    TextureToColor/ColorUtils.hpp
-    TextureToColor/ColorUtils.cpp
     Flow.cpp
     Flow.hpp
     FlushVolCalc.cpp
@@ -565,7 +561,16 @@ if (SLIC3R_CAD)
         )
 endif ()
 
-if (APPLE)
+if (SLIC3R_WITH_OPENCV)
+    list(APPEND lisbslic3r_sources
+            TextureToColor/TextureToColor.hpp
+            TextureToColor/TextureToColor.cpp
+            TextureToColor/ColorUtils.hpp
+            TextureToColor/ColorUtils.cpp
+        )
+endif ()
+
+if (APPLE AND NOT EMSCRIPTEN)
     list(APPEND lisbslic3r_sources
             MacUtils.mm
             Format/ModelIO.hpp
@@ -589,8 +594,12 @@ cmake_policy(SET CMP0011 NEW)
 # can't reach it; the default opts its Boost lookup into BoostConfig (CMP0167).
 set(CMAKE_POLICY_DEFAULT_CMP0167 NEW)
 find_package(CGAL REQUIRED)
+if (SLIC3R_WITH_OPENCV)
 find_package(OpenCV REQUIRED core)
+endif ()
+if (SLIC3R_WITH_ASSIMP)
 find_package(assimp REQUIRED)
+endif ()
 unset(CMAKE_POLICY_DEFAULT_CMP0167)
 cmake_policy(POP)
 
@@ -634,20 +643,55 @@ endif ()
 encoding_check(libslic3r)
 
 target_compile_definitions(libslic3r PUBLIC -DUSE_TBB -DTBB_USE_CAPTURED_EXCEPTION=0)
+set(_slic3r_no_defs)
+if (NOT SLIC3R_WITH_OCCT)
+    list(APPEND _slic3r_no_defs SLIC3R_NO_OCCT)
+endif ()
+if (NOT SLIC3R_WITH_OPENCV)
+    list(APPEND _slic3r_no_defs SLIC3R_NO_OPENCV)
+endif ()
+if (NOT SLIC3R_WITH_ASSIMP)
+    list(APPEND _slic3r_no_defs SLIC3R_NO_ASSIMP)
+endif ()
+if (NOT SLIC3R_WITH_DRACO)
+    list(APPEND _slic3r_no_defs SLIC3R_NO_DRACO)
+endif ()
+if (NOT SLIC3R_WITH_OPENSSL)
+    list(APPEND _slic3r_no_defs SLIC3R_NO_OPENSSL)
+endif ()
+if (NOT SLIC3R_WITH_FREETYPE)
+    list(APPEND _slic3r_no_defs SLIC3R_NO_FREETYPE)
+endif ()
+if (NOT SLIC3R_WITH_OPENVDB)
+    list(APPEND _slic3r_no_defs SLIC3R_NO_OPENVDB)
+endif ()
+target_compile_definitions(libslic3r PUBLIC ${_slic3r_no_defs})
+target_compile_definitions(libslic3r_cgal PRIVATE ${_slic3r_no_defs})
 if (USE_SLIC3R_CONSOLE_LOG)
     target_compile_definitions(libslic3r PRIVATE $<$<CONFIG:RelWithDebInfo>:SLIC3R_CONSOLE_LOG>)
 endif()
-target_include_directories(libslic3r PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/TextureToColor PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(libslic3r PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+if (SLIC3R_WITH_OPENCV)
+    target_include_directories(libslic3r PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/TextureToColor)
+endif ()
 target_include_directories(libslic3r SYSTEM PUBLIC ${EXPAT_INCLUDE_DIRS})
 
 # Find the OCCT and related libraries
+if (SLIC3R_WITH_OCCT)
 set(OpenCASCADE_DIR "${CMAKE_PREFIX_PATH}/lib/cmake/occt")
 find_package(OpenCASCADE REQUIRED)
 target_include_directories(libslic3r SYSTEM PUBLIC ${OpenCASCADE_INCLUDE_DIR})
+endif ()
 
 find_package(JPEG REQUIRED)
+if (SLIC3R_WITH_DRACO)
 find_package(Draco REQUIRED)
+endif ()
 
+
+if (NOT SLIC3R_WITH_OCCT)
+    set(OCCT_LIBS "" CACHE INTERNAL "OCCT toolkits linked by libslic3r")
+else ()
 set(OCCT_LIBS
     TKDESTEP
     TKDE
@@ -713,6 +757,27 @@ if (WIN32)
         set(OCCT_BIN_DIR_${_build_config} "${_occt_bin}" CACHE INTERNAL "OCCT DLL directory for ${_build_config} builds")
     endforeach ()
 endif ()
+endif ()
+
+set(_opencv_libs)
+if (SLIC3R_WITH_OPENCV)
+    set(_opencv_libs opencv_world)
+endif ()
+
+set(_assimp_libs)
+if (SLIC3R_WITH_ASSIMP)
+    set(_assimp_libs assimp::assimp)
+endif ()
+
+set(_draco_libs)
+if (SLIC3R_WITH_DRACO)
+    set(_draco_libs draco::draco)
+endif ()
+
+set(_openssl_libs)
+if (SLIC3R_WITH_OPENSSL)
+    set(_openssl_libs OpenSSL::Crypto)
+endif ()
 
 target_link_libraries(libslic3r
     PUBLIC
@@ -721,8 +786,8 @@ target_link_libraries(libslic3r
         libigl
         libnest2d
         miniz
-        opencv_world
-        assimp::assimp
+        ${_opencv_libs}
+        ${_assimp_libs}
     PRIVATE
         ${CMAKE_DL_LIBS}
         ${EXPAT_LIBRARIES}
@@ -730,7 +795,7 @@ target_link_libraries(libslic3r
         boost_libs
         cereal::cereal
         Clipper2
-        draco::draco
+        ${_draco_libs}
         glu-libtess
         JPEG::JPEG
         libslic3r_cgal
@@ -743,10 +808,10 @@ target_link_libraries(libslic3r
         TBB::tbb
         TBB::tbbmalloc
         ZLIB::ZLIB
-        OpenSSL::Crypto
+        ${_openssl_libs}
     )
 
-if(NOT WIN32)
+if(SLIC3R_WITH_FREETYPE AND NOT WIN32)
     # OCCT's static targets name FreeType as a bare "freetype", which the macOS linker cannot
     # find; this target maps that name to FREETYPE_LIBRARIES.
     if (NOT TARGET freetype)
@@ -755,12 +820,12 @@ if(NOT WIN32)
     endif ()
     # Link freetype for OCCT dependency (CAD operations need font rendering)
     target_link_libraries(libslic3r PRIVATE ${FREETYPE_LIBRARIES})
-    if (NOT APPLE)
+    if (NOT APPLE AND NOT EMSCRIPTEN)
         target_link_libraries(libslic3r PRIVATE fontconfig)
     endif()
 endif()
 
-if (APPLE)
+if (APPLE AND NOT EMSCRIPTEN)
     find_library(FOUNDATION Foundation REQUIRED)
     find_library(MODELIO ModelIO REQUIRED)
     target_link_libraries(libslic3r PRIVATE ${FOUNDATION} ${MODELIO})

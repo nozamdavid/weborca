@@ -1,5 +1,7 @@
 #include "AssimpImport.hpp"
 
+#ifndef SLIC3R_NO_ASSIMP
+
 #include "../TexturePainting.hpp"
 #include "ResourcePathUtils.hpp"
 
@@ -334,3 +336,18 @@ bool load_assimp_textured_model(const std::string& path, TexturedMesh& out, std:
 }
 
 } // namespace Slic3r
+
+#else // SLIC3R_NO_ASSIMP
+
+namespace Slic3r {
+
+bool load_assimp_textured_model(const std::string& /*path*/, TexturedMesh& /*out*/, std::string* error_message)
+{
+    if (error_message)
+        *error_message = "Assimp is not available in this build";
+    return false;
+}
+
+} // namespace Slic3r
+
+#endif // SLIC3R_NO_ASSIMP

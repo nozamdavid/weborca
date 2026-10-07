@@ -8,6 +8,8 @@
 #include "svg.hpp"
 #include "nanosvg/nanosvg.h"
 
+#ifndef SLIC3R_NO_OCCT
+
 #include <cstdlib>
 #include <cstddef>
 #include <TopAbs_ShapeEnum.hxx>
@@ -405,3 +407,17 @@ bool load_svg(const char *path, Model *model, std::string &message)
     return true;
 }
 } // namespace Slic3r
+
+#else // SLIC3R_NO_OCCT
+
+
+namespace Slic3r {
+
+bool load_svg(const char* /*path*/, Model* /*model*/, std::string& message)
+{
+    message = "OCCT is not available in this build"; return false;
+}
+
+} // namespace Slic3r
+
+#endif // SLIC3R_NO_OCCT

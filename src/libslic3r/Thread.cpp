@@ -138,7 +138,29 @@ std::optional<std::string> get_current_thread_name()
 
 #else // _WIN32
 
-#ifdef __APPLE__
+#if defined(__EMSCRIPTEN__)
+
+bool set_thread_name(std::thread &thread, const char *thread_name)
+{
+	return false;
+}
+
+bool set_thread_name(boost::thread &thread, const char *thread_name)
+{
+	return false;
+}
+
+bool set_current_thread_name(const char *thread_name)
+{
+	return false;
+}
+
+std::optional<std::string> get_current_thread_name()
+{
+	return std::nullopt;
+}
+
+#elif defined(__APPLE__)
 
 // Appe screwed the Posix norm.
 bool set_thread_name(std::thread &thread, const char *thread_name)
