@@ -351,6 +351,83 @@ export class OrcaEngine {
    * @param {SliceOptions} [options={}]
    * @returns {Promise<SliceResult>}
    */
+  /**
+   * Retrieves full object hierarchy with volumes, instances, ranges, and overrides.
+   * @returns {Promise<{ objects: Array<any> }>}
+   */
+  async getObjectTree() {
+    return await this._call("getObjectTree", {});
+  }
+
+  /**
+   * Adds a volume (part, negative volume, modifier, support blocker/enforcer) to an object.
+   * @param {{ objectId: number, type: string, shape: string, size?: number[] | number, offset?: number[], name?: string }} params
+   * @returns {Promise<{ volumeId: number, id: number, name: string }>}
+   */
+  async addVolume(params) {
+    return await this._call("addVolume", params);
+  }
+
+  /**
+   * Deletes a volume from an object.
+   * @param {number} objectId
+   * @param {number} volumeId
+   * @returns {Promise<{}>}
+   */
+  async deleteVolume(objectId, volumeId) {
+    return await this._call("deleteVolume", { objectId, volumeId });
+  }
+
+  /**
+   * Renames a model object.
+   * @param {number} objectId
+   * @param {string} name
+   * @returns {Promise<{}>}
+   */
+  async renameObject(objectId, name) {
+    return await this._call("renameObject", { objectId, name });
+  }
+
+  /**
+   * Renames a volume of a model object.
+   * @param {number} objectId
+   * @param {number} volumeId
+   * @param {string} name
+   * @returns {Promise<{}>}
+   */
+  async renameVolume(objectId, volumeId, name) {
+    return await this._call("renameVolume", { objectId, volumeId, name });
+  }
+
+  /**
+   * Sets configuration option overrides on an object or volume.
+   * @param {{ objectId: number, volumeId?: number, options: Record<string, string> }} params
+   * @returns {Promise<{ errors: Array<{ key: string, error: string }> }>}
+   */
+  async setObjectConfig(params) {
+    return await this._call("setObjectConfig", params);
+  }
+
+  /**
+   * Resets configuration option overrides on an object or volume.
+   * @param {{ objectId: number, volumeId?: number, keys?: string[] }} params
+   * @returns {Promise<{}>}
+   */
+  async resetObjectConfig(params) {
+    return await this._call("resetObjectConfig", params);
+  }
+
+  /**
+   * Sets the extruder number for a volume.
+   * @param {number} objectId
+   * @param {number} volumeId
+   * @param {number} extruder
+   * @returns {Promise<{}>}
+   */
+  async setVolumeExtruder(objectId, volumeId, extruder) {
+    return await this._call("setVolumeExtruder", { objectId, volumeId, extruder });
+  }
+
   async slice(options = {}) {
     const defaultThreads = Math.min(
       typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4,

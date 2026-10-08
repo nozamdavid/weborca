@@ -1,4 +1,4 @@
-add_executable(orca_engine Engine.cpp ConfigRules.cpp ProjectOps.cpp bindings.cpp)
+add_executable(orca_engine Engine.cpp ConfigRules.cpp ProjectOps.cpp ObjectOps.cpp bindings.cpp)
 
 target_link_libraries(orca_engine PRIVATE libslic3r)
 

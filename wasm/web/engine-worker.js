@@ -239,6 +239,62 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'getObjectTree': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('getObjectTree', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'addVolume': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('addVolume', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'deleteVolume': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('deleteVolume', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'renameObject': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('renameObject', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'renameVolume': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('renameVolume', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'setObjectConfig': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('setObjectConfig', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'resetObjectConfig': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('resetObjectConfig', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'setVolumeExtruder': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('setVolumeExtruder', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
       case 'slice': {
         if (!core) throw new Error('Engine not initialized');
         const controller = new AbortController();

@@ -178,6 +178,37 @@ export class OrcaEngine {
 
   arrange(options?: { useBed?: boolean }): Promise<Record<string, never>>;
 
+  getObjectTree(): Promise<{ objects: Array<any> }>;
+
+  addVolume(params: {
+    objectId: number;
+    type: string;
+    shape: string;
+    size?: number[] | number;
+    offset?: number[];
+    name?: string;
+  }): Promise<{ volumeId: number; id: number; name: string }>;
+
+  deleteVolume(objectId: number, volumeId: number): Promise<Record<string, never>>;
+
+  renameObject(objectId: number, name: string): Promise<Record<string, never>>;
+
+  renameVolume(objectId: number, volumeId: number, name: string): Promise<Record<string, never>>;
+
+  setObjectConfig(params: {
+    objectId: number;
+    volumeId?: number;
+    options: Record<string, string>;
+  }): Promise<{ errors: Array<{ key: string; error: string }> }>;
+
+  resetObjectConfig(params: {
+    objectId: number;
+    volumeId?: number;
+    keys?: string[];
+  }): Promise<Record<string, never>>;
+
+  setVolumeExtruder(objectId: number, volumeId: number, extruder: number): Promise<Record<string, never>>;
+
   slice(options?: SliceOptions): Promise<SliceResult>;
 
   dispose(): void;

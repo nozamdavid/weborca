@@ -1,6 +1,7 @@
 #include "Engine.hpp"
 #include "ConfigRules.hpp"
 #include "ProjectOps.hpp"
+#include "ObjectOps.hpp"
 
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/BoundingBox.hpp"
@@ -202,6 +203,14 @@ private:
     json op_duplicateInstance(const json& args);
     json op_openProject(const json& args);
     json op_saveProject(const json& args);
+    json op_getObjectTree(const json& args);
+    json op_addVolume(const json& args);
+    json op_deleteVolume(const json& args);
+    json op_renameObject(const json& args);
+    json op_renameVolume(const json& args);
+    json op_setObjectConfig(const json& args);
+    json op_resetObjectConfig(const json& args);
+    json op_setVolumeExtruder(const json& args);
     std::string op_slice(int jobId, const json& args);
 
     // Job queue
@@ -378,6 +387,22 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_openProject(args);
         } else if (op == "saveProject") {
             result_data = op_saveProject(args);
+        } else if (op == "getObjectTree") {
+            result_data = op_getObjectTree(args);
+        } else if (op == "addVolume") {
+            result_data = op_addVolume(args);
+        } else if (op == "deleteVolume") {
+            result_data = op_deleteVolume(args);
+        } else if (op == "renameObject") {
+            result_data = op_renameObject(args);
+        } else if (op == "renameVolume") {
+            result_data = op_renameVolume(args);
+        } else if (op == "setObjectConfig") {
+            result_data = op_setObjectConfig(args);
+        } else if (op == "resetObjectConfig") {
+            result_data = op_resetObjectConfig(args);
+        } else if (op == "setVolumeExtruder") {
+            result_data = op_setVolumeExtruder(args);
         } else {
             throw Slic3r::RuntimeError("Unknown operation: " + op);
         }
@@ -1167,6 +1192,38 @@ json Engine::Impl::op_openProject(const json& args) {
 
 json Engine::Impl::op_saveProject(const json& args) {
     return OrcaEngine::op_saveProject(args, m_model, m_bundle, m_options_override, m_plate_data);
+}
+
+json Engine::Impl::op_getObjectTree(const json& args) {
+    return OrcaWasm::getObjectTree(m_model, args);
+}
+
+json Engine::Impl::op_addVolume(const json& args) {
+    return OrcaWasm::addVolume(m_model, args);
+}
+
+json Engine::Impl::op_deleteVolume(const json& args) {
+    return OrcaWasm::deleteVolume(m_model, args);
+}
+
+json Engine::Impl::op_renameObject(const json& args) {
+    return OrcaWasm::renameObject(m_model, args);
+}
+
+json Engine::Impl::op_renameVolume(const json& args) {
+    return OrcaWasm::renameVolume(m_model, args);
+}
+
+json Engine::Impl::op_setObjectConfig(const json& args) {
+    return OrcaWasm::setObjectConfig(m_model, args);
+}
+
+json Engine::Impl::op_resetObjectConfig(const json& args) {
+    return OrcaWasm::resetObjectConfig(m_model, args);
+}
+
+json Engine::Impl::op_setVolumeExtruder(const json& args) {
+    return OrcaWasm::setVolumeExtruder(m_model, args);
 }
 
 std::string Engine::Impl::op_slice(int jobId, const json& args) {
