@@ -139,6 +139,20 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'getConfigDef': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('getConfigDef', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'evaluateRules': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('evaluateRules', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
       case 'setOptions': {
         if (!core) throw new Error('Engine not initialized');
         const result = await core.call('setOptions', args || {});

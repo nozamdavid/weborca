@@ -88,10 +88,51 @@ export interface SliceResult {
   warnings: string[];
 }
 
+export interface ConfigOptionDef {
+  type: string;
+  label?: string;
+  fullLabel?: string;
+  category?: string;
+  tooltip?: string;
+  sidetext?: string;
+  mode: 'simple' | 'advanced' | 'expert' | 'develop';
+  min?: number;
+  max?: number;
+  default?: string;
+  enumValues?: string[];
+  enumLabels?: string[];
+  nullable?: boolean;
+  readonly?: boolean;
+  multiline?: boolean;
+  guiType?: string;
+  guiFlags?: string;
+}
+
+export interface FieldState {
+  enabled: boolean;
+  visible: boolean;
+  label?: string;
+}
+
+export interface RuleFix {
+  key: string;
+  value: string;
+  reason: string;
+}
+
+export interface EvaluateRulesResult {
+  fields: Record<string, FieldState>;
+  fixes: RuleFix[];
+  messages: string[];
+  context: any;
+}
+
 export class OrcaEngine {
   protected constructor(worker: Worker, options: CreateEngineOptions);
 
   static create(options?: CreateEngineOptions): Promise<OrcaEngine>;
+
+  call(method: string, args?: any, options?: any): Promise<any>;
 
   loadVendors(names?: string[]): Promise<LoadVendorsResult>;
 
@@ -103,6 +144,13 @@ export class OrcaEngine {
   selectPresets(selection: SelectPresetsOptions): Promise<SelectedPresetsResult>;
 
   getConfig(): Promise<Record<string, string>>;
+
+  getConfigDef(keys?: string[]): Promise<Record<string, ConfigOptionDef>>;
+
+  evaluateRules(options?: {
+    kind: 'print' | 'printer' | 'filament' | 'sla_print' | 'sla_material';
+    filamentIndex?: number;
+  }): Promise<EvaluateRulesResult>;
 
   setOptions(options: Record<string, string>): Promise<SetOptionsResult>;
 

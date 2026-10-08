@@ -34,6 +34,13 @@ if [ -n "${EMSDK_NODE:-}" ]; then
     export PATH="$(dirname "$EMSDK_NODE"):$PATH"
 fi
 
+# Cap the JS heap of every node started from here (tests, vite, tsc, Playwright).
+# Wasm memory is outside this heap; wasm/scripts/memcap.sh caps the whole process.
+case " ${NODE_OPTIONS:-} " in
+    *" --max-old-space-size="*) ;;
+    *) export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-old-space-size=${NODE_HEAP_MB:-2048}" ;;
+esac
+
 # Target architecture (default 64)
 export WASM_ARCH="${WASM_ARCH:-64}"
 

@@ -98,8 +98,7 @@ export class OrcaEngine {
   /**
    * Creates an OrcaEngine instance and initializes the background worker.
    * @param {CreateEngineOptions} [options={}]
-   * @returns {Promise<OrcaEngine>}
-   */
+   * @returns {Promise<OrcaEngine>}\n   */
   static async create(options = {}) {
     const defaultThreads = Math.min(
       typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4,
@@ -156,6 +155,17 @@ export class OrcaEngine {
   }
 
   /**
+   * Generic call method dispatching directly to the engine RPC.
+   * @param {string} method
+   * @param {any} [args]
+   * @param {any} [options]
+   * @returns {Promise<any>}
+   */
+  async call(method, args = {}, options = {}) {
+    return await this._call(method, args, options);
+  }
+
+  /**
    * Loads vendor profiles. OrcaFilamentLibrary is automatically loaded first.
    * @param {string[]} [names=[]]
    * @returns {Promise<{ vendors: Array<{ name: string, printers: number, processes: number, filaments: number }> }>}
@@ -203,6 +213,24 @@ export class OrcaEngine {
    */
   async getConfig() {
     return await this._call('getConfig', {});
+  }
+
+  /**
+   * Returns option metadata definitions from Slic3r::print_config_def.
+   * @param {string[]} [keys]
+   * @returns {Promise<Record<string, any>>}
+   */
+  async getConfigDef(keys) {
+    return await this._call('getConfigDef', keys ? { keys } : {});
+  }
+
+  /**
+   * Evaluates GUI setting rules, visibility/enablement conditions, and proposed fixes.
+   * @param {{ kind: 'print' | 'printer' | 'filament' | 'sla_print' | 'sla_material', filamentIndex?: number }} [options]
+   * @returns {Promise<{ fields: Record<string, { enabled: boolean, visible: boolean, label?: string }>, fixes: Array<{ key: string, value: string, reason: string }>, messages: string[], context: any }>}
+   */
+  async evaluateRules(options = { kind: 'print' }) {
+    return await this._call('evaluateRules', options);
   }
 
   /**
