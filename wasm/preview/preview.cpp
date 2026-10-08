@@ -5,6 +5,7 @@
 
 #include "Viewer.hpp"
 #include "Types.hpp"
+#include "ColorRange.hpp"
 #include "GCodeInputData.hpp"
 #include "convert.hpp"
 #include "libslic3r/GCode/GCodeProcessor.hpp"
@@ -15,6 +16,8 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <sstream>
+#include <iomanip>
 
 namespace {
 
@@ -83,7 +86,308 @@ inline libvgcode::Mat4x4 compute_perspective(float fov_rad, float aspect, float 
     return m;
 }
 
+inline libvgcode::Mat4x4 multiply_mat4(const libvgcode::Mat4x4& a, const libvgcode::Mat4x4& b)
+{
+    libvgcode::Mat4x4 r{};
+    for (int col = 0; col < 4; ++col) {
+        for (int row = 0; row < 4; ++row) {
+            float sum = 0.0f;
+            for (int k = 0; k < 4; ++k) {
+                sum += a[k * 4 + row] * b[col * 4 + k];
+            }
+            r[col * 4 + row] = sum;
+        }
+    }
+    return r;
+}
+
+inline std::string to_hex(const libvgcode::Color& c) {
+    char buf[10];
+    std::snprintf(buf, sizeof(buf), "#%02x%02x%02x", c[0], c[1], c[2]);
+    return std::string(buf);
+}
+
+inline const char* role_name(libvgcode::EGCodeExtrusionRole role) {
+    switch (role) {
+    case libvgcode::EGCodeExtrusionRole::Perimeter: return "Inner wall";
+    case libvgcode::EGCodeExtrusionRole::ExternalPerimeter: return "Outer wall";
+    case libvgcode::EGCodeExtrusionRole::OverhangPerimeter: return "Overhang wall";
+    case libvgcode::EGCodeExtrusionRole::InternalInfill: return "Internal infill";
+    case libvgcode::EGCodeExtrusionRole::SolidInfill: return "Solid infill";
+    case libvgcode::EGCodeExtrusionRole::TopSolidInfill: return "Top surface";
+    case libvgcode::EGCodeExtrusionRole::Ironing: return "Ironing";
+    case libvgcode::EGCodeExtrusionRole::BridgeInfill: return "Bridge";
+    case libvgcode::EGCodeExtrusionRole::GapFill: return "Gap infill";
+    case libvgcode::EGCodeExtrusionRole::Skirt: return "Skirt";
+    case libvgcode::EGCodeExtrusionRole::SupportMaterial: return "Support";
+    case libvgcode::EGCodeExtrusionRole::SupportMaterialInterface: return "Support interface";
+    case libvgcode::EGCodeExtrusionRole::WipeTower: return "Wipe tower";
+    case libvgcode::EGCodeExtrusionRole::BottomSurface: return "Bottom surface";
+    case libvgcode::EGCodeExtrusionRole::InternalBridgeInfill: return "Internal bridge";
+    case libvgcode::EGCodeExtrusionRole::Brim: return "Brim";
+    case libvgcode::EGCodeExtrusionRole::SupportTransition: return "Support transition";
+    default: return "Custom";
+    }
+}
+
+inline const char* option_name(libvgcode::EOptionType opt) {
+    switch (opt) {
+    case libvgcode::EOptionType::Travels: return "Travel";
+    case libvgcode::EOptionType::Wipes: return "Wipe";
+    case libvgcode::EOptionType::Retractions: return "Retract";
+    case libvgcode::EOptionType::Unretractions: return "Unretract";
+    case libvgcode::EOptionType::Seams: return "Seams";
+    case libvgcode::EOptionType::ToolChanges: return "Filament changes";
+    default: return "Option";
+    }
+}
+
+static const char* BED_VS =
+    "#version 300 es\n"
+    "layout(location = 0) in vec3 a_pos;\n"
+    "layout(location = 1) in vec4 a_color;\n"
+    "uniform mat4 u_mvp;\n"
+    "out vec4 v_color;\n"
+    "void main() {\n"
+    "    v_color = a_color;\n"
+    "    gl_Position = u_mvp * vec4(a_pos, 1.0);\n"
+    "}\n";
+
+static const char* BED_FS =
+    "#version 300 es\n"
+    "precision mediump float;\n"
+    "in vec4 v_color;\n"
+    "out vec4 fragColor;\n"
+    "void main() {\n"
+    "    fragColor = v_color;\n"
+    "}\n";
+
 } // namespace
+
+class BedRenderer {
+public:
+    struct Vertex {
+        float x, y, z;
+        float r, g, b, a;
+    };
+
+    BedRenderer()
+        : m_min_x(0.0f), m_min_y(0.0f), m_max_x(300.0f), m_max_y(300.0f)
+        , m_program(0), m_u_mvp(-1), m_vao(0), m_vbo(0)
+        , m_floor_count(0), m_lines_count(0), m_initialized(false)
+    {
+        m_polygon = { {0.0f, 0.0f}, {300.0f, 0.0f}, {300.0f, 300.0f}, {0.0f, 300.0f} };
+    }
+
+    ~BedRenderer() {
+        cleanup();
+    }
+
+    void init() {
+        if (m_initialized) return;
+
+        GLuint vs = compileShader(GL_VERTEX_SHADER, BED_VS);
+        GLuint fs = compileShader(GL_FRAGMENT_SHADER, BED_FS);
+        if (!vs || !fs) {
+            std::fprintf(stderr, "BedRenderer: Failed to compile shaders\n");
+            return;
+        }
+
+        m_program = glCreateProgram();
+        glAttachShader(m_program, vs);
+        glAttachShader(m_program, fs);
+        glLinkProgram(m_program);
+
+        GLint linked = 0;
+        glGetProgramiv(m_program, GL_LINK_STATUS, &linked);
+        if (!linked) {
+            char log[512];
+            glGetProgramInfoLog(m_program, sizeof(log), nullptr, log);
+            std::fprintf(stderr, "BedRenderer: Shader link error: %s\n", log);
+            glDeleteProgram(m_program);
+            m_program = 0;
+            return;
+        }
+
+        glDeleteShader(vs);
+        glDeleteShader(fs);
+
+        m_u_mvp = glGetUniformLocation(m_program, "u_mvp");
+
+        glGenVertexArrays(1, &m_vao);
+        glGenBuffers(1, &m_vbo);
+
+        m_initialized = true;
+        rebuildMesh();
+    }
+
+    void cleanup() {
+        if (m_vao) {
+            glDeleteVertexArrays(1, &m_vao);
+            m_vao = 0;
+        }
+        if (m_vbo) {
+            glDeleteBuffers(1, &m_vbo);
+            m_vbo = 0;
+        }
+        if (m_program) {
+            glDeleteProgram(m_program);
+            m_program = 0;
+        }
+        m_initialized = false;
+    }
+
+    void setBed(float min_x, float min_y, float max_x, float max_y) {
+        m_min_x = min_x;
+        m_min_y = min_y;
+        m_max_x = max_x;
+        m_max_y = max_y;
+        m_polygon.clear();
+        m_polygon.push_back({min_x, min_y});
+        m_polygon.push_back({max_x, min_y});
+        m_polygon.push_back({max_x, max_y});
+        m_polygon.push_back({min_x, max_y});
+        if (m_initialized) rebuildMesh();
+    }
+
+    void setPolygon(const std::vector<std::pair<float, float>>& poly) {
+        if (poly.size() >= 3) {
+            m_polygon = poly;
+            m_min_x = poly[0].first;
+            m_max_x = poly[0].first;
+            m_min_y = poly[0].second;
+            m_max_y = poly[0].second;
+            for (const auto& p : poly) {
+                m_min_x = std::min(m_min_x, p.first);
+                m_max_x = std::max(m_max_x, p.first);
+                m_min_y = std::min(m_min_y, p.second);
+                m_max_y = std::max(m_max_y, p.second);
+            }
+            if (m_initialized) rebuildMesh();
+        }
+    }
+
+    void render(const libvgcode::Mat4x4& mvp) {
+        if (!m_initialized || m_program == 0) return;
+
+        glUseProgram(m_program);
+        glUniformMatrix4fv(m_u_mvp, 1, GL_FALSE, mvp.data());
+        glBindVertexArray(m_vao);
+
+        if (m_floor_count > 0) {
+            glDrawArrays(GL_TRIANGLES, 0, m_floor_count);
+        }
+        if (m_lines_count > 0) {
+            glDrawArrays(GL_LINES, m_floor_count, m_lines_count);
+        }
+
+        glBindVertexArray(0);
+        glUseProgram(0);
+    }
+
+    float getCenterX() const { return (m_min_x + m_max_x) * 0.5f; }
+    float getCenterY() const { return (m_min_y + m_max_y) * 0.5f; }
+    float getWidth() const { return m_max_x - m_min_x; }
+    float getDepth() const { return m_max_y - m_min_y; }
+
+private:
+    GLuint compileShader(GLenum type, const char* src) {
+        GLuint s = glCreateShader(type);
+        glShaderSource(s, 1, &src, nullptr);
+        glCompileShader(s);
+        GLint compiled = 0;
+        glGetShaderiv(s, GL_COMPILE_STATUS, &compiled);
+        if (!compiled) {
+            char log[512];
+            glGetShaderInfoLog(s, sizeof(log), nullptr, log);
+            std::fprintf(stderr, "BedRenderer: compileShader error: %s\n", log);
+            glDeleteShader(s);
+            return 0;
+        }
+        return s;
+    }
+
+    void rebuildMesh() {
+        if (!m_initialized) return;
+
+        std::vector<Vertex> verts;
+
+        // 1. Bed subtle floor plate at z = -0.05 mm
+        const float fz = -0.05f;
+        const float fr = 0.14f, fg = 0.15f, fb = 0.17f, fa = 1.0f;
+        verts.push_back({m_min_x, m_min_y, fz, fr, fg, fb, fa});
+        verts.push_back({m_max_x, m_min_y, fz, fr, fg, fb, fa});
+        verts.push_back({m_max_x, m_max_y, fz, fr, fg, fb, fa});
+
+        verts.push_back({m_min_x, m_min_y, fz, fr, fg, fb, fa});
+        verts.push_back({m_max_x, m_max_y, fz, fr, fg, fb, fa});
+        verts.push_back({m_min_x, m_max_y, fz, fr, fg, fb, fa});
+
+        m_floor_count = static_cast<GLsizei>(verts.size());
+
+        // 2. Bed grid lines at z = 0.0 mm
+        const float gz = 0.0f;
+        const float gr = 0.22f, gg = 0.23f, gb = 0.26f, ga = 1.0f;
+        const float step = 10.0f; // 10mm grid
+
+        for (float x = std::ceil(m_min_x / step) * step; x <= m_max_x; x += step) {
+            verts.push_back({x, m_min_y, gz, gr, gg, gb, ga});
+            verts.push_back({x, m_max_y, gz, gr, gg, gb, ga});
+        }
+        for (float y = std::ceil(m_min_y / step) * step; y <= m_max_y; y += step) {
+            verts.push_back({m_min_x, y, gz, gr, gg, gb, ga});
+            verts.push_back({m_max_x, y, gz, gr, gg, gb, ga});
+        }
+
+        // 3. Bed boundary outline at z = 0.05 mm
+        const float oz = 0.05f;
+        const float or_ = 0.00f, og = 0.65f, ob = 0.60f, oa = 1.0f; // Orca teal
+        if (m_polygon.size() >= 3) {
+            for (size_t i = 0; i < m_polygon.size(); ++i) {
+                size_t next = (i + 1) % m_polygon.size();
+                verts.push_back({m_polygon[i].first, m_polygon[i].second, oz, or_, og, ob, oa});
+                verts.push_back({m_polygon[next].first, m_polygon[next].second, oz, or_, og, ob, oa});
+            }
+        }
+
+        // 4. Origin Axes at z = 0.1 mm
+        const float az = 0.1f;
+        const float axis_len = 30.0f;
+        // X axis (red)
+        verts.push_back({0.0f, 0.0f, az, 0.90f, 0.25f, 0.25f, 1.0f});
+        verts.push_back({axis_len, 0.0f, az, 0.90f, 0.25f, 0.25f, 1.0f});
+        // Y axis (green)
+        verts.push_back({0.0f, 0.0f, az, 0.25f, 0.85f, 0.25f, 1.0f});
+        verts.push_back({0.0f, axis_len, az, 0.25f, 0.85f, 0.25f, 1.0f});
+        // Z axis (blue)
+        verts.push_back({0.0f, 0.0f, az, 0.25f, 0.50f, 0.95f, 1.0f});
+        verts.push_back({0.0f, 0.0f, az + axis_len, 0.25f, 0.50f, 0.95f, 1.0f});
+
+        m_lines_count = static_cast<GLsizei>(verts.size() - m_floor_count);
+
+        glBindVertexArray(m_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+        glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(), GL_STATIC_DRAW);
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, x));
+
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, r));
+
+        glBindVertexArray(0);
+    }
+
+    float m_min_x, m_min_y, m_max_x, m_max_y;
+    std::vector<std::pair<float, float>> m_polygon;
+    GLuint m_program;
+    GLint m_u_mvp;
+    GLuint m_vao;
+    GLuint m_vbo;
+    GLsizei m_floor_count;
+    GLsizei m_lines_count;
+    bool m_initialized;
+};
 
 class OrcaPreview {
 public:
@@ -92,15 +396,17 @@ public:
         , m_width(800)
         , m_height(600)
         , m_target{150.0f, 150.0f, 10.0f}
-        , m_distance(50.0f)
+        , m_distance(60.0f)
         , m_yaw(45.0f)
         , m_pitch(30.0f)
         , m_initialized(false)
+        , m_last_view_type(libvgcode::EViewType::FeatureType)
     {
     }
 
     ~OrcaPreview() {
         if (m_initialized) {
+            m_bed.cleanup();
             m_viewer.shutdown();
         }
         if (m_ctx > 0) {
@@ -143,15 +449,21 @@ public:
         m_ctx = ctx;
 
         // Initialize libvgcode Viewer with OpenGL ES 3.0 context
-        // Viewer::init calls OpenGLWrapper::load_opengl which invokes gladLoaderLoadGLES2()
         try {
-            m_viewer.init("OpenGL ES 3.0");
+        m_viewer.init("OpenGL ES 3.0");
         } catch (const std::exception& e) {
             std::fprintf(stderr, "OrcaPreview: Viewer::init failed: %s\n", e.what());
             return false;
         }
 
-        // Default viewport setup (now gladLoaderLoadGLES2 has populated GL function pointers)
+        // Initialize BedRenderer
+        m_bed.init();
+
+        // Desktop scrubs moves in the top layer while retaining earlier layers.
+        if (!m_viewer.is_top_layer_only_view_range())
+            m_viewer.toggle_top_layer_only_view_range();
+
+        // Default viewport setup
         glViewport(0, 0, m_width, m_height);
 
         m_initialized = true;
@@ -186,9 +498,25 @@ public:
         std::vector<std::string> cp_colors;
 
         libvgcode::GCodeInputData data = libvgcode::convert(res, tool_colors, cp_colors, m_viewer);
-
         m_viewer.reset_default_extrusion_roles_colors();
         m_viewer.load(std::move(data));
+
+
+        // Force color ranges recalculation on the newly loaded model in OpenGL ES via public API
+        m_viewer.toggle_extrusion_role_visibility(libvgcode::EGCodeExtrusionRole::Custom);
+        render();
+        m_viewer.toggle_extrusion_role_visibility(libvgcode::EGCodeExtrusionRole::Custom);
+        render();
+
+
+        // Configure bed from result if available
+        if (res.printable_area.size() >= 3) {
+            std::vector<std::pair<float, float>> poly;
+            for (const auto& pt : res.printable_area) {
+                poly.push_back({static_cast<float>(pt.x()), static_cast<float>(pt.y())});
+            }
+            m_bed.setPolygon(poly);
+        }
 
         // Center camera specifically on extrusion bounds (avoiding travel moves from origin)
         libvgcode::AABox bbox = m_viewer.get_bounding_box({ libvgcode::EMoveType::Extrude });
@@ -205,7 +533,7 @@ public:
         float dy = bbox[1][1] - bbox[0][1];
         float dz = bbox[1][2] - bbox[0][2];
         float radius = std::sqrt(dx * dx + dy * dy + dz * dz) * 0.5f;
-        m_distance = std::max(radius * 2.5f, 25.0f);
+        m_distance = std::max(radius * 3.0f, 50.0f);
         m_yaw = 45.0f;
         m_pitch = 30.0f;
 
@@ -216,10 +544,59 @@ public:
             time_s = m_viewer.get_estimated_time();
         }
 
-        char buf[256];
-        std::snprintf(buf, sizeof(buf), "{\"layers\":%zu,\"moves\":%zu,\"timeS\":%.2f}",
-                      layers_count, moves_count, time_s);
-        return std::string(buf);
+        // Extract filament statistics
+        float filament_mm = 0.0f;
+        float filament_g = 0.0f;
+        for (const auto& kv : res.print_statistics.used_filaments_per_role) {
+            filament_mm += static_cast<float>(kv.second.first * 1000.0);
+            filament_g += static_cast<float>(kv.second.second);
+        }
+        if (filament_mm <= 0.0f && !res.moves.empty()) {
+            for (const auto& mv : res.moves) {
+                if (mv.delta_extruder > 0.0f) {
+                    filament_mm += mv.delta_extruder;
+                }
+            }
+            float density = (!res.filament_densities.empty() && res.filament_densities[0] > 0.0f) ? res.filament_densities[0] : 1.24f;
+            float diam = (!res.filament_diameters.empty() && res.filament_diameters[0] > 0.0f) ? res.filament_diameters[0] : 1.75f;
+            float r = diam * 0.5f;
+            filament_g = (filament_mm * 3.14159f * r * r * density) / 1000.0f;
+        }
+
+        // Build feature breakdown
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(2);
+        ss << "{\"layers\":" << layers_count
+           << ",\"moves\":" << moves_count
+           << ",\"timeS\":" << time_s
+           << ",\"filamentMm\":" << filament_mm
+           << ",\"filamentG\":" << filament_g
+           << ",\"travelDistance\":" << res.print_statistics.total_travel_distance
+           << ",\"travelMoves\":" << res.print_statistics.total_travel_moves
+           << ",\"features\":[";
+
+        bool first_feat = true;
+        for (const auto role : m_viewer.get_extrusion_roles()) {
+            float role_time = m_viewer.get_extrusion_role_estimated_time(role);
+            if (role_time > 0.0f) {
+                if (!first_feat) ss << ",";
+                first_feat = false;
+                float pct = (time_s > 0.0f) ? (role_time / time_s * 100.0f) : 0.0f;
+                ss << "{\"name\":\"" << role_name(role) << "\""
+                   << ",\"timeS\":" << role_time
+                   << ",\"percent\":" << pct << "}";
+            }
+        }
+        float travel_time = m_viewer.get_travels_estimated_time();
+        if (travel_time > 0.0f) {
+            if (!first_feat) ss << ",";
+            float pct = (time_s > 0.0f) ? (travel_time / time_s * 100.0f) : 0.0f;
+            ss << "{\"name\":\"Travel\",\"timeS\":" << travel_time << ",\"percent\":" << pct << "}";
+        }
+        ss << "]}";
+
+        m_cached_stats_json = ss.str();
+        return m_cached_stats_json;
     }
 
     void setLayerRange(int min_layer, int max_layer) {
@@ -228,6 +605,41 @@ public:
         size_t cl_min = std::clamp<size_t>(min_layer, 0, count - 1);
         size_t cl_max = std::clamp<size_t>(max_layer, cl_min, count - 1);
         m_viewer.set_layers_view_range(cl_min, cl_max);
+    }
+
+    void setMove(int move) {
+        if (!m_initialized) return;
+        const auto& enabled = m_viewer.get_view_enabled_range();
+        size_t m = std::clamp<size_t>(move, enabled[0], enabled[1]);
+        m_viewer.set_view_visible_range(enabled[0], m);
+    }
+
+    std::string getMoveRange() const {
+        if (!m_initialized) return "{\"min\":0,\"max\":0,\"current\":0}";
+        const auto& enabled = m_viewer.get_view_enabled_range();
+        const auto& visible = m_viewer.get_view_visible_range();
+        char buf[128];
+        std::snprintf(buf, sizeof(buf), "{\"min\":%zu,\"max\":%zu,\"current\":%zu}",
+                      enabled[0], enabled[1], visible[1]);
+        return std::string(buf);
+    }
+
+    std::string getLayersZs() const {
+        if (!m_initialized) return "[]";
+        const auto& zs = m_viewer.get_layers_zs();
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(3) << "[";
+        for (size_t i = 0; i < zs.size(); ++i) {
+            if (i > 0) ss << ",";
+            ss << zs[i];
+        }
+        ss << "]";
+        return ss.str();
+    }
+
+    float getLayerZ(int layer_idx) const {
+        if (!m_initialized || layer_idx < 0) return 0.0f;
+        return m_viewer.get_layer_z(static_cast<size_t>(layer_idx));
     }
 
     void setViewType(const std::string& name) {
@@ -239,40 +651,184 @@ public:
             return c == ' ' || c == '_' || c == '-';
         }), s.end());
 
-        if (s == "featuretype" || s == "feature") {
-            m_viewer.set_view_type(libvgcode::EViewType::FeatureType);
+        if (s == "featuretype" || s == "feature" || s == "linetype") {
+            m_last_view_type = libvgcode::EViewType::FeatureType;
         } else if (s == "speed") {
-            m_viewer.set_view_type(libvgcode::EViewType::Speed);
+            m_last_view_type = libvgcode::EViewType::Speed;
         } else if (s == "actualspeed") {
-            m_viewer.set_view_type(libvgcode::EViewType::ActualSpeed);
+            m_last_view_type = libvgcode::EViewType::ActualSpeed;
         } else if (s == "height") {
-            m_viewer.set_view_type(libvgcode::EViewType::Height);
+            m_last_view_type = libvgcode::EViewType::Height;
         } else if (s == "width") {
-            m_viewer.set_view_type(libvgcode::EViewType::Width);
+            m_last_view_type = libvgcode::EViewType::Width;
         } else if (s == "tool") {
-            m_viewer.set_view_type(libvgcode::EViewType::Tool);
+            m_last_view_type = libvgcode::EViewType::Tool;
         } else if (s == "colorprint") {
-            m_viewer.set_view_type(libvgcode::EViewType::ColorPrint);
+            m_last_view_type = libvgcode::EViewType::ColorPrint;
         } else if (s == "volumetricflowrate" || s == "volumetric" || s == "flow") {
-            m_viewer.set_view_type(libvgcode::EViewType::VolumetricFlowRate);
+            m_last_view_type = libvgcode::EViewType::VolumetricFlowRate;
         } else if (s == "fanspeed" || s == "fan") {
-            m_viewer.set_view_type(libvgcode::EViewType::FanSpeed);
+            m_last_view_type = libvgcode::EViewType::FanSpeed;
         } else if (s == "temperature" || s == "temp") {
-            m_viewer.set_view_type(libvgcode::EViewType::Temperature);
+            m_last_view_type = libvgcode::EViewType::Temperature;
         } else if (s == "pressureadvance" || s == "pa") {
-            m_viewer.set_view_type(libvgcode::EViewType::PressureAdvance);
+            m_last_view_type = libvgcode::EViewType::PressureAdvance;
         } else if (s == "acceleration" || s == "accel") {
-            m_viewer.set_view_type(libvgcode::EViewType::Acceleration);
+            m_last_view_type = libvgcode::EViewType::Acceleration;
         } else if (s == "jerk") {
-            m_viewer.set_view_type(libvgcode::EViewType::Jerk);
-        } else if (s == "layertime" || s == "time") {
-            m_viewer.set_view_type(libvgcode::EViewType::LayerTimeLinear);
+            m_last_view_type = libvgcode::EViewType::Jerk;
+        } else if (s == "layertime" || s == "layertimelinear" || s == "time") {
+            m_last_view_type = libvgcode::EViewType::LayerTimeLinear;
         } else if (s == "summary") {
-            m_viewer.set_view_type(libvgcode::EViewType::Summary);
+            m_last_view_type = libvgcode::EViewType::Summary;
         } else {
-            std::printf("OrcaPreview: Unknown view type '%s', default to FeatureType\n", name.c_str());
-            m_viewer.set_view_type(libvgcode::EViewType::FeatureType);
+            m_last_view_type = libvgcode::EViewType::FeatureType;
         }
+
+        m_viewer.set_view_type(m_last_view_type);
+        render();
+    }
+
+    std::string getLegendData() const {
+        if (!m_initialized) return "{}";
+
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(1);
+
+        switch (m_last_view_type) {
+        case libvgcode::EViewType::FeatureType: {
+            ss << "{\"viewType\":\"FeatureType\",\"title\":\"Line Type\",\"type\":\"features\",\"items\":[";
+            bool first = true;
+            for (const auto role : m_viewer.get_extrusion_roles()) {
+                if (!first) ss << ",";
+                first = false;
+                std::string col = to_hex(m_viewer.get_extrusion_role_color(role));
+                bool vis = m_viewer.is_extrusion_role_visible(role);
+                float role_time = m_viewer.get_extrusion_role_estimated_time(role);
+                ss << "{\"id\":" << static_cast<int>(role)
+                   << ",\"name\":\"" << role_name(role) << "\""
+                   << ",\"color\":\"" << col << "\""
+                   << ",\"visible\":" << (vis ? "true" : "false")
+                   << ",\"timeS\":" << role_time << "}";
+            }
+            ss << "],\"options\":[";
+            bool first_opt = true;
+            for (const auto opt : m_viewer.get_options()) {
+                if (!first_opt) ss << ",";
+                first_opt = false;
+                std::string col = to_hex(m_viewer.get_option_color(opt));
+                bool vis = m_viewer.is_option_visible(opt);
+                ss << "{\"id\":" << static_cast<int>(opt)
+                   << ",\"name\":\"" << option_name(opt) << "\""
+                   << ",\"color\":\"" << col << "\""
+                   << ",\"visible\":" << (vis ? "true" : "false") << "}";
+            }
+            ss << "]}";
+            break;
+        }
+        case libvgcode::EViewType::Tool: {
+            ss << "{\"viewType\":\"Tool\",\"title\":\"Filament / Tool\",\"type\":\"tool\",\"items\":[";
+            const auto& tools = m_viewer.get_used_extruders_ids();
+            const auto& pal = m_viewer.get_tool_colors();
+            for (size_t i = 0; i < tools.size(); ++i) {
+                if (i > 0) ss << ",";
+                uint8_t tool_id = tools[i];
+                std::string col = (tool_id < pal.size()) ? to_hex(pal[tool_id]) : "#009688";
+                ss << "{\"id\":" << static_cast<int>(tool_id)
+                   << ",\"name\":\"Extruder " << (tool_id + 1) << "\""
+                   << ",\"color\":\"" << col << "\""
+                   << ",\"visible\":true}";
+            }
+            ss << "],\"options\":[]}";
+            break;
+        }
+        default: {
+            // Range views: Speed, Height, Width, FanSpeed, Temperature, VolumetricFlowRate, LayerTimeLinear
+            std::string title = "Range";
+            if (m_last_view_type == libvgcode::EViewType::Speed) title = "Speed (mm/s)";
+            else if (m_last_view_type == libvgcode::EViewType::ActualSpeed) title = "Actual Speed (mm/s)";
+            else if (m_last_view_type == libvgcode::EViewType::Height) title = "Layer Height (mm)";
+            else if (m_last_view_type == libvgcode::EViewType::Width) title = "Line Width (mm)";
+            else if (m_last_view_type == libvgcode::EViewType::FanSpeed) title = "Fan Speed (%)";
+            else if (m_last_view_type == libvgcode::EViewType::Temperature) title = "Temperature (°C)";
+            else if (m_last_view_type == libvgcode::EViewType::VolumetricFlowRate) title = "Flow Rate (mm³/s)";
+            else if (m_last_view_type == libvgcode::EViewType::LayerTimeLinear) title = "Layer Time (s)";
+
+            ss << "{\"viewType\":\"" << title << "\",\"title\":\"" << title << "\",\"type\":\"range\",\"ranges\":[";
+            const auto& range = m_viewer.get_color_range(m_last_view_type);
+            const auto& pal = range.get_palette();
+            const auto& vals = range.get_values();
+
+            const auto& interval = range.get_range();
+            bool valid_range = std::isfinite(interval[0]) && std::isfinite(interval[1]) && interval[1] >= interval[0];
+            if (valid_range && !vals.empty()) {
+                if (vals.size() == pal.size()) {
+                    for (int i = static_cast<int>(pal.size()) - 1; i >= 0; --i) {
+                        if (i < static_cast<int>(pal.size()) - 1) ss << ",";
+                        float val = vals[i];
+                        ss << "{\"color\":\"" << to_hex(pal[i]) << "\",\"value\":" << (std::isfinite(val) ? val : 0.0f) << "}";
+                    }
+                } else if (vals.size() == 2) {
+                    ss << "{\"color\":\"" << to_hex(pal.back()) << "\",\"value\":" << (std::isfinite(vals.back()) ? vals.back() : 0.0f) << "},";
+                    ss << "{\"color\":\"" << to_hex(pal.front()) << "\",\"value\":" << (std::isfinite(vals.front()) ? vals.front() : 0.0f) << "}";
+                } else if (vals.size() == 1) {
+                    ss << "{\"color\":\"" << to_hex(pal.front()) << "\",\"value\":" << (std::isfinite(vals.front()) ? vals.front() : 0.0f) << "}";
+                }
+            }
+            ss << "],\"options\":[";
+            // Include Travel toggle for range views
+            std::string tr_col = to_hex(m_viewer.get_option_color(libvgcode::EOptionType::Travels));
+            bool tr_vis = m_viewer.is_option_visible(libvgcode::EOptionType::Travels);
+            ss << "{\"id\":" << static_cast<int>(libvgcode::EOptionType::Travels)
+               << ",\"name\":\"Travel\",\"color\":\"" << tr_col << "\",\"visible\":" << (tr_vis ? "true" : "false") << "}";
+            ss << "]}";
+            break;
+        }
+        }
+
+        return ss.str();
+    }
+
+    void toggleExtrusionRole(int role) {
+        if (!m_initialized) return;
+        m_viewer.toggle_extrusion_role_visibility(static_cast<libvgcode::EGCodeExtrusionRole>(role));
+    }
+
+    void setExtrusionRoleVisible(int role, bool visible) {
+        if (!m_initialized) return;
+        auto r = static_cast<libvgcode::EGCodeExtrusionRole>(role);
+        if (m_viewer.is_extrusion_role_visible(r) != visible) {
+            m_viewer.toggle_extrusion_role_visibility(r);
+        }
+    }
+
+    void toggleOption(int opt) {
+        if (!m_initialized) return;
+        m_viewer.toggle_option_visibility(static_cast<libvgcode::EOptionType>(opt));
+    }
+
+    void setOptionVisible(int opt, bool visible) {
+        if (!m_initialized) return;
+        auto o = static_cast<libvgcode::EOptionType>(opt);
+        if (m_viewer.is_option_visible(o) != visible) {
+            m_viewer.toggle_option_visibility(o);
+        }
+    }
+
+    void setBed(float min_x, float min_y, float max_x, float max_y) {
+        m_bed.setBed(min_x, min_y, max_x, max_y);
+    }
+
+    void setBedPolygon(emscripten::val pointsArr) {
+        std::vector<std::pair<float, float>> poly;
+        size_t len = pointsArr["length"].as<size_t>();
+        for (size_t i = 0; i < len; ++i) {
+            emscripten::val p = pointsArr[i];
+            float x = p[0].as<float>();
+            float y = p[1].as<float>();
+            poly.push_back({x, y});
+        }
+        m_bed.setPolygon(poly);
     }
 
     void resize(int w, int h) {
@@ -338,7 +894,7 @@ public:
         float dy = bbox[1][1] - bbox[0][1];
         float dz = bbox[1][2] - bbox[0][2];
         float radius = std::sqrt(dx * dx + dy * dy + dz * dz) * 0.5f;
-        m_distance = std::max(radius * 2.5f, 25.0f);
+        m_distance = std::max(radius * 3.0f, 50.0f);
         m_yaw = 45.0f;
         m_pitch = 30.0f;
     }
@@ -379,6 +935,7 @@ public:
     size_t getLayersCount() const { return m_viewer.get_layers_count(); }
     size_t getMovesCount() const { return m_viewer.get_vertices_count(); }
     float getEstimatedTime() const { return m_viewer.get_estimated_time(); }
+    std::string getSliceStatistics() const { return m_cached_stats_json; }
 
 private:
     void do_render(const libvgcode::Mat4x4& view, const libvgcode::Mat4x4& proj) {
@@ -390,10 +947,14 @@ private:
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
 
+        libvgcode::Mat4x4 mvp = multiply_mat4(proj, view);
+        m_bed.render(mvp);
+
         m_viewer.render(view, proj);
     }
 
     libvgcode::Viewer m_viewer;
+    BedRenderer m_bed;
     EMSCRIPTEN_WEBGL_CONTEXT_HANDLE m_ctx;
     int m_width;
     int m_height;
@@ -402,6 +963,8 @@ private:
     float m_yaw;
     float m_pitch;
     bool m_initialized;
+    libvgcode::EViewType m_last_view_type;
+    std::string m_cached_stats_json;
 };
 
 EMSCRIPTEN_BINDINGS(orca_preview) {
@@ -410,7 +973,18 @@ EMSCRIPTEN_BINDINGS(orca_preview) {
         .function("init", &OrcaPreview::init)
         .function("loadGcode", &OrcaPreview::loadGcode)
         .function("setLayerRange", &OrcaPreview::setLayerRange)
+        .function("setMove", &OrcaPreview::setMove)
+        .function("getMoveRange", &OrcaPreview::getMoveRange)
+        .function("getLayersZs", &OrcaPreview::getLayersZs)
+        .function("getLayerZ", &OrcaPreview::getLayerZ)
         .function("setViewType", &OrcaPreview::setViewType)
+        .function("getLegendData", &OrcaPreview::getLegendData)
+        .function("toggleExtrusionRole", &OrcaPreview::toggleExtrusionRole)
+        .function("setExtrusionRoleVisible", &OrcaPreview::setExtrusionRoleVisible)
+        .function("toggleOption", &OrcaPreview::toggleOption)
+        .function("setOptionVisible", &OrcaPreview::setOptionVisible)
+        .function("setBed", &OrcaPreview::setBed)
+        .function("setBedPolygon", &OrcaPreview::setBedPolygon)
         .function("resize", &OrcaPreview::resize)
         .function("render", &OrcaPreview::render)
         .function("renderMatrices", &OrcaPreview::renderMatrices)
@@ -421,6 +995,7 @@ EMSCRIPTEN_BINDINGS(orca_preview) {
         .function("getLayersCount", &OrcaPreview::getLayersCount)
         .function("getMovesCount", &OrcaPreview::getMovesCount)
         .function("getEstimatedTime", &OrcaPreview::getEstimatedTime)
+        .function("getSliceStatistics", &OrcaPreview::getSliceStatistics)
         ;
 }
 
