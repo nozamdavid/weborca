@@ -1,0 +1,132 @@
+import React from 'react';
+import { useAppStore } from '../store/appStore';
+import { SettingInput } from './SettingInput';
+import type { LayoutLine } from './types';
+
+interface SettingsLineProps {
+  line: LayoutLine;
+  kind?: 'print' | 'filament' | 'printer';
+}
+
+export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
+  const { configDefs, rulesState, settingsMode, highlightedKey } = useAppStore();
+
+  const isModeVisible = (mode?: string): boolean => {
+    const optMode = mode || 'simple';
+    if (settingsMode === 'simple') {
+      return optMode === 'simple';
+    }
+    if (settingsMode === 'advanced') {
+      return optMode === 'simple' || optMode === 'advanced';
+    }
+    return true; // expert shows all (simple, advanced, expert, develop)
+  };
+
+  if (line.type === 'option' && line.key) {
+    const def = configDefs[line.key];
+    if (!isModeVisible(def?.mode)) return null;
+
+    const ruleKey = line.index !== undefined ? `${line.key}#${line.index}` : line.key;
+    const fieldState = rulesState.fields[ruleKey] || rulesState.fields[line.key];
+    if (fieldState && fieldState.visible === false) return null;
+
+    const displayLabel = fieldState?.label || def?.label || line.key;
+    const tooltip = def?.tooltip || '';
+    const isHighlighted = highlightedKey === line.key;
+
+    return (
+      <div
+        id={`setting-row-${line.key}`}
+        className={`setting-row ${isHighlighted ? 'highlighted-row' : ''}`}
+        title={tooltip}
+      >
+        <label
+          htmlFor={`setting-input-${line.key}`}
+          className="setting-label"
+          title={tooltip}
+        >
+          {displayLabel}
+        </label>
+        <SettingInput
+          optionKey={line.key}
+          index={line.index}
+          def={def}
+          fieldState={fieldState}
+          kind={kind}
+        />
+      </div>
+    );
+  }
+
+  if (line.type === 'line' && line.options && line.options.length > 0) {
+    // Multi-option line
+    const visibleOptions = line.options.filter((k) => {
+      const def = configDefs[k];
+      if (!isModeVisible(def?.mode)) return false;
+      const fieldState = rulesState.fields[k];
+      if (fieldState && fieldState.visible === false) return false;
+      return true;
+    });
+
+    if (visibleOptions.length === 0) return null;
+
+    const firstDef = configDefs[visibleOptions[0]];
+    const tooltip = firstDef?.tooltip || '';
+    const isHighlighted = visibleOptions.some((k) => k === highlightedKey);
+
+    return (
+      <div
+        id={`setting-row-${visibleOptions[0]}`}
+        className={`setting-row multi-option-row ${isHighlighted ? 'highlighted-row' : ''}`}
+        title={tooltip}
+      >
+        <span className="setting-label" title={tooltip}>
+          {line.label || firstDef?.label || visibleOptions[0]}
+        </span>
+        <div className="multi-option-inputs">
+          {visibleOptions.map((optKey) => {
+            const def = configDefs[optKey];
+            const fieldState = rulesState.fields[optKey];
+            return (
+              <div key={optKey} className="inline-option-item">
+                <SettingInput
+                  optionKey={optKey}
+                  def={def}
+                  fieldState={fieldState}
+                  kind={kind}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (line.type === 'custom') {
+    const key = line.key;
+    const def = key ? configDefs[key] : undefined;
+    if (def && !isModeVisible(def.mode)) return null;
+
+    const fieldState = key ? rulesState.fields[key] : undefined;
+    if (fieldState && fieldState.visible === false) return null;
+
+    return (
+      <div
+        id={key ? `setting-row-${key}` : undefined}
+        className="setting-row custom-widget-row"
+      >
+        <span className="setting-label">{line.note || def?.label || key || 'Custom Widget'}</span>
+        <span className="setting-readonly-note">
+          {key && def ? (
+            <SettingInput optionKey={key} def={def} fieldState={fieldState} kind={kind} />
+          ) : (
+            <span className="custom-summary">{line.note || 'Custom Setting'}</span>
+          )}
+        </span>
+      </div>
+    );
+  }
+
+  return null;
+};

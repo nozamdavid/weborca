@@ -1,0 +1,256 @@
+import { create } from 'zustand';
+import { getEngine } from '../engine/orcaEngine';
+import { usePlateStore } from '../plate/plateStore';
+import type { ObjectTreeNode, AddVolumeParams } from './types';
+
+export interface ObjectListState {
+  objects: ObjectTreeNode[];
+  selectedObjectId: number | null;
+  selectedVolumeId: number | null;
+  isLoading: boolean;
+  error: string | null;
+
+  // Actions
+  refreshTree: () => Promise<ObjectTreeNode[]>;
+  selectItem: (objectId: number | null, volumeId?: number | null) => void;
+  addVolume: (params: AddVolumeParams) => Promise<number>;
+  deleteVolume: (objectId: number, volumeId: number) => Promise<void>;
+  deleteObject: (objectId: number) => Promise<void>;
+  renameObject: (objectId: number, name: string) => Promise<void>;
+  renameVolume: (objectId: number, volumeId: number, name: string) => Promise<void>;
+  setObjectConfig: (
+    objectId: number,
+    volumeId: number | null,
+    options: Record<string, string>
+  ) => Promise<{ errors: Array<{ key: string; error: string }> }>;
+  resetObjectConfig: (
+    objectId: number,
+    volumeId: number | null,
+    keys?: string[]
+  ) => Promise<void>;
+  setVolumeExtruder: (
+    objectId: number,
+    volumeId: number,
+    extruder: number
+  ) => Promise<void>;
+}
+
+export const useObjectListStore = create<ObjectListState>((set, get) => ({
+  objects: [],
+  selectedObjectId: null,
+  selectedVolumeId: null,
+  isLoading: false,
+  error: null,
+
+  refreshTree: async () => {
+    try {
+      set({ isLoading: true, error: null });
+      const engine = await getEngine();
+      let res: any;
+      if (typeof (engine as any).getObjectTree === 'function') {
+        res = await (engine as any).getObjectTree();
+      } else {
+        res = await engine.call('getObjectTree', {});
+      }
+      const objects: ObjectTreeNode[] = res?.objects || [];
+      set({ objects, isLoading: false });
+
+      // Auto-select first object if nothing selected
+      const currentSelected = get().selectedObjectId;
+      if (currentSelected === null && objects.length > 0) {
+        set({ selectedObjectId: objects[0].id, selectedVolumeId: null });
+      } else if (currentSelected !== null && !objects.some((o) => o.id === currentSelected)) {
+        set({
+          selectedObjectId: objects.length > 0 ? objects[0].id : null,
+          selectedVolumeId: null
+        });
+      }
+
+      return objects;
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to get object tree' });
+      return [];
+    }
+  },
+
+  selectItem: (objectId: number | null, volumeId: number | null = null) => {
+    set({ selectedObjectId: objectId, selectedVolumeId: volumeId });
+    if (objectId !== null) {
+      const plateStore = usePlateStore.getState();
+      if (plateStore.selectedObjectId !== objectId) {
+        plateStore.selectObject(objectId);
+      }
+    }
+  },
+
+  addVolume: async (params: AddVolumeParams) => {
+    try {
+      set({ isLoading: true, error: null });
+      const engine = await getEngine();
+      let res: any;
+      if (typeof (engine as any).addVolume === 'function') {
+        res = await (engine as any).addVolume(params);
+      } else {
+        res = await engine.call('addVolume', params);
+      }
+      const volumeId = res.volumeId || res.id;
+      await get().refreshTree();
+      // Select newly added volume
+      set({ selectedObjectId: params.objectId, selectedVolumeId: volumeId });
+      return volumeId;
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to add volume' });
+      throw err;
+    }
+  },
+
+  deleteVolume: async (objectId: number, volumeId: number) => {
+    try {
+      set({ isLoading: true, error: null });
+      const engine = await getEngine();
+      if (typeof (engine as any).deleteVolume === 'function') {
+        await (engine as any).deleteVolume(objectId, volumeId);
+      } else {
+        await engine.call('deleteVolume', { objectId, volumeId });
+      }
+      if (get().selectedVolumeId === volumeId) {
+        set({ selectedVolumeId: null });
+      }
+      await get().refreshTree();
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to delete volume' });
+      throw err;
+    }
+  },
+
+  deleteObject: async (objectId: number) => {
+    try {
+      set({ isLoading: true, error: null });
+      const plateStore = usePlateStore.getState();
+      await plateStore.deleteObject(objectId);
+      if (get().selectedObjectId === objectId) {
+        set({ selectedObjectId: null, selectedVolumeId: null });
+      }
+      await get().refreshTree();
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to delete object' });
+      throw err;
+    }
+  },
+
+  renameObject: async (objectId: number, name: string) => {
+    try {
+      const engine = await getEngine();
+      if (typeof (engine as any).renameObject === 'function') {
+        await (engine as any).renameObject(objectId, name);
+      } else {
+        await engine.call('renameObject', { objectId, name });
+      }
+      await get().refreshTree();
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to rename object' });
+      throw err;
+    }
+  },
+
+  renameVolume: async (objectId: number, volumeId: number, name: string) => {
+    try {
+      const engine = await getEngine();
+      if (typeof (engine as any).renameVolume === 'function') {
+        await (engine as any).renameVolume(objectId, volumeId, name);
+      } else {
+        await engine.call('renameVolume', { objectId, volumeId, name });
+      }
+      await get().refreshTree();
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to rename volume' });
+      throw err;
+    }
+  },
+
+  setObjectConfig: async (
+    objectId: number,
+    volumeId: number | null,
+    options: Record<string, string>
+  ) => {
+    try {
+      const engine = await getEngine();
+      const payload: any = { objectId, options };
+      if (volumeId !== null) {
+        payload.volumeId = volumeId;
+      }
+      let res: any;
+      if (typeof (engine as any).setObjectConfig === 'function') {
+        res = await (engine as any).setObjectConfig(payload);
+      } else {
+        res = await engine.call('setObjectConfig', payload);
+      }
+      await get().refreshTree();
+      return res || { errors: [] };
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to set config' });
+      throw err;
+    }
+  },
+
+  resetObjectConfig: async (
+    objectId: number,
+    volumeId: number | null,
+    keys?: string[]
+  ) => {
+    try {
+      const engine = await getEngine();
+      const payload: any = { objectId };
+      if (volumeId !== null) {
+        payload.volumeId = volumeId;
+      }
+      if (keys && keys.length > 0) {
+        payload.keys = keys;
+      }
+      if (typeof (engine as any).resetObjectConfig === 'function') {
+        await (engine as any).resetObjectConfig(payload);
+      } else {
+        await engine.call('resetObjectConfig', payload);
+      }
+      await get().refreshTree();
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to reset config' });
+      throw err;
+    }
+  },
+
+  setVolumeExtruder: async (
+    objectId: number,
+    volumeId: number,
+    extruder: number
+  ) => {
+    try {
+      const engine = await getEngine();
+      if (typeof (engine as any).setVolumeExtruder === 'function') {
+        await (engine as any).setVolumeExtruder(objectId, volumeId, extruder);
+      } else {
+        await engine.call('setVolumeExtruder', { objectId, volumeId, extruder });
+      }
+      await get().refreshTree();
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to set volume extruder' });
+      throw err;
+    }
+  }
+}));
+
+// Expose on window for tests / debug
+if (typeof window !== 'undefined') {
+  (window as any).__objectListStore = useObjectListStore;
+}
+
+// Sync selection from plate store
+usePlateStore.subscribe((state) => {
+  const current = useObjectListStore.getState();
+  if (state.selectedObjectId !== current.selectedObjectId) {
+    useObjectListStore.setState({
+      selectedObjectId: state.selectedObjectId,
+      selectedVolumeId: null
+    });
+  }
+});
