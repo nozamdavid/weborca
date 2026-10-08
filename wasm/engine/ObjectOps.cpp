@@ -82,8 +82,10 @@ json getObjectTree(const Slic3r::Model& model, const json& /*args*/) {
         json instances_arr = json::array();
         for (const auto* inst : obj->instances) {
             if (!inst) continue;
+            const Slic3r::Vec3d offset = inst->get_offset();
             instances_arr.push_back({
-                {"id", inst->id().id}
+                {"id", inst->id().id},
+                {"offset", {offset.x(), offset.y(), offset.z()}}
             });
         }
 

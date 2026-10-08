@@ -372,6 +372,39 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'paintStroke':
+      case 'getPaintOverlay':
+      case 'getPaintData':
+      case 'setPaintData':
+      case 'clearPaint': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call(method, args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'getLayerHeightProfile':
+      case 'setLayerHeightProfile':
+      case 'adaptiveLayerHeights':
+      case 'smoothLayerHeights':
+      case 'adjustLayerHeights':
+      case 'resetLayerHeights':
+      case 'getObjectLayers': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call(method, args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'addText':
+      case 'updateText':
+      case 'getText': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call(method, args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
       case 'slice': {
         if (!core) throw new Error('Engine not initialized');
         const controller = new AbortController();

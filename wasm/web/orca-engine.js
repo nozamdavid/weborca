@@ -532,6 +532,24 @@ export class OrcaEngine {
     return await this._call('cutObject', params);
   }
 
+  async paintStroke(params) { return await this._call('paintStroke', params); }
+  async getPaintOverlay(params) { return await this._call('getPaintOverlay', params); }
+  async getPaintData(params) { return await this._call('getPaintData', params); }
+  async setPaintData(params) { return await this._call('setPaintData', params); }
+  async clearPaint(params) { return await this._call('clearPaint', params); }
+
+  async getLayerHeightProfile(params) { return await this._call('getLayerHeightProfile', params); }
+  async setLayerHeightProfile(params) { return await this._call('setLayerHeightProfile', params); }
+  async adaptiveLayerHeights(params) { return await this._call('adaptiveLayerHeights', params); }
+  async smoothLayerHeights(params) { return await this._call('smoothLayerHeights', params); }
+  async adjustLayerHeights(params) { return await this._call('adjustLayerHeights', params); }
+  async resetLayerHeights(params) { return await this._call('resetLayerHeights', params); }
+  async getObjectLayers(params) { return await this._call('getObjectLayers', params); }
+
+  async addText(params) { return await this._call('addText', params); }
+  async updateText(params) { return await this._call('updateText', params); }
+  async getText(params) { return await this._call('getText', params); }
+
   /**
    * Runs the slicing pipeline.
    * @param {SliceOptions} [options={}]

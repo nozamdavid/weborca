@@ -321,6 +321,68 @@ export interface CutObjectResult {
   createdObjects?: CutObjectCreatedItem[];
 }
 
+export interface LayerRange {
+  bottom: number;
+  top: number;
+  height: number;
+}
+
+export interface LayerHeightProfileResult {
+  objectId: number;
+  profile: number[];
+  layerCount: number;
+  layers: number[];
+  ranges: LayerRange[];
+  success?: boolean;
+  cleared?: boolean;
+  hasCustomProfile?: boolean;
+  minLayerHeight?: number;
+  maxLayerHeight?: number;
+  nominalHeight?: number;
+  firstLayerHeight?: number;
+  objectHeight?: number;
+}
+
+export interface TextParams {
+  objectId?: number;
+  volumeType?: 'new_object' | 'part' | 'modifier' | 'negative';
+  text: string;
+  fontPath?: string;
+  fontData?: string;
+  fontName?: string;
+  size?: number;
+  depth?: number;
+  position?: [number, number, number];
+  normal?: [number, number, number];
+  rotation?: number;
+  name?: string;
+}
+
+export interface TextResult {
+  objectId: number;
+  volumeId: number;
+  name: string;
+  triangleCount: number;
+  boundingBox: [number, number, number, number, number, number];
+}
+
+export interface TextInfo {
+  objectId: number;
+  volumeId: number;
+  name: string;
+  text: string;
+  fontName: string;
+  fontPath: string;
+  size: number;
+  depth: number;
+  useSurface: boolean;
+  charGap: number;
+  lineGap: number;
+  boldness: number;
+  skew: number;
+  align: { horizontal: 'left' | 'center' | 'right'; vertical: 'top' | 'center' | 'bottom' };
+}
+
 export class OrcaEngine {
   protected constructor(worker: Worker, options: CreateEngineOptions);
 
@@ -441,6 +503,24 @@ export class OrcaEngine {
   ): Promise<ClearSeamPaintingResult>;
 
   cutObject(params: CutObjectParams): Promise<CutObjectResult>;
+
+  paintStroke(params: Record<string, unknown>): Promise<{ changed: boolean; stats: Record<string, number> }>;
+  getPaintOverlay(params: Record<string, unknown>): Promise<{ path: string; states: Array<{ state: string; firstTriangle: number; triangleCount: number }> }>;
+  getPaintData(params: Record<string, unknown>): Promise<{ data: string }>;
+  setPaintData(params: Record<string, unknown>): Promise<unknown>;
+  clearPaint(params: Record<string, unknown>): Promise<unknown>;
+
+  getLayerHeightProfile(params: { objectId: number }): Promise<LayerHeightProfileResult>;
+  setLayerHeightProfile(params: { objectId: number; profile: number[] }): Promise<LayerHeightProfileResult>;
+  adaptiveLayerHeights(params: { objectId: number; quality?: number }): Promise<LayerHeightProfileResult>;
+  smoothLayerHeights(params: { objectId: number; radius?: number; keepMin?: boolean }): Promise<LayerHeightProfileResult>;
+  adjustLayerHeights(params: { objectId: number; z: number; delta?: number; bandWidth?: number; action?: 'increase' | 'decrease' | 'smooth' | 'reduce' }): Promise<LayerHeightProfileResult>;
+  resetLayerHeights(params: { objectId: number }): Promise<LayerHeightProfileResult>;
+  getObjectLayers(params: { objectId: number }): Promise<{ objectId: number; layerCount: number; layers: number[]; ranges: LayerRange[] }>;
+
+  addText(params: TextParams): Promise<TextResult>;
+  updateText(params: Partial<TextParams> & { objectId: number; volumeId: number }): Promise<TextResult>;
+  getText(params: { objectId: number; volumeId: number }): Promise<TextInfo>;
 
   slice(options?: SliceOptions): Promise<SliceResult>;
 

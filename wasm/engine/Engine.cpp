@@ -4,6 +4,9 @@
 #include "ObjectOps.hpp"
 #include "PlateOps.hpp"
 #include "PaintOps.hpp"
+#include "PaintToolsOps.hpp"
+#include "LayerHeightOps.hpp"
+#include "TextOps.hpp"
 #include "CutOps.hpp"
 #include "libslic3r/Arrange.hpp"
 
@@ -226,6 +229,22 @@ private:
     json op_setSeamPainting(const json& args);
     json op_clearSeamPainting(const json& args);
     json op_cutObject(const json& args);
+    json op_paintStroke(const json& args);
+    json op_getPaintOverlay(const json& args);
+    json op_getPaintData(const json& args);
+    json op_setPaintData(const json& args);
+    json op_clearPaint(const json& args);
+    json op_getLayerHeightProfile(const json& args);
+    json op_setLayerHeightProfile(const json& args);
+    json op_adaptiveLayerHeights(const json& args);
+    json op_smoothLayerHeights(const json& args);
+    json op_adjustLayerHeights(const json& args);
+    json op_resetLayerHeights(const json& args);
+    json op_getObjectLayers(const json& args);
+    json op_addText(const json& args);
+    json op_updateText(const json& args);
+    json op_getText(const json& args);
+    Slic3r::DynamicPrintConfig layer_config() const;
     std::string op_slice(int jobId, const json& args);
 
     // Job queue
@@ -440,6 +459,36 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_clearSeamPainting(args);
         } else if (op == "cutObject") {
             result_data = op_cutObject(args);
+        } else if (op == "paintStroke") {
+            result_data = op_paintStroke(args);
+        } else if (op == "getPaintOverlay") {
+            result_data = op_getPaintOverlay(args);
+        } else if (op == "getPaintData") {
+            result_data = op_getPaintData(args);
+        } else if (op == "setPaintData") {
+            result_data = op_setPaintData(args);
+        } else if (op == "clearPaint") {
+            result_data = op_clearPaint(args);
+        } else if (op == "getLayerHeightProfile") {
+            result_data = op_getLayerHeightProfile(args);
+        } else if (op == "setLayerHeightProfile") {
+            result_data = op_setLayerHeightProfile(args);
+        } else if (op == "adaptiveLayerHeights") {
+            result_data = op_adaptiveLayerHeights(args);
+        } else if (op == "smoothLayerHeights") {
+            result_data = op_smoothLayerHeights(args);
+        } else if (op == "adjustLayerHeights") {
+            result_data = op_adjustLayerHeights(args);
+        } else if (op == "resetLayerHeights") {
+            result_data = op_resetLayerHeights(args);
+        } else if (op == "getObjectLayers") {
+            result_data = op_getObjectLayers(args);
+        } else if (op == "addText") {
+            result_data = op_addText(args);
+        } else if (op == "updateText") {
+            result_data = op_updateText(args);
+        } else if (op == "getText") {
+            result_data = op_getText(args);
         } else {
             throw Slic3r::RuntimeError("Unknown operation: " + op);
         }
@@ -1357,6 +1406,30 @@ json Engine::Impl::op_cutObject(const json& args) {
     Slic3r::DynamicPrintConfig config = m_bundle ? m_bundle->full_config() : Slic3r::DynamicPrintConfig();
     return OrcaWasm::cutObject(m_model, m_plate_data, config, args);
 }
+
+json Engine::Impl::op_paintStroke(const json& args) { return OrcaWasm::paintStroke(m_model, args); }
+json Engine::Impl::op_getPaintOverlay(const json& args) { return OrcaWasm::getPaintOverlay(m_model, args); }
+json Engine::Impl::op_getPaintData(const json& args) { return OrcaWasm::getPaintData(m_model, args); }
+json Engine::Impl::op_setPaintData(const json& args) { return OrcaWasm::setPaintData(m_model, args); }
+json Engine::Impl::op_clearPaint(const json& args) { return OrcaWasm::clearPaint(m_model, args); }
+
+Slic3r::DynamicPrintConfig Engine::Impl::layer_config() const {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+    Slic3r::DynamicPrintConfig config = m_bundle->full_config();
+    config.apply(m_options_override);
+    return config;
+}
+
+json Engine::Impl::op_getLayerHeightProfile(const json& args) { return OrcaWasm::getLayerHeightProfile(m_model, layer_config(), args); }
+json Engine::Impl::op_setLayerHeightProfile(const json& args) { return OrcaWasm::setLayerHeightProfile(m_model, layer_config(), args); }
+json Engine::Impl::op_adaptiveLayerHeights(const json& args) { return OrcaWasm::adaptiveLayerHeights(m_model, layer_config(), args); }
+json Engine::Impl::op_smoothLayerHeights(const json& args) { return OrcaWasm::smoothLayerHeights(m_model, layer_config(), args); }
+json Engine::Impl::op_adjustLayerHeights(const json& args) { return OrcaWasm::adjustLayerHeights(m_model, layer_config(), args); }
+json Engine::Impl::op_resetLayerHeights(const json& args) { return OrcaWasm::resetLayerHeights(m_model, layer_config(), args); }
+json Engine::Impl::op_getObjectLayers(const json& args) { return OrcaWasm::getObjectLayers(m_model, layer_config(), args); }
+json Engine::Impl::op_addText(const json& args) { return OrcaWasm::addText(m_model, m_plate_data, args); }
+json Engine::Impl::op_updateText(const json& args) { return OrcaWasm::updateText(m_model, args); }
+json Engine::Impl::op_getText(const json& args) { return OrcaWasm::getText(m_model, args); }
 
 
 std::string Engine::Impl::op_slice(int jobId, const json& args) {
