@@ -91,45 +91,70 @@ std::vector<unsigned char> base64_decode(const std::string& input) {
     const std::string b64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     std::vector<unsigned char> out;
     std::vector<int> T(256, -1);
-    for (int i = 0; i < 64; ++i) T[static_cast<unsigned char>(b64_chars[i])] = i;
+    for (int k = 0; k < 64; ++k) T[static_cast<unsigned char>(b64_chars[k])] = k;
 
-    int val = 0, valb = -8;
-    for (unsigned char c : input) {
+    size_t start_pos = 0;
+    size_t comma = input.find(',');
+    if (comma != std::string::npos && input.find("base64") != std::string::npos && comma < 100) {
+        start_pos = comma + 1;
+    }
+
+    uint32_t val = 0;
+    int valb = -8;
+    for (size_t k = start_pos; k < input.size(); ++k) {
+        unsigned char c = static_cast<unsigned char>(input[k]);
+        if (c == '=') break;
         if (T[c] == -1) continue;
-        val = (val << 6) + T[c];
+        val = (val << 6) | static_cast<uint32_t>(T[c]);
         valb += 6;
         if (valb >= 0) {
             out.push_back(static_cast<unsigned char>((val >> valb) & 0xFF));
             valb -= 8;
         }
+        if (valb == -8) {
+            val = 0;
+        }
     }
     return out;
 }
 
-std::unique_ptr<Slic3r::Emboss::FontFile> load_font_file(const std::string& font_data_or_path, std::string& loaded_path) {
-    // 1. Try direct path if non-empty
-    if (!font_data_or_path.empty()) {
-        if (boost::filesystem::exists(font_data_or_path)) {
-            loaded_path = font_data_or_path;
-            auto ff = Slic3r::Emboss::create_font_file(font_data_or_path.c_str());
-            if (ff) return ff;
+std::unique_ptr<Slic3r::Emboss::FontFile> load_font_file(
+    const std::string& font_data,
+    const std::string& font_path,
+    std::string& loaded_path
+) {
+    // 1. Explicit fontData (base64) provided:
+    if (!font_data.empty()) {
+        std::vector<unsigned char> bytes = base64_decode(font_data);
+        if (bytes.empty()) {
+            throw Slic3r::RuntimeError("Provided fontData failed to base64-decode or is empty");
         }
-
-        // Try base64 decoding if string is longer and doesn't contain path separators
-        if (font_data_or_path.find('/') == std::string::npos && font_data_or_path.find('\\') == std::string::npos && font_data_or_path.size() > 64) {
-            std::vector<unsigned char> bytes = base64_decode(font_data_or_path);
-            if (!bytes.empty()) {
-                auto data_ptr = std::make_unique<std::vector<unsigned char>>(std::move(bytes));
-                auto ff = Slic3r::Emboss::create_font_file(std::move(data_ptr));
-                if (ff) {
-                    loaded_path = "<embedded_font>";
-                    return ff;
-                }
-            }
+        auto data_ptr = std::make_unique<std::vector<unsigned char>>(std::move(bytes));
+        auto ff = Slic3r::Emboss::create_font_file(std::move(data_ptr));
+        if (!ff) {
+            throw Slic3r::RuntimeError("Failed to parse TrueType/OpenType font from provided fontData");
         }
+        loaded_path = "<embedded_font>";
+        return ff;
     }
 
-    // 2. Fallbacks for standard bundled and system fonts
+    // 2. Explicit fontPath provided:
+    if (!font_path.empty()) {
+        if (font_path.size() >= 4096) {
+            throw Slic3r::RuntimeError("Font path exceeds maximum allowable length: " + font_path.substr(0, 64));
+        }
+        if (!boost::filesystem::exists(font_path)) {
+            throw Slic3r::RuntimeError("Font file not found at path: " + font_path);
+        }
+        auto ff = Slic3r::Emboss::create_font_file(font_path.c_str());
+        if (!ff) {
+            throw Slic3r::RuntimeError("Failed to parse font file at path: " + font_path);
+        }
+        loaded_path = font_path;
+        return ff;
+    }
+
+    // 3. Fallbacks for standard bundled and system fonts ONLY when no custom font was specified
     const std::vector<std::string> fallback_candidates = {
         "/fonts/DejaVuSans.ttf",
         "/fonts/LiberationSans-Regular.ttf",
@@ -141,13 +166,15 @@ std::unique_ptr<Slic3r::Emboss::FontFile> load_font_file(const std::string& font
 
     for (const auto& path : fallback_candidates) {
         if (boost::filesystem::exists(path)) {
-            loaded_path = path;
             auto ff = Slic3r::Emboss::create_font_file(path.c_str());
-            if (ff) return ff;
+            if (ff) {
+                loaded_path = path;
+                return ff;
+            }
         }
     }
 
-    throw Slic3r::RuntimeError("Could not load TrueType font from '" + font_data_or_path + "' or default font paths.");
+    throw Slic3r::RuntimeError("No font specified and could not load default font from fallback paths.");
 }
 
 Slic3r::FontProp::HorizontalAlign parse_h_align(const std::string& align) {
@@ -186,7 +213,8 @@ struct GeneratedTextMesh {
 
 GeneratedTextMesh generate_text_geometry(
     const std::string& text,
-    const std::string& font_data_or_path,
+    const std::string& font_data,
+    const std::string& font_path,
     const std::string& font_name,
     double size,
     double depth,
@@ -201,7 +229,7 @@ GeneratedTextMesh generate_text_geometry(
     Slic3r::ModelVolumeType volume_type
 ) {
     std::string actual_font_path;
-    std::unique_ptr<Slic3r::Emboss::FontFile> font_file = load_font_file(font_data_or_path, actual_font_path);
+    std::unique_ptr<Slic3r::Emboss::FontFile> font_file = load_font_file(font_data, font_path, actual_font_path);
 
     Slic3r::FontProp fp(static_cast<float>(size));
     if (char_gap.has_value()) fp.char_gap = *char_gap;
@@ -293,13 +321,18 @@ json addText(Slic3r::Model& model, Slic3r::PlateDataPtrs& plates, const json& ar
         }
     }
 
-    std::string font_data_or_path = "";
+    std::string font_data = "";
     if (args.contains("fontData") && args["fontData"].is_string()) {
-        font_data_or_path = args["fontData"].get<std::string>();
-    } else if (args.contains("fontPath") && args["fontPath"].is_string()) {
-        font_data_or_path = args["fontPath"].get<std::string>();
+        font_data = args["fontData"].get<std::string>();
+    }
+
+    std::string font_path = "";
+    if (args.contains("fontPath") && args["fontPath"].is_string()) {
+        font_path = args["fontPath"].get<std::string>();
     } else if (args.contains("font") && args["font"].is_string()) {
-        font_data_or_path = args["font"].get<std::string>();
+        const std::string& val = args["font"].get<std::string>();
+        if (val.size() > 512) font_data = val;
+        else font_path = val;
     }
 
     std::string font_name = args.value("fontName", "DejaVu Sans");
@@ -341,7 +374,7 @@ json addText(Slic3r::Model& model, Slic3r::PlateDataPtrs& plates, const json& ar
     std::string custom_name = args.value("name", text);
 
     GeneratedTextMesh generated = generate_text_geometry(
-        text, font_data_or_path, font_name, size, depth,
+        text, font_data, font_path, font_name, size, depth,
         char_gap, line_gap, boldness, skew, h_align, v_align,
         use_surface, is_new_object, mv_type
     );
@@ -367,11 +400,19 @@ json addText(Slic3r::Model& model, Slic3r::PlateDataPtrs& plates, const json& ar
             new_obj->ensure_on_bed();
         }
 
+        if (args.contains("rotation")) {
+            double rotation = args.value("rotation", 0.0);
+            double rot_rad = rotation * M_PI / 180.0;
+            new_obj->instances.front()->set_rotation(Slic3r::Vec3d(0.0, 0.0, rot_rad));
+        }
+
         if (!plates.empty() && plates[0]) {
             plates[0]->objects_and_instances.emplace_back(static_cast<int>(model.objects.size() - 1), 0);
         }
 
-        const auto& bb = new_vol->mesh().bounding_box();
+        const Slic3r::Transform3d& inst_tr = (!new_obj->instances.empty()) ? new_obj->instances.front()->get_matrix() : Slic3r::Transform3d::Identity();
+        new_obj->invalidate_bounding_box();
+        const auto bb = new_vol->mesh().transformed_bounding_box(inst_tr * new_vol->get_transformation().get_matrix());
         return json{
             {"objectId", new_obj->id().id},
             {"volumeId", new_vol->id().id},
@@ -398,8 +439,7 @@ json addText(Slic3r::Model& model, Slic3r::PlateDataPtrs& plates, const json& ar
         }
 
         double rotation = args.value("rotation", 0.0);
-        // Convert to radians if passed in degrees
-        double rot_rad = (std::abs(rotation) > 2.0 * M_PI) ? (rotation * M_PI / 180.0) : rotation;
+        double rot_rad = rotation * M_PI / 180.0;
 
         Slic3r::Transform3d surface_trmat = Slic3r::Emboss::create_transformation_onto_surface(pos, norm, 0.9);
         if (std::abs(rot_rad) > 1e-6) {
@@ -416,7 +456,9 @@ json addText(Slic3r::Model& model, Slic3r::PlateDataPtrs& plates, const json& ar
         new_vol->text_configuration = std::move(generated.text_config);
         new_vol->emboss_shape = std::move(generated.emboss_shape);
 
-        const auto& bb = new_vol->mesh().bounding_box();
+        const Slic3r::Transform3d& inst_tr = (!target_obj->instances.empty()) ? target_obj->instances.front()->get_matrix() : Slic3r::Transform3d::Identity();
+        target_obj->invalidate_bounding_box();
+        const auto bb = new_vol->mesh().transformed_bounding_box(inst_tr * new_vol->get_transformation().get_matrix());
         return json{
             {"objectId", target_obj->id().id},
             {"volumeId", new_vol->id().id},
@@ -447,15 +489,20 @@ json updateText(Slic3r::Model& model, const json& args) {
     std::string text = args.value("text", existing_tc ? existing_tc->text : "Text");
     std::string font_name = args.value("fontName", existing_tc ? existing_tc->style.name : "DejaVu Sans");
 
-    std::string font_data_or_path = "";
+    std::string font_data = "";
     if (args.contains("fontData") && args["fontData"].is_string()) {
-        font_data_or_path = args["fontData"].get<std::string>();
-    } else if (args.contains("fontPath") && args["fontPath"].is_string()) {
-        font_data_or_path = args["fontPath"].get<std::string>();
+        font_data = args["fontData"].get<std::string>();
+    }
+
+    std::string font_path = "";
+    if (args.contains("fontPath") && args["fontPath"].is_string()) {
+        font_path = args["fontPath"].get<std::string>();
     } else if (args.contains("font") && args["font"].is_string()) {
-        font_data_or_path = args["font"].get<std::string>();
-    } else if (existing_tc) {
-        font_data_or_path = existing_tc->style.path;
+        const std::string& val = args["font"].get<std::string>();
+        if (val.size() > 512) font_data = val;
+        else font_path = val;
+    } else if (existing_tc && font_data.empty()) {
+        font_path = existing_tc->style.path;
     }
 
     double size = args.value("size", existing_tc ? static_cast<double>(existing_tc->style.prop.size_in_mm) : 10.0);
@@ -496,7 +543,7 @@ json updateText(Slic3r::Model& model, const json& args) {
     bool is_new_object = (obj->volumes.size() == 1 && vol->type() == Slic3r::ModelVolumeType::MODEL_PART);
 
     GeneratedTextMesh generated = generate_text_geometry(
-        text, font_data_or_path, font_name, size, depth,
+        text, font_data, font_path, font_name, size, depth,
         char_gap, line_gap, boldness, skew, h_align, v_align,
         use_surface, is_new_object, vol->type()
     );
@@ -512,6 +559,9 @@ json updateText(Slic3r::Model& model, const json& args) {
         vol->name = text;
     }
 
+    double rotation = args.value("rotation", 0.0);
+    double rot_rad = rotation * M_PI / 180.0;
+
     if (args.contains("position") && args["position"].is_array() && args["position"].size() >= 3) {
         Slic3r::Vec3d pos(args["position"][0].get<double>(), args["position"][1].get<double>(), args["position"][2].get<double>());
         Slic3r::Vec3d norm(0.0, 0.0, 1.0);
@@ -519,8 +569,6 @@ json updateText(Slic3r::Model& model, const json& args) {
             norm = Slic3r::Vec3d(args["normal"][0].get<double>(), args["normal"][1].get<double>(), args["normal"][2].get<double>());
             if (norm.norm() > 1e-6) norm.normalize();
         }
-        double rotation = args.value("rotation", 0.0);
-        double rot_rad = (std::abs(rotation) > 2.0 * M_PI) ? (rotation * M_PI / 180.0) : rotation;
 
         Slic3r::Transform3d surface_trmat = Slic3r::Emboss::create_transformation_onto_surface(pos, norm, 0.9);
         if (std::abs(rot_rad) > 1e-6) {
@@ -528,9 +576,40 @@ json updateText(Slic3r::Model& model, const json& args) {
         }
         Slic3r::Transform3d vol_tr = obj->instances.front()->get_matrix().inverse() * surface_trmat;
         vol->set_transformation(vol_tr);
+    } else if (args.contains("rotation")) {
+        if (is_new_object && !obj->instances.empty()) {
+            obj->instances.front()->set_rotation(Slic3r::Vec3d(0.0, 0.0, rot_rad));
+        } else {
+            const Slic3r::Transform3d& inst_tr = (!obj->instances.empty()) ? obj->instances.front()->get_matrix() : Slic3r::Transform3d::Identity();
+            Slic3r::Transform3d cur_vol_tr = vol->get_transformation().get_matrix();
+            Slic3r::Transform3d world_tr = inst_tr * cur_vol_tr;
+
+            Slic3r::Vec3d pos = world_tr.translation();
+            auto linear_mat = world_tr.linear();
+            double scale_x = linear_mat.col(0).norm();
+            double scale_y = linear_mat.col(1).norm();
+            double scale_z = linear_mat.col(2).norm();
+
+            Slic3r::Vec3d norm = linear_mat.col(2);
+            if (norm.norm() > 1e-6) norm.normalize();
+            else norm = Slic3r::Vec3d(0.0, 0.0, 1.0);
+
+            Slic3r::Transform3d surface_trmat = Slic3r::Emboss::create_transformation_onto_surface(pos, norm, 0.9);
+            if (std::abs(rot_rad) > 1e-6) {
+                surface_trmat *= Eigen::AngleAxisd(rot_rad, Slic3r::Vec3d::UnitZ());
+            }
+            if (std::abs(scale_x - 1.0) > 1e-4 || std::abs(scale_y - 1.0) > 1e-4 || std::abs(scale_z - 1.0) > 1e-4) {
+                surface_trmat.scale(Slic3r::Vec3d(scale_x, scale_y, scale_z));
+            }
+
+            Slic3r::Transform3d new_vol_tr = inst_tr.inverse() * surface_trmat;
+            vol->set_transformation(new_vol_tr);
+        }
     }
 
-    const auto& bb = vol->mesh().bounding_box();
+    const Slic3r::Transform3d& inst_tr = (!obj->instances.empty()) ? obj->instances.front()->get_matrix() : Slic3r::Transform3d::Identity();
+    obj->invalidate_bounding_box();
+    const auto bb = vol->mesh().transformed_bounding_box(inst_tr * vol->get_transformation().get_matrix());
     return json{
         {"objectId", obj->id().id},
         {"volumeId", vol->id().id},
@@ -578,7 +657,13 @@ json getText(const Slic3r::Model& model, const json& args) {
         {"align", {
             {"horizontal", align_h_to_string(tc.style.prop.align.first)},
             {"vertical", align_v_to_string(tc.style.prop.align.second)}
-        }}
+        }},
+        {"rotation", ([&]() -> double {
+            const Slic3r::Transform3d& inst_tr = (!obj->instances.empty()) ? obj->instances.front()->get_matrix() : Slic3r::Transform3d::Identity();
+            Slic3r::Transform3d world_tr = inst_tr * vol->get_transformation().get_matrix();
+            std::optional<float> cur_rot = Slic3r::Emboss::calc_up(world_tr, 0.9);
+            return cur_rot.has_value() ? static_cast<double>(*cur_rot) * 180.0 / M_PI : 0.0;
+        })()}
     };
 
     return res;
