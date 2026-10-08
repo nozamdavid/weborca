@@ -493,6 +493,37 @@ export class OrcaEngine {
   }
 
   /**
+   * Retrieves seam painting annotations for an object volume.
+   * @param {number|{ objectId: number, volumeId?: number, volumeIndex?: number, facetIds?: number[] }} objectId
+   * @param {number} [volumeId]
+   * @returns {Promise<any>}
+   */
+  async getSeamPainting(objectId, volumeId) {
+    const params = typeof objectId === 'object' ? objectId : { objectId, volumeId };
+    return await this._call('getSeamPainting', params);
+  }
+
+  /**
+   * Updates seam painting (enforcer, blocker, clear) on an object volume.
+   * @param {any} params
+   * @returns {Promise<any>}
+   */
+  async setSeamPainting(params) {
+    return await this._call('setSeamPainting', params);
+  }
+
+  /**
+   * Clears all seam painting annotations from an object volume.
+   * @param {number|any} objectId
+   * @param {number} [volumeId]
+   * @returns {Promise<any>}
+   */
+  async clearSeamPainting(objectId, volumeId) {
+    const params = typeof objectId === 'object' ? objectId : { objectId, volumeId };
+    return await this._call('clearSeamPainting', params);
+  }
+
+  /**
    * Runs the slicing pipeline.
    * @param {SliceOptions} [options={}]
    * @returns {Promise<SliceResult>}

@@ -205,6 +205,60 @@ export interface ClearSupportPaintingResult {
   volumeId: number;
 }
 
+export interface SeamPaintingStats {
+  enforcersCount: number;
+  blockersCount: number;
+  totalPainted: number;
+}
+
+export interface SeamPaintingInfo {
+  objectId: number;
+  volumeId: number;
+  triangleCount: number;
+  hasCustomSeam: boolean;
+  hasCustomSeams?: boolean;
+  enforcers: number[];
+  blockers: number[];
+  facets: FacetAnnotationItem[];
+  queriedFacets?: FacetAnnotationItem[];
+  statistics: SeamPaintingStats;
+}
+
+export interface SetSeamPaintingParams {
+  objectId: number;
+  volumeId?: number;
+  volumeIndex?: number;
+  reset?: boolean;
+  facets?: Array<{ facetId: number; state: number | string } | [number, number | string]>;
+  enforcers?: number[];
+  blockers?: number[];
+  clear?: number[];
+  facetId?: number;
+  state?: number | string;
+}
+
+export interface SetSeamPaintingResult {
+  updated: boolean;
+  objectId: number;
+  volumeId: number;
+  triangleCount: number;
+  enforcersCount: number;
+  blockersCount: number;
+  modifiedCount: number;
+}
+
+export interface ClearSeamPaintingParams {
+  objectId: number;
+  volumeId?: number;
+  volumeIndex?: number;
+}
+
+export interface ClearSeamPaintingResult {
+  cleared: boolean;
+  objectId: number;
+  volumeId: number;
+}
+
 export interface MeshVolumePartition {
   volumeId: number;
   firstFacet: number;
@@ -325,6 +379,18 @@ export class OrcaEngine {
     objectId: number | ClearSupportPaintingParams,
     volumeId?: number
   ): Promise<ClearSupportPaintingResult>;
+
+  getSeamPainting(
+    objectId: number | { objectId: number; volumeId?: number; volumeIndex?: number; facetIds?: number[] },
+    volumeId?: number
+  ): Promise<SeamPaintingInfo>;
+
+  setSeamPainting(params: SetSeamPaintingParams): Promise<SetSeamPaintingResult>;
+
+  clearSeamPainting(
+    objectId: number | ClearSeamPaintingParams,
+    volumeId?: number
+  ): Promise<ClearSeamPaintingResult>;
 
   slice(options?: SliceOptions): Promise<SliceResult>;
 

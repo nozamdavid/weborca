@@ -12,4 +12,8 @@ nlohmann::json getSupportPainting(const Slic3r::Model& model, const nlohmann::js
 nlohmann::json setSupportPainting(Slic3r::Model& model, const nlohmann::json& args);
 nlohmann::json clearSupportPainting(Slic3r::Model& model, const nlohmann::json& args);
 
+nlohmann::json getSeamPainting(const Slic3r::Model& model, const nlohmann::json& args);
+nlohmann::json setSeamPainting(Slic3r::Model& model, const nlohmann::json& args);
+nlohmann::json clearSeamPainting(Slic3r::Model& model, const nlohmann::json& args);
+
 } // namespace OrcaWasm

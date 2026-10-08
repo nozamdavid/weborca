@@ -344,6 +344,27 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'getSeamPainting': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('getSeamPainting', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'setSeamPainting': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('setSeamPainting', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'clearSeamPainting': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('clearSeamPainting', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
       case 'slice': {
         if (!core) throw new Error('Engine not initialized');
         const controller = new AbortController();
