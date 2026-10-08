@@ -8,6 +8,8 @@
 #include "LayerHeightOps.hpp"
 #include "TextOps.hpp"
 #include "CutOps.hpp"
+#include "RepairOps.hpp"
+#include "CutConnectorOps.hpp"
 #include "libslic3r/Arrange.hpp"
 
 #include "libslic3r/libslic3r.h"
@@ -229,6 +231,11 @@ private:
     json op_setSeamPainting(const json& args);
     json op_clearSeamPainting(const json& args);
     json op_cutObject(const json& args);
+    json op_cutObjectWithConnectors(const json& args);
+    json op_getMeshHealth(const json& args);
+    json op_checkMeshHealth(const json& args);
+    json op_repairObject(const json& args);
+    json op_repairMesh(const json& args);
     json op_paintStroke(const json& args);
     json op_getPaintOverlay(const json& args);
     json op_getPaintData(const json& args);
@@ -459,6 +466,16 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_clearSeamPainting(args);
         } else if (op == "cutObject") {
             result_data = op_cutObject(args);
+        } else if (op == "cutObjectWithConnectors") {
+            result_data = op_cutObjectWithConnectors(args);
+        } else if (op == "getMeshHealth") {
+            result_data = op_getMeshHealth(args);
+        } else if (op == "checkMeshHealth") {
+            result_data = op_checkMeshHealth(args);
+        } else if (op == "repairObject") {
+            result_data = op_repairObject(args);
+        } else if (op == "repairMesh") {
+            result_data = op_repairMesh(args);
         } else if (op == "paintStroke") {
             result_data = op_paintStroke(args);
         } else if (op == "getPaintOverlay") {
@@ -1405,6 +1422,26 @@ json Engine::Impl::op_clearSeamPainting(const json& args) {
 json Engine::Impl::op_cutObject(const json& args) {
     Slic3r::DynamicPrintConfig config = m_bundle ? m_bundle->full_config() : Slic3r::DynamicPrintConfig();
     return OrcaWasm::cutObject(m_model, m_plate_data, config, args);
+}
+json Engine::Impl::op_cutObjectWithConnectors(const json& args) {
+    Slic3r::DynamicPrintConfig config = m_bundle ? m_bundle->full_config() : Slic3r::DynamicPrintConfig();
+    return OrcaWasm::cutObjectWithConnectors(m_model, m_plate_data, config, args);
+}
+
+json Engine::Impl::op_getMeshHealth(const json& args) {
+    return OrcaWasm::getMeshHealth(m_model, args);
+}
+
+json Engine::Impl::op_checkMeshHealth(const json& args) {
+    return OrcaWasm::checkMeshHealth(m_model, args);
+}
+
+json Engine::Impl::op_repairObject(const json& args) {
+    return OrcaWasm::repairObject(m_model, args);
+}
+
+json Engine::Impl::op_repairMesh(const json& args) {
+    return OrcaWasm::repairMesh(m_model, args);
 }
 
 json Engine::Impl::op_paintStroke(const json& args) { return OrcaWasm::paintStroke(m_model, args); }

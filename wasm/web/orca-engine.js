@@ -532,6 +532,51 @@ export class OrcaEngine {
     return await this._call('cutObject', params);
   }
 
+  /**
+   * Cuts a model object along a planar surface with connectors (plugs, dowels, or snaps).
+   * @param {any} params
+   * @returns {Promise<any>}
+   */
+  async cutObjectWithConnectors(params) {
+    return await this._call('cutObjectWithConnectors', params);
+  }
+
+  /**
+   * Evaluates mesh topology health and manifold integrity metrics.
+   * @param {any} params
+   * @returns {Promise<any>}
+   */
+  async getMeshHealth(params) {
+    return await this._call('getMeshHealth', params);
+  }
+
+  /**
+   * Alias for getMeshHealth.
+   * @param {any} params
+   * @returns {Promise<any>}
+   */
+  async checkMeshHealth(params) {
+    return await this._call('checkMeshHealth', params);
+  }
+
+  /**
+   * Repairs mesh topology using CGAL mesh repair.
+   * @param {any} params
+   * @returns {Promise<any>}
+   */
+  async repairObject(params) {
+    return await this._call('repairObject', params);
+  }
+
+  /**
+   * Alias for repairObject.
+   * @param {any} params
+   * @returns {Promise<any>}
+   */
+  async repairMesh(params) {
+    return await this._call('repairMesh', params);
+  }
+
   async paintStroke(params) { return await this._call('paintStroke', params); }
   async getPaintOverlay(params) { return await this._call('getPaintOverlay', params); }
   async getPaintData(params) { return await this._call('getPaintData', params); }

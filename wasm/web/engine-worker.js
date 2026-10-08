@@ -372,6 +372,23 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'cutObjectWithConnectors': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('cutObjectWithConnectors', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'getMeshHealth':
+      case 'checkMeshHealth':
+      case 'repairObject':
+      case 'repairMesh': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call(method, args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
       case 'getPaintOverlay': {
         if (!core) throw new Error('Engine not initialized');
         const result = await core.call(method, args || {});

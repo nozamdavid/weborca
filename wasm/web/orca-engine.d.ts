@@ -321,6 +321,183 @@ export interface CutObjectResult {
   createdObjects?: CutObjectCreatedItem[];
 }
 
+export type CutConnectorType = 'plug' | 'dowel' | 'snap';
+export type CutConnectorStyle = 'prism' | 'frustum';
+export type CutConnectorShape = 'circle' | 'triangle' | 'square' | 'hexagon';
+
+export interface CutConnectorAttributes {
+  type?: CutConnectorType;
+  style?: CutConnectorStyle;
+  shape?: CutConnectorShape;
+  size?: number;
+  radius?: number;
+  diameter?: number;
+  depthRatio?: number;
+  depth?: number;
+  height?: number;
+  rotationDeg?: number;
+  rotation?: number;
+  angle?: number;
+  tolerance?: number;
+  radiusTolerance?: number;
+  heightTolerance?: number;
+  targetHalf?: 'upper' | 'lower';
+  plugHalf?: 'upper' | 'lower';
+}
+
+export interface CutConnectorParam {
+  pos?: [number, number, number];
+  position?: [number, number, number];
+  attrs?: CutConnectorAttributes;
+  type?: CutConnectorType;
+  style?: CutConnectorStyle;
+  shape?: CutConnectorShape;
+  size?: number;
+  radius?: number;
+  diameter?: number;
+  depthRatio?: number;
+  depth?: number;
+  height?: number;
+  rotationDeg?: number;
+  rotation?: number;
+  angle?: number;
+  tolerance?: number;
+  radiusTolerance?: number;
+  heightTolerance?: number;
+  targetHalf?: 'upper' | 'lower';
+  plugHalf?: 'upper' | 'lower';
+}
+
+export interface CutObjectWithConnectorsParams {
+  objectId?: number;
+  id?: number;
+  instanceIndex?: number;
+  instanceId?: number;
+  z?: number;
+  plane?: CutPlane;
+  coordinateSystem?: 'world' | 'object';
+  keepUpper?: boolean;
+  keepLower?: boolean;
+  keepMode?: 'both' | 'upper' | 'lower';
+  keepAsParts?: boolean;
+  placeOnCutUpper?: boolean;
+  placeOnCutLower?: boolean;
+  flipUpper?: boolean;
+  flipLower?: boolean;
+  keepPaint?: boolean;
+  connectors?: CutConnectorParam[];
+}
+
+export interface CutConnectorVolumeInfo {
+  id: number;
+  name: string;
+  type: string;
+  volume: number;
+  scalingFactor: [number, number, number];
+  offset: [number, number, number];
+  boundingBox: {
+    min: [number, number, number];
+    max: [number, number, number];
+  };
+  openEdges: number;
+}
+
+export interface CutConnectorCreatedObject {
+  id: number;
+  name: string;
+  part: 'upper' | 'lower' | 'parts' | 'dowel';
+  volume: number;
+  volumeIsBooleanResult: false;
+  openEdges: number;
+  boundingBox: {
+    min: [number, number, number];
+    max: [number, number, number];
+  };
+  volumes: CutConnectorVolumeInfo[];
+}
+
+export interface CutObjectWithConnectorsResult {
+  success: boolean;
+  error?: string;
+  objectId?: number;
+  connectorCount?: number;
+  fitValidated: false;
+  createdObjects?: CutConnectorCreatedObject[];
+}
+
+export interface MeshHealthVolumeInfo {
+  volumeId: number;
+  volumeIndex: number;
+  name: string;
+  isManifold: boolean;
+  openEdges: number;
+  facetsCount: number;
+  numberOfParts: number;
+  degenerateFacets: number;
+  facetsReversed: number;
+  edgesFixed: number;
+  facetsRemoved: number;
+  backwardsEdges: number;
+  volume: number;
+  boundingBox: [number, number, number, number, number, number];
+}
+
+export interface GetMeshHealthParams {
+  objectId?: number;
+  id?: number;
+  volumeId?: number;
+  volumeIndex?: number;
+}
+
+export interface MeshHealthResult {
+  success: boolean;
+  objectId: number;
+  isManifold: boolean;
+  openEdges: number;
+  facetsCount: number;
+  numberOfParts: number;
+  degenerateFacets: number;
+  facetsReversed: number;
+  edgesFixed: number;
+  facetsRemoved: number;
+  backwardsEdges: number;
+  volume: number;
+  boundingBox: [number, number, number, number, number, number];
+  volumes: MeshHealthVolumeInfo[];
+}
+
+export interface RepairObjectParams {
+  objectId?: number;
+  id?: number;
+  volumeId?: number;
+  volumeIndex?: number;
+  keepPainting?: boolean;
+  splitParts?: boolean;
+}
+
+export interface RepairObjectResult {
+  success: boolean;
+  wasRepaired: boolean;
+  objectId: number;
+  error?: string;
+  isManifold?: boolean;
+  openEdgesBefore?: number;
+  openEdgesAfter?: number;
+  degenerateFacetsBefore?: number;
+  degenerateFacetsAfter?: number;
+  facetsReversed?: number;
+  edgesFixed?: number;
+  facetsRemoved?: number;
+  facetsBefore?: number;
+  facetsAfter?: number;
+  volumeBefore?: number;
+  volumeAfter?: number;
+  numberOfPartsBefore?: number;
+  numberOfPartsAfter?: number;
+  volumes?: MeshHealthVolumeInfo[];
+}
+
+
 export interface LayerRange {
   bottom: number;
   top: number;
@@ -503,6 +680,13 @@ export class OrcaEngine {
   ): Promise<ClearSeamPaintingResult>;
 
   cutObject(params: CutObjectParams): Promise<CutObjectResult>;
+  cutObjectWithConnectors(params: CutObjectWithConnectorsParams): Promise<CutObjectWithConnectorsResult>;
+
+  getMeshHealth(params: GetMeshHealthParams): Promise<MeshHealthResult>;
+  checkMeshHealth(params: GetMeshHealthParams): Promise<MeshHealthResult>;
+  repairObject(params: RepairObjectParams): Promise<RepairObjectResult>;
+  repairMesh(params: RepairObjectParams): Promise<RepairObjectResult>;
+
 
   paintStroke(params: Record<string, unknown>): Promise<{ changed: boolean; stats: Record<string, number> }>;
   getPaintOverlay(params: Record<string, unknown>): Promise<{ path: string; buffer: Uint8Array; states: Array<{ state: string; firstTriangle: number; triangleCount: number }> }>;
