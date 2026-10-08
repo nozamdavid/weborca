@@ -487,6 +487,9 @@ json getPaintOverlay(const Slic3r::Model& model, const json& args) {
     if (!vol) {
         throw Slic3r::RuntimeError("Volume not found on object: " + std::to_string(object_id));
     }
+    if (!vol->is_model_part()) {
+        throw Slic3r::RuntimeError("Cannot get paint overlay on non-model-part volume");
+    }
 
     if (!args.contains("layer") || !args["layer"].is_string()) {
         throw Slic3r::RuntimeError("getPaintOverlay requires layer");
@@ -510,11 +513,15 @@ json getPaintOverlay(const Slic3r::Model& model, const json& args) {
         Slic3r::TriangleSelector selector(vol->mesh(), edge_limit);
         selector.deserialize(annotation.get_data(), false);
 
+        const Slic3r::Transform3d vol_matrix = vol->get_matrix();
+
         std::vector<Slic3r::EnforcerBlockerType> states_to_check = get_layer_states(layer);
         for (Slic3r::EnforcerBlockerType s : states_to_check) {
             indexed_triangle_set its = selector.get_facets(s);
             if (its.indices.empty())
                 continue;
+
+            its_transform(its, vol_matrix, true);
 
             uint32_t base_vertex = static_cast<uint32_t>(all_vertex_coords.size() / 3);
             for (const auto& v : its.vertices) {

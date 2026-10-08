@@ -22,7 +22,9 @@ The facet-level ops in API-paint.md (getSupportPainting, setSeamPainting, ...) k
 Points and camera positions are in world (bed) coordinates, the space the 3D plate renders in.
 The engine converts them to the volume's mesh coordinates with the instance and volume
 transforms, as the desktop does. `facet` is the volume-local triangle index of the hit
-(see "Local Facet Mapping" in API-paint.md).
+(see "Local Facet Mapping" in API-paint.md). Overlay vertices emitted by `getPaintOverlay`
+are transformed by `vol->get_matrix()` into object-local coordinates to align with the
+app's instance-applied renderer, keeping instance transformations separate.
 
 ## Ops
 
@@ -59,11 +61,14 @@ transforms, as the desktop does. `facet` is the volume-local triangle index of t
 ### `getPaintOverlay`
 
 `{ objectId, volumeId, layer }` -> writes `/out/paint_<objectId>_<volumeId>_<layer>.bin` with,
-for each painted state, the split triangles from `TriangleSelector::get_facets(state)` in
-volume mesh coordinates. Result:
+for each painted state, the split triangles from `TriangleSelector::get_facets(state)` transformed
+by `vol->get_matrix()` into object-local coordinates (aligning with the app's instance-applied renderer,
+while instance transformations remain separate). Result:
 `{ "path", "states": [ { "state": "enforcer", "firstTriangle": 0, "triangleCount": 120 }, ... ] }`.
 Binary layout: header "PNT1", uint32 vertexCount, uint32 triangleCount, then Float32 xyz
 positions and Uint32 triangle indices, triangles grouped by state in the order of `states`.
+The web worker reads this MEMFS file and transfers it as `buffer: Uint8Array`
+alongside `path` and `states`; browser callers do not need filesystem access.
 
 ### `getPaintData` / `setPaintData`
 

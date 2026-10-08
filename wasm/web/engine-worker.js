@@ -372,8 +372,16 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'getPaintOverlay': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call(method, args || {});
+        const bytes = core.readFile(result.path);
+        result.buffer = bytes;
+        postMessage({ id, ok: true, result }, [bytes.buffer]);
+        break;
+      }
+
       case 'paintStroke':
-      case 'getPaintOverlay':
       case 'getPaintData':
       case 'setPaintData':
       case 'clearPaint': {

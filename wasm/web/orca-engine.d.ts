@@ -505,7 +505,7 @@ export class OrcaEngine {
   cutObject(params: CutObjectParams): Promise<CutObjectResult>;
 
   paintStroke(params: Record<string, unknown>): Promise<{ changed: boolean; stats: Record<string, number> }>;
-  getPaintOverlay(params: Record<string, unknown>): Promise<{ path: string; states: Array<{ state: string; firstTriangle: number; triangleCount: number }> }>;
+  getPaintOverlay(params: Record<string, unknown>): Promise<{ path: string; buffer: Uint8Array; states: Array<{ state: string; firstTriangle: number; triangleCount: number }> }>;
   getPaintData(params: Record<string, unknown>): Promise<{ data: string }>;
   setPaintData(params: Record<string, unknown>): Promise<unknown>;
   clearPaint(params: Record<string, unknown>): Promise<unknown>;

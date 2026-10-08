@@ -1,6 +1,7 @@
 import test, { describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -216,6 +217,23 @@ describe('Orca WASM Engine Advanced Paint Tools Test Suite', () => {
     );
 
     const binBytes = core.readFile(overlay.path);
+    // Exercise the actual browser worker dispatcher with the already initialized
+    // engine; structuredClone applies the same transfer semantics as postMessage.
+    const workerSource = fs.readFileSync(path.join(repoRoot, 'wasm/web/engine-worker.js'), 'utf8')
+      .replace("import { createEngineCore } from './engine-core.js';", '')
+      .replace('let core = null;', 'let core = injectedCore;');
+    let reply;
+    const worker = { injectedCore: core, self: {}, postMessage(message, transfer = []) {
+      reply = structuredClone(message, { transfer });
+    } };
+    vm.runInNewContext(workerSource, worker);
+    await worker.self.onmessage({ data: {
+      id: 1, method: 'getPaintOverlay', args: { objectId, volumeId, layer: 'support' }
+    } });
+    assert.equal(reply.ok, true);
+    assert.ok(reply.result.buffer instanceof Uint8Array, 'Worker must return overlay bytes to renderer');
+    assert.deepEqual(reply.result.buffer, binBytes, 'Transferred overlay must preserve split triangles');
+    assert.deepEqual(reply.result.states, overlay.states);
     const parsed = parseOverlayBin(binBytes);
     assert.equal(parsed.triangleCount, overlay.states[0].triangleCount);
 
@@ -715,5 +733,148 @@ describe('Orca WASM Engine Advanced Paint Tools Test Suite', () => {
     const gcodeText = new TextDecoder('utf-8').decode(core.readFile('/out/bridge_brush_support.gcode'));
     const supportExtrusions = countSupportGcode(gcodeText);
     assert.ok(supportExtrusions > 0, `Brush support painting must produce support extrusions (got ${supportExtrusions})`);
+  });
+
+  test('transformed volume overlay emits in object-local coordinates with volume offset, keeping instance transform separate', async () => {
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    const tree = await core.call('getObjectTree', {});
+    const obj = tree.objects[0];
+    const objectId = obj.id;
+    const instanceId = obj.instances[0].id;
+
+    // Set an explicit instance offset on the plate
+    const instOffset = [150.0, 150.0, 0.0];
+    await core.call('setInstanceTransform', {
+      objectId,
+      instanceId,
+      offset: instOffset
+    });
+
+    // Add a second volume with an explicit volume offset
+    const volOffset = [30.0, 20.0, 10.0];
+    const addVolRes = await core.call('addVolume', {
+      objectId,
+      type: 'part',
+      shape: 'cube',
+      size: [20.0, 20.0, 20.0],
+      offset: volOffset
+    });
+    const vol2Id = addVolRes.volumeId;
+
+    // Get the object mesh and verify volume 2 partition bounds in object space
+    const meshRes = await core.call('getMesh', { objectId });
+    assert.ok(meshRes.volumes && meshRes.volumes.length === 2);
+    const partition2 = meshRes.volumes.find((p) => p.volumeId === vol2Id);
+    assert.ok(partition2, 'Volume 2 partition must exist');
+
+    const meshBytes = core.readFile(meshRes.path);
+    const meshView = new DataView(meshBytes.buffer, meshBytes.byteOffset, meshBytes.byteLength);
+    const meshVCount = meshView.getUint32(4, true);
+    const meshPositions = new Float32Array(meshBytes.buffer, meshBytes.byteOffset + 16, meshVCount * 3);
+    const meshIndices = new Uint32Array(
+      meshBytes.buffer,
+      meshBytes.byteOffset + 16 + meshVCount * 3 * 4,
+      meshRes.triangleCount * 3
+    );
+
+    // Compute partition 2 bounding box from getMesh (object-local)
+    let p2MinX = Infinity, p2MaxX = -Infinity;
+    let p2MinY = Infinity, p2MaxY = -Infinity;
+    let p2MinZ = Infinity, p2MaxZ = -Infinity;
+    for (let f = partition2.firstFacet; f < partition2.firstFacet + partition2.facetCount; f++) {
+      for (let c = 0; c < 3; c++) {
+        const vi = meshIndices[f * 3 + c];
+        const x = meshPositions[vi * 3];
+        const y = meshPositions[vi * 3 + 1];
+        const z = meshPositions[vi * 3 + 2];
+        if (x < p2MinX) p2MinX = x;
+        if (x > p2MaxX) p2MaxX = x;
+        if (y < p2MinY) p2MinY = y;
+        if (y > p2MaxY) p2MaxY = y;
+        if (z < p2MinZ) p2MinZ = z;
+        if (z > p2MaxZ) p2MaxZ = z;
+      }
+    }
+    // Partition 2 in object space should be around [20, 40] x [10, 30] x [0, 20]
+    assert.ok(p2MinX >= 19.9 && p2MaxX <= 40.1, `Partition 2 X bounds [${p2MinX}, ${p2MaxX}] must match volume offset`);
+
+    // World coordinates for stroke hit on volume 2 top face:
+    // instance offset + volume offset + local face top center [0, 0, 10]
+    const worldHit = [instOffset[0] + volOffset[0], instOffset[1] + volOffset[1], instOffset[2] + volOffset[2] + 10.0];
+    const strokeRes = await core.call('paintStroke', {
+      objectId,
+      instanceId,
+      volumeId: vol2Id,
+      layer: 'support',
+      tool: 'circle',
+      state: 'enforcer',
+      radius: 4.0,
+      cameraPos: [worldHit[0], worldHit[1], worldHit[2] + 100.0],
+      points: [{ hit: worldHit, facet: 2 }],
+      triangleSplitting: true
+    });
+    assert.equal(strokeRes.changed, true, 'Stroke on volume 2 must succeed');
+    assert.ok(strokeRes.stats.enforcer > 0, 'Enforcer facets must be recorded');
+
+    // Query overlay
+    const overlay = await core.call('getPaintOverlay', {
+      objectId,
+      volumeId: vol2Id,
+      layer: 'support'
+    });
+    assert.ok(overlay.path, 'Overlay path must be returned');
+    assert.equal(overlay.states.length, 1);
+    assert.equal(overlay.states[0].state, 'enforcer');
+    assert.ok(overlay.states[0].triangleCount > 0);
+
+    const binBytes = core.readFile(overlay.path);
+    const parsed = parseOverlayBin(binBytes);
+    assert.equal(parsed.triangleCount, overlay.states[0].triangleCount);
+    assert.ok(parsed.vertexCount > 0);
+
+    // Verify all overlay vertices are in object-local space:
+    // 1. Must contain volume offset (inside [p2MinX, p2MaxX] and [p2MinY, p2MaxY])
+    // 2. Must NOT contain instance offset (instOffset[0] = 150)
+    for (let i = 0; i < parsed.vertexCount; i++) {
+      const vx = parsed.vertices[i * 3];
+      const vy = parsed.vertices[i * 3 + 1];
+      const vz = parsed.vertices[i * 3 + 2];
+      assert.ok(
+        vx >= p2MinX - 0.01 && vx <= p2MaxX + 0.01,
+        `Overlay vertex X (${vx}) must lie within volume object bounds [${p2MinX}, ${p2MaxX}]`
+      );
+      assert.ok(
+        vy >= p2MinY - 0.01 && vy <= p2MaxY + 0.01,
+        `Overlay vertex Y (${vy}) must lie within volume object bounds [${p2MinY}, ${p2MaxY}]`
+      );
+      assert.ok(
+        vx < instOffset[0],
+        `Overlay vertex X (${vx}) must NOT include instance offset (${instOffset[0]})`
+      );
+    }
+
+    // Also verify seam overlay alignment on the offset volume with tool: 'triangle'
+    const seamStroke = await core.call('paintStroke', {
+      objectId,
+      instanceId,
+      volumeId: vol2Id,
+      layer: 'seam',
+      tool: 'triangle',
+      state: 'enforcer',
+      points: [{ hit: worldHit, facet: 2 }]
+    });
+    assert.equal(seamStroke.changed, true);
+    const seamOverlay = await core.call('getPaintOverlay', {
+      objectId,
+      volumeId: vol2Id,
+      layer: 'seam'
+    });
+    const seamParsed = parseOverlayBin(core.readFile(seamOverlay.path));
+    assert.ok(seamParsed.vertexCount > 0);
+    for (let i = 0; i < seamParsed.vertexCount; i++) {
+      const vx = seamParsed.vertices[i * 3];
+      assert.ok(vx >= p2MinX - 0.01 && vx <= p2MaxX + 0.01);
+      assert.ok(vx < instOffset[0]);
+    }
   });
 });
