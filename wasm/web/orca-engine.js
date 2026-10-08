@@ -524,6 +524,15 @@ export class OrcaEngine {
   }
 
   /**
+   * Cuts a model object along a planar surface.
+   * @param {any} params
+   * @returns {Promise<any>}
+   */
+  async cutObject(params) {
+    return await this._call('cutObject', params);
+  }
+
+  /**
    * Runs the slicing pipeline.
    * @param {SliceOptions} [options={}]
    * @returns {Promise<SliceResult>}

@@ -365,6 +365,13 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'cutObject': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('cutObject', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
       case 'slice': {
         if (!core) throw new Error('Engine not initialized');
         const controller = new AbortController();

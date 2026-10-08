@@ -4,6 +4,7 @@
 #include "ObjectOps.hpp"
 #include "PlateOps.hpp"
 #include "PaintOps.hpp"
+#include "CutOps.hpp"
 #include "libslic3r/Arrange.hpp"
 
 #include "libslic3r/libslic3r.h"
@@ -224,6 +225,7 @@ private:
     json op_getSeamPainting(const json& args);
     json op_setSeamPainting(const json& args);
     json op_clearSeamPainting(const json& args);
+    json op_cutObject(const json& args);
     std::string op_slice(int jobId, const json& args);
 
     // Job queue
@@ -436,6 +438,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_setSeamPainting(args);
         } else if (op == "clearSeamPainting") {
             result_data = op_clearSeamPainting(args);
+        } else if (op == "cutObject") {
+            result_data = op_cutObject(args);
         } else {
             throw Slic3r::RuntimeError("Unknown operation: " + op);
         }
@@ -1347,6 +1351,11 @@ json Engine::Impl::op_setSeamPainting(const json& args) {
 
 json Engine::Impl::op_clearSeamPainting(const json& args) {
     return OrcaWasm::clearSeamPainting(m_model, args);
+}
+
+json Engine::Impl::op_cutObject(const json& args) {
+    Slic3r::DynamicPrintConfig config = m_bundle ? m_bundle->full_config() : Slic3r::DynamicPrintConfig();
+    return OrcaWasm::cutObject(m_model, m_plate_data, config, args);
 }
 
 

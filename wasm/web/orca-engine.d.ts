@@ -273,6 +273,54 @@ export interface GetMeshResult {
   volumes?: MeshVolumePartition[];
 }
 
+export interface CutPlane {
+  point: [number, number, number];
+  normal: [number, number, number];
+}
+
+export interface CutObjectParams {
+  objectId: number;
+  instanceIndex?: number;
+  instanceId?: number;
+  z?: number;
+  plane?: CutPlane;
+  coordinateSystem?: 'world' | 'object';
+  keepUpper?: boolean;
+  keepLower?: boolean;
+  keepMode?: 'both' | 'upper' | 'lower';
+  keepAsParts?: boolean;
+  placeOnCutUpper?: boolean;
+  placeOnCutLower?: boolean;
+  flipUpper?: boolean;
+  flipLower?: boolean;
+  keepPaint?: boolean;
+}
+
+export interface CutObjectCreatedItem {
+  id: number;
+  name: string;
+  part: 'upper' | 'lower' | 'parts';
+  volume: number;
+  openEdges: number;
+  boundingBox: {
+    min: [number, number, number];
+    max: [number, number, number];
+  };
+  volumes: Array<{
+    id: number;
+    name: string;
+    volume: number;
+    openEdges: number;
+  }>;
+}
+
+export interface CutObjectResult {
+  success: boolean;
+  error?: string;
+  objectId?: number;
+  createdObjects?: CutObjectCreatedItem[];
+}
+
 export class OrcaEngine {
   protected constructor(worker: Worker, options: CreateEngineOptions);
 
@@ -391,6 +439,8 @@ export class OrcaEngine {
     objectId: number | ClearSeamPaintingParams,
     volumeId?: number
   ): Promise<ClearSeamPaintingResult>;
+
+  cutObject(params: CutObjectParams): Promise<CutObjectResult>;
 
   slice(options?: SliceOptions): Promise<SliceResult>;
 
