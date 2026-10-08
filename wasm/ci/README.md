@@ -123,15 +123,15 @@ The workflow triggers on:
 | **`orca-wasm-preview`** | `wasm/build/orca-wasm64-preview/wasm/preview/orca_preview.{js,wasm}` | `wasm/build/orca-wasm64-preview/wasm/preview` (`test-browser`) | `preview/orca_preview.{js,wasm}` | Standalone WebGL2 G-code preview renderer (built with `-DORCA_WASM_PREVIEW=ON`) |
 | **`orca-wasm-profiles`** | `wasm/build/web`<br>`wasm/build/tests-node` | `wasm/build` (`test-node`, `test-browser`) | `web/profiles/index.json`<br>`tests-node/profiles/Voron.json` | Packed vendor profile bundles and index files |
 | **`orca-wasm-settings`** | `wasm/build/settings/layout.json` | `wasm/build/settings` (`test-browser`) | `settings/layout.json` | Desktop-extracted tab and settings hierarchy layout |
-| **`orca-wasm-app-dist`** | `wasm/app/dist` | `wasm/app/dist` (`test-browser`) | `dist/index.html` | Production build of React web application *(Integration Pending: see note below)* |
+| **`orca-wasm-app-dist`** | `wasm/app/dist` | `wasm/app/dist` (`test-browser`) | `dist/index.html` | Production build of React web application |
 | **`browser-test-results`** | `wasm/build/tests-browser`<br>`wasm/build/tests-app` | Upload only (`test-browser`) | N/A | Test screenshots and slice G-code outputs |
 | **`refs-macos-x86_64`** | `wasm/tests/parity/refs-macos-x86_64` | Upload only (`refs-macos`) | `refs-macos-x86_64/cube-voron.gcode` | macOS golden reference G-code files |
 
-### Web App & App Smoke Test Integration Status (Pending)
+### Web App & App Smoke Test Integration Status
 > [!NOTE]
-> The workflow includes build steps (`npm --prefix wasm/app run build`), artifact packaging (`orca-wasm-app-dist`), and Playwright smoke testing (`wasm/tests/app/smoke.mjs`) for the React web application.
-> However, `wasm/app/` and `wasm/tests/app/` are currently untracked in the git repository (owned by active parallel development tracks).
-> On clean checkouts from git, these directories do not exist. Complete standalone CI execution for web app artifacts and smoke tests is **pending** the integration and commit of the app codebase. This workflow should not be claimed as standalone complete CI until that integration lands.
+> The web application (`wasm/app/`) and Playwright smoke test suite (`wasm/tests/app/`) are tracked in the git repository as of commit `ac36896cec`.
+> The workflow includes build steps (`npm --prefix wasm/app run build`), artifact packaging (`orca-wasm-app-dist`), and Playwright smoke testing (`wasm/tests/app/smoke.mjs`).
+> Note: The workflow template (`wasm/ci/wasm.yml`) is maintained as a template and has not yet been executed or validated on hosted CI runner infrastructure. Do not claim hosted CI has tested this pipeline until runner infrastructure is provisioned and verified.
 
 ---
 
