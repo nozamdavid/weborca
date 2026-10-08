@@ -158,7 +158,25 @@ export class OrcaEngine {
 
   loadModel(fileName: string, bytes: Uint8Array | ArrayBuffer): Promise<LoadModelResult>;
 
-  arrange(): Promise<Record<string, never>>;
+  addModel(fileName: string, bytes: Uint8Array | ArrayBuffer): Promise<LoadModelResult>;
+
+  listObjects(): Promise<Array<any>>;
+
+  getMesh(objectId: number): Promise<{ path: string; vertexCount: number; triangleCount: number; buffer: Uint8Array }>;
+
+  setInstanceTransform(params: {
+    objectId: number;
+    instanceId: number;
+    offset?: [number, number, number];
+    rotation?: [number, number, number];
+    scale?: [number, number, number] | number;
+  }): Promise<Record<string, never>>;
+
+  deleteObject(objectId: number): Promise<Record<string, never>>;
+
+  duplicateInstance(objectId: number, instanceId: number): Promise<{ instanceId: number; id: number }>;
+
+  arrange(options?: { useBed?: boolean }): Promise<Record<string, never>>;
 
   slice(options?: SliceOptions): Promise<SliceResult>;
 

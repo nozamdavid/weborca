@@ -175,6 +175,63 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'addModel': {
+        if (!core) throw new Error('Engine not initialized');
+        let result;
+        if (args && args.bytes) {
+          const { fileName, bytes } = args;
+          result = await core.addModel(fileName, bytes);
+        } else {
+          result = await core.call('addModel', args || {});
+        }
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'listObjects': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('listObjects', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'getMesh': {
+        if (!core) throw new Error('Engine not initialized');
+        const objectId = typeof args === "number" ? args : (args?.objectId ?? args?.id);
+        const result = await core.call('getMesh', { objectId });
+        let meshBytes;
+        try {
+          meshBytes = core.readFile(result.path);
+        } catch (_) {
+          meshBytes = new Uint8Array(0);
+        }
+        result.buffer = meshBytes;
+        postMessage({ id, ok: true, result }, [meshBytes.buffer]);
+        break;
+      }
+
+      case 'setInstanceTransform': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('setInstanceTransform', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'deleteObject': {
+        if (!core) throw new Error('Engine not initialized');
+        const objectId = typeof args === "number" ? args : (args?.objectId ?? args?.id);
+        const result = await core.call('deleteObject', { objectId });
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'duplicateInstance': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('duplicateInstance', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
       case 'arrange': {
         if (!core) throw new Error('Engine not initialized');
         const result = await core.call('arrange', args || {});
@@ -224,8 +281,14 @@ self.onmessage = async (event) => {
         break;
       }
 
-      default:
+      default: {
+        if (core) {
+          const result = await core.call(method, args || {});
+          postMessage({ id, ok: true, result });
+          break;
+        }
         throw new Error(`Unknown RPC method: ${method}`);
+      }
     }
   } catch (err) {
     postMessage({

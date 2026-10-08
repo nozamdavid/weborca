@@ -294,6 +294,19 @@ export async function createEngineCore(options = {}) {
   }
 
   /**
+   * Writes a model file into /models/<fileName> and calls the addModel op.
+   * @param {string} fileName
+   * @param {Uint8Array|ArrayBuffer|string} bytes
+   * @returns {Promise<any>}
+   */
+  async function addModel(fileName, bytes) {
+    const base = fileName.split('/').pop().split('\\').pop();
+    const dest = `/models/${base}`;
+    writeFile(dest, bytes);
+    return await call('addModel', { path: dest });
+  }
+
+  /**
    * Releases the Embind Engine instance.
    */
   function dispose() {
@@ -310,6 +323,7 @@ export async function createEngineCore(options = {}) {
     slice,
     addVendorBundle,
     loadModel,
+    addModel,
     dispose,
     FS: Module.FS,
     rawEngine: engine

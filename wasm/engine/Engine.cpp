@@ -1,5 +1,6 @@
 #include "Engine.hpp"
 #include "ConfigRules.hpp"
+#include "ProjectOps.hpp"
 
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/BoundingBox.hpp"
@@ -31,6 +32,7 @@
 #include <condition_variable>
 #include <deque>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -149,6 +151,16 @@ json serialize_option_def(const Slic3r::ConfigOptionDef& def) {
     return j;
 }
 
+
+Slic3r::Vec3d parse_vec3d(const json& j) {
+    if (j.is_array() && j.size() >= 3) {
+        return Slic3r::Vec3d(j[0].get<double>(), j[1].get<double>(), j[2].get<double>());
+    } else if (j.is_object() && j.contains("x") && j.contains("y") && j.contains("z")) {
+        return Slic3r::Vec3d(j["x"].get<double>(), j["y"].get<double>(), j["z"].get<double>());
+    }
+    throw Slic3r::RuntimeError("Expected 3D vector [x, y, z]");
+}
+
 } // namespace
 
 class Engine::Impl {
@@ -182,6 +194,14 @@ private:
     json op_resetOptions(const json& args);
     json op_loadModel(const json& args);
     json op_arrange(const json& args);
+    json op_addModel(const json& args);
+    json op_listObjects(const json& args);
+    json op_getMesh(const json& args);
+    json op_setInstanceTransform(const json& args);
+    json op_deleteObject(const json& args);
+    json op_duplicateInstance(const json& args);
+    json op_openProject(const json& args);
+    json op_saveProject(const json& args);
     std::string op_slice(int jobId, const json& args);
 
     // Job queue
@@ -218,6 +238,7 @@ private:
     std::vector<std::string> m_selected_filaments;
     Slic3r::DynamicPrintConfig m_options_override;
     Slic3r::Model m_model;
+    Slic3r::PlateDataPtrs m_plate_data;
 };
 
 Engine::Impl::Impl() {
@@ -234,6 +255,7 @@ Engine::Impl::~Impl() {
     if (m_engine_thread.joinable()) {
         m_engine_thread.join();
     }
+    Slic3r::release_PlateData_list(m_plate_data);
 }
 
 int Engine::Impl::submit(const std::string& op, const std::string& argsJson) {
@@ -338,8 +360,24 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_resetOptions(args);
         } else if (op == "loadModel") {
             result_data = op_loadModel(args);
+        } else if (op == "addModel") {
+            result_data = op_addModel(args);
+        } else if (op == "listObjects") {
+            result_data = op_listObjects(args);
+        } else if (op == "getMesh") {
+            result_data = op_getMesh(args);
+        } else if (op == "setInstanceTransform") {
+            result_data = op_setInstanceTransform(args);
+        } else if (op == "deleteObject") {
+            result_data = op_deleteObject(args);
+        } else if (op == "duplicateInstance") {
+            result_data = op_duplicateInstance(args);
         } else if (op == "arrange") {
             result_data = op_arrange(args);
+        } else if (op == "openProject") {
+            result_data = op_openProject(args);
+        } else if (op == "saveProject") {
+            result_data = op_saveProject(args);
         } else {
             throw Slic3r::RuntimeError("Unknown operation: " + op);
         }
@@ -796,7 +834,7 @@ json Engine::Impl::op_resetOptions(const json& /*args*/) {
 
 json Engine::Impl::op_loadModel(const json& args) {
     std::string path = args.at("path").get<std::string>();
-    m_model = Slic3r::Model::read_from_file(path);
+    m_model = Slic3r::Model::read_from_file(path, nullptr, nullptr, Slic3r::LoadStrategy::AddDefaultInstances | Slic3r::LoadStrategy::LoadModel);
     if (m_model.objects.empty())
         throw Slic3r::RuntimeError("No objects loaded from file: " + path);
 
@@ -804,6 +842,7 @@ json Engine::Impl::op_loadModel(const json& args) {
     for (const auto* obj : m_model.objects) {
         Slic3r::Vec3d sz = obj->bounding_box_exact().size();
         objects_arr.push_back({
+            {"id", obj->id().id},
             {"name", obj->name},
             {"instances", obj->instances.size()},
             {"volumes", obj->volumes.size()},
@@ -813,7 +852,270 @@ json Engine::Impl::op_loadModel(const json& args) {
     return json{{"objects", objects_arr}};
 }
 
-json Engine::Impl::op_arrange(const json& /*args*/) {
+json Engine::Impl::op_addModel(const json& args) {
+    std::string path = args.at("path").get<std::string>();
+    Slic3r::Model loaded_model = Slic3r::Model::read_from_file(path, nullptr, nullptr, Slic3r::LoadStrategy::AddDefaultInstances | Slic3r::LoadStrategy::LoadModel);
+    if (loaded_model.objects.empty())
+        throw Slic3r::RuntimeError("No objects loaded from file: " + path);
+
+    json objects_arr = json::array();
+    for (const auto* obj : loaded_model.objects) {
+        Slic3r::ModelObject* new_obj = m_model.add_object(*obj);
+        if (new_obj->instances.empty()) {
+            new_obj->add_instance();
+        }
+        // Like the desktop's file loading: mesh centered on the object origin,
+        // so gizmo rotation and scale pivot on the object's center.
+        new_obj->center_around_origin();
+
+        Slic3r::Vec3d sz = new_obj->bounding_box_exact().size();
+        objects_arr.push_back({
+            {"id", new_obj->id().id},
+            {"name", new_obj->name},
+            {"instances", new_obj->instances.size()},
+            {"volumes", new_obj->volumes.size()},
+            {"size", {sz.x(), sz.y(), sz.z()}}
+        });
+    }
+
+    return json{{"objects", objects_arr}};
+}
+
+json Engine::Impl::op_listObjects(const json& /*args*/) {
+    json objects_arr = json::array();
+    for (const auto* obj : m_model.objects) {
+        if (!obj) continue;
+        json instances_arr = json::array();
+        for (const auto* inst : obj->instances) {
+            if (!inst) continue;
+            Slic3r::Vec3d offset = inst->get_offset();
+            Slic3r::Vec3d rotation = inst->get_rotation();
+            Slic3r::Vec3d scale = inst->get_scaling_factor();
+            instances_arr.push_back({
+                {"id", inst->id().id},
+                {"offset", {offset.x(), offset.y(), offset.z()}},
+                {"rotation", {rotation.x(), rotation.y(), rotation.z()}},
+                {"scale", {scale.x(), scale.y(), scale.z()}}
+            });
+        }
+        Slic3r::Vec3d sz = obj->bounding_box_exact().size();
+        objects_arr.push_back({
+            {"id", obj->id().id},
+            {"name", obj->name},
+            {"volumes", obj->volumes.size()},
+            {"instances", instances_arr},
+            {"size", {sz.x(), sz.y(), sz.z()}}
+        });
+    }
+    return objects_arr;
+}
+
+json Engine::Impl::op_getMesh(const json& args) {
+    size_t object_id = 0;
+    if (args.contains("objectId")) {
+        object_id = args["objectId"].get<size_t>();
+    } else if (args.contains("id")) {
+        object_id = args["id"].get<size_t>();
+    } else {
+        throw Slic3r::RuntimeError("getMesh requires objectId");
+    }
+
+    const Slic3r::ModelObject* obj = nullptr;
+    for (const auto* o : m_model.objects) {
+        if (o && o->id().id == object_id) {
+            obj = o;
+            break;
+        }
+    }
+    if (!obj) {
+        throw Slic3r::RuntimeError("Object not found: " + std::to_string(object_id));
+    }
+
+    Slic3r::TriangleMesh mesh;
+    for (const Slic3r::ModelVolume* v : obj->volumes) {
+        if (v && v->is_model_part()) {
+            Slic3r::TriangleMesh vol_mesh(v->mesh());
+            vol_mesh.transform(v->get_matrix());
+            mesh.merge(vol_mesh);
+        }
+    }
+    if (mesh.empty()) {
+        for (const Slic3r::ModelVolume* v : obj->volumes) {
+            if (v) {
+                Slic3r::TriangleMesh vol_mesh(v->mesh());
+                vol_mesh.transform(v->get_matrix());
+                mesh.merge(vol_mesh);
+            }
+        }
+    }
+
+    uint32_t vertex_count = static_cast<uint32_t>(mesh.its.vertices.size());
+    uint32_t triangle_count = static_cast<uint32_t>(mesh.its.indices.size());
+
+    std::string out_dir = "/out";
+    std::filesystem::create_directories(out_dir);
+    std::string out_path = out_dir + "/mesh_" + std::to_string(object_id) + ".bin";
+
+    std::ofstream os(out_path, std::ios::binary);
+    if (!os.is_open()) {
+        throw Slic3r::RuntimeError("Failed to open file for writing: " + out_path);
+    }
+
+    uint32_t header[4] = {
+        0x4D455348, // MESH
+        vertex_count,
+        triangle_count,
+        0
+    };
+    os.write(reinterpret_cast<const char*>(header), sizeof(header));
+
+    if (vertex_count > 0) {
+        os.write(reinterpret_cast<const char*>(mesh.its.vertices.data()), vertex_count * 3 * sizeof(float));
+    }
+
+    if (triangle_count > 0) {
+        os.write(reinterpret_cast<const char*>(mesh.its.indices.data()), triangle_count * 3 * sizeof(uint32_t));
+    }
+    os.close();
+
+    return json{
+        {"path", out_path},
+        {"vertexCount", vertex_count},
+        {"triangleCount", triangle_count}
+    };
+}
+
+json Engine::Impl::op_setInstanceTransform(const json& args) {
+    size_t object_id = 0;
+    if (args.contains("objectId")) {
+        object_id = args["objectId"].get<size_t>();
+    } else if (args.contains("id")) {
+        object_id = args["id"].get<size_t>();
+    } else {
+        throw Slic3r::RuntimeError("setInstanceTransform requires objectId");
+    }
+
+    size_t instance_id = 0;
+    if (args.contains("instanceId")) {
+        instance_id = args["instanceId"].get<size_t>();
+    } else {
+        throw Slic3r::RuntimeError("setInstanceTransform requires instanceId");
+    }
+
+    Slic3r::ModelObject* obj = nullptr;
+    for (auto* o : m_model.objects) {
+        if (o && o->id().id == object_id) {
+            obj = o;
+            break;
+        }
+    }
+    if (!obj) {
+        throw Slic3r::RuntimeError("Object not found: " + std::to_string(object_id));
+    }
+
+    Slic3r::ModelInstance* inst = nullptr;
+    for (auto* i : obj->instances) {
+        if (i && i->id().id == instance_id) {
+            inst = i;
+            break;
+        }
+    }
+    if (!inst) {
+        throw Slic3r::RuntimeError("Instance not found: " + std::to_string(instance_id));
+    }
+
+    if (args.contains("offset") && !args["offset"].is_null()) {
+        inst->set_offset(parse_vec3d(args["offset"]));
+    }
+    if (args.contains("rotation") && !args["rotation"].is_null()) {
+        inst->set_rotation(parse_vec3d(args["rotation"]));
+    }
+    if (args.contains("scale") && !args["scale"].is_null()) {
+        const auto& s = args["scale"];
+        if (s.is_number()) {
+            double v = s.get<double>();
+            inst->set_scaling_factor(Slic3r::Vec3d(v, v, v));
+        } else {
+            inst->set_scaling_factor(parse_vec3d(s));
+        }
+    }
+
+    // Drop to bed
+    obj->invalidate_bounding_box();
+    Slic3r::BoundingBoxf3 bb = obj->instance_bounding_box(*inst);
+    if (bb.defined) {
+        double min_z = bb.min.z();
+        inst->set_offset(Slic3r::Z, inst->get_offset(Slic3r::Z) - min_z);
+        obj->invalidate_bounding_box();
+    }
+
+    return json::object();
+}
+
+json Engine::Impl::op_deleteObject(const json& args) {
+    size_t object_id = 0;
+    if (args.contains("objectId")) {
+        object_id = args["objectId"].get<size_t>();
+    } else if (args.contains("id")) {
+        object_id = args["id"].get<size_t>();
+    } else {
+        throw Slic3r::RuntimeError("deleteObject requires objectId");
+    }
+
+    bool deleted = m_model.delete_object(Slic3r::ObjectID(object_id));
+    if (!deleted) {
+        throw Slic3r::RuntimeError("Object not found: " + std::to_string(object_id));
+    }
+    return json::object();
+}
+
+json Engine::Impl::op_duplicateInstance(const json& args) {
+    size_t object_id = 0;
+    if (args.contains("objectId")) {
+        object_id = args["objectId"].get<size_t>();
+    } else if (args.contains("id")) {
+        object_id = args["id"].get<size_t>();
+    } else {
+        throw Slic3r::RuntimeError("duplicateInstance requires objectId");
+    }
+
+    size_t instance_id = 0;
+    if (args.contains("instanceId")) {
+        instance_id = args["instanceId"].get<size_t>();
+    } else {
+        throw Slic3r::RuntimeError("duplicateInstance requires instanceId");
+    }
+
+    Slic3r::ModelObject* obj = nullptr;
+    for (auto* o : m_model.objects) {
+        if (o && o->id().id == object_id) {
+            obj = o;
+            break;
+        }
+    }
+    if (!obj) {
+        throw Slic3r::RuntimeError("Object not found: " + std::to_string(object_id));
+    }
+
+    const Slic3r::ModelInstance* inst = nullptr;
+    for (const auto* i : obj->instances) {
+        if (i && i->id().id == instance_id) {
+            inst = i;
+            break;
+        }
+    }
+    if (!inst) {
+        throw Slic3r::RuntimeError("Instance not found: " + std::to_string(instance_id));
+    }
+
+    Slic3r::ModelInstance* new_inst = obj->add_instance(*inst);
+    return json{
+        {"instanceId", new_inst->id().id},
+        {"id", new_inst->id().id}
+    };
+}
+
+json Engine::Impl::op_arrange(const json& args) {
     if (m_model.objects.empty())
         throw Slic3r::RuntimeError("No model loaded");
     if (!m_bundle)
@@ -822,6 +1124,8 @@ json Engine::Impl::op_arrange(const json& /*args*/) {
     Slic3r::DynamicPrintConfig config = m_bundle->full_config();
     config.apply(m_options_override);
 
+    bool use_bed = args.value("useBed", false);
+
     Slic3r::BoundingBoxf bed_bbox;
     if (const auto *bed_shape_opt = config.opt<Slic3r::ConfigOptionPoints>("printable_area");
         bed_shape_opt && !bed_shape_opt->values.empty()) {
@@ -829,11 +1133,40 @@ json Engine::Impl::op_arrange(const json& /*args*/) {
             bed_bbox.merge(p);
     }
     Slic3r::Vec2d bed_center = bed_bbox.defined ? bed_bbox.center() : Slic3r::Vec2d(100.0, 100.0);
-    m_model.center_instances_around_point(bed_center);
-    Slic3r::arrange_objects(m_model, Slic3r::InfiniteBed{Slic3r::Point::new_scale(bed_center.x(), bed_center.y())},
-                            Slic3r::ArrangeParams{Slic3r::scaled(Slic3r::min_object_distance(config))});
+
+    if (use_bed) {
+        Slic3r::Points bed_points = Slic3r::get_bed_shape(config);
+        if (bed_points.empty()) {
+            if (const auto *bed_shape_opt = config.opt<Slic3r::ConfigOptionPoints>("printable_area");
+                bed_shape_opt && !bed_shape_opt->values.empty()) {
+                for (const auto &p : bed_shape_opt->values)
+                    bed_points.emplace_back(Slic3r::Point::new_scale(p.x(), p.y()));
+            }
+        }
+        if (bed_points.size() >= 3) {
+            Slic3r::ArrangeParams params{Slic3r::scaled(Slic3r::min_object_distance(config))};
+            Slic3r::arrange_objects(m_model, bed_points, params);
+        } else {
+            m_model.center_instances_around_point(bed_center);
+            Slic3r::arrange_objects(m_model, Slic3r::InfiniteBed{Slic3r::Point::new_scale(bed_center.x(), bed_center.y())},
+                                    Slic3r::ArrangeParams{Slic3r::scaled(Slic3r::min_object_distance(config))});
+        }
+    } else {
+        m_model.center_instances_around_point(bed_center);
+        Slic3r::arrange_objects(m_model, Slic3r::InfiniteBed{Slic3r::Point::new_scale(bed_center.x(), bed_center.y())},
+                                Slic3r::ArrangeParams{Slic3r::scaled(Slic3r::min_object_distance(config))});
+    }
 
     return json::object();
+}
+
+json Engine::Impl::op_openProject(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized; call loadVendors first");
+    return OrcaEngine::op_openProject(args, m_model, m_bundle, m_options_override, m_selected_printer, m_selected_process, m_selected_filaments, m_plate_data);
+}
+
+json Engine::Impl::op_saveProject(const json& args) {
+    return OrcaEngine::op_saveProject(args, m_model, m_bundle, m_options_override, m_plate_data);
 }
 
 std::string Engine::Impl::op_slice(int jobId, const json& args) {

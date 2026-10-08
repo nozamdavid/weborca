@@ -272,11 +272,78 @@ export class OrcaEngine {
   }
 
   /**
-   * Centers the model on the print bed and arranges objects.
+   * Appends a 3D model to the plate.
+   * @param {string} fileName
+   * @param {Uint8Array|ArrayBuffer} bytes
+   * @returns {Promise<{ objects: Array<{ id: number, name: string, instances: number, volumes: number, size: [number, number, number] }> }>}
+   */
+  async addModel(fileName, bytes) {
+    let payload = bytes;
+    let transfer = [];
+
+    if (bytes instanceof ArrayBuffer) {
+      payload = new Uint8Array(bytes);
+      transfer = [bytes];
+    } else if (bytes && bytes.buffer instanceof ArrayBuffer) {
+      payload = bytes;
+      transfer = [bytes.buffer];
+    }
+
+    return await this._call('addModel', { fileName, bytes: payload }, { transfer });
+  }
+
+  /**
+   * Lists all objects and their instances on the plate.
+   * @returns {Promise<Array<any>>}
+   */
+  async listObjects() {
+    return await this._call('listObjects', {});
+  }
+
+  /**
+   * Retrieves binary mesh data for an object.
+   * @param {number} objectId
+   * @returns {Promise<{ path: string, vertexCount: number, triangleCount: number, buffer: Uint8Array }>}
+   */
+  async getMesh(objectId) {
+    return await this._call('getMesh', { objectId });
+  }
+
+  /**
+   * Updates an instance transform and drops to bed.
+   * @param {{ objectId: number, instanceId: number, offset?: [number, number, number], rotation?: [number, number, number], scale?: [number, number, number] | number }} params
    * @returns {Promise<{}>}
    */
-  async arrange() {
-    return await this._call('arrange', {});
+  async setInstanceTransform(params) {
+    return await this._call('setInstanceTransform', params);
+  }
+
+  /**
+   * Deletes an object from the plate.
+   * @param {number} objectId
+   * @returns {Promise<{}>}
+   */
+  async deleteObject(objectId) {
+    return await this._call('deleteObject', { objectId });
+  }
+
+  /**
+   * Duplicates an instance of an object.
+   * @param {number} objectId
+   * @param {number} instanceId
+   * @returns {Promise<{ instanceId: number, id: number }>}
+   */
+  async duplicateInstance(objectId, instanceId) {
+    return await this._call('duplicateInstance', { objectId, instanceId });
+  }
+
+  /**
+   * Centers the model on the print bed and arranges objects.
+   * @param {{ useBed?: boolean }} [options={}]
+   * @returns {Promise<{}>}
+   */
+  async arrange(options = {}) {
+    return await this._call('arrange', options);
   }
 
   /**
