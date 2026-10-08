@@ -26,7 +26,7 @@ A layer height profile is represented as a contiguous linear sequence of alterna
 ```json
 [z_0, h_0, z_1, h_1, z_2, h_2, ..., z_n, h_n]
 ```
-- Even indices ($2k$): Height $Z$ above print bed in millimeters ($0.0 \le z \le Z_{\text{max}}$).
+- Even indices ($2k$): Height $Z$ from the object's bottom in millimeters ($0.0 \le z \le Z_{\text{max}}$), using the transformed object height independently of instance translation.
 - Odd indices ($2k+1$): Layer thickness in millimeters at that height.
 - Bound constraints: Layer thicknesses are constrained to $[h_{\text{min}}, h_{\text{max}}]$ defined by printer nozzle parameters (`min_layer_height`, `max_layer_height`).
 

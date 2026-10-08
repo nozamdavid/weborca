@@ -340,7 +340,28 @@ describe('Orca WASM Variable Layer Height & Adaptive Slicing Test Suite', () => 
     benchyObjId = loadedObjId;
   });
 
+  test('cube adaptive and brush profiles agree with slicing', async () => {
+    core.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    const oldTree = await core.call('getObjectTree', {});
+    await core.call('deleteObject', { objectId: oldTree.objects[0].id });
+    await core.call('addModel', { path: '/models/cube.obj' });
+    await core.call('arrange', {});
+    const tree = await core.call('getObjectTree', {});
+    const objectId = tree.objects[0].id;
+    const initial = await core.call('getLayerHeightProfile', { objectId });
+    await core.call('adaptiveLayerHeights', { objectId, quality: 0.5 });
+    const edited = await core.call('adjustLayerHeights', {
+      objectId, z: 12, delta: 0.005, bandWidth: 2, action: 'increase'
+    });
+    const sliced = await core.call('slice', { outPath: '/out/cube_variable.gcode', threads: 4 });
+    assert.equal(sliced.layers, edited.layerCount, 'Slice must use the edited cube profile');
+    assert.equal(initial.objectHeight, 20, 'Profile height must cover the entire cube');
+  });
+
   test('setLayerHeightProfile directly applies explicit profile', async () => {
+    await core.call('loadModel', { path: '/models/3DBenchy.stl' });
+    benchyObjId = (await core.call('getObjectTree', {})).objects[0].id;
     const testProfile = [
       0.0, 0.20,
       0.2, 0.20,

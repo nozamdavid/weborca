@@ -39,11 +39,11 @@ Slic3r::ModelObject* find_object(Slic3r::Model& model, size_t object_id) {
 }
 
 Slic3r::SlicingParameters get_slicing_parameters(const Slic3r::ModelObject& obj, const Slic3r::DynamicPrintConfig& config) {
-    float object_max_z = static_cast<float>(obj.max_z());
-    if (object_max_z <= 0.0f) {
-        object_max_z = static_cast<float>(obj.raw_bounding_box().size().z());
-    }
-    return Slic3r::PrintObject::slicing_parameters(config, obj, object_max_z, Slic3r::Vec3d::Ones());
+    // Profiles span the transformed object's height, independent of its position
+    // on the bed. A centered mesh's world max_z is only half its height; such a
+    // profile is rejected by PrintObject when slicing places the object on bed.
+    // Zero selects PrintObject's raw_bounding_box height (including scale/rotation).
+    return Slic3r::PrintObject::slicing_parameters(config, obj, 0.0f, Slic3r::Vec3d::Ones());
 }
 
 json build_ranges_json(const std::vector<double>& layers) {
