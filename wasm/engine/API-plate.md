@@ -83,7 +83,14 @@ Combines all printable model volumes with their respective volume transforms int
   {
     "path": "/out/mesh_1.bin",
     "vertexCount": 8,
-    "triangleCount": 12
+    "triangleCount": 12,
+    "volumes": [
+      {
+        "volumeId": 1,
+        "firstFacet": 0,
+        "facetCount": 12
+      }
+    ]
   }
   ```
 

@@ -3,6 +3,7 @@
 #include "ProjectOps.hpp"
 #include "ObjectOps.hpp"
 #include "PlateOps.hpp"
+#include "PaintOps.hpp"
 #include "libslic3r/Arrange.hpp"
 
 #include "libslic3r/libslic3r.h"
@@ -217,6 +218,9 @@ private:
     json op_addPlate(const json& args);
     json op_deletePlate(const json& args);
     json op_setPlateConfig(const json& args);
+    json op_getSupportPainting(const json& args);
+    json op_setSupportPainting(const json& args);
+    json op_clearSupportPainting(const json& args);
     std::string op_slice(int jobId, const json& args);
 
     // Job queue
@@ -417,6 +421,12 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_deletePlate(args);
         } else if (op == "setPlateConfig") {
             result_data = op_setPlateConfig(args);
+        } else if (op == "getSupportPainting") {
+            result_data = op_getSupportPainting(args);
+        } else if (op == "setSupportPainting") {
+            result_data = op_setSupportPainting(args);
+        } else if (op == "clearSupportPainting") {
+            result_data = op_clearSupportPainting(args);
         } else {
             throw Slic3r::RuntimeError("Unknown operation: " + op);
         }
@@ -989,19 +999,35 @@ json Engine::Impl::op_getMesh(const json& args) {
     }
 
     Slic3r::TriangleMesh mesh;
+    json volumes_meta = json::array();
     for (const Slic3r::ModelVolume* v : obj->volumes) {
         if (v && v->is_model_part()) {
+            uint32_t first_facet = static_cast<uint32_t>(mesh.its.indices.size());
             Slic3r::TriangleMesh vol_mesh(v->mesh());
             vol_mesh.transform(v->get_matrix());
             mesh.merge(vol_mesh);
+            uint32_t facet_count = static_cast<uint32_t>(vol_mesh.its.indices.size());
+            volumes_meta.push_back({
+                {"volumeId", v->id().id},
+                {"firstFacet", first_facet},
+                {"facetCount", facet_count}
+            });
         }
     }
     if (mesh.empty()) {
+        volumes_meta = json::array();
         for (const Slic3r::ModelVolume* v : obj->volumes) {
             if (v) {
+                uint32_t first_facet = static_cast<uint32_t>(mesh.its.indices.size());
                 Slic3r::TriangleMesh vol_mesh(v->mesh());
                 vol_mesh.transform(v->get_matrix());
                 mesh.merge(vol_mesh);
+                uint32_t facet_count = static_cast<uint32_t>(vol_mesh.its.indices.size());
+                volumes_meta.push_back({
+                    {"volumeId", v->id().id},
+                    {"firstFacet", first_facet},
+                    {"facetCount", facet_count}
+                });
             }
         }
     }
@@ -1038,7 +1064,8 @@ json Engine::Impl::op_getMesh(const json& args) {
     return json{
         {"path", out_path},
         {"vertexCount", vertex_count},
-        {"triangleCount", triangle_count}
+        {"triangleCount", triangle_count},
+        {"volumes", volumes_meta}
     };
 }
 
@@ -1290,6 +1317,18 @@ json Engine::Impl::op_deletePlate(const json& args) {
 json Engine::Impl::op_setPlateConfig(const json& args) {
     return OrcaEngine::setPlateConfig(args, m_plate_data);
 }
+json Engine::Impl::op_getSupportPainting(const json& args) {
+    return OrcaWasm::getSupportPainting(m_model, args);
+}
+
+json Engine::Impl::op_setSupportPainting(const json& args) {
+    return OrcaWasm::setSupportPainting(m_model, args);
+}
+
+json Engine::Impl::op_clearSupportPainting(const json& args) {
+    return OrcaWasm::clearSupportPainting(m_model, args);
+}
+
 
 std::string Engine::Impl::op_slice(int jobId, const json& args) {
     struct SliceCleanupGuard {

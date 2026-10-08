@@ -146,6 +146,79 @@ export interface PlateInfo {
   filamentMaps?: Record<string, string>;
 }
 
+export interface FacetAnnotationItem {
+  facetId: number;
+  state: 'enforcer' | 'blocker' | 'none';
+  type: number;
+}
+
+export interface SupportPaintingStats {
+  enforcersCount: number;
+  blockersCount: number;
+  totalPainted: number;
+}
+
+export interface SupportPaintingInfo {
+  objectId: number;
+  volumeId: number;
+  triangleCount: number;
+  hasCustomSupports: boolean;
+  enforcers: number[];
+  blockers: number[];
+  facets: FacetAnnotationItem[];
+  queriedFacets?: FacetAnnotationItem[];
+  statistics: SupportPaintingStats;
+}
+
+export interface SetSupportPaintingParams {
+  objectId: number;
+  volumeId?: number;
+  volumeIndex?: number;
+  reset?: boolean;
+  facets?: Array<{ facetId: number; state: number | string } | [number, number | string]>;
+  enforcers?: number[];
+  blockers?: number[];
+  clear?: number[];
+  facetId?: number;
+  state?: number | string;
+}
+
+export interface SetSupportPaintingResult {
+  updated: boolean;
+  objectId: number;
+  volumeId: number;
+  triangleCount: number;
+  enforcersCount: number;
+  blockersCount: number;
+  modifiedCount: number;
+}
+
+export interface ClearSupportPaintingParams {
+  objectId: number;
+  volumeId?: number;
+  volumeIndex?: number;
+}
+
+export interface ClearSupportPaintingResult {
+  cleared: boolean;
+  objectId: number;
+  volumeId: number;
+}
+
+export interface MeshVolumePartition {
+  volumeId: number;
+  firstFacet: number;
+  facetCount: number;
+}
+
+export interface GetMeshResult {
+  path: string;
+  vertexCount: number;
+  triangleCount: number;
+  buffer: Uint8Array;
+  volumes?: MeshVolumePartition[];
+}
+
 export class OrcaEngine {
   protected constructor(worker: Worker, options: CreateEngineOptions);
 
@@ -181,7 +254,7 @@ export class OrcaEngine {
 
   listObjects(): Promise<Array<any>>;
 
-  getMesh(objectId: number): Promise<{ path: string; vertexCount: number; triangleCount: number; buffer: Uint8Array }>;
+  getMesh(objectId: number): Promise<GetMeshResult>;
 
   setInstanceTransform(params: {
     objectId: number;
@@ -240,6 +313,18 @@ export class OrcaEngine {
     name?: string;
     locked?: boolean;
   }): Promise<Record<string, never>>;
+
+  getSupportPainting(
+    objectId: number | { objectId: number; volumeId?: number; volumeIndex?: number; facetIds?: number[] },
+    volumeId?: number
+  ): Promise<SupportPaintingInfo>;
+
+  setSupportPainting(params: SetSupportPaintingParams): Promise<SetSupportPaintingResult>;
+
+  clearSupportPainting(
+    objectId: number | ClearSupportPaintingParams,
+    volumeId?: number
+  ): Promise<ClearSupportPaintingResult>;
 
   slice(options?: SliceOptions): Promise<SliceResult>;
 

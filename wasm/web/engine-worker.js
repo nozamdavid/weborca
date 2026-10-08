@@ -323,6 +323,27 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'getSupportPainting': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('getSupportPainting', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'setSupportPainting': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('setSupportPainting', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'clearSupportPainting': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('clearSupportPainting', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
       case 'slice': {
         if (!core) throw new Error('Engine not initialized');
         const controller = new AbortController();

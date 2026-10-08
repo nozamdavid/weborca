@@ -305,7 +305,7 @@ export class OrcaEngine {
   /**
    * Retrieves binary mesh data for an object.
    * @param {number} objectId
-   * @returns {Promise<{ path: string, vertexCount: number, triangleCount: number, buffer: Uint8Array }>}
+   * @returns {Promise<{ path: string, vertexCount: number, triangleCount: number, buffer: Uint8Array, volumes?: Array<{ volumeId: number, firstFacet: number, facetCount: number }> }>}
    */
   async getMesh(objectId) {
     return await this._call('getMesh', { objectId });
@@ -459,6 +459,37 @@ export class OrcaEngine {
    */
   async setPlateConfig(params) {
     return await this._call('setPlateConfig', params);
+  }
+
+  /**
+   * Retrieves support painting annotations for an object volume.
+   * @param {number|{ objectId: number, volumeId?: number, volumeIndex?: number, facetIds?: number[] }} objectId
+   * @param {number} [volumeId]
+   * @returns {Promise<any>}
+   */
+  async getSupportPainting(objectId, volumeId) {
+    const params = typeof objectId === 'object' ? objectId : { objectId, volumeId };
+    return await this._call('getSupportPainting', params);
+  }
+
+  /**
+   * Updates support painting (enforcer, blocker, clear) on an object volume.
+   * @param {any} params
+   * @returns {Promise<any>}
+   */
+  async setSupportPainting(params) {
+    return await this._call('setSupportPainting', params);
+  }
+
+  /**
+   * Clears all support painting annotations from an object volume.
+   * @param {number|any} objectId
+   * @param {number} [volumeId]
+   * @returns {Promise<any>}
+   */
+  async clearSupportPainting(objectId, volumeId) {
+    const params = typeof objectId === 'object' ? objectId : { objectId, volumeId };
+    return await this._call('clearSupportPainting', params);
   }
 
   /**
