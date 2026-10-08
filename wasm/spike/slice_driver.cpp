@@ -101,9 +101,10 @@ int main(int argc, char* argv[])
 
             // Step 2: Load STL into Model
             auto t0 = std::chrono::steady_clock::now();
-            Model model = Model::read_from_file(input_stl);
+            Model model = Model::read_from_file(input_stl, nullptr, nullptr, LoadStrategy::AddDefaultInstances | LoadStrategy::LoadModel);
             if (model.objects.empty())
                 throw RuntimeError("No objects loaded from file: " + input_stl);
+            model.remove_backup_path_if_exist();
             auto t_load_stl = std::chrono::steady_clock::now();
 
             // Step 3: Base config from defaults, apply JSON config if given, validate

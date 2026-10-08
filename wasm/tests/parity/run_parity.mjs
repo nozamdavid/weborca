@@ -46,7 +46,7 @@ const nativeCli = '/tmp/orca-native/squashfs-root/AppRun';
 const bundleDir = path.join(repoRoot, 'wasm', 'build', 'tests-node');
 const parityOutDir = path.join(bundleDir, 'parity');
 const refsDir = path.join(__dirname, 'refs-macos-x86_64');
-const casesFile = path.join(__dirname, 'cases.json');
+const casesFile = process.env.PARITY_CASES ? path.resolve(process.env.PARITY_CASES) : path.join(__dirname, 'cases.json');
 
 function ensureBundles() {
   fs.mkdirSync(parityOutDir, { recursive: true });
@@ -359,6 +359,7 @@ async function main() {
       }
       console.log('');
     }
+    process.exitCode = 1;
   } else {
     console.log('\nNo parity failures or mismatches detected.');
   }
