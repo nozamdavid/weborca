@@ -5,6 +5,7 @@ import { useAppStore } from '../store/appStore';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
 import { usePaintingStore, SupportPaintingPanel } from '../painting';
 import { getEngine } from '../engine/orcaEngine';
+import { useHistoryStore } from '../history';
 
 function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
@@ -41,6 +42,13 @@ export const PlateView: React.FC = () => {
   const getMesh = usePlateStore((s) => s.getMesh);
   const importFile = usePlateStore((s) => s.importFile);
   const initBedConfig = usePlateStore((s) => s.initBedConfig);
+
+  // History / Undo-Redo Store
+  const canUndo = useHistoryStore((s) => s.canUndo);
+  const canRedo = useHistoryStore((s) => s.canRedo);
+  const isRestoring = useHistoryStore((s) => s.isRestoring);
+  const undo = useHistoryStore((s) => s.undo);
+  const redo = useHistoryStore((s) => s.redo);
 
   // Support Painting Store
   const isPaintingActive = usePaintingStore((s) => s.isPaintingActive);
@@ -155,20 +163,19 @@ export const PlateView: React.FC = () => {
   useEffect(() => {
     if (sceneRef.current) {
       sceneRef.current.setSelection(selectedObjectId, selectedInstanceId);
-    const paintState = usePaintingStore.getState();
-    if (paintState.isPaintingActive) {
-      if (!selectedObjectId || selectedObjectId !== paintState.selectedObjectId) {
-        paintState.cancelStroke();
-        if (selectedObjectId) {
-          paintState.startPainting(selectedObjectId);
-        } else {
-          paintState.stopPainting();
+      const paintState = usePaintingStore.getState();
+      if (paintState.isPaintingActive) {
+        if (!selectedObjectId || selectedObjectId !== paintState.selectedObjectId) {
+          paintState.cancelStroke();
+          if (selectedObjectId) {
+            paintState.startPainting(selectedObjectId);
+          } else {
+            paintState.stopPainting();
+          }
         }
       }
     }
-    }
   }, [selectedObjectId, selectedInstanceId]);
-
 
   // Stop painting if slicing starts
   useEffect(() => {
@@ -177,6 +184,7 @@ export const PlateView: React.FC = () => {
       usePaintingStore.getState().stopPainting();
     }
   }, [isSlicing]);
+
   // Update gizmo mode in scene
   useEffect(() => {
     if (sceneRef.current) {
@@ -236,12 +244,28 @@ export const PlateView: React.FC = () => {
         return;
       }
 
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A')) {
-        e.preventDefault();
-        if (objects.length > 0) {
-          selectObject(objects[0].id, objects[0].instances[0]?.id);
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z' || e.key === 'Z') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            redo();
+          } else {
+            undo();
+          }
+          return;
         }
-        return;
+        if (e.key === 'y' || e.key === 'Y') {
+          e.preventDefault();
+          redo();
+          return;
+        }
+        if (e.key === 'a' || e.key === 'A') {
+          e.preventDefault();
+          if (objects.length > 0) {
+            selectObject(objects[0].id, objects[0].instances[0]?.id);
+          }
+          return;
+        }
       }
 
       if (e.key === 'Escape' && isPaintingActive) {
@@ -279,7 +303,7 @@ export const PlateView: React.FC = () => {
           break;
       }
     },
-    [objects, selectObject, setGizmoMode, arrange, deleteSelected, isPaintingActive, selectedObjectId, handleTogglePainting, stopPainting]
+    [objects, selectObject, setGizmoMode, arrange, deleteSelected, isPaintingActive, selectedObjectId, handleTogglePainting, stopPainting, undo, redo]
   );
 
   useEffect(() => {
@@ -354,6 +378,55 @@ export const PlateView: React.FC = () => {
           zIndex: 10
         }}
       >
+        {/* Undo and Redo buttons */}
+        <button
+          id="tool-undo-btn"
+          className="btn-tool"
+          data-testid="tool-undo-btn"
+          disabled={!canUndo || isRestoring || isSlicing}
+          data-can-undo={canUndo}
+          data-is-restoring={isRestoring}
+          onClick={() => undo()}
+          title="Undo (Ctrl+Z)"
+          style={{
+            background: 'transparent',
+            color: canUndo && !isRestoring && !isSlicing ? '#fff' : '#64748b',
+            border: 'none',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: '0.85rem',
+            cursor: canUndo && !isRestoring && !isSlicing ? 'pointer' : 'default',
+            fontWeight: 500,
+            opacity: canUndo && !isRestoring && !isSlicing ? 1 : 0.5
+          }}
+        >
+          ↩️ Undo
+        </button>
+        <button
+          id="tool-redo-btn"
+          className="btn-tool"
+          data-testid="tool-redo-btn"
+          disabled={!canRedo || isRestoring || isSlicing}
+          data-can-redo={canRedo}
+          data-is-restoring={isRestoring}
+          onClick={() => redo()}
+          title="Redo (Ctrl+Shift+Z)"
+          style={{
+            background: 'transparent',
+            color: canRedo && !isRestoring && !isSlicing ? '#fff' : '#64748b',
+            border: 'none',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: '0.85rem',
+            cursor: canRedo && !isRestoring && !isSlicing ? 'pointer' : 'default',
+            fontWeight: 500,
+            opacity: canRedo && !isRestoring && !isSlicing ? 1 : 0.5
+          }}
+        >
+          ↪️ Redo
+        </button>
+        <div style={{ width: 1, background: 'rgba(255,255,255,0.15)', margin: '2px 4px' }} />
+
         <button
           id="tool-move-btn"
           className={`btn-tool ${gizmoMode === 'translate' && !isPaintingActive ? 'active' : ''}`}
@@ -361,15 +434,16 @@ export const PlateView: React.FC = () => {
             if (isPaintingActive) stopPainting();
             setGizmoMode('translate');
           }}
+          disabled={isRestoring || isSlicing}
           title="Move tool (M)"
           style={{
             background: gizmoMode === 'translate' && !isPaintingActive ? '#2563eb' : 'transparent',
-            color: '#fff',
+            color: isRestoring || isSlicing ? '#64748b' : '#fff',
             border: 'none',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: '0.85rem',
-            cursor: 'pointer',
+            cursor: isRestoring || isSlicing ? 'default' : 'pointer',
             fontWeight: 500
           }}
         >
@@ -382,15 +456,16 @@ export const PlateView: React.FC = () => {
             if (isPaintingActive) stopPainting();
             setGizmoMode('rotate');
           }}
+          disabled={isRestoring || isSlicing}
           title="Rotate tool (R)"
           style={{
             background: gizmoMode === 'rotate' && !isPaintingActive ? '#2563eb' : 'transparent',
-            color: '#fff',
+            color: isRestoring || isSlicing ? '#64748b' : '#fff',
             border: 'none',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: '0.85rem',
-            cursor: 'pointer',
+            cursor: isRestoring || isSlicing ? 'default' : 'pointer',
             fontWeight: 500
           }}
         >
@@ -403,15 +478,16 @@ export const PlateView: React.FC = () => {
             if (isPaintingActive) stopPainting();
             setGizmoMode('scale');
           }}
+          disabled={isRestoring || isSlicing}
           title="Scale tool (S)"
           style={{
             background: gizmoMode === 'scale' && !isPaintingActive ? '#2563eb' : 'transparent',
-            color: '#fff',
+            color: isRestoring || isSlicing ? '#64748b' : '#fff',
             border: 'none',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: '0.85rem',
-            cursor: 'pointer',
+            cursor: isRestoring || isSlicing ? 'default' : 'pointer',
             fontWeight: 500
           }}
         >
@@ -423,16 +499,16 @@ export const PlateView: React.FC = () => {
           id="tool-paint-btn"
           className={`btn-tool ${isPaintingActive ? 'active' : ''}`}
           onClick={handleTogglePainting}
-          disabled={!selectedObject}
+          disabled={!selectedObject || isRestoring || isSlicing}
           title="Support Face Painting (P)"
           style={{
             background: isPaintingActive ? '#009688' : 'transparent',
-            color: selectedObject ? '#fff' : '#64748b',
+            color: selectedObject && !isRestoring && !isSlicing ? '#fff' : '#64748b',
             border: 'none',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: '0.85rem',
-            cursor: selectedObject ? 'pointer' : 'default',
+            cursor: selectedObject && !isRestoring && !isSlicing ? 'pointer' : 'default',
             fontWeight: isPaintingActive ? 600 : 500
           }}
         >
@@ -442,15 +518,16 @@ export const PlateView: React.FC = () => {
         <button
           id="tool-arrange-btn"
           onClick={() => arrange(true)}
+          disabled={isRestoring || isSlicing}
           title="Arrange objects on bed (A)"
           style={{
             background: 'transparent',
-            color: '#fff',
+            color: isRestoring || isSlicing ? '#64748b' : '#fff',
             border: 'none',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: '0.85rem',
-            cursor: 'pointer'
+            cursor: isRestoring || isSlicing ? 'default' : 'pointer'
           }}
         >
           🧩 Arrange [A]
@@ -458,16 +535,16 @@ export const PlateView: React.FC = () => {
         <button
           id="tool-delete-btn"
           onClick={() => deleteSelected()}
-          disabled={!selectedObject}
+          disabled={!selectedObject || isRestoring || isSlicing}
           title="Delete selected object (Delete)"
           style={{
             background: 'transparent',
-            color: selectedObject ? '#ef4444' : '#64748b',
+            color: selectedObject && !isRestoring && !isSlicing ? '#ef4444' : '#64748b',
             border: 'none',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: '0.85rem',
-            cursor: selectedObject ? 'pointer' : 'default'
+            cursor: selectedObject && !isRestoring && !isSlicing ? 'pointer' : 'default'
           }}
         >
           🗑️ Delete

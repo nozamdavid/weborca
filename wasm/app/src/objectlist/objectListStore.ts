@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { getEngine } from '../engine/orcaEngine';
 import { usePlateStore } from '../plate/plateStore';
+import { useHistoryStore } from '../history';
 import type { ObjectTreeNode, AddVolumeParams } from './types';
 
 export interface ObjectListState {
@@ -97,6 +98,9 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
       await get().refreshTree();
       // Select newly added volume
       set({ selectedObjectId: params.objectId, selectedVolumeId: volumeId });
+      try {
+        await useHistoryStore.getState().commitTransaction('Add volume');
+      } catch (_) {}
       return volumeId;
     } catch (err: any) {
       set({ isLoading: false, error: err.message || 'Failed to add volume' });
@@ -117,6 +121,9 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
         set({ selectedVolumeId: null });
       }
       await get().refreshTree();
+      try {
+        await useHistoryStore.getState().commitTransaction('Delete volume');
+      } catch (_) {}
     } catch (err: any) {
       set({ isLoading: false, error: err.message || 'Failed to delete volume' });
       throw err;
@@ -147,6 +154,9 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
         await engine.call('renameObject', { objectId, name });
       }
       await get().refreshTree();
+      try {
+        await useHistoryStore.getState().commitTransaction('Rename object');
+      } catch (_) {}
     } catch (err: any) {
       set({ error: err.message || 'Failed to rename object' });
       throw err;
@@ -162,6 +172,9 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
         await engine.call('renameVolume', { objectId, volumeId, name });
       }
       await get().refreshTree();
+      try {
+        await useHistoryStore.getState().commitTransaction('Rename volume');
+      } catch (_) {}
     } catch (err: any) {
       set({ error: err.message || 'Failed to rename volume' });
       throw err;
@@ -186,6 +199,9 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
         res = await engine.call('setObjectConfig', payload);
       }
       await get().refreshTree();
+      try {
+        await useHistoryStore.getState().commitTransaction('Set object config');
+      } catch (_) {}
       return res || { errors: [] };
     } catch (err: any) {
       set({ error: err.message || 'Failed to set config' });
@@ -213,6 +229,9 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
         await engine.call('resetObjectConfig', payload);
       }
       await get().refreshTree();
+      try {
+        await useHistoryStore.getState().commitTransaction('Reset object config');
+      } catch (_) {}
     } catch (err: any) {
       set({ error: err.message || 'Failed to reset config' });
       throw err;
@@ -232,6 +251,9 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
         await engine.call('setVolumeExtruder', { objectId, volumeId, extruder });
       }
       await get().refreshTree();
+      try {
+        await useHistoryStore.getState().commitTransaction('Set volume extruder');
+      } catch (_) {}
     } catch (err: any) {
       set({ error: err.message || 'Failed to set volume extruder' });
       throw err;

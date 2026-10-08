@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { getEngine } from '../engine/orcaEngine';
 import { useAppStore } from '../store/appStore';
+import { useHistoryStore } from '../history';
 import type { PlateObject, MeshBufferData, BedConfig, GizmoMode } from './types';
 
 export function parseMeshBuffer(bytes: Uint8Array): MeshBufferData {
@@ -234,6 +235,9 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
       await engine.call('setInstanceTransform', { objectId, instanceId, ...transform });
     }
     await get().refreshObjects();
+    try {
+      await useHistoryStore.getState().commitTransaction('Transform object');
+    } catch (_) {}
   },
 
   moveSelection: async (delta: [number, number, number]) => {
@@ -283,6 +287,9 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     set({ meshCache: new Map(meshCache) });
 
     await get().refreshObjects();
+    try {
+      await useHistoryStore.getState().commitTransaction('Delete object');
+    } catch (_) {}
   },
 
   duplicateSelected: async () => {
@@ -295,6 +302,9 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
       await engine.call('duplicateInstance', { objectId: selectedObjectId, instanceId: selectedInstanceId });
     }
     await get().refreshObjects();
+    try {
+      await useHistoryStore.getState().commitTransaction('Duplicate instance');
+    } catch (_) {}
   },
 
   arrange: async (useBed = false) => {
@@ -307,6 +317,9 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
         await engine.call('arrange', { useBed });
       }
       await get().refreshObjects();
+      try {
+        await useHistoryStore.getState().commitTransaction('Arrange objects');
+      } catch (_) {}
     } finally {
       set({ isLoading: false });
     }
@@ -333,6 +346,9 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
       useAppStore.setState({
         modelFile: { name: file.name, size: file.size }
       });
+      try {
+        await useHistoryStore.getState().commitTransaction(`Import ${file.name}`);
+      } catch (_) {}
     } catch (err) {
       console.error('[plateStore] Failed to import model file:', err);
       throw err;

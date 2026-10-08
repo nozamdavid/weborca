@@ -334,6 +334,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         isEngineInitializing: false
       });
 
+      try {
+        const { useHistoryStore } = await import('../history');
+        await useHistoryStore.getState().initHistory();
+      } catch (_) {}
+
       // Pick default vendor
       const defaultVendor = vendors.some((v) => v.name === 'Voron')
         ? 'Voron'
@@ -598,6 +603,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         isModelLoading: false,
         sliceStatusText: `Loaded and arranged ${file.name}`
       });
+      try {
+        const { useHistoryStore } = await import('../history');
+        await useHistoryStore.getState().commitTransaction(`Import ${file.name}`);
+      } catch (_) {}
     } catch (err: any) {
       set({
         isModelLoading: false,
@@ -611,6 +620,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   startSlice: async () => {
     const { isEngineReady, isSlicing, modelFile, selectedPrinter, selectedProcess, selectedFilament } = get();
+    try {
+      const { useHistoryStore } = await import('../history');
+      if (useHistoryStore.getState().isRestoring) {
+        return;
+      }
+    } catch (_) {}
     if (!isEngineReady || isSlicing || !modelFile || !selectedPrinter || !selectedProcess || !selectedFilament) {
       return;
     }

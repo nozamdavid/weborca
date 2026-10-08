@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { getEngine } from '../engine/orcaEngine';
 import { useAppStore } from '../store/appStore';
 import { usePlateStore } from '../plate/plateStore';
+import { useHistoryStore } from '../history';
 import type {
   PaintTarget,
   SupportPaintMode,
@@ -505,6 +506,11 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
 
       // Invalidate stale slice preview on successful edits
       useAppStore.getState().invalidateSlicePreview();
+
+      // Commit to history transaction
+      try {
+        await useHistoryStore.getState().commitTransaction(`${strokeTarget === 'seam' ? 'Seam' : 'Support'} paint stroke`);
+      } catch (_) {}
     } catch (err: any) {
       console.error('[paintingStore] Failed to commit stroke:', err);
       // Revert optimistic changes by restoring backup
@@ -596,6 +602,11 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
 
       // Invalidate stale slice preview on successful edits
       useAppStore.getState().invalidateSlicePreview();
+
+      // Commit to history transaction
+      try {
+        await useHistoryStore.getState().commitTransaction(`Clear ${paintTarget} painting`);
+      } catch (_) {}
     } catch (err: any) {
       console.error('[paintingStore] Failed to clear volume painting:', err);
       if (

@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { ManagePresetsDialog } from '../presets/ManagePresetsDialog';
+import { useHistoryStore } from '../history';
 
 export const TopBar: React.FC = () => {
   const {
@@ -31,6 +32,12 @@ export const TopBar: React.FC = () => {
     isEngineReady
   } = useAppStore();
 
+  const canUndo = useHistoryStore((s) => s.canUndo);
+  const canRedo = useHistoryStore((s) => s.canRedo);
+  const isRestoring = useHistoryStore((s) => s.isRestoring);
+  const undo = useHistoryStore((s) => s.undo);
+  const redo = useHistoryStore((s) => s.redo);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -44,6 +51,7 @@ export const TopBar: React.FC = () => {
   const canSlice =
     isEngineReady &&
     !isSlicing &&
+    !isRestoring &&
     !!modelFile &&
     !!selectedPrinter &&
     !!selectedProcess &&
@@ -372,10 +380,32 @@ export const TopBar: React.FC = () => {
         <button
           id="import-btn"
           className="btn btn-secondary"
-          disabled={isSlicing}
+          disabled={isSlicing || isRestoring}
           onClick={() => fileInputRef.current?.click()}
         >
           📂 Import Model
+        </button>
+
+        {/* Undo and Redo TopBar buttons */}
+        <button
+          id="undo-btn"
+          className="btn btn-secondary"
+          data-testid="undo-btn"
+          title="Undo (Ctrl+Z)"
+          disabled={!canUndo || isRestoring || isSlicing}
+          onClick={() => undo()}
+        >
+          ↩️ Undo
+        </button>
+        <button
+          id="redo-btn"
+          className="btn btn-secondary"
+          data-testid="redo-btn"
+          title="Redo (Ctrl+Shift+Z)"
+          disabled={!canRedo || isRestoring || isSlicing}
+          onClick={() => redo()}
+        >
+          ↪️ Redo
         </button>
 
         {/* Slice button */}
