@@ -75,6 +75,7 @@ export interface SliceOptions {
   signal?: AbortSignal;
   threads?: number;
   outPath?: string;
+  plateIndex?: number;
 }
 
 export interface SliceResult {
@@ -125,6 +126,24 @@ export interface EvaluateRulesResult {
   fixes: RuleFix[];
   messages: string[];
   context: any;
+}
+
+export interface PlateInstanceRef {
+  objectId: number;
+  instanceId: number;
+  objectIndex: number;
+  instanceIndex: number;
+}
+
+export interface PlateInfo {
+  index: number;
+  name: string;
+  locked: boolean;
+  origin: [number, number, number];
+  size: [number, number, number];
+  instances: PlateInstanceRef[];
+  config: Record<string, string>;
+  filamentMaps?: Record<string, string>;
 }
 
 export class OrcaEngine {
@@ -208,6 +227,19 @@ export class OrcaEngine {
   }): Promise<Record<string, never>>;
 
   setVolumeExtruder(objectId: number, volumeId: number, extruder: number): Promise<Record<string, never>>;
+
+  listPlates(): Promise<Array<PlateInfo>>;
+
+  addPlate(params?: { name?: string; config?: Record<string, string> }): Promise<Array<PlateInfo>>;
+
+  deletePlate(plateIndex: number, deleteObjects?: boolean): Promise<Array<PlateInfo>>;
+
+  setPlateConfig(params: {
+    plateIndex: number;
+    config?: Record<string, string>;
+    name?: string;
+    locked?: boolean;
+  }): Promise<Record<string, never>>;
 
   slice(options?: SliceOptions): Promise<SliceResult>;
 

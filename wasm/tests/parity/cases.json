@@ -70,5 +70,41 @@
     "filaments": [
       "Generic PLA @Prusa MK4"
     ]
+  },
+  {
+    "id": "orcabadge-bbl-multifilament",
+    "model": "wasm/tests/data/two_cubes_multi.3mf",
+    "printer": "Bambu Lab X1 Carbon 0.4 nozzle",
+    "process": "0.20mm Standard @BBL X1C",
+    "filaments": [
+      "Bambu PLA Basic @BBL X1C",
+      "Bambu PLA Matte @BBL X1C"
+    ],
+    "options": {
+      "wipe_tower_x": [
+        30
+      ],
+      "wipe_tower_y": [
+        180
+      ]
+    }
+  },
+  {
+    "id": "orcabadge-voron-multifilament",
+    "model": "wasm/tests/data/two_cubes_multi.3mf",
+    "printer": "Voron 2.4 300 0.4 nozzle",
+    "process": "0.20mm Standard @Voron",
+    "filaments": [
+      "Generic PLA @System",
+      "Generic PLA Silk @System"
+    ],
+    "options": {
+      "wipe_tower_x": [
+        60
+      ],
+      "wipe_tower_y": [
+        220
+      ]
+    }
   }
 ]

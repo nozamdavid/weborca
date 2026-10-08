@@ -187,6 +187,12 @@ async function main() {
         filaments: c.filaments
       });
 
+      if (c.options) {
+        await core.call("setOptions", {
+          options: c.options
+        });
+      }
+
       const modelFullPath = path.resolve(repoRoot, c.model);
       const modelBytes = fs.readFileSync(modelFullPath);
       await core.loadModel(path.basename(c.model), modelBytes);
@@ -236,6 +242,29 @@ async function main() {
         if (exportRes.status !== 0) {
           throw new Error(`Native CLI export failed (exit ${exportRes.status}): ${exportRes.stderr || exportRes.stdout}`);
         }
+
+        const flat = JSON.parse(fs.readFileSync(flatJsonPath, "utf8"));
+        // When multiple filaments are specified, native CLI export-settings produces
+        // single-slot arrays for filament_colour, filament_map, flush matrices, etc.
+        // Synchronize these effective multi-filament configuration values from engine config.
+        if (c.filaments && c.filaments.length > 1) {
+          const engineCfg = await core.call("getConfig", {});
+          for (const [k, v] of Object.entries(engineCfg)) {
+            flat[k] = String(v);
+          }
+        }
+        if (c.options) {
+          for (const [key, val] of Object.entries(c.options)) {
+            if (key in flat && Array.isArray(flat[key])) {
+              flat[key] = Array.isArray(val) ? val.map((v) => String(v)) : [String(val)];
+            } else if (Array.isArray(val)) {
+              flat[key] = val.map((v) => String(v));
+            } else {
+              flat[key] = String(val);
+            }
+          }
+        }
+        fs.writeFileSync(flatJsonPath, JSON.stringify(flat, null, "\t"));
 
         // Slice with spike driver
         const modelFullPath = path.resolve(repoRoot, c.model);
@@ -315,6 +344,12 @@ async function main() {
       layers: String(layers),
       sliceMs: String(sliceMs)
     });
+
+    if (c.options) {
+      try {
+        await core.call("resetOptions", {});
+      } catch (_) {}
+    }
   }
 
   core.dispose();

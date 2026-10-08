@@ -295,6 +295,34 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'listPlates': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('listPlates', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'addPlate': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('addPlate', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'deletePlate': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('deletePlate', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
+      case 'setPlateConfig': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = await core.call('setPlateConfig', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
       case 'slice': {
         if (!core) throw new Error('Engine not initialized');
         const controller = new AbortController();

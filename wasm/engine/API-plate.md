@@ -1,6 +1,6 @@
 # Orca WASM Engine API - Plate Operations
 
-Extensions to the Orca WASM engine for 3D plate manipulation, object management, transforms, and mesh export.
+Extensions to the Orca WASM engine for 3D plate manipulation, object management, transforms, mesh export, and multiple plates.
 All operations run on the engine pthread and return standard `{"ok": true, "result": ...}` or `{"ok": false, "error": "..."}` JSON payloads.
 
 ---
@@ -176,8 +176,122 @@ Arranges objects on the bed.
   ```
 - **Behavior**:
   - Default (`useBed: false` or omitted): Centers objects around the bed center point and arranges them using an infinite bed, preserving exact slicing parity with baseline `slice_driver`.
-  - `useBed: true`: Arranges objects within the actual bed polygon defined by the printer's `printable_area` setting.
+  - `useBed: true`: Arranges objects within the actual bed polygon defined by the printer's `printable_area` setting, using desktop OrcaSlicer's arrange spacing (`min_object_distance`).
 - **Result**:
   ```json
   {}
   ```
+
+---
+
+## Multiple Plates
+
+Plates in the engine manage multiple print beds tiled in a 2D grid matching desktop OrcaSlicer's `PartPlateList` layout. Instances are assigned to plates according to spatial intersection in world coordinates.
+
+### Grid Layout and Coordinate Space
+- **Column Count**: Computed dynamically as `cols = std::max(1, (int)std::round(std::sqrt(count)))` (incremented if `sqrt > round`).
+- **Plate Stride**:
+  $$\text{stride}_x = \text{bed\_width} \times 1.2$$
+  $$\text{stride}_y = \text{bed\_depth} \times 1.2$$
+- **Origin for Plate $i$**:
+  $$\text{row} = \lfloor i / \text{cols} \rfloor, \quad \text{col} = i \pmod{\text{cols}}$$
+  $$\text{origin}(i) = (\text{col} \times \text{stride}_x, \, -\text{row} \times \text{stride}_y, \, 0)$$
+
+---
+
+### `listPlates`
+Returns all current plates with their index, display name, lock state, world origin, dimensions, instance assignments, per-plate configuration overrides, and filament maps.
+
+- **Arguments**:
+  ```json
+  {}
+  ```
+- **Result**:
+  ```json
+  [
+    {
+      "index": 0,
+      "name": "Plate 1",
+      "locked": false,
+      "origin": [0.0, 0.0, 0.0],
+      "size": [256.0, 256.0, 256.0],
+      "instances": [
+        { "objectId": 1, "instanceId": 2, "objectIndex": 0, "instanceIndex": 0 }
+      ],
+      "config": {
+        "curr_bed_type": "textured_plate"
+      },
+      "filamentMaps": [1, 2]
+    }
+  ]
+  ```
+
+---
+
+### `addPlate`
+Adds a new plate to the project. If adding the plate changes the grid column count, existing plates and their assigned instances reflow to their updated grid positions. Per-plate wipe towers are positioned automatically.
+
+- **Arguments**:
+  ```json
+  {
+    "name": "Plate 2",
+    "config": {
+      "curr_bed_type": "textured_plate"
+    }
+  }
+  ```
+  `name` and `config` are optional.
+- **Result**: Array of all plates (same as `listPlates`).
+
+---
+
+### `deletePlate`
+Deletes the specified plate. Cannot delete if only one plate remains. If `deleteObjects` is false (default), objects on the deleted plate move to the adjacent remaining plate. Subsequent plates and their instances shift to updated grid coordinates.
+
+- **Arguments**:
+  ```json
+  {
+    "plateIndex": 1,
+    "deleteObjects": false
+  }
+  ```
+  - `plateIndex`: 0-based plate index.
+  - `deleteObjects`: `true` to delete objects assigned to the plate; `false` to move them to the adjacent plate.
+- **Result**: Array of remaining plates (same as `listPlates`).
+
+---
+
+### `setPlateConfig`
+Updates configuration overrides and metadata for a specific plate (e.g. `curr_bed_type`, `print_sequence`, `spiral_mode`).
+
+- **Arguments**:
+  ```json
+  {
+    "plateIndex": 0,
+    "name": "Bed A",
+    "locked": false,
+    "config": {
+      "curr_bed_type": "textured_plate",
+      "print_sequence": "by_object"
+    }
+  }
+  ```
+- **Result**:
+  ```json
+  {}
+  ```
+
+---
+
+### Slicing a Specific Plate (`slice` with `plateIndex`)
+When `slice` receives `"plateIndex"`, only instances assigned to that plate are sliced (`printable = true` on that plate, `false` elsewhere). The engine calls `Print::set_plate_origin(plate_origin)` and `Print::set_plate_index(plateIndex)`, which automatically translates all emitted toolpaths and wipe tower coordinates from world coordinates back into bed coordinates `[0, width] x [0, depth]`.
+
+- **Arguments**:
+  ```json
+  {
+    "outPath": "/out/plate_2.gcode",
+    "plateIndex": 1,
+    "threads": 4
+  }
+  ```
+- **Result**: Standard slice result object containing `layers`, `gcodeBytes`, `printTimeS`, etc.

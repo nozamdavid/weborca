@@ -2,6 +2,8 @@
 #include "ConfigRules.hpp"
 #include "ProjectOps.hpp"
 #include "ObjectOps.hpp"
+#include "PlateOps.hpp"
+#include "libslic3r/Arrange.hpp"
 
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/BoundingBox.hpp"
@@ -211,6 +213,10 @@ private:
     json op_setObjectConfig(const json& args);
     json op_resetObjectConfig(const json& args);
     json op_setVolumeExtruder(const json& args);
+    json op_listPlates(const json& args);
+    json op_addPlate(const json& args);
+    json op_deletePlate(const json& args);
+    json op_setPlateConfig(const json& args);
     std::string op_slice(int jobId, const json& args);
 
     // Job queue
@@ -403,6 +409,14 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_resetObjectConfig(args);
         } else if (op == "setVolumeExtruder") {
             result_data = op_setVolumeExtruder(args);
+        } else if (op == "listPlates") {
+            result_data = op_listPlates(args);
+        } else if (op == "addPlate") {
+            result_data = op_addPlate(args);
+        } else if (op == "deletePlate") {
+            result_data = op_deletePlate(args);
+        } else if (op == "setPlateConfig") {
+            result_data = op_setPlateConfig(args);
         } else {
             throw Slic3r::RuntimeError("Unknown operation: " + op);
         }
@@ -473,8 +487,17 @@ json Engine::Impl::op_loadVendors(const json& args) {
         }
     }
     if (all_filaments_exist) {
+        m_bundle->set_num_filaments(static_cast<unsigned int>(prev_filaments.size()));
         m_bundle->filament_presets = prev_filaments;
         m_bundle->filaments.select_preset_by_name(prev_filaments[0], true);
+        for (size_t i = 0; i < prev_filaments.size(); ++i) {
+            if (const auto* p = m_bundle->filaments.find_preset(prev_filaments[i], false)) {
+                if (p->config.has("filament_colour") && !p->config.opt_string("filament_colour").empty()) {
+                    m_bundle->project_config.option<Slic3r::ConfigOptionStrings>("filament_colour")->values[i] = p->config.opt_string("filament_colour");
+                    m_bundle->project_config.option<Slic3r::ConfigOptionStrings>("filament_multi_colour")->values[i] = p->config.opt_string("filament_colour");
+                }
+            }
+        }
         m_selected_filaments = prev_filaments;
     } else {
         m_selected_filaments.clear();
@@ -592,8 +615,17 @@ json Engine::Impl::op_selectPresets(const json& args) {
     m_bundle->prints.select_preset_by_name(process_name, true);
     m_selected_process = m_bundle->prints.get_edited_preset().name;
 
+    m_bundle->set_num_filaments(static_cast<unsigned int>(filament_names.size()));
     m_bundle->filament_presets = filament_names;
     m_bundle->filaments.select_preset_by_name(filament_names[0], true);
+    for (size_t i = 0; i < filament_names.size(); ++i) {
+        if (const auto* p = m_bundle->filaments.find_preset(filament_names[i], false)) {
+            if (p->config.has("filament_colour") && !p->config.opt_string("filament_colour").empty()) {
+                m_bundle->project_config.option<Slic3r::ConfigOptionStrings>("filament_colour")->values[i] = p->config.opt_string("filament_colour");
+                m_bundle->project_config.option<Slic3r::ConfigOptionStrings>("filament_multi_colour")->values[i] = p->config.opt_string("filament_colour");
+            }
+        }
+    }
 
     m_bundle->update_multi_material_filament_presets();
     m_bundle->update_compatible(Slic3r::PresetSelectCompatibleType::Never);
@@ -1159,6 +1191,18 @@ json Engine::Impl::op_arrange(const json& args) {
     }
     Slic3r::Vec2d bed_center = bed_bbox.defined ? bed_bbox.center() : Slic3r::Vec2d(100.0, 100.0);
 
+    if (!use_bed) {
+        m_model.center_instances_around_point(bed_center);
+        Slic3r::arrange_objects(m_model, Slic3r::InfiniteBed{Slic3r::Point::new_scale(bed_center.x(), bed_center.y())},
+                                Slic3r::ArrangeParams{Slic3r::scaled(Slic3r::min_object_distance(config))});
+        return json::object();
+    }
+
+    Slic3r::ModelInstancePtrs instances;
+    auto input = Slic3r::get_arrange_polys(m_model, instances);
+    Slic3r::ArrangeParams params{Slic3r::scaled(Slic3r::min_object_distance(config))};
+    Slic3r::arrangement::update_selected_items_inflation(input, &config, params);
+
     if (use_bed) {
         Slic3r::Points bed_points = Slic3r::get_bed_shape(config);
         if (bed_points.empty()) {
@@ -1169,18 +1213,14 @@ json Engine::Impl::op_arrange(const json& args) {
             }
         }
         if (bed_points.size() >= 3) {
-            Slic3r::ArrangeParams params{Slic3r::scaled(Slic3r::min_object_distance(config))};
-            Slic3r::arrange_objects(m_model, bed_points, params);
+            Slic3r::arrangement::arrange(input, bed_points, params);
         } else {
             m_model.center_instances_around_point(bed_center);
-            Slic3r::arrange_objects(m_model, Slic3r::InfiniteBed{Slic3r::Point::new_scale(bed_center.x(), bed_center.y())},
-                                    Slic3r::ArrangeParams{Slic3r::scaled(Slic3r::min_object_distance(config))});
+            Slic3r::arrangement::arrange(input, Slic3r::InfiniteBed{Slic3r::Point::new_scale(bed_center.x(), bed_center.y())}, params);
         }
-    } else {
-        m_model.center_instances_around_point(bed_center);
-        Slic3r::arrange_objects(m_model, Slic3r::InfiniteBed{Slic3r::Point::new_scale(bed_center.x(), bed_center.y())},
-                                Slic3r::ArrangeParams{Slic3r::scaled(Slic3r::min_object_distance(config))});
     }
+
+    Slic3r::apply_arrange_polys(input, instances, Slic3r::throw_if_out_of_bed);
 
     return json::object();
 }
@@ -1226,15 +1266,51 @@ json Engine::Impl::op_setVolumeExtruder(const json& args) {
     return OrcaWasm::setVolumeExtruder(m_model, args);
 }
 
+json Engine::Impl::op_listPlates(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+    Slic3r::DynamicPrintConfig config = m_bundle->full_config();
+    config.apply(m_options_override);
+    return OrcaEngine::listPlates(m_model, m_plate_data, config);
+}
+
+json Engine::Impl::op_addPlate(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+    Slic3r::DynamicPrintConfig config = m_bundle->full_config();
+    config.apply(m_options_override);
+    return OrcaEngine::addPlate(args, m_model, m_plate_data, config);
+}
+
+json Engine::Impl::op_deletePlate(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+    Slic3r::DynamicPrintConfig config = m_bundle->full_config();
+    config.apply(m_options_override);
+    return OrcaEngine::deletePlate(args, m_model, m_plate_data, config);
+}
+
+json Engine::Impl::op_setPlateConfig(const json& args) {
+    return OrcaEngine::setPlateConfig(args, m_plate_data);
+}
+
 std::string Engine::Impl::op_slice(int jobId, const json& args) {
     struct SliceCleanupGuard {
         Engine::Impl* impl;
+        std::vector<std::pair<Slic3r::ModelObject*, std::vector<bool>>> saved_inst;
+        std::vector<std::pair<Slic3r::ModelObject*, bool>> saved_obj;
+
         ~SliceCleanupGuard() {
             std::lock_guard<std::mutex> lock(impl->m_cancel_mutex);
             impl->m_current_print = nullptr;
             impl->m_cancel_requested = false;
             if (impl->m_slice_jobs_queued_or_running > 0) {
                 impl->m_slice_jobs_queued_or_running--;
+            }
+            for (auto& item : saved_obj) {
+                item.first->printable = item.second;
+            }
+            for (auto& item : saved_inst) {
+                for (size_t i = 0; i < std::min(item.first->instances.size(), item.second.size()); ++i) {
+                    item.first->instances[i]->printable = item.second[i];
+                }
             }
         }
     } slice_cleanup{this};
@@ -1246,6 +1322,7 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
 
     std::string out_path = args.at("outPath").get<std::string>();
     int threads = args.value("threads", 0);
+    int plate_index = args.value("plateIndex", -1);
 
     // Ensure output directory exists
     std::filesystem::path p(out_path);
@@ -1260,6 +1337,38 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
         config.set_key_value("before_layer_change_gcode", new Slic3r::ConfigOptionString("G92 E0"));
     }
     config.normalize_fdm();
+
+    // Plate handling
+    if (plate_index >= 0) {
+        double bed_w = 256.0, bed_d = 256.0, bed_h = 256.0;
+        OrcaEngine::getBedDimensions(config, bed_w, bed_d, bed_h);
+
+        size_t total_plates = std::max(static_cast<size_t>(plate_index + 1), m_plate_data.size());
+        if (total_plates == 0) total_plates = 1;
+
+        while (m_plate_data.size() < total_plates) {
+            auto* pd = new Slic3r::PlateData();
+            pd->plate_index = static_cast<int>(m_plate_data.size());
+            pd->plate_name = "Plate " + std::to_string(pd->plate_index + 1);
+            m_plate_data.push_back(pd);
+        }
+
+        OrcaEngine::assignInstancesToPlates(m_model, m_plate_data, config);
+
+        if (static_cast<size_t>(plate_index) < m_plate_data.size()) {
+            const auto* pd = m_plate_data[plate_index];
+            if (pd && !pd->config.empty()) {
+                config.apply(pd->config);
+            }
+        }
+
+        // Ensure wipe tower position is properly initialized and clamped inside printable area for plate
+    }
+
+    if (config.opt_bool("enable_prime_tower") && config.opt<Slic3r::ConfigOptionFloats>("nozzle_diameter") && config.opt<Slic3r::ConfigOptionFloats>("filament_diameter") && config.opt<Slic3r::ConfigOptionFloats>("filament_diameter")->values.size() > 1) {
+        OrcaEngine::updateWipeTowerPosition(config, m_model, m_plate_data, (plate_index >= 0 ? plate_index : 0));
+    }
+
     if (auto errors = config.validate(true); !errors.empty()) {
         std::string msg = "Config validation failed:\n";
         for (const auto &[k, v] : errors)
@@ -1267,13 +1376,54 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
         throw Slic3r::RuntimeError(msg);
     }
 
+    if (plate_index >= 0) {
+        for (auto* mo : m_model.objects) {
+            slice_cleanup.saved_obj.emplace_back(mo, mo->printable);
+            std::vector<bool> inst_p;
+            inst_p.reserve(mo->instances.size());
+            for (auto* inst : mo->instances) {
+                inst_p.push_back(inst->printable);
+            }
+            slice_cleanup.saved_inst.emplace_back(mo, inst_p);
+        }
+
+        std::set<std::pair<int, int>> plate_pairs;
+        if (static_cast<size_t>(plate_index) < m_plate_data.size()) {
+            for (const auto& pair : m_plate_data[plate_index]->objects_and_instances) {
+                plate_pairs.insert(pair);
+            }
+        }
+
+        for (size_t oi = 0; oi < m_model.objects.size(); ++oi) {
+            auto* mo = m_model.objects[oi];
+            bool any_printable = false;
+            for (size_t ii = 0; ii < mo->instances.size(); ++ii) {
+                bool is_on_plate = plate_pairs.count({static_cast<int>(oi), static_cast<int>(ii)}) > 0;
+                mo->instances[ii]->printable = is_on_plate;
+                if (is_on_plate) any_printable = true;
+            }
+            mo->printable = any_printable;
+        }
+    }
+
     Slic3r::Print print;
+    if (plate_index >= 0) {
+        double bed_w = 256.0, bed_d = 256.0, bed_h = 256.0;
+        OrcaEngine::getBedDimensions(config, bed_w, bed_d, bed_h);
+        size_t total_plates = std::max(static_cast<size_t>(plate_index + 1), m_plate_data.size());
+        if (total_plates == 0) total_plates = 1;
+        Slic3r::Vec3d plate_origin = OrcaEngine::computePlateOrigin(plate_index, total_plates, bed_w, bed_d);
+        print.set_plate_origin(plate_origin);
+        print.set_plate_index(plate_index);
+    }
+
     for (Slic3r::ModelObject *mo : m_model.objects) {
+        if (!mo->printable) continue;
         mo->ensure_on_bed();
         print.auto_assign_extruders(mo);
     }
-    print.apply(m_model, config);
     print.is_BBL_printer() = m_bundle->is_bbl_vendor();
+    print.apply(m_model, config);
     if (auto err = print.validate(); !err.string.empty())
         throw Slic3r::RuntimeError("Print validation failed: " + err.string);
 

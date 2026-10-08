@@ -27,6 +27,7 @@
  * @property {AbortSignal} [signal]
  * @property {number} [threads]
  * @property {string} [outPath]
+ * @property {number} [plateIndex]
  */
 
 /**
@@ -98,7 +99,8 @@ export class OrcaEngine {
   /**
    * Creates an OrcaEngine instance and initializes the background worker.
    * @param {CreateEngineOptions} [options={}]
-   * @returns {Promise<OrcaEngine>}\n   */
+   * @returns {Promise<OrcaEngine>}
+   */
   static async create(options = {}) {
     const defaultThreads = Math.min(
       typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4,
@@ -347,11 +349,6 @@ export class OrcaEngine {
   }
 
   /**
-   * Runs the slicing pipeline.
-   * @param {SliceOptions} [options={}]
-   * @returns {Promise<SliceResult>}
-   */
-  /**
    * Retrieves full object hierarchy with volumes, instances, ranges, and overrides.
    * @returns {Promise<{ objects: Array<any> }>}
    */
@@ -428,6 +425,47 @@ export class OrcaEngine {
     return await this._call("setVolumeExtruder", { objectId, volumeId, extruder });
   }
 
+  /**
+   * Lists all plates and their assigned instances.
+   * @returns {Promise<Array<any>>}
+   */
+  async listPlates() {
+    return await this._call('listPlates', {});
+  }
+
+  /**
+   * Adds a new plate.
+   * @param {{ name?: string, config?: Record<string, string> }} [params={}]
+   * @returns {Promise<Array<any>>}
+   */
+  async addPlate(params = {}) {
+    return await this._call('addPlate', params);
+  }
+
+  /**
+   * Deletes a plate by index.
+   * @param {number} plateIndex
+   * @param {boolean} [deleteObjects=false]
+   * @returns {Promise<Array<any>>}
+   */
+  async deletePlate(plateIndex, deleteObjects = false) {
+    return await this._call('deletePlate', { plateIndex, deleteObjects });
+  }
+
+  /**
+   * Sets plate-specific configuration overrides or metadata.
+   * @param {{ plateIndex: number, config?: Record<string, string>, name?: string, locked?: boolean }} params
+   * @returns {Promise<{}>}
+   */
+  async setPlateConfig(params) {
+    return await this._call('setPlateConfig', params);
+  }
+
+  /**
+   * Runs the slicing pipeline.
+   * @param {SliceOptions} [options={}]
+   * @returns {Promise<SliceResult>}
+   */
   async slice(options = {}) {
     const defaultThreads = Math.min(
       typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4,
@@ -439,8 +477,13 @@ export class OrcaEngine {
         ? this._options.threads
         : defaultThreads;
     const threads = Math.max(1, Math.floor(configuredThreads));
-    const { onProgress, signal, outPath = '/out/plate_1.gcode' } = options;
-    return await this._call('slice', { threads, outPath }, { onProgress, signal });
+    const { onProgress, signal, plateIndex } = options;
+    const outPath = options.outPath || (typeof plateIndex === 'number' ? `/out/plate_${plateIndex + 1}.gcode` : '/out/plate_1.gcode');
+    const args = { threads, outPath };
+    if (typeof plateIndex === 'number') {
+      args.plateIndex = plateIndex;
+    }
+    return await this._call('slice', args, { onProgress, signal });
   }
 
   /**
