@@ -10,17 +10,72 @@ on:
       - 'wasm/**'
       - 'src/libslic3r/**'
   workflow_dispatch:
+    inputs:
+      native_appimage_url:
+        description: 'URL to native Linux AppImage for parity CLI config export (verified via SHA-256)'
+        required: false
+        type: string
+      native_appimage_sha256:
+        description: 'Expected SHA-256 checksum of native Linux AppImage'
+        required: false
+        type: string
+      native_macos_dmg_url:
+        description: 'URL to native macOS DMG for reference G-code generation (verified via SHA-256)'
+        required: false
+        type: string
+      native_macos_dmg_sha256:
+        description: 'Expected SHA-256 checksum of native macOS DMG'
+        required: false
+        type: string
 
 permissions:
   contents: read
 
+env:
+  # Process-level caps (Node JS heap cap and compilation parallelism).
+  # Total process memory must be enforced by runner cgroup or systemd-run (10GB ceiling).
+  NODE_OPTIONS: '--max-old-space-size=2048'
+  WASM_JOBS: '6'
+  CMAKE_BUILD_PARALLEL_LEVEL: '6'
+
 jobs:
   build:
-    name: Build WASM Engine
+    name: Build WASM Engine & Assets
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Enforce 10GB runner memory ceiling
+        run: |
+          # Enforces 10GB total memory limit via container cgroup or systemd-run.
+          # Process-level heap (2048 MB) and concurrency (6 jobs) are not total memory caps.
+          # Uncapped runner execution is forbidden; fail clearly pending a bounded runner.
+          BOUNDED=false
+          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
+            echo "10GB memory enforcement: systemd-run --user is active for wasm/scripts/memcap.sh"
+            BOUNDED=true
+          fi
+          if [ -f /sys/fs/cgroup/memory.max ]; then
+            CGROUP_MAX=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "max")
+            if [ "$CGROUP_MAX" != "max" ] && [ "$CGROUP_MAX" -le 10737418240 ] 2>/dev/null; then
+              echo "10GB memory enforcement: cgroup v2 memory.max is bounded ($CGROUP_MAX <= 10GB)"
+              BOUNDED=true
+            fi
+          fi
+          if [ -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+            CGROUP_V1=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "")
+            if [ -n "$CGROUP_V1" ] && [ "$CGROUP_V1" -le 10737418240 ] 2>/dev/null; then
+              echo "10GB memory enforcement: cgroup v1 memory.limit_in_bytes is bounded ($CGROUP_V1 <= 10GB)"
+              BOUNDED=true
+            fi
+          fi
+          if [ "$BOUNDED" != "true" ]; then
+            echo "::error::Total memory enforcement failed: runner lacks 10GB memory bounding." >&2
+            echo "Runner must be configured with a 10GB container limit (--memory=10g / cgroup) or functional systemd-run --user." >&2
+            echo "Failing clearly pending configured bounded runner. Process-level caps are not total memory enforcement." >&2
+            exit 1
+          fi
 
       - name: Install Ninja
         run: |
@@ -54,35 +109,82 @@ jobs:
         uses: actions/cache@v4
         with:
           path: wasm/build/prefix-wasm64
-          key: prefix-wasm64-${{ hashFiles('wasm/deps/**', 'wasm/scripts/env.sh') }}
+          key: prefix-wasm64-${{ runner.os }}-emsdk-6.0.11-${{ hashFiles('wasm/deps/**', 'wasm/scripts/env.sh') }}
 
       - name: Build dependencies
         if: steps.cache-prefix.outputs.cache-hit != 'true'
         run: |
           source wasm/scripts/env.sh
+          build_dep() {
+            if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
+              wasm/scripts/memcap.sh bash "$1"
+            else
+              bash "$1"
+            fi
+          }
           # Dependency build order: zlib, png, jpeg, expat, eigen, cereal, nlopt, libnoise, gmp, mpfr, cgal, tbb, boost
-          bash wasm/deps/build_zlib.sh
-          bash wasm/deps/build_png.sh
-          bash wasm/deps/build_jpeg.sh
-          bash wasm/deps/build_expat.sh
-          bash wasm/deps/build_eigen.sh
-          bash wasm/deps/build_cereal.sh
-          bash wasm/deps/build_nlopt.sh
-          bash wasm/deps/build_libnoise.sh
-          bash wasm/deps/build_gmp.sh
-          bash wasm/deps/build_mpfr.sh
-          bash wasm/deps/build_cgal.sh
-          bash wasm/deps/build_tbb.sh
-          bash wasm/deps/build_boost.sh
+          build_dep wasm/deps/build_zlib.sh
+          build_dep wasm/deps/build_png.sh
+          build_dep wasm/deps/build_jpeg.sh
+          build_dep wasm/deps/build_expat.sh
+          build_dep wasm/deps/build_eigen.sh
+          build_dep wasm/deps/build_cereal.sh
+          build_dep wasm/deps/build_nlopt.sh
+          build_dep wasm/deps/build_libnoise.sh
+          build_dep wasm/deps/build_gmp.sh
+          build_dep wasm/deps/build_mpfr.sh
+          build_dep wasm/deps/build_cgal.sh
+          build_dep wasm/deps/build_tbb.sh
+          build_dep wasm/deps/build_boost.sh
 
-      - name: Build OrcaSlicer WebAssembly
+      - name: Build OrcaSlicer WebAssembly Engine
         run: |
-          bash wasm/scripts/build_orca.sh
+          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
+            wasm/scripts/memcap.sh bash wasm/scripts/build_orca.sh
+          else
+            bash wasm/scripts/build_orca.sh
+          fi
+
+      - name: Build WebAssembly Preview Engine
+        run: |
+          source wasm/scripts/env.sh
+          emcmake cmake -S . -B wasm/build/orca-wasm64-preview -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DORCA_WASM_PREVIEW=ON \
+            -DSLIC3R_GUI=OFF \
+            -DSLIC3R_CAD=OFF \
+            -DSLIC3R_PCH=OFF \
+            -DSLIC3R_STATIC=ON \
+            -DSLIC3R_WITH_OCCT=OFF \
+            -DSLIC3R_WITH_OPENCV=OFF \
+            -DSLIC3R_WITH_ASSIMP=OFF \
+            -DSLIC3R_WITH_DRACO=OFF \
+            -DSLIC3R_WITH_OPENSSL=OFF \
+            -DSLIC3R_WITH_FREETYPE=OFF \
+            -DCMAKE_PREFIX_PATH="$WASM_PREFIX" \
+            -DCMAKE_FIND_ROOT_PATH="$WASM_PREFIX" \
+            -DCMAKE_C_FLAGS="$WASM_CFLAGS" \
+            -DCMAKE_CXX_FLAGS="$WASM_CFLAGS"
+          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
+            wasm/scripts/memcap.sh cmake --build wasm/build/orca-wasm64-preview --target orca_preview -j "${WASM_JOBS:-6}"
+          else
+            cmake --build wasm/build/orca-wasm64-preview --target orca_preview -j "${WASM_JOBS:-6}"
+          fi
+
+      - name: Generate Settings Layout
+        run: |
+          mkdir -p wasm/build/settings
+          node wasm/settings/extract_tab_layout.mjs . wasm/build/settings/layout.json
 
       - name: Pack vendor profiles
         run: |
           node wasm/web/tools/pack_profiles.mjs . wasm/build/web
           node wasm/web/tools/pack_profiles.mjs . wasm/build/tests-node Voron OrcaFilamentLibrary BBL Prusa
+
+      - name: Build Web App Production Bundle
+        run: |
+          npm --prefix wasm/app ci
+          npm --prefix wasm/app run build
 
       - name: Upload engine and driver artifacts
         uses: actions/upload-artifact@v4
@@ -94,6 +196,17 @@ jobs:
             wasm/build/orca-wasm64/wasm/spike/orca_slice_driver.js
             wasm/build/orca-wasm64/wasm/spike/orca_slice_driver.wasm
           retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload preview engine artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: orca-wasm-preview
+          path: |
+            wasm/build/orca-wasm64-preview/wasm/preview/orca_preview.js
+            wasm/build/orca-wasm64-preview/wasm/preview/orca_preview.wasm
+          retention-days: 7
+          if-no-files-found: error
 
       - name: Upload packed profiles
         uses: actions/upload-artifact@v4
@@ -103,6 +216,23 @@ jobs:
             wasm/build/web
             wasm/build/tests-node
           retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload settings layout
+        uses: actions/upload-artifact@v4
+        with:
+          name: orca-wasm-settings
+          path: wasm/build/settings/layout.json
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload web app production bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: orca-wasm-app-dist
+          path: wasm/app/dist
+          retention-days: 7
+          if-no-files-found: error
 
   test-node:
     name: Test Node.js & Parity
@@ -112,10 +242,43 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Enforce 10GB runner memory ceiling
+        run: |
+          # Enforces 10GB total memory limit via container cgroup or systemd-run.
+          # Process-level heap (2048 MB) and concurrency (6 jobs) are not total memory caps.
+          # Uncapped runner execution is forbidden; fail clearly pending a bounded runner.
+          BOUNDED=false
+          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
+            echo "10GB memory enforcement: systemd-run --user is active for wasm/scripts/memcap.sh"
+            BOUNDED=true
+          fi
+          if [ -f /sys/fs/cgroup/memory.max ]; then
+            CGROUP_MAX=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "max")
+            if [ "$CGROUP_MAX" != "max" ] && [ "$CGROUP_MAX" -le 10737418240 ] 2>/dev/null; then
+              echo "10GB memory enforcement: cgroup v2 memory.max is bounded ($CGROUP_MAX <= 10GB)"
+              BOUNDED=true
+            fi
+          fi
+          if [ -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+            CGROUP_V1=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "")
+            if [ -n "$CGROUP_V1" ] && [ "$CGROUP_V1" -le 10737418240 ] 2>/dev/null; then
+              echo "10GB memory enforcement: cgroup v1 memory.limit_in_bytes is bounded ($CGROUP_V1 <= 10GB)"
+              BOUNDED=true
+            fi
+          fi
+          if [ "$BOUNDED" != "true" ]; then
+            echo "::error::Total memory enforcement failed: runner lacks 10GB memory bounding." >&2
+            echo "Runner must be configured with a 10GB container limit (--memory=10g / cgroup) or functional systemd-run --user." >&2
+            echo "Failing clearly pending configured bounded runner. Process-level caps are not total memory enforcement." >&2
+            exit 1
+          fi
+
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: 'wasm/tests/package-lock.json'
 
       - name: Download engine and driver artifacts
         uses: actions/download-artifact@v4
@@ -128,40 +291,105 @@ jobs:
         with:
           name: orca-wasm-profiles
           path: wasm/build
+
+      - name: Verify downloaded artifacts
+        run: |
+          for f in \
+            "wasm/build/orca-wasm64/wasm/engine/orca_engine.mjs" \
+            "wasm/build/orca-wasm64/wasm/engine/orca_engine.wasm" \
+            "wasm/build/orca-wasm64/wasm/spike/orca_slice_driver.js" \
+            "wasm/build/orca-wasm64/wasm/spike/orca_slice_driver.wasm" \
+            "wasm/build/web/profiles/index.json" \
+            "wasm/build/tests-node/profiles/Voron.json"; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Missing required artifact: $f" >&2
+              exit 1
+            fi
+          done
 
       - name: Setup test models
         run: |
           bash wasm/tests/data/fetch_models.sh
 
       - name: Setup native Linux OrcaSlicer CLI for parity check
+        env:
+          NATIVE_APPIMAGE_URL: ${{ inputs.native_appimage_url || vars.NATIVE_APPIMAGE_URL }}
+          NATIVE_APPIMAGE_SHA256: ${{ inputs.native_appimage_sha256 || vars.NATIVE_APPIMAGE_SHA256 }}
         run: |
+          if [ -z "$NATIVE_APPIMAGE_URL" ] || [ -z "$NATIVE_APPIMAGE_SHA256" ]; then
+            echo "::error::Reproducible parity testing requires an explicit native artifact URL and pinned SHA-256 checksum." >&2
+            echo "Set NATIVE_APPIMAGE_URL and NATIVE_APPIMAGE_SHA256 via workflow inputs or repository variables." >&2
+            echo "Integrity and reproducibility depend on SHA-256 verification (sha256sum); URLs without checksums are rejected." >&2
+            exit 1
+          fi
           mkdir -p /tmp/orca-native
-          curl -fsSL "https://github.com/OrcaSlicer/OrcaSlicer/releases/download/nightly-builds/OrcaSlicer_Linux_AppImage_Ubuntu2404_nightly.AppImage" \
-            -o /tmp/orca-native/OrcaSlicer.AppImage
+          curl -fsSL "$NATIVE_APPIMAGE_URL" -o /tmp/orca-native/OrcaSlicer.AppImage
+          echo "$NATIVE_APPIMAGE_SHA256  /tmp/orca-native/OrcaSlicer.AppImage" | sha256sum -c -
           chmod +x /tmp/orca-native/OrcaSlicer.AppImage
           cd /tmp/orca-native
           ./OrcaSlicer.AppImage --appimage-extract
 
       - name: Run Node test suite
         run: |
-          node --test wasm/tests/node/
+          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
+            wasm/scripts/memcap.sh node --test --test-concurrency=1 wasm/tests/node/*.test.mjs
+          else
+            node --test --test-concurrency=1 wasm/tests/node/*.test.mjs
+          fi
 
       - name: Run parity test suite
         run: |
-          node wasm/tests/parity/run_parity.mjs
+          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
+            wasm/scripts/memcap.sh node wasm/tests/parity/run_parity.mjs
+          else
+            node wasm/tests/parity/run_parity.mjs
+          fi
 
   test-browser:
-    name: Test Browser (Playwright)
+    name: Test Browser (Playwright) & App Smoke
     needs: build
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Enforce 10GB runner memory ceiling
+        run: |
+          # Enforces 10GB total memory limit via container cgroup or systemd-run.
+          # Process-level heap (2048 MB) and concurrency (6 jobs) are not total memory caps.
+          # Uncapped runner execution is forbidden; fail clearly pending a bounded runner.
+          BOUNDED=false
+          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
+            echo "10GB memory enforcement: systemd-run --user is active for wasm/scripts/memcap.sh"
+            BOUNDED=true
+          fi
+          if [ -f /sys/fs/cgroup/memory.max ]; then
+            CGROUP_MAX=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "max")
+            if [ "$CGROUP_MAX" != "max" ] && [ "$CGROUP_MAX" -le 10737418240 ] 2>/dev/null; then
+              echo "10GB memory enforcement: cgroup v2 memory.max is bounded ($CGROUP_MAX <= 10GB)"
+              BOUNDED=true
+            fi
+          fi
+          if [ -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+            CGROUP_V1=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "")
+            if [ -n "$CGROUP_V1" ] && [ "$CGROUP_V1" -le 10737418240 ] 2>/dev/null; then
+              echo "10GB memory enforcement: cgroup v1 memory.limit_in_bytes is bounded ($CGROUP_V1 <= 10GB)"
+              BOUNDED=true
+            fi
+          fi
+          if [ "$BOUNDED" != "true" ]; then
+            echo "::error::Total memory enforcement failed: runner lacks 10GB memory bounding." >&2
+            echo "Runner must be configured with a 10GB container limit (--memory=10g / cgroup) or functional systemd-run --user." >&2
+            echo "Failing clearly pending configured bounded runner. Process-level caps are not total memory enforcement." >&2
+            exit 1
+          fi
+
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: 'wasm/tests/package-lock.json'
 
       - name: Download engine and driver artifacts
         uses: actions/download-artifact@v4
@@ -175,25 +403,75 @@ jobs:
           name: orca-wasm-profiles
           path: wasm/build
 
+      - name: Download preview engine artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: orca-wasm-preview
+          path: wasm/build/orca-wasm64-preview/wasm/preview
+
+      - name: Download settings layout
+        uses: actions/download-artifact@v4
+        with:
+          name: orca-wasm-settings
+          path: wasm/build/settings
+
+      - name: Download web app production bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: orca-wasm-app-dist
+          path: wasm/app/dist
+
+      - name: Verify downloaded artifacts
+        run: |
+          for f in \
+            "wasm/build/orca-wasm64/wasm/engine/orca_engine.mjs" \
+            "wasm/build/orca-wasm64/wasm/engine/orca_engine.wasm" \
+            "wasm/build/orca-wasm64/wasm/spike/orca_slice_driver.js" \
+            "wasm/build/orca-wasm64/wasm/spike/orca_slice_driver.wasm" \
+            "wasm/build/orca-wasm64-preview/wasm/preview/orca_preview.js" \
+            "wasm/build/orca-wasm64-preview/wasm/preview/orca_preview.wasm" \
+            "wasm/build/settings/layout.json" \
+            "wasm/build/web/profiles/index.json" \
+            "wasm/app/dist/index.html"; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Missing required artifact: $f" >&2
+              exit 1
+            fi
+          done
+
       - name: Setup test models
         run: |
           bash wasm/tests/data/fetch_models.sh
 
-      - name: Install Playwright and server dependencies
+      - name: Install Playwright and test dependencies
         run: |
           npm --prefix wasm/tests ci
           npx --prefix wasm/tests playwright install --with-deps chromium firefox
 
       - name: Run browser test suite
         run: |
-          node wasm/tests/browser/run.mjs
+          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
+            wasm/scripts/memcap.sh node wasm/tests/browser/run.mjs
+          else
+            node wasm/tests/browser/run.mjs
+          fi
 
-      - name: Upload browser test results
+      - name: Run web app smoke test
+        run: |
+          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
+            wasm/scripts/memcap.sh node wasm/tests/app/smoke.mjs
+          else
+            node wasm/tests/app/smoke.mjs
+          fi
+
+      - name: Upload browser and app test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: browser-test-results
-          path: wasm/build/tests-browser
+          path: |
+            wasm/build/tests-browser
+            wasm/build/tests-app
           if-no-files-found: ignore
 
   refs-macos:
@@ -214,11 +492,24 @@ jobs:
           softwareupdate --install-rosetta --agree-to-license || true
 
       - name: Download and mount native OrcaSlicer macOS DMG
+        env:
+          NATIVE_MACOS_DMG_URL: ${{ inputs.native_macos_dmg_url || vars.NATIVE_MACOS_DMG_URL }}
+          NATIVE_MACOS_DMG_SHA256: ${{ inputs.native_macos_dmg_sha256 || vars.NATIVE_MACOS_DMG_SHA256 }}
         run: |
+          if [ -z "$NATIVE_MACOS_DMG_URL" ] || [ -z "$NATIVE_MACOS_DMG_SHA256" ]; then
+            echo "::error::Generating reproducible macOS references requires explicit DMG URL and pinned SHA-256 checksum." >&2
+            echo "Specify native_macos_dmg_url and native_macos_dmg_sha256 in workflow dispatch inputs." >&2
+            echo "Integrity and reproducibility depend on SHA-256 verification (sha256sum); URLs without checksums are rejected." >&2
+            exit 1
+          fi
           mkdir -p /tmp/orca-native/mount
-          curl -fsSL "https://github.com/OrcaSlicer/OrcaSlicer/releases/download/nightly-builds/OrcaSlicer_Mac_universal_nightly.dmg" \
-            -o /tmp/orca-native/OrcaSlicer_Mac_universal_nightly.dmg
-          hdiutil attach /tmp/orca-native/OrcaSlicer_Mac_universal_nightly.dmg \
+          curl -fsSL "$NATIVE_MACOS_DMG_URL" -o /tmp/orca-native/OrcaSlicer.dmg
+          if command -v sha256sum >/dev/null 2>&1; then
+            echo "$NATIVE_MACOS_DMG_SHA256  /tmp/orca-native/OrcaSlicer.dmg" | sha256sum -c -
+          else
+            echo "$NATIVE_MACOS_DMG_SHA256  /tmp/orca-native/OrcaSlicer.dmg" | shasum -a 256 -c -
+          fi
+          hdiutil attach /tmp/orca-native/OrcaSlicer.dmg \
             -mountpoint /tmp/orca-native/mount -nobrowse -readonly
           cp -R /tmp/orca-native/mount/OrcaSlicer.app /tmp/orca-native/OrcaSlicer.app
           hdiutil detach /tmp/orca-native/mount
@@ -236,3 +527,4 @@ jobs:
         with:
           name: refs-macos-x86_64
           path: wasm/tests/parity/refs-macos-x86_64
+          if-no-files-found: error
