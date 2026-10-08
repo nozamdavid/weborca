@@ -44,6 +44,7 @@ export const PlateView: React.FC = () => {
 
   // Support Painting Store
   const isPaintingActive = usePaintingStore((s) => s.isPaintingActive);
+  const paintTarget = usePaintingStore((s) => s.paintTarget);
   const paintingData = usePaintingStore((s) => s.paintingData);
   const selectedVolumeId = usePaintingStore((s) => s.selectedVolumeId);
   const paintingError = usePaintingStore((s) => s.error);
@@ -200,18 +201,22 @@ export const PlateView: React.FC = () => {
         sceneRef.current.updatePaintingOverlay(selectedObjectId, null, selectedVolumeId);
       }
     }
-  }, [selectedObjectId, paintingData, selectedVolumeId]);
+  }, [selectedObjectId, paintingData, selectedVolumeId, paintTarget]);
 
   // Check and display existing annotations on loaded objects (e.g. 3MF load)
   useEffect(() => {
-    if (selectedObjectId) {
-      loadPaintingForObject(selectedObjectId).then((data) => {
-        if (data && sceneRef.current) {
+    let cancelled = false;
+    if (selectedObjectId && !isPaintingActive) {
+      loadPaintingForObject(selectedObjectId, undefined, paintTarget).then((data) => {
+        if (!cancelled && data && sceneRef.current) {
           sceneRef.current.updatePaintingOverlay(selectedObjectId, data, data.volumeId);
         }
       });
     }
-  }, [selectedObjectId, loadPaintingForObject]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedObjectId, isPaintingActive, loadPaintingForObject, paintTarget]);
 
   // Toggle painting mode
   const handleTogglePainting = useCallback(() => {

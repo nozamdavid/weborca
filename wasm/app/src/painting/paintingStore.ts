@@ -3,6 +3,7 @@ import { getEngine } from '../engine/orcaEngine';
 import { useAppStore } from '../store/appStore';
 import { usePlateStore } from '../plate/plateStore';
 import type {
+  PaintTarget,
   SupportPaintMode,
   SupportFacetState,
   SupportPaintingData,
@@ -11,6 +12,7 @@ import type {
 
 export interface PaintingStoreState {
   isPaintingActive: boolean;
+  paintTarget: PaintTarget;
   paintMode: SupportPaintMode;
   selectedObjectId: number | null;
   selectedVolumeId: number | null;
@@ -26,6 +28,7 @@ export interface PaintingStoreState {
   // Actions
   startPainting: (objectId: number, volumeId?: number | null) => Promise<void>;
   stopPainting: () => void;
+  setPaintTarget: (target: PaintTarget) => Promise<void>;
   setPaintMode: (mode: SupportPaintMode) => void;
   selectVolume: (volumeId: number) => Promise<void>;
   beginStroke: () => void;
@@ -34,11 +37,14 @@ export interface PaintingStoreState {
   cancelStroke: () => void;
   clearVolume: () => Promise<void>;
   refreshPaintingData: (objectId: number, volumeId: number) => Promise<SupportPaintingData | null>;
-  loadPaintingForObject: (objectId: number, volumeId?: number | null) => Promise<SupportPaintingData | null>;
+  loadPaintingForObject: (objectId: number, volumeId?: number | null, target?: PaintTarget) => Promise<SupportPaintingData | null>;
 }
+
+let paintingSessionSeq = 0;
 
 export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
   isPaintingActive: false,
+  paintTarget: 'support',
   paintMode: 'enforce',
   selectedObjectId: null,
   selectedVolumeId: null,
@@ -50,9 +56,11 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
   strokeBackupPaintingData: null,
 
   startPainting: async (objectId: number, volumeId?: number | null) => {
+    const sessionId = ++paintingSessionSeq;
     try {
-      set({ isLoading: true, error: null });
+      set({ isLoading: true, error: null, selectedObjectId: objectId });
       const engine = await getEngine();
+      if (sessionId !== paintingSessionSeq) return;
       if (typeof window !== 'undefined') {
         (window as any).__orcaEngine = engine;
       }
@@ -82,9 +90,20 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
       // 1. Check volume partition metadata on object mesh
       // Never assume volume zero; missing metadata must disable painting safely with clear reason!
       const meshData = await usePlateStore.getState().getMesh(objectId);
+      if (sessionId !== paintingSessionSeq) return;
       const partitions = meshData?.volumes;
 
+      const { paintTarget } = get();
+      const targetLabel = paintTarget === 'seam' ? 'Seam' : 'Support';
+
+      const currentPlateObjId = usePlateStore.getState().selectedObjectId;
+      if (currentPlateObjId !== objectId && currentPlateObjId !== null) {
+        // Selection switched away during async fetch
+        return;
+      }
+
       if (!partitions || partitions.length === 0) {
+        if (sessionId !== paintingSessionSeq) return;
         set({
           isPaintingActive: true,
           selectedObjectId: objectId,
@@ -92,7 +111,7 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
           volumes: modelPartVolumes.length > 0 ? modelPartVolumes : rawVolumes,
           paintingData: null,
           isLoading: false,
-          error: 'Support painting is disabled: mesh volume metadata is missing from the engine.'
+          error: `${targetLabel} painting is disabled: mesh volume metadata is missing from the engine.`
         });
         return;
       }
@@ -109,6 +128,7 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
       }
 
       if (targetVolId === null) {
+        if (sessionId !== paintingSessionSeq) return;
         set({
           isPaintingActive: true,
           selectedObjectId: objectId,
@@ -116,42 +136,128 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
           volumes: modelPartVolumes,
           paintingData: null,
           isLoading: false,
-          error: 'Support painting is disabled: no matching volume partition found.'
+          error: `${targetLabel} painting is disabled: no matching volume partition found.`
         });
         return;
       }
 
-      // Query engine support painting
-      const paintRes = await (engine as any).getSupportPainting(objectId, targetVolId);
+      // Query engine painting for active target
+      const paintRes = paintTarget === 'seam'
+        ? await (engine as any).getSeamPainting(objectId, targetVolId)
+        : await (engine as any).getSupportPainting(objectId, targetVolId);
 
-      set({
-        isPaintingActive: true,
-        selectedObjectId: objectId,
-        selectedVolumeId: targetVolId,
-        volumes: modelPartVolumes.length > 0 ? modelPartVolumes : rawVolumes,
-        paintingData: paintRes,
-        isLoading: false,
-        error: null,
-        strokeModifiedFacets: new Map(),
-        strokeBackupPaintingData: null
-      });
+      if (sessionId !== paintingSessionSeq) return;
+      // Guard against stale async write if target or object selection changed during await
+      const activeObjId = usePlateStore.getState().selectedObjectId;
+      if (
+        get().paintTarget === paintTarget &&
+        (activeObjId === objectId || activeObjId === null)
+      ) {
+        set({
+          isPaintingActive: true,
+          selectedObjectId: objectId,
+          selectedVolumeId: targetVolId,
+          volumes: modelPartVolumes.length > 0 ? modelPartVolumes : rawVolumes,
+          paintingData: paintRes,
+          isLoading: false,
+          error: null,
+          strokeModifiedFacets: new Map(),
+          strokeBackupPaintingData: null
+        });
+      }
     } catch (err: any) {
+      if (sessionId !== paintingSessionSeq) return;
       console.error('[paintingStore] Failed to start painting:', err);
       set({
         isLoading: false,
-        error: err.message || 'Failed to initialize support painting'
+        error: err.message || 'Failed to initialize painting'
       });
     }
   },
 
   stopPainting: () => {
-    const { strokeBackupPaintingData, paintingData } = get();
+    paintingSessionSeq++;
+    const { strokeBackupPaintingData, paintingData, selectedObjectId } = get();
+    if (typeof window !== 'undefined' && (window as any).__plateScene) {
+      if (typeof (window as any).__plateScene.clearAllOverlays === 'function') {
+        (window as any).__plateScene.clearAllOverlays(selectedObjectId ?? undefined);
+      }
+      if (typeof (window as any).__plateScene.cancelStroke === 'function') {
+        (window as any).__plateScene.cancelStroke();
+      }
+    }
     set({
       isPaintingActive: false,
+      selectedObjectId: null,
+      selectedVolumeId: null,
       paintingData: strokeBackupPaintingData || paintingData,
+      isLoading: false,
       strokeModifiedFacets: new Map(),
       strokeBackupPaintingData: null
     });
+  },
+
+  setPaintTarget: async (target: PaintTarget) => {
+    const current = get();
+    if (current.paintTarget === target) return;
+
+    // Discard any active/pending stroke immediately
+    get().cancelStroke();
+
+    // Clear overlays in 3D scene immediately so old target's overlay does not persist
+    if (typeof window !== 'undefined' && (window as any).__plateScene) {
+      if (typeof (window as any).__plateScene.clearAllOverlays === 'function') {
+        (window as any).__plateScene.clearAllOverlays(current.selectedObjectId ?? undefined);
+      }
+      if (typeof (window as any).__plateScene.cancelStroke === 'function') {
+        (window as any).__plateScene.cancelStroke();
+      }
+    }
+
+    const { selectedObjectId, selectedVolumeId } = get();
+    set({
+      paintTarget: target,
+      paintingData: null,
+      strokeModifiedFacets: new Map(),
+      strokeBackupPaintingData: null
+    });
+
+    if (!selectedObjectId || selectedVolumeId === null) return;
+
+    try {
+      set({ isLoading: true, error: null });
+      const engine = await getEngine();
+      const paintRes = target === 'seam'
+        ? await (engine as any).getSeamPainting(selectedObjectId, selectedVolumeId)
+        : await (engine as any).getSupportPainting(selectedObjectId, selectedVolumeId);
+
+      // Verify user didn't switch targets, objects, or volumes while waiting for response
+      if (
+        get().paintTarget === target &&
+        get().selectedObjectId === selectedObjectId &&
+        get().selectedVolumeId === selectedVolumeId
+      ) {
+        set({
+          paintingData: paintRes,
+          isLoading: false,
+          error: null,
+          strokeModifiedFacets: new Map(),
+          strokeBackupPaintingData: null
+        });
+      }
+    } catch (err: any) {
+      console.error('[paintingStore] Failed to switch paint target:', err);
+      if (
+        get().paintTarget === target &&
+        get().selectedObjectId === selectedObjectId &&
+        get().selectedVolumeId === selectedVolumeId
+      ) {
+        set({
+          isLoading: false,
+          error: err.message || `Failed to query ${target} painting for volume`
+        });
+      }
+    }
   },
 
   setPaintMode: (mode: SupportPaintMode) => {
@@ -159,37 +265,73 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
   },
 
   selectVolume: async (volumeId: number) => {
-    const { selectedObjectId } = get();
+    const { selectedObjectId, paintTarget } = get();
     if (!selectedObjectId) return;
 
+    // Discard any active/pending stroke immediately
+    get().cancelStroke();
+
+    // Clear overlays in 3D scene immediately
+    if (typeof window !== 'undefined' && (window as any).__plateScene) {
+      if (typeof (window as any).__plateScene.clearAllOverlays === 'function') {
+        (window as any).__plateScene.clearAllOverlays(selectedObjectId);
+      }
+      if (typeof (window as any).__plateScene.cancelStroke === 'function') {
+        (window as any).__plateScene.cancelStroke();
+      }
+    }
+
     try {
-      set({ isLoading: true, error: null, selectedVolumeId: volumeId });
+      set({ isLoading: true, error: null, selectedVolumeId: volumeId, paintingData: null });
 
       const meshData = await usePlateStore.getState().getMesh(selectedObjectId);
       const partitions = meshData?.volumes;
+      const targetLabel = paintTarget === 'seam' ? 'Seam' : 'Support';
       if (!partitions || !partitions.some((p) => p.volumeId === volumeId)) {
-        set({
-          isLoading: false,
-          error: `Support painting is disabled for volume ${volumeId}: volume partition metadata missing.`
-        });
+        if (
+          get().selectedObjectId === selectedObjectId &&
+          get().selectedVolumeId === volumeId &&
+          get().paintTarget === paintTarget
+        ) {
+          set({
+            isLoading: false,
+            error: `${targetLabel} painting is disabled for volume ${volumeId}: volume partition metadata missing.`
+          });
+        }
         return;
       }
 
       const engine = await getEngine();
-      const paintRes = await (engine as any).getSupportPainting(selectedObjectId, volumeId);
-      set({
-        paintingData: paintRes,
-        isLoading: false,
-        error: null,
-        strokeModifiedFacets: new Map(),
-        strokeBackupPaintingData: null
-      });
+      const paintRes = paintTarget === 'seam'
+        ? await (engine as any).getSeamPainting(selectedObjectId, volumeId)
+        : await (engine as any).getSupportPainting(selectedObjectId, volumeId);
+
+      // Guard against stale async write if target, object or volume changed during await
+      if (
+        get().selectedObjectId === selectedObjectId &&
+        get().selectedVolumeId === volumeId &&
+        get().paintTarget === paintTarget
+      ) {
+        set({
+          paintingData: paintRes,
+          isLoading: false,
+          error: null,
+          strokeModifiedFacets: new Map(),
+          strokeBackupPaintingData: null
+        });
+      }
     } catch (err: any) {
       console.error('[paintingStore] Failed to switch volume:', err);
-      set({
-        isLoading: false,
-        error: err.message || 'Failed to query support painting for volume'
-      });
+      if (
+        get().selectedObjectId === selectedObjectId &&
+        get().selectedVolumeId === volumeId &&
+        get().paintTarget === paintTarget
+      ) {
+        set({
+          isLoading: false,
+          error: err.message || `Failed to query ${paintTarget} painting for volume`
+        });
+      }
     }
   },
 
@@ -208,7 +350,7 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
   },
 
   paintFacet: (facetId: number) => {
-    const { paintMode, paintingData, strokeModifiedFacets, error, isPaintingActive } = get();
+    const { paintMode, paintTarget, paintingData, strokeModifiedFacets, error, isPaintingActive } = get();
     if (!isPaintingActive || error || !paintingData || facetId < 0 || facetId >= paintingData.triangleCount) {
       return;
     }
@@ -246,13 +388,16 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
 
     const nextEnforcers = Array.from(enforcersSet);
     const nextBlockers = Array.from(blockersSet);
+    const hasAny = nextEnforcers.length > 0 || nextBlockers.length > 0;
 
     set({
       strokeModifiedFacets: nextStroke,
       strokeBackupPaintingData: backup,
       paintingData: {
         ...paintingData,
-        hasCustomSupports: nextEnforcers.length > 0 || nextBlockers.length > 0,
+        hasCustomSupports: paintTarget === 'support' ? hasAny : (paintingData.hasCustomSupports ?? false),
+        hasCustomSeam: paintTarget === 'seam' ? hasAny : (paintingData.hasCustomSeam ?? false),
+        hasCustomSeams: paintTarget === 'seam' ? hasAny : (paintingData.hasCustomSeams ?? false),
         enforcers: nextEnforcers,
         blockers: nextBlockers,
         statistics: {
@@ -263,14 +408,16 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
       }
     });
   },
+
   endStroke: async () => {
-    const { selectedObjectId, selectedVolumeId, strokeModifiedFacets, strokeBackupPaintingData } = get();
+    const { selectedObjectId, selectedVolumeId, paintTarget, strokeModifiedFacets, strokeBackupPaintingData } = get();
     if (!selectedObjectId || !selectedVolumeId || strokeModifiedFacets.size === 0) {
       return;
     }
 
     // Snapshot stroke parameters and clear in-store stroke tracking immediately
-    // to prevent racing with subsequent strokes or object switches
+    // to prevent racing with subsequent strokes or object/target switches
+    const strokeTarget = paintTarget;
     const targetObjId = selectedObjectId;
     const targetVolId = selectedVolumeId;
     const facetsToCommit = new Map(strokeModifiedFacets);
@@ -297,18 +444,35 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
         }
       }
 
-      await (engine as any).setSupportPainting({
-        objectId: targetObjId,
-        volumeId: targetVolId,
-        enforcers,
-        blockers,
-        clear
-      });
+      if (strokeTarget === 'seam') {
+        await (engine as any).setSeamPainting({
+          objectId: targetObjId,
+          volumeId: targetVolId,
+          enforcers,
+          blockers,
+          clear
+        });
+      } else {
+        await (engine as any).setSupportPainting({
+          objectId: targetObjId,
+          volumeId: targetVolId,
+          enforcers,
+          blockers,
+          clear
+        });
+      }
 
       // Synchronize exact readback from engine
-      const freshData = await (engine as any).getSupportPainting(targetObjId, targetVolId);
+      const freshData = strokeTarget === 'seam'
+        ? await (engine as any).getSeamPainting(targetObjId, targetVolId)
+        : await (engine as any).getSupportPainting(targetObjId, targetVolId);
+
       const current = get();
-      if (current.selectedObjectId === targetObjId && current.selectedVolumeId === targetVolId) {
+      if (
+        current.paintTarget === strokeTarget &&
+        current.selectedObjectId === targetObjId &&
+        current.selectedVolumeId === targetVolId
+      ) {
         if (current.strokeModifiedFacets.size === 0) {
           set({ paintingData: freshData });
         } else {
@@ -320,10 +484,13 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
             else if (st === 'blocker') { blk.add(fId); enf.delete(fId); }
             else { enf.delete(fId); blk.delete(fId); }
           }
+          const hasAny = enf.size > 0 || blk.size > 0;
           set({
             paintingData: {
               ...freshData,
-              hasCustomSupports: enf.size > 0 || blk.size > 0,
+              hasCustomSupports: strokeTarget === 'support' ? hasAny : freshData.hasCustomSupports,
+              hasCustomSeam: strokeTarget === 'seam' ? hasAny : freshData.hasCustomSeam,
+              hasCustomSeams: strokeTarget === 'seam' ? hasAny : freshData.hasCustomSeams,
               enforcers: Array.from(enf),
               blockers: Array.from(blk),
               statistics: {
@@ -342,7 +509,12 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
       console.error('[paintingStore] Failed to commit stroke:', err);
       // Revert optimistic changes by restoring backup
       const current = get();
-      if (backupToRestore && current.selectedObjectId === targetObjId && current.selectedVolumeId === targetVolId) {
+      if (
+        backupToRestore &&
+        current.paintTarget === strokeTarget &&
+        current.selectedObjectId === targetObjId &&
+        current.selectedVolumeId === targetVolId
+      ) {
         set({
           paintingData: backupToRestore,
           strokeModifiedFacets: new Map(),
@@ -351,8 +523,14 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
       }
       try {
         const engine = await getEngine();
-        const fallback = await (engine as any).getSupportPainting(targetObjId, targetVolId);
-        if (get().selectedObjectId === targetObjId && get().selectedVolumeId === targetVolId) {
+        const fallback = strokeTarget === 'seam'
+          ? await (engine as any).getSeamPainting(targetObjId, targetVolId)
+          : await (engine as any).getSupportPainting(targetObjId, targetVolId);
+        if (
+          get().paintTarget === strokeTarget &&
+          get().selectedObjectId === targetObjId &&
+          get().selectedVolumeId === targetVolId
+        ) {
           set({ paintingData: fallback });
         }
       } catch (_) {}
@@ -370,41 +548,83 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
     } else {
       set({ strokeModifiedFacets: new Map() });
     }
+    if (typeof window !== 'undefined' && (window as any).__plateScene) {
+      if (typeof (window as any).__plateScene.cancelStroke === 'function') {
+        (window as any).__plateScene.cancelStroke();
+      }
+    }
   },
 
   clearVolume: async () => {
-    const { selectedObjectId, selectedVolumeId } = get();
+    const { selectedObjectId, selectedVolumeId, paintTarget } = get();
     if (!selectedObjectId || !selectedVolumeId) return;
 
     try {
       set({ isLoading: true, error: null });
       const engine = await getEngine();
-      await (engine as any).clearSupportPainting(selectedObjectId, selectedVolumeId);
-
-      const freshData = await (engine as any).getSupportPainting(selectedObjectId, selectedVolumeId);
-      set({
-        paintingData: freshData,
-        isLoading: false,
-        strokeModifiedFacets: new Map(),
-        strokeBackupPaintingData: null
-      });
+      if (paintTarget === 'seam') {
+        await (engine as any).clearSeamPainting(selectedObjectId, selectedVolumeId);
+        const freshData = await (engine as any).getSeamPainting(selectedObjectId, selectedVolumeId);
+        if (
+          get().paintTarget === 'seam' &&
+          get().selectedObjectId === selectedObjectId &&
+          get().selectedVolumeId === selectedVolumeId
+        ) {
+          set({
+            paintingData: freshData,
+            isLoading: false,
+            strokeModifiedFacets: new Map(),
+            strokeBackupPaintingData: null
+          });
+        }
+      } else {
+        await (engine as any).clearSupportPainting(selectedObjectId, selectedVolumeId);
+        const freshData = await (engine as any).getSupportPainting(selectedObjectId, selectedVolumeId);
+        if (
+          get().paintTarget === 'support' &&
+          get().selectedObjectId === selectedObjectId &&
+          get().selectedVolumeId === selectedVolumeId
+        ) {
+          set({
+            paintingData: freshData,
+            isLoading: false,
+            strokeModifiedFacets: new Map(),
+            strokeBackupPaintingData: null
+          });
+        }
+      }
 
       // Invalidate stale slice preview on successful edits
       useAppStore.getState().invalidateSlicePreview();
     } catch (err: any) {
-      console.error('[paintingStore] Failed to clear volume support painting:', err);
-      set({
-        isLoading: false,
-        error: err.message || 'Failed to clear support painting'
-      });
+      console.error('[paintingStore] Failed to clear volume painting:', err);
+      if (
+        get().paintTarget === paintTarget &&
+        get().selectedObjectId === selectedObjectId &&
+        get().selectedVolumeId === selectedVolumeId
+      ) {
+        set({
+          isLoading: false,
+          error: err.message || `Failed to clear ${paintTarget} painting`
+        });
+      }
     }
   },
 
   refreshPaintingData: async (objectId: number, volumeId: number) => {
     try {
+      const { paintTarget } = get();
       const engine = await getEngine();
-      const freshData = await (engine as any).getSupportPainting(objectId, volumeId);
-      set({ paintingData: freshData });
+      const freshData = paintTarget === 'seam'
+        ? await (engine as any).getSeamPainting(objectId, volumeId)
+        : await (engine as any).getSupportPainting(objectId, volumeId);
+      if (
+        get().paintTarget === paintTarget &&
+        get().selectedObjectId === objectId &&
+        get().selectedVolumeId === volumeId
+      ) {
+        set({ paintingData: freshData });
+      }
       return freshData;
     } catch (err) {
       console.error('[paintingStore] Failed to refresh painting data:', err);
@@ -412,11 +632,14 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
     }
   },
 
-  loadPaintingForObject: async (objectId: number, volumeId?: number | null) => {
+  loadPaintingForObject: async (objectId: number, volumeId?: number | null, target?: PaintTarget) => {
     try {
+      const actualTarget = target || get().paintTarget;
       const engine = await getEngine();
       if (typeof volumeId === 'number') {
-        const res = await (engine as any).getSupportPainting(objectId, volumeId);
+        const res = actualTarget === 'seam'
+          ? await (engine as any).getSeamPainting(objectId, volumeId)
+          : await (engine as any).getSupportPainting(objectId, volumeId);
         return res as SupportPaintingData;
       }
 
@@ -426,7 +649,9 @@ export const usePaintingStore = create<PaintingStoreState>((set, get) => ({
         return null;
       }
       const targetVolId = partitions[0].volumeId;
-      const res = await (engine as any).getSupportPainting(objectId, targetVolId);
+      const res = actualTarget === 'seam'
+        ? await (engine as any).getSeamPainting(objectId, targetVolId)
+        : await (engine as any).getSupportPainting(objectId, targetVolId);
       return res as SupportPaintingData;
     } catch (err) {
       return null;

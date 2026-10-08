@@ -1,8 +1,11 @@
 import React from 'react';
 import { usePaintingStore } from './paintingStore';
+import type { PaintTarget } from './types';
 
 export const SupportPaintingPanel: React.FC = () => {
   const isPaintingActive = usePaintingStore((s) => s.isPaintingActive);
+  const paintTarget = usePaintingStore((s) => s.paintTarget);
+  const setPaintTarget = usePaintingStore((s) => s.setPaintTarget);
   const paintMode = usePaintingStore((s) => s.paintMode);
   const setPaintMode = usePaintingStore((s) => s.setPaintMode);
   const selectedVolumeId = usePaintingStore((s) => s.selectedVolumeId);
@@ -28,26 +31,26 @@ export const SupportPaintingPanel: React.FC = () => {
       className="painting-panel"
       style={{
         position: 'absolute',
-        top: 68,
+        top: 60,
         right: 16,
         background: 'rgba(24, 24, 27, 0.95)',
         backdropFilter: 'blur(12px)',
         border: '1px solid rgba(255, 255, 255, 0.15)',
         borderRadius: 10,
-        padding: '14px 16px',
+        padding: '10px 14px',
         color: '#f4f4f5',
-        width: 250,
+        width: 240,
         fontSize: '0.85rem',
         boxShadow: '0 12px 36px rgba(0, 0, 0, 0.5)',
-        zIndex: 20
+        zIndex: 40
       }}
     >
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: '1.1rem' }}>🖌️</span>
           <strong id="painting-panel-title" style={{ fontSize: '0.95rem', color: '#38bdf8' }}>
-            Support Face Painting
+            {paintTarget === 'seam' ? 'Seam Face Painting' : 'Support Face Painting'}
           </strong>
         </div>
         <span
@@ -72,7 +75,7 @@ export const SupportPaintingPanel: React.FC = () => {
             color: '#fca5a5',
             padding: '6px 8px',
             borderRadius: 6,
-            marginBottom: 10,
+            marginBottom: 8,
             fontSize: '0.75rem',
             lineHeight: '1.4'
           }}
@@ -81,12 +84,88 @@ export const SupportPaintingPanel: React.FC = () => {
         </div>
       )}
 
+      {/* Target Selector: Support vs Seam */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 4 }}>Painting Target</div>
+        <div
+          role="group"
+          aria-label="Painting Target"
+          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}
+        >
+          <button
+            type="button"
+            id="paint-target-support"
+            aria-pressed={paintTarget === 'support'}
+            className={`btn-paint-target ${paintTarget === 'support' ? 'active' : ''}`}
+            onClick={() => setPaintTarget('support')}
+            disabled={isLoading}
+            style={{
+              padding: '4px 6px',
+              background: paintTarget === 'support' ? '#0284c7' : '#27272a',
+              color: '#fff',
+              border: paintTarget === 'support' ? '1px solid #38bdf8' : '1px solid #3f3f46',
+              borderRadius: 6,
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              opacity: isLoading ? 0.6 : 1
+            }}
+          >
+            Support
+          </button>
+          <button
+            type="button"
+            id="paint-target-seam"
+            aria-pressed={paintTarget === 'seam'}
+            className={`btn-paint-target ${paintTarget === 'seam' ? 'active' : ''}`}
+            onClick={() => setPaintTarget('seam')}
+            disabled={isLoading}
+            style={{
+              padding: '4px 6px',
+              background: paintTarget === 'seam' ? '#0284c7' : '#27272a',
+              color: '#fff',
+              border: paintTarget === 'seam' ? '1px solid #38bdf8' : '1px solid #3f3f46',
+              borderRadius: 6,
+              cursor: isLoading ? 'not-allowed' : 'pointer',
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              opacity: isLoading ? 0.6 : 1
+            }}
+          >
+            Seam
+          </button>
+        </div>
+        {/* Accessible selection fallback for screen readers / automation, hidden from visible layout to remove duplicate control */}
+        <select
+          id="paint-target-select"
+          aria-label="Painting Target"
+          value={paintTarget}
+          onChange={(e) => setPaintTarget(e.target.value as PaintTarget)}
+          disabled={isLoading}
+          tabIndex={-1}
+          style={{
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            padding: 0,
+            margin: -1,
+            overflow: 'hidden',
+            clip: 'rect(0, 0, 0, 0)',
+            border: 0,
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <option value="support">Support</option>
+          <option value="seam">Seam</option>
+        </select>
+      </div>
+
       {/* Target Volume Selector */}
       {volumes.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 8 }}>
           <label
             htmlFor="paint-volume-select"
-            style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: 4 }}
+            style={{ display: 'block', fontSize: '0.75rem', color: '#94a3b8', marginBottom: 3 }}
           >
             Target Volume
           </label>
@@ -101,8 +180,8 @@ export const SupportPaintingPanel: React.FC = () => {
               color: '#f4f4f5',
               border: '1px solid #3f3f46',
               borderRadius: 6,
-              padding: '5px 8px',
-              fontSize: '0.8rem',
+              padding: '4px 6px',
+              fontSize: '0.75rem',
               opacity: isLoading || !!error ? 0.6 : 1
             }}
           >
@@ -116,8 +195,8 @@ export const SupportPaintingPanel: React.FC = () => {
       )}
 
       {/* Mode Selector Buttons */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 6 }}>Paint Mode</div>
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 4 }}>Paint Mode</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
           <button
             type="button"
@@ -129,7 +208,7 @@ export const SupportPaintingPanel: React.FC = () => {
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              padding: '6px 4px',
+              padding: '5px 4px',
               background: paintMode === 'enforce' ? '#15803d' : '#27272a',
               color: '#fff',
               border: paintMode === 'enforce' ? '1px solid #22c55e' : '1px solid #3f3f46',
@@ -140,7 +219,7 @@ export const SupportPaintingPanel: React.FC = () => {
               opacity: isLoading || !!error ? 0.5 : 1
             }}
           >
-            <span style={{ fontSize: '1rem', marginBottom: 2 }}>🟢</span>
+            <span style={{ fontSize: '0.9rem', marginBottom: 2 }}>🟢</span>
             <span>Enforce</span>
           </button>
 
@@ -154,7 +233,7 @@ export const SupportPaintingPanel: React.FC = () => {
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              padding: '6px 4px',
+              padding: '5px 4px',
               background: paintMode === 'block' ? '#b91c1c' : '#27272a',
               color: '#fff',
               border: paintMode === 'block' ? '1px solid #ef4444' : '1px solid #3f3f46',
@@ -165,7 +244,7 @@ export const SupportPaintingPanel: React.FC = () => {
               opacity: isLoading || !!error ? 0.5 : 1
             }}
           >
-            <span style={{ fontSize: '1rem', marginBottom: 2 }}>🔴</span>
+            <span style={{ fontSize: '0.9rem', marginBottom: 2 }}>🔴</span>
             <span>Block</span>
           </button>
 
@@ -179,7 +258,7 @@ export const SupportPaintingPanel: React.FC = () => {
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              padding: '6px 4px',
+              padding: '5px 4px',
               background: paintMode === 'erase' ? '#475569' : '#27272a',
               color: '#fff',
               border: paintMode === 'erase' ? '1px solid #94a3b8' : '1px solid #3f3f46',
@@ -190,7 +269,7 @@ export const SupportPaintingPanel: React.FC = () => {
               opacity: isLoading || !!error ? 0.5 : 1
             }}
           >
-            <span style={{ fontSize: '1rem', marginBottom: 2 }}>⚪</span>
+            <span style={{ fontSize: '0.9rem', marginBottom: 2 }}>⚪</span>
             <span>Erase</span>
           </button>
         </div>
@@ -201,13 +280,13 @@ export const SupportPaintingPanel: React.FC = () => {
         id="paint-stats"
         style={{
           background: 'rgba(0, 0, 0, 0.25)',
-          padding: '8px 10px',
+          padding: '6px 8px',
           borderRadius: 6,
-          marginBottom: 12,
+          marginBottom: 8,
           fontSize: '0.75rem',
           display: 'flex',
           flexDirection: 'column',
-          gap: 3
+          gap: 2
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -233,31 +312,31 @@ export const SupportPaintingPanel: React.FC = () => {
         style={{
           fontSize: '0.7rem',
           color: '#a1a1aa',
-          lineHeight: '1.3',
-          marginBottom: 12,
+          lineHeight: '1.25',
+          marginBottom: 8,
           borderLeft: '2px solid #38bdf8',
           paddingLeft: 6
         }}
       >
-        Face painting operates on complete mesh triangles. Brush radius, sub-triangle, seam, and filament painting are not supported in this version.
+        Face painting operates on complete mesh triangles. Brush radius, sub-triangle, and filament painting are not supported in this version.
       </div>
 
       {/* Action Buttons */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ display: 'flex', gap: 6 }}>
         <button
           type="button"
           id="paint-clear-btn"
           onClick={() => clearVolume()}
           disabled={isLoading || !!error || (enforcersCount === 0 && blockersCount === 0)}
-          title="Clear all support annotations on this volume"
+          title={`Clear all ${paintTarget} annotations on this volume`}
           style={{
             flex: 1,
             background: 'transparent',
             border: '1px solid #ef4444',
             color: enforcersCount === 0 && blockersCount === 0 ? '#64748b' : '#ef4444',
             borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: '0.8rem',
+            padding: '5px 8px',
+            fontSize: '0.75rem',
             cursor: enforcersCount === 0 && blockersCount === 0 || !!error ? 'default' : 'pointer',
             opacity: isLoading || !!error ? 0.5 : 1
           }}
@@ -274,8 +353,8 @@ export const SupportPaintingPanel: React.FC = () => {
             border: 'none',
             color: '#fff',
             borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: '0.8rem',
+            padding: '5px 8px',
+            fontSize: '0.75rem',
             fontWeight: 500,
             cursor: 'pointer'
           }}

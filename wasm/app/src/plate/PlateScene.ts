@@ -484,6 +484,28 @@ export class PlateScene {
     return { x, y };
   }
 
+  public clearAllOverlays(objectId?: number): void {
+    for (const [key, mesh] of this.objectMeshes.entries()) {
+      if (typeof objectId === 'number' && mesh.userData.objectId !== objectId) {
+        continue;
+      }
+      for (const [oKey, overlay] of Array.from(this.overlayMeshes.entries())) {
+        if (oKey.startsWith(key)) {
+          mesh.remove(overlay);
+          overlay.geometry.dispose();
+          if (Array.isArray(overlay.material)) overlay.material.forEach((m) => m.dispose());
+          else overlay.material.dispose();
+          this.overlayMeshes.delete(oKey);
+        }
+      }
+    }
+  }
+
+  public cancelStroke(): void {
+    this.isPaintingStroke = false;
+    this.orbitControls.enabled = true;
+  }
+
   public updatePaintingOverlay(
     objectId: number,
     paintingData: SupportPaintingData | null,
