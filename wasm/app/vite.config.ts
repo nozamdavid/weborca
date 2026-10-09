@@ -17,6 +17,7 @@
  *      - `/preview/*`  -> `wasm/build/orca-wasm64-preview/wasm/preview/*` (orca_preview.js, orca_preview.wasm)
  *      - `/profiles/*` -> `wasm/build/web/profiles/*` (packed vendor profiles and index.json)
  *      - `/web/*`      -> `wasm/web/*` (orca-engine.js, engine-worker.js, engine-core.js)
+ *      - `/resources/calib/*` -> `resources/calib/*` (Draco calibration models)
  *      - `/settings/*` -> `wasm/build/settings/*` (layout.json)
  *      - Root worker   -> `/engine-worker.js`, `/engine-core.js`, `/orca-engine.js` from `wasm/web/*`
  *      - Root preview  -> `/orca_preview.js`, `/orca_preview.wasm`
@@ -31,6 +32,7 @@
  *      - `wasm/build/orca-wasm64-preview/wasm/preview` -> `dist/preview` and root `dist/`
  *      - `wasm/build/web/profiles`           -> `dist/profiles`
  *      - `wasm/web` (worker & client libs)   -> `dist/web` and root `dist/`
+ *      - `resources/calib` (.drc models only) -> `dist/resources/calib`
  *      - `wasm/build/settings/layout.json`   -> `dist/settings/layout.json` and `dist/layout.json`
  *    This allows zero-config deployment without runtime backend proxying.
  */
@@ -52,6 +54,7 @@ const previewBuildDir = path.resolve(repoRoot, 'wasm/build/orca-wasm64-preview/w
 const profilesBuildDir = path.resolve(repoRoot, 'wasm/build/web/profiles');
 const settingsBuildDir = path.resolve(repoRoot, 'wasm/build/settings');
 const webDir = path.resolve(repoRoot, 'wasm/web');
+const calibBuildDir = path.resolve(repoRoot, 'resources/calib');
 
 function getMimeType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
@@ -106,6 +109,12 @@ function orcaAssetsPlugin() {
     configureServer(server: any) {
       server.middlewares.use((req: any, res: any, next: () => void) => {
         const url = req.url ? req.url.split('?')[0] : '';
+
+        // Serve calibration models (Draco) at /resources/calib/
+        if (url.startsWith('/resources/calib/')) {
+          const subPath = url.replace(/^\/resources\/calib\//, '');
+          if (serveStaticFile(subPath, calibBuildDir, res)) return;
+        }
 
         // Serve engine module at /engine/
         if (url.startsWith('/engine/')) {
@@ -208,7 +217,15 @@ function orcaAssetsPlugin() {
         }
       }
 
-      // 5. Copy layout.json into dist/settings/layout.json and dist/layout.json
+      // 5. Copy the calibration models (.drc only) into dist/resources/calib
+      if (fs.existsSync(calibBuildDir)) {
+        fs.cpSync(calibBuildDir, path.join(distDir, 'resources/calib'), {
+          recursive: true,
+          filter: (src) => fs.statSync(src).isDirectory() || src.endsWith('.drc')
+        });
+      }
+
+      // 6. Copy layout.json into dist/settings/layout.json and dist/layout.json
       const distSettings = path.join(distDir, 'settings');
       fs.mkdirSync(distSettings, { recursive: true });
       const layoutSrc = path.join(settingsBuildDir, 'layout.json');

@@ -175,6 +175,13 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'writeFile': {
+        if (!core) throw new Error('Engine not initialized');
+        const { path: filePath, bytes } = args;
+        core.writeFile(filePath, new Uint8Array(bytes));
+        postMessage({ id, ok: true });
+        break;
+      }
       case 'addModel': {
         if (!core) throw new Error('Engine not initialized');
         let result;

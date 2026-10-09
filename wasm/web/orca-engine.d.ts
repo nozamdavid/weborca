@@ -661,6 +661,9 @@ export class OrcaEngine {
 
   loadModel(fileName: string, bytes: Uint8Array | ArrayBuffer, options?: { linearDeflection?: number; angleDeflection?: number }): Promise<LoadModelResult>;
 
+  /** Writes a file into the engine's MEMFS, e.g. a decoded calibration mesh. */
+  writeFile(path: string, bytes: Uint8Array | ArrayBuffer): Promise<void>;
+
   addModel(fileName: string, bytes: Uint8Array | ArrayBuffer, options?: { linearDeflection?: number; angleDeflection?: number }): Promise<LoadModelResult>;
 
   listObjects(): Promise<Array<any>>;

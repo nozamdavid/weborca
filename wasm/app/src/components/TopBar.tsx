@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { ManagePresetsDialog } from '../presets/ManagePresetsDialog';
 import { useHistoryStore } from '../history';
-import { FlowRateModal, useCalibrationStore } from '../calibration';
+import { FlowRateModal, useCalibrationStore, OtherCalibrationsDialogs, OtherCalibrationsMenu, useOtherCalibrationStore } from '../calibration';
 
 export const TopBar: React.FC = () => {
   const {
@@ -390,6 +390,15 @@ export const TopBar: React.FC = () => {
         </button>
         {/* Flow Rate Calibration button */}
         <button
+          id="other-calibration-btn"
+          className="btn btn-secondary"
+          title="Other Calibrations"
+          disabled={isBusy}
+          onClick={() => useOtherCalibrationStore.getState().openMenu()}
+        >
+          🛠️ Other Calibrations...
+        </button>
+        <button
           id="calibration-btn"
           className="btn btn-secondary"
           data-testid="calibration-btn"
@@ -447,6 +456,8 @@ export const TopBar: React.FC = () => {
       <ManagePresetsDialog />
       {/* Flow Rate Calibration Modal */}
       <FlowRateModal />
+      <OtherCalibrationsMenu />
+      <OtherCalibrationsDialogs />
     </header>
   );
 };

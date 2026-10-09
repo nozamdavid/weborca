@@ -304,6 +304,19 @@ export class OrcaEngine {
    * @param {{ linearDeflection?: number, angleDeflection?: number }} [options] STEP tessellation settings
    * @returns {Promise<{ objects: Array<{ id: number, name: string, instances: number, volumes: number, size: [number, number, number] }> }>}
    */
+  /**
+   * Writes a file into the engine's MEMFS, e.g. a decoded calibration mesh.
+   * @param {string} path
+   * @param {Uint8Array|ArrayBuffer} bytes
+   */
+  async writeFile(path, bytes) {
+    let payload = bytes;
+    let transfer = [];
+    if (bytes instanceof ArrayBuffer) { payload = new Uint8Array(bytes); transfer = [bytes]; }
+    else if (bytes.buffer) { transfer = [bytes.buffer]; }
+    return await this._call('writeFile', { path, bytes: payload }, { transfer });
+  }
+
   async addModel(fileName, bytes, options = {}) {
     let payload = bytes;
     let transfer = [];

@@ -379,7 +379,9 @@ export async function exportDesktopArchiveHelper(
     const printerPreset = userPresets.find((p) => p.kind === 'printer' && p.name === name);
     if (!printerPreset) throw new Error(`"${name}" is not a user printer preset`);
 
-    const candidates = userPresets.filter((p) => p.kind === 'filament' || p.kind === 'process');
+    const candidates = userPresets.flatMap((p) =>
+      p.kind === 'filament' || p.kind === 'process' ? [{ ...p, kind: p.kind }] : []
+    );
     const { compatibleUserPresets } = await getCompatiblePresets({
       printer: printerPreset.inherits || printerPreset.name,
       printerName: printerPreset.name,
