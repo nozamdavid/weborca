@@ -4,6 +4,7 @@
 #include "libslic3r/Model.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/TriangleMesh.hpp"
+#include "libslic3r/CutSurface.hpp"
 #include "libslic3r/Emboss.hpp"
 #include "libslic3r/EmbossShape.hpp"
 #include "libslic3r/TextConfiguration.hpp"
@@ -17,8 +18,112 @@
 #include <vector>
 #include <memory>
 #include <algorithm>
+#include <limits>
+#include <optional>
 
 using json = nlohmann::json;
+
+
+// Port of desktop's EmbossJob cut-surface path (src/slic3r/GUI/Jobs/EmbossJob.cpp), which lives in the GUI library.
+namespace OrcaWasm::surface {
+using namespace Slic3r;
+
+struct ModelSource {
+    std::shared_ptr<const TriangleMesh> mesh;
+    Transform3d tr;
+};
+using ModelSources = std::vector<ModelSource>;
+
+Emboss::OrthoProject create_projection_for_cut(Transform3d tr, double shape_scale, const std::pair<float, float> &z_range) {
+    double safe_extension = 1.0;
+    double min_z = z_range.first - safe_extension;
+    double max_z = z_range.second + safe_extension;
+    double projection_size = max_z - min_z;
+    Matrix3d transformation_for_vector = tr.linear();
+    Vec3d untransformed_direction(0., 0., projection_size);
+    Vec3d project_direction = transformation_for_vector * untransformed_direction;
+    tr.translate(Vec3d(0., 0., min_z));
+    tr.scale(shape_scale);
+    return Emboss::OrthoProject(tr, project_direction);
+}
+
+Emboss::OrthoProject3d create_emboss_projection(bool is_outside, float emboss, Transform3d tr, SurfaceCut &cut) {
+    float SAFE_SURFACE_OFFSET = 0.015f;
+    float front_move = is_outside ? emboss : SAFE_SURFACE_OFFSET;
+    float back_move = -(is_outside ? SAFE_SURFACE_OFFSET : emboss);
+    its_transform(cut, tr.pretranslate(Vec3d(0., 0., front_move)));
+    Vec3d from_front_to_back(0., 0., back_move - front_move);
+    return Emboss::OrthoProject3d(from_front_to_back);
+}
+
+indexed_triangle_set cut_surface_to_its(const ExPolygons &shapes, const Transform3d& tr, const ModelSources &sources, double shape_scale, bool is_outside, double depth) {
+    if (sources.empty()) return {};
+    BoundingBox bb = get_extents(shapes);
+    const ModelSource *biggest = &sources.front();
+    size_t biggest_count = 0;
+    std::vector<size_t> s_to_itss(sources.size(), std::numeric_limits<size_t>::max());
+    std::vector<indexed_triangle_set> itss;
+    itss.reserve(sources.size());
+    for (const ModelSource &s : sources) {
+        Transform3d mesh_tr_inv = s.tr.inverse();
+        Transform3d cut_projection_tr = mesh_tr_inv * tr;
+        std::pair<float, float> z_range{0., 1.};
+        Emboss::OrthoProject cut_projection = create_projection_for_cut(cut_projection_tr, shape_scale, z_range);
+        indexed_triangle_set its = its_cut_AoI(s.mesh->its, bb, cut_projection);
+        if (its.indices.empty()) continue;
+        if (biggest_count < its.vertices.size()) {
+            biggest_count = its.vertices.size();
+            biggest = &s;
+        }
+        size_t source_index = &s - &sources.front();
+        size_t its_index = itss.size();
+        s_to_itss[source_index] = its_index;
+        itss.emplace_back(std::move(its));
+    }
+    if (itss.empty()) return {};
+    Transform3d tr_inv = biggest->tr.inverse();
+    Transform3d cut_projection_tr = tr_inv * tr;
+    size_t itss_index = s_to_itss[biggest - &sources.front()];
+    BoundingBoxf3 mesh_bb = bounding_box(itss[itss_index]);
+    for (const ModelSource &s : sources) {
+        itss_index = s_to_itss[&s - &sources.front()];
+        if (itss_index == std::numeric_limits<size_t>::max()) continue;
+        if (&s == biggest) continue;
+        Transform3d tr2 = s.tr * tr_inv;
+        bool fix_reflected = true;
+        indexed_triangle_set &its = itss[itss_index];
+        its_transform(its, tr2, fix_reflected);
+        BoundingBoxf3 its_bb = bounding_box(its);
+        mesh_bb.merge(its_bb);
+    }
+    Transform3d emboss_tr = cut_projection_tr.inverse();
+    BoundingBoxf3 mesh_bb_tr = mesh_bb.transformed(emboss_tr);
+    std::pair<float, float> z_range{mesh_bb_tr.min.z(), mesh_bb_tr.max.z()};
+    Emboss::OrthoProject cut_projection = create_projection_for_cut(cut_projection_tr, shape_scale, z_range);
+    double safe_extension = 1.0;
+    float projection_ratio = (-z_range.first + safe_extension) / (z_range.second - z_range.first + 2 * safe_extension);
+    ExPolygons shapes_data;
+    const ExPolygons *shapes_ptr = &shapes;
+    bool is_text_reflected = has_reflection(tr);
+    if (is_text_reflected) {
+        shapes_data = shapes;
+        for (ExPolygon &shape : shapes_data) {
+            shape.contour.reverse();
+            for (Polygon &hole : shape.holes) hole.reverse();
+        }
+        shapes_ptr = &shapes_data;
+    }
+    SurfaceCut cut = cut_surface(*shapes_ptr, itss, cut_projection, projection_ratio);
+    if (is_text_reflected) {
+        for (SurfaceCut::Contour &c : cut.contours) std::reverse(c.begin(), c.end());
+        for (Vec3i32 &t : cut.indices) std::swap(t[0], t[1]);
+    }
+    if (cut.empty()) return {};
+    Emboss::OrthoProject3d projection = create_emboss_projection(is_outside, static_cast<float>(depth), emboss_tr, cut);
+    return cut2model(cut, projection);
+}
+
+} // namespace OrcaWasm::surface
 
 namespace OrcaWasm {
 
@@ -226,7 +331,9 @@ GeneratedTextMesh generate_text_geometry(
     Slic3r::FontProp::VerticalAlign v_align,
     bool use_surface,
     bool is_new_object,
-    Slic3r::ModelVolumeType volume_type
+    Slic3r::ModelVolumeType volume_type,
+    const std::optional<OrcaWasm::surface::ModelSources>& sources = std::nullopt,
+    const std::optional<Slic3r::Transform3d>& text_tr = std::nullopt
 ) {
     std::string actual_font_path;
     std::unique_ptr<Slic3r::Emboss::FontFile> font_file = load_font_file(font_data, font_path, actual_font_path);
@@ -274,7 +381,16 @@ GeneratedTextMesh generate_text_geometry(
 
     Slic3r::Transform3d tr = Eigen::Translation<double, 3>(0.0, 0.0, static_cast<double>(offset)) * Eigen::Scaling(scale);
     Slic3r::Emboss::ProjectTransform project(std::move(projectZ), tr);
-    indexed_triangle_set its = Slic3r::Emboss::polygons2model(shapes, project);
+    indexed_triangle_set its;
+    if (use_surface && sources && !sources->empty()) {
+        bool is_outside = (volume_type != Slic3r::ModelVolumeType::NEGATIVE_VOLUME);
+        its = OrcaWasm::surface::cut_surface_to_its(shapes, text_tr ? *text_tr : tr, *sources, scale, is_outside, depth);
+        if (its.indices.empty()) {
+            its = Slic3r::Emboss::polygons2model(shapes, project);
+        }
+    } else {
+        its = Slic3r::Emboss::polygons2model(shapes, project);
+    }
     Slic3r::TriangleMesh mesh(std::move(its));
 
     Slic3r::TextConfiguration tc;
@@ -373,10 +489,42 @@ json addText(Slic3r::Model& model, Slic3r::PlateDataPtrs& plates, const json& ar
 
     std::string custom_name = args.value("name", text);
 
+    std::optional<OrcaWasm::surface::ModelSources> sources;
+    std::optional<::Slic3r::Transform3d> text_tr;
+    if (!is_new_object && target_obj) {
+        OrcaWasm::surface::ModelSources src;
+        for (const Slic3r::ModelVolume *v : target_obj->volumes) {
+            if (!v->is_model_part()) continue;
+            const Slic3r::TriangleMesh &tm = v->mesh();
+            if (tm.empty() || tm.its.empty()) continue;
+            src.push_back({v->get_mesh_shared_ptr(), v->get_matrix()});
+        }
+        sources = std::move(src);
+
+        if (args.contains("position") && args["position"].is_array() && args["position"].size() >= 3) {
+            ::Slic3r::Vec3d pos(args["position"][0].get<double>(), args["position"][1].get<double>(), args["position"][2].get<double>());
+            ::Slic3r::Vec3d norm(0.0, 0.0, 1.0);
+            if (args.contains("normal") && args["normal"].is_array() && args["normal"].size() >= 3) {
+                norm = ::Slic3r::Vec3d(args["normal"][0].get<double>(), args["normal"][1].get<double>(), args["normal"][2].get<double>());
+                if (norm.norm() > 1e-6) norm.normalize();
+                else norm = ::Slic3r::Vec3d(0.0, 0.0, 1.0);
+            }
+            ::Slic3r::Transform3d surface_trmat = Slic3r::Emboss::create_transformation_onto_surface(pos, norm, 0.9);
+            double rotation = args.value("rotation", 0.0);
+            double rot_rad = rotation * M_PI / 180.0;
+            if (std::abs(rot_rad) > 1e-6) {
+                surface_trmat *= Eigen::AngleAxisd(rot_rad, Slic3r::Vec3d::UnitZ());
+            }
+            if (!target_obj->instances.empty()) {
+                text_tr = target_obj->instances.front()->get_matrix().inverse() * surface_trmat;
+            }
+        }
+    }
+
     GeneratedTextMesh generated = generate_text_geometry(
         text, font_data, font_path, font_name, size, depth,
         char_gap, line_gap, boldness, skew, h_align, v_align,
-        use_surface, is_new_object, mv_type
+        use_surface, is_new_object, mv_type, sources, text_tr
     );
 
     if (is_new_object) {
@@ -448,7 +596,9 @@ json addText(Slic3r::Model& model, Slic3r::PlateDataPtrs& plates, const json& ar
 
         Slic3r::Transform3d vol_tr = target_obj->instances.front()->get_matrix().inverse() * surface_trmat;
 
-        Slic3r::ModelVolume* new_vol = target_obj->add_volume(std::move(generated.mesh), mv_type);
+        // Like desktop's EmbossJob, keep the mesh in text space: centering it would be lost when the
+        // transformation is set below and shift the text off its placement point.
+        Slic3r::ModelVolume* new_vol = target_obj->add_volume(std::move(generated.mesh), mv_type, false);
         new_vol->set_transformation(vol_tr);
         new_vol->name = custom_name;
         new_vol->source.is_from_builtin_objects = true;
@@ -542,10 +692,63 @@ json updateText(Slic3r::Model& model, const json& args) {
 
     bool is_new_object = (obj->volumes.size() == 1 && vol->type() == Slic3r::ModelVolumeType::MODEL_PART);
 
+    std::optional<OrcaWasm::surface::ModelSources> sources;
+    std::optional<::Slic3r::Transform3d> text_tr = vol->get_transformation().get_matrix();
+    if (!is_new_object && obj) {
+        OrcaWasm::surface::ModelSources src;
+        for (const Slic3r::ModelVolume *v : obj->volumes) {
+            if (v->id() == vol->id()) continue;
+            if (!v->is_model_part()) continue;
+            const Slic3r::TriangleMesh &tm = v->mesh();
+            if (tm.empty() || tm.its.empty()) continue;
+            src.push_back({v->get_mesh_shared_ptr(), v->get_matrix()});
+        }
+        sources = std::move(src);
+
+        double rotation = args.value("rotation", 0.0);
+        double rot_rad = rotation * M_PI / 180.0;
+        if (args.contains("position") && args["position"].is_array() && args["position"].size() >= 3) {
+            ::Slic3r::Vec3d pos(args["position"][0].get<double>(), args["position"][1].get<double>(), args["position"][2].get<double>());
+            ::Slic3r::Vec3d norm(0.0, 0.0, 1.0);
+            if (args.contains("normal") && args["normal"].is_array() && args["normal"].size() >= 3) {
+                norm = ::Slic3r::Vec3d(args["normal"][0].get<double>(), args["normal"][1].get<double>(), args["normal"][2].get<double>());
+                if (norm.norm() > 1e-6) norm.normalize();
+                else norm = ::Slic3r::Vec3d(0.0, 0.0, 1.0);
+            }
+            ::Slic3r::Transform3d surface_trmat = Slic3r::Emboss::create_transformation_onto_surface(pos, norm, 0.9);
+            if (std::abs(rot_rad) > 1e-6) {
+                surface_trmat *= Eigen::AngleAxisd(rot_rad, Slic3r::Vec3d::UnitZ());
+            }
+            if (!obj->instances.empty()) {
+                text_tr = obj->instances.front()->get_matrix().inverse() * surface_trmat;
+            }
+        } else if (args.contains("rotation")) {
+            const ::Slic3r::Transform3d& inst_tr = (!obj->instances.empty()) ? obj->instances.front()->get_matrix() : ::Slic3r::Transform3d::Identity();
+            ::Slic3r::Transform3d cur_vol_tr = vol->get_transformation().get_matrix();
+            ::Slic3r::Transform3d world_tr = inst_tr * cur_vol_tr;
+            ::Slic3r::Vec3d pos = world_tr.translation();
+            auto linear_mat = world_tr.linear();
+            double scale_x = linear_mat.col(0).norm();
+            double scale_y = linear_mat.col(1).norm();
+            double scale_z = linear_mat.col(2).norm();
+            ::Slic3r::Vec3d norm = linear_mat.col(2);
+            if (norm.norm() > 1e-6) norm.normalize();
+            else norm = ::Slic3r::Vec3d(0.0, 0.0, 1.0);
+            ::Slic3r::Transform3d surface_trmat = Slic3r::Emboss::create_transformation_onto_surface(pos, norm, 0.9);
+            if (std::abs(rot_rad) > 1e-6) {
+                surface_trmat *= Eigen::AngleAxisd(rot_rad, Slic3r::Vec3d::UnitZ());
+            }
+            if (std::abs(scale_x - 1.0) > 1e-4 || std::abs(scale_y - 1.0) > 1e-4 || std::abs(scale_z - 1.0) > 1e-4) {
+                surface_trmat.scale(::Slic3r::Vec3d(scale_x, scale_y, scale_z));
+            }
+            text_tr = inst_tr.inverse() * surface_trmat;
+        }
+    }
+
     GeneratedTextMesh generated = generate_text_geometry(
         text, font_data, font_path, font_name, size, depth,
         char_gap, line_gap, boldness, skew, h_align, v_align,
-        use_surface, is_new_object, vol->type()
+        use_surface, is_new_object, vol->type(), sources, text_tr
     );
 
     vol->set_mesh(std::move(generated.mesh));

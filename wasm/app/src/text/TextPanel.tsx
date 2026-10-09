@@ -29,6 +29,7 @@ export const TextPanel: React.FC = () => {
   const align = useTextStore((s) => s.align);
   const volumeType = useTextStore((s) => s.volumeType);
   const rotation = useTextStore((s) => s.rotation);
+  const useSurface = useTextStore((s) => s.useSurface);
   const fonts = useTextStore((s) => s.fonts);
   const isFontsLoaded = useTextStore((s) => s.isFontsLoaded);
   const isLoading = useTextStore((s) => s.isLoading);
@@ -47,6 +48,7 @@ export const TextPanel: React.FC = () => {
   const setAlign = useTextStore((s) => s.setAlign);
   const setVolumeType = useTextStore((s) => s.setVolumeType);
   const setRotation = useTextStore((s) => s.setRotation);
+  const setUseSurface = useTextStore((s) => s.setUseSurface);
   const setError = useTextStore((s) => s.setError);
   const resetParams = useTextStore((s) => s.resetParams);
   const loadFonts = useTextStore((s) => s.loadFonts);
@@ -397,6 +399,20 @@ export const TextPanel: React.FC = () => {
             style={{ width: '100%', cursor: 'pointer' }}
           />
         </div>
+      </div>
+
+      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center' }}>
+        <input
+          id="use-surface-checkbox"
+          data-testid="use-surface-checkbox"
+          type="checkbox"
+          checked={useSurface}
+          onChange={(e) => setUseSurface(e.target.checked)}
+          style={{ marginRight: 8, cursor: 'pointer' }}
+        />
+        <label htmlFor="use-surface-checkbox" style={{ color: '#a1a1aa', cursor: 'pointer' }}>
+          Use surface
+        </label>
       </div>
 
       {/* Spacing: Character Gap & Line Gap */}

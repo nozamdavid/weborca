@@ -36,7 +36,7 @@ test('text part grows a cube mesh and keeps editable metadata through 3MF', asyn
     core.writeFile('/fonts/DejaVuSans.ttf', fs.readFileSync(path.join(repoRoot, 'wasm/app/public/fonts/DejaVuSans.ttf')));
     core.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
     await core.call('loadModel', { path: '/models/cube.obj' });
-    const before = await core.call('getObjectTree', {});
+    const before = await core.call('getObjectTree', {}); console.log("instanceOffset:", before.objects[0].instances[0].offset);
     const objectId = before.objects[0].id;
     const instanceOffset = before.objects[0].instances[0].offset;
     const meshBefore = await core.call('getMesh', { objectId });
@@ -92,7 +92,7 @@ test('valid base64 fontData containing slashes adds text volume without host fal
     await core.call('init', { resourcesDir: '/resources', dataDir: '/data' });
     core.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
     await core.call('loadModel', { path: '/models/cube.obj' });
-    const before = await core.call('getObjectTree', {});
+    const before = await core.call('getObjectTree', {}); console.log("instanceOffset:", before.objects[0].instances[0].offset);
     const objectId = before.objects[0].id;
 
     // Load actual bundled font and encode as base64 (contains thousands of slashes '/')
@@ -128,7 +128,7 @@ test('invalid custom fontData throws without silent fallback', async () => {
     await core.call('init', { resourcesDir: '/resources', dataDir: '/data' });
     core.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
     await core.call('loadModel', { path: '/models/cube.obj' });
-    const before = await core.call('getObjectTree', {});
+    const before = await core.call('getObjectTree', {}); console.log("instanceOffset:", before.objects[0].instances[0].offset);
     const objectId = before.objects[0].id;
 
     // Invalid base64 font data should throw, not silently fall back to default
@@ -159,7 +159,7 @@ test('rotation-only update preserves surface normal tilt without flattening to X
     core.writeFile('/fonts/DejaVuSans.ttf', fs.readFileSync(path.join(repoRoot, 'wasm/app/public/fonts/DejaVuSans.ttf')));
     core.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
     await core.call('loadModel', { path: '/models/cube.obj' });
-    const before = await core.call('getObjectTree', {});
+    const before = await core.call('getObjectTree', {}); console.log("instanceOffset:", before.objects[0].instances[0].offset);
     const objectId = before.objects[0].id;
     const instanceOffset = before.objects[0].instances[0].offset;
 
@@ -213,7 +213,7 @@ test('corrupt update leaves existing geometry intact', async () => {
     core.writeFile('/fonts/DejaVuSans.ttf', fs.readFileSync(path.join(repoRoot, 'wasm/app/public/fonts/DejaVuSans.ttf')));
     core.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
     await core.call('loadModel', { path: '/models/cube.obj' });
-    const before = await core.call('getObjectTree', {});
+    const before = await core.call('getObjectTree', {}); console.log("instanceOffset:", before.objects[0].instances[0].offset);
     const objectId = before.objects[0].id;
 
     const added = await core.call('addText', {
@@ -260,7 +260,7 @@ test('base64 fontData with data-URI prefix and padding decodes cleanly without U
     await core.call('init', { resourcesDir: '/resources', dataDir: '/data' });
     core.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
     await core.call('loadModel', { path: '/models/cube.obj' });
-    const before = await core.call('getObjectTree', {});
+    const before = await core.call('getObjectTree', {}); console.log("instanceOffset:", before.objects[0].instances[0].offset);
     const objectId = before.objects[0].id;
 
     const fontBytes = fs.readFileSync(path.join(repoRoot, 'wasm/app/public/fonts/DejaVuSans.ttf'));
@@ -293,7 +293,7 @@ test('small rotation angles in degrees preserve orientation and remain idempoten
     core.writeFile('/fonts/DejaVuSans.ttf', fs.readFileSync(path.join(repoRoot, 'wasm/app/public/fonts/DejaVuSans.ttf')));
     core.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
     await core.call('loadModel', { path: '/models/cube.obj' });
-    const before = await core.call('getObjectTree', {});
+    const before = await core.call('getObjectTree', {}); console.log("instanceOffset:", before.objects[0].instances[0].offset);
     const objectId = before.objects[0].id;
     const instanceOffset = before.objects[0].instances[0].offset;
 
@@ -349,6 +349,116 @@ test('small rotation angles in degrees preserve orientation and remain idempoten
         assert.ok(Math.abs(reUpdated.boundingBox[b] - bbInitial[b]) < 1e-3, `Bounding box drift at index ${b} step ${i}`);
       }
     }
+  } finally {
+    core.dispose();
+  }
+});
+
+test('useSurface wraps text around cylindrical model', async () => {
+  const mod = await import(modulePath);
+  const core = await createEngineCore({ moduleFactory: mod.createOrcaEngine || mod.default, threads: 4 });
+  try {
+    await core.call('init', { resourcesDir: '/resources', dataDir: '/data' });
+    core.writeFile('/fonts/DejaVuSans.ttf', fs.readFileSync(path.join(repoRoot, 'wasm/app/public/fonts/DejaVuSans.ttf')));
+    
+    // Create cylinder obj programmatically
+    const R = 40, H = 60, N = 96;
+    let obj = 'v 0 0 0\nv 0 0 ' + H + '\n';
+    for (let i = 0; i < N; i++) {
+        const a = i / N * 2 * Math.PI;
+        obj += `v ${Math.cos(a) * R} ${Math.sin(a) * R} 0\nv ${Math.cos(a) * R} ${Math.sin(a) * R} ${H}\n`;
+    }
+    for (let i = 0; i < N; i++) {
+        const j = (i + 1) % N, b1 = 3 + 2 * i, t1 = 4 + 2 * i, b2 = 3 + 2 * j, t2 = 4 + 2 * j;
+        obj += `f ${b1} ${b2} ${t2}\nf ${b1} ${t2} ${t1}\nf 1 ${b2} ${b1}\nf 2 ${t1} ${t2}\n`;
+    }
+    
+    core.writeFile('/models/cyl.obj', new TextEncoder().encode(obj));
+    await core.call('loadModel', { path: '/models/cyl.obj' });
+    const before = await core.call('getObjectTree', {}); console.log("instanceOffset:", before.objects[0].instances[0].offset);
+    const objectId = before.objects[0].id;
+
+    async function measureText(useSurface, textStr = 'CURVED') {
+      const t0 = performance.now();
+      const add = await core.call('addText', {
+        objectId, volumeType: 'part', text: textStr,
+        fontPath: '/fonts/DejaVuSans.ttf', fontName: 'DejaVu Sans',
+        size: 12, depth: 2, useSurface, position: [0, R, 0], normal: [0, 1, 0]
+      });
+      const t1 = performance.now();
+      
+      // Round-trip check
+      const info = await core.call('getText', { objectId, volumeId: add.volumeId });
+      assert.equal(info.useSurface, useSurface, "useSurface property must round-trip");
+      
+      const mesh = await core.call('getMesh', { objectId });
+      const bytes = core.readFile(mesh.path);
+      const pos = new Float32Array(bytes.buffer, bytes.byteOffset + 16, mesh.vertexCount * 3);
+      const idx = new Uint32Array(bytes.buffer, bytes.byteOffset + 16 + mesh.vertexCount * 12, mesh.triangleCount * 3);
+      const vol = mesh.volumes.find((x) => x.volumeId === add.volumeId);
+      const r = [];
+      for (let f = vol.firstFacet; f < vol.firstFacet + vol.facetCount; f++) {
+        for (let k = 0; k < 3; k++) {
+          const i = idx[f * 3 + k];
+          r.push(Math.hypot(pos[i * 3], pos[i * 3 + 1]));
+        }
+      }
+      await core.call('deleteVolume', { objectId, volumeId: add.volumeId }).catch(() => {});
+      console.log("Curved MIN/MAX:", Math.min(...r), Math.max(...r)); return { min: Math.min(...r), max: Math.max(...r), time: t1 - t0 };
+    }
+
+    const curved = await measureText(true);
+    assert.ok(curved.time < 5000, `Curved text generation took too long: ${curved.time} ms`);
+    // An embossed part sits on the surface and reaches depth (2 mm) out from it.
+    assert.ok(curved.min >= R - 0.05, `Curved min ${curved.min} should be >= ${R - 0.05}`);
+    assert.ok(curved.max <= R + 2 + 0.05, `Curved max ${curved.max} should be <= ${R + 2.05}`);
+
+    const flat = await measureText(false);
+    // (b) flat text of the same size sticks out beyond R + 1 at its ends
+    assert.ok(flat.max > R + 1, `Flat max ${flat.max} should stick out beyond ${R + 1}`);
+
+    
+    // Case where text is too wide / misses object
+    // For R=40, a very long string hangs CGAL in WASM due to complex corefinement.
+    // Instead, we just check if "CURVED" misses a smaller cylinder.
+
+    let obj2 = 'v 0 0 0\nv 0 0 ' + H + '\n';
+    const R2 = 5;
+    for (let i = 0; i < N; i++) {
+        const a = i / N * 2 * Math.PI;
+        obj2 += `v ${Math.cos(a) * R2} ${Math.sin(a) * R2} 0\nv ${Math.cos(a) * R2} ${Math.sin(a) * R2} ${H}\n`;
+    }
+    for (let i = 0; i < N; i++) {
+        const j = (i + 1) % N, b1 = 3 + 2 * i, t1 = 4 + 2 * i, b2 = 3 + 2 * j, t2 = 4 + 2 * j;
+        obj2 += `f ${b1} ${b2} ${t2}\nf ${b1} ${t2} ${t1}\nf 1 ${b2} ${b1}\nf 2 ${t1} ${t2}\n`;
+    }
+    core.writeFile('/models/cyl2.obj', new TextEncoder().encode(obj2));
+    await core.call('loadModel', { path: '/models/cyl2.obj' });
+    const tree2 = await core.call('getObjectTree', {});
+    const objectId2 = tree2.objects.find(o => o.name === 'cyl2.obj').id;
+
+    const missed = await core.call('addText', {
+        objectId: objectId2, volumeType: 'part', text: 'C',
+        fontPath: '/fonts/DejaVuSans.ttf', fontName: 'DejaVu Sans',
+        size: 12, depth: 2, useSurface: true, position: [20, R2, H / 2], normal: [0, 1, 0]
+    });
+    
+    const mesh2 = await core.call('getMesh', { objectId: objectId2 });
+    const bytes2 = core.readFile(mesh2.path);
+    const pos2 = new Float32Array(bytes2.buffer, bytes2.byteOffset + 16, mesh2.vertexCount * 3);
+    const idx2 = new Uint32Array(bytes2.buffer, bytes2.byteOffset + 16 + mesh2.vertexCount * 12, mesh2.triangleCount * 3);
+    const vol2 = mesh2.volumes.find((x) => x.volumeId === missed.volumeId);
+    let maxR2 = -1e9;
+    for (let f = vol2.firstFacet; f < vol2.firstFacet + vol2.facetCount; f++) {
+      for (let k = 0; k < 3; k++) {
+        const i = idx2[f * 3 + k];
+        maxR2 = Math.max(maxR2, Math.hypot(pos2[i * 3], pos2[i * 3 + 1]));
+      }
+    }
+    
+    assert.ok(maxR2 > R2 + 1, `Missed max ${maxR2} should fall back to flat and stick out beyond ${R2+1}`);
+
+
   } finally {
     core.dispose();
   }

@@ -375,9 +375,8 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
     get().debouncedUpdateText();
   },
 
-  setUseSurface: (_useSurface: boolean) => {
-    // Curved surface emboss unsupported in WebAssembly engine: forced false
-    set({ useSurface: false });
+  setUseSurface: (useSurface: boolean) => {
+    set({ useSurface });
     get().debouncedUpdateText();
   },
 
@@ -513,7 +512,7 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
         boldness: info.boldness ?? 0.0,
         skew: info.skew ?? 0.0,
         align: info.align || { horizontal: 'center', vertical: 'center' },
-        useSurface: false
+        useSurface: info.useSurface ?? false
       };
 
       set({
@@ -529,7 +528,7 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
         boldness: info.boldness ?? 0.0,
         skew: info.skew ?? 0.0,
         align: info.align || { horizontal: 'center', vertical: 'center' },
-        useSurface: false,
+        useSurface: info.useSurface ?? false,
         rotation: info.rotation ?? 0.0,
         initialConfig,
         hasDispatchedMutation: false,
@@ -585,7 +584,7 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
         boldness: state.boldness,
         skew: state.skew,
         align: state.align,
-        useSurface: false,
+        useSurface: state.useSurface,
         position: state.position ?? undefined,
         normal: state.normal ?? undefined,
         rotation: state.rotation
@@ -702,7 +701,7 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
         boldness: state.boldness,
         skew: state.skew,
         align: state.align,
-        useSurface: false
+        useSurface: state.useSurface
       };
 
       if (state.position !== null) {

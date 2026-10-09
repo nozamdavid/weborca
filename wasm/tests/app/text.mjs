@@ -9,6 +9,7 @@
 import { chromium, firefox } from 'playwright';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +21,15 @@ const REPO_ROOT = path.resolve(__dirname, '../../..');
 const PORT = parseInt(process.env.PORT || '5173', 10);
 const BASE_URL = `http://127.0.0.1:${PORT}/`;
 const DIST_DIR = process.env.APP_TEST_DIST || path.resolve(REPO_ROOT, 'wasm/build/ui-final-dist');
-const CUBE_MODEL_PATH = path.join(REPO_ROOT, 'tests/data/20mm_cube.obj');
+const CYLINDER_MODEL_PATH = path.join(os.tmpdir(), 'orca-text-test-cylinder.obj');
+if (!fs.existsSync(CYLINDER_MODEL_PATH)) {
+  const R = 40, H = 60, N = 96;
+  let obj = 'v 0 0 0\nv 0 0 ' + H + '\n';
+  for (let i = 0; i < N; i++) { const a = i / N * 2 * Math.PI; obj += `v ${Math.cos(a) * R} ${Math.sin(a) * R} 0\nv ${Math.cos(a) * R} ${Math.sin(a) * R} ${H}\n`; }
+  for (let i = 0; i < N; i++) { const j = (i + 1) % N, b1 = 3 + 2 * i, t1 = 4 + 2 * i, b2 = 3 + 2 * j, t2 = 4 + 2 * j; obj += `f ${b1} ${b2} ${t2}\nf ${b1} ${t2} ${t1}\nf 1 ${b2} ${b1}\nf 2 ${t1} ${t2}\n`; }
+  fs.writeFileSync(CYLINDER_MODEL_PATH, obj);
+}
+
 const SCREENSHOT_DIR = path.join(REPO_ROOT, 'wasm/tests/app/screenshots');
 
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
@@ -77,8 +86,8 @@ async function runBrowserTextSuite(browserType, browserName) {
     await page.selectOption('#printer-select', 'Voron 2.4 300 0.4 nozzle');
 
     // 2. Import 20mm_cube.obj
-    console.log(`[${browserName}] Importing 20mm_cube.obj...`);
-    await page.setInputFiles('#model-file', CUBE_MODEL_PATH);
+    console.log(`[${browserName}] Importing cylinder.obj...`);
+    await page.setInputFiles('#model-file', CYLINDER_MODEL_PATH);
 
     await page.waitForFunction(() => {
       const store = window.__plateStore?.getState();
@@ -129,6 +138,15 @@ async function runBrowserTextSuite(browserType, browserName) {
         ts.setDepth(1.5);
       }
     });
+    
+    // Check useSurface toggle
+    const useSurfaceCheckbox = await page.waitForSelector('#use-surface-checkbox', { timeout: 5000 });
+    const isChecked = await useSurfaceCheckbox.isChecked();
+    assert.equal(isChecked, false, 'useSurface should default to false');
+    
+    // Toggle on
+    await page.check('#use-surface-checkbox');
+    assert.equal(await useSurfaceCheckbox.isChecked(), true, 'useSurface toggle should be checked');
     await page.waitForTimeout(200);
 
     // 6. Add Text to Object
@@ -170,6 +188,61 @@ async function runBrowserTextSuite(browserType, browserName) {
       return { triangleCount: m?.triangleCount, vertexCount: m?.vertexCount };
     }, initialObj.id);
     assert.ok(meshInitial.triangleCount > 0, 'Initial object mesh must have triangles');
+
+    
+    const curvedTriangleCount = await page.evaluate(async ({objId, textVolId}) => {
+      const store = window.__plateStore?.getState();
+      const m = await store?.getMesh(objId);
+      const mVol = m.volumes.find(v => v.volumeId === textVolId);
+      return mVol ? mVol.facetCount : 0;
+    }, { objId: initialObj.id, textVolId: textVol.id });
+    
+    // Toggle useSurface OFF
+    console.log('[' + browserName + '] Toggling Use surface OFF...');
+    await page.uncheck('#use-surface-checkbox');
+    // Wait for debounce and engine response
+    await page.waitForTimeout(1000);
+    await page.waitForFunction(() => !window.__textStore?.getState()?.isLoading, null, { timeout: 10000 });
+    
+    const flatTriangleCount = await page.evaluate(async ({objId, textVolId}) => {
+      const store = window.__plateStore?.getState();
+      const m = await store?.getMesh(objId);
+      const mVol = m.volumes.find(v => v.volumeId === textVolId);
+      return mVol ? mVol.facetCount : 0;
+    }, { objId: initialObj.id, textVolId: textVol.id });
+    
+    console.log('[' + browserName + '] Curved triangles:', curvedTriangleCount);
+    console.log('[' + browserName + '] Flat triangles:', flatTriangleCount);
+    
+    assert.ok(curvedTriangleCount !== flatTriangleCount, 'Curved and flat volumes must differ in triangle count');
+
+    // Undo
+    console.log('[' + browserName + '] Undoing Use surface toggle...');
+    await page.keyboard.press('Control+Z');
+    await page.waitForTimeout(500);
+    
+    const undoTriangleCount = await page.evaluate(async ({objId, textVolId}) => {
+      const store = window.__plateStore?.getState();
+      const m = await store?.getMesh(objId);
+      const mVol = m.volumes.find(v => v.volumeId === textVolId);
+      return mVol ? mVol.facetCount : 0;
+    }, { objId: initialObj.id, textVolId: textVol.id });
+    assert.ok(undoTriangleCount > 0, 'Undo should restore a mesh');
+
+
+    // Redo
+    console.log('[' + browserName + '] Redoing Use surface toggle...');
+    await page.keyboard.press('Control+Shift+Z');
+    await page.waitForTimeout(500);
+    
+    const redoTriangleCount = await page.evaluate(async ({objId, textVolId}) => {
+      const store = window.__plateStore?.getState();
+      const m = await store?.getMesh(objId);
+      const mVol = m.volumes.find(v => v.volumeId === textVolId);
+      return mVol ? mVol.facetCount : 0;
+    }, { objId: initialObj.id, textVolId: textVol.id });
+    assert.ok(redoTriangleCount > 0, 'Redo should restore a mesh');
+
 
     // 7. Edit 3D Text: update text string and rotation
     console.log(`[${browserName}] Editing text volume in-place...`);

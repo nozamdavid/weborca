@@ -145,11 +145,15 @@ Reads the stored text parameters and configuration from an existing text volume.
    - **`negative` volumes**: The text penetrates into the body by `depth`. To avoid degenerate coplanar surfaces at the interface during slicing CSG difference, the mesh starts slightly above the surface at $+0.015\text{ mm}$ and penetrates to $-(\text{depth} - 0.015)\text{ mm}$.
    - **`part` / `modifier` volumes**: The text extends outward along the normal by `depth`. The base extends $-0.015\text{ mm}$ into the model to guarantee watertight contact.
    - **`new_object`**: Placed directly on the build bed spanning $Z \in [0, \text{depth}]$.
+   The mesh is kept in text space when the volume is added (no geometry centering), as desktop's `EmbossJob` does, so the offsets above hold relative to $P$.
 
-3. **Rotation Updates Preserving Normal & Scale**:
+3. **Use surface**:
+   With `useSurface`, the glyph outlines are cut onto the object's model-part meshes along the text's local $Z$ (`cut_surface`, ported from desktop's `EmbossJob` into `TextOps.cpp`) and extruded along that projection by `depth`, using the same offsets as above. On a curved object, the text therefore follows the surface instead of the tangent plane at $P$. If the outlines miss the object, the planar mesh is used.
+
+4. **Rotation Updates Preserving Normal & Scale**:
    When updating rotation without specifying a new position/normal, the engine queries the volume's current world-space transformation matrix $M_{\text{world}} = M_{\text{inst}} \cdot M_{\text{vol}}$. It computes the local outward normal $N = \operatorname{normalize}(M_{\text{world}, *2})$, preserves column scaling factors $(\|c_0\|, \|c_1\|, \|c_2\|)$, and rotates within the tangent plane. The text does not flatten to the $XY$ build bed.
 
-4. **Rotation Units & Round-Trip Idempotency**:
+5. **Rotation Units & Round-Trip Idempotency**:
    All rotation parameters across `addText`, `updateText`, and `getText` are consistently expressed in **degrees**. There is no magnitude-based guessing between degrees and radians. Small angles (e.g. 1°, 5°, -5°) are preserved accurately without unexpected radian conversions, ensuring that reading a volume's rotation via `getText` and passing it back into `updateText` is idempotent and causes zero geometry orientation drift.
 
 ---
