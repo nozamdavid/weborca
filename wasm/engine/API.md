@@ -48,6 +48,7 @@ Jobs run strictly in submission order.
 | `getConfig` | `{}` | `{key: serializedValue}` for the full config slicing will use (presets merged plus overrides) |
 | `setOptions` | `{"options": {key: serializedValue}}` | `{"errors": [{"key", "error"}]}`; valid keys become overrides on top of the presets; values use the same serialization as Orca profile JSON |
 | `resetOptions` | `{}` | `{}` |
+| `parsePreset` | `{"format": "json" \| "ini", "text": "..."}` | `{"config": {key: serializedValue}, "meta": {"name", "inherits", "type", ...}, "droppedKeys": [...]}`; loads one desktop preset file with desktop's loader (`load_from_json` / `load_from_ini_string`), including legacy key migration; unknown keys are dropped; error on malformed JSON |
 | `loadModel` | `{"path": "/models/x.stl"}` | `{"objects": [{"name", "instances", "volumes", "size": [x, y, z]}]}`; replaces the current model |
 | `arrange` | `{}` | `{}`; centers on the bed and arranges, same as wasm/spike/slice_driver.cpp |
 | `slice` | `{"outPath": "/out/plate_1.gcode", "threads": n}` | `{"gcodePath", "gcodeBytes", "layers", "printTimeS", "filamentMm", "filamentG", "warnings": ["..."]}` |

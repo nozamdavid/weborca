@@ -605,6 +605,13 @@ export interface ClearLayerEventsResult {
   remainingCount: number;
 }
 
+/** A desktop preset file as loaded by the engine; values are serialized like getConfig(). */
+export interface ParsedPreset {
+  config: Record<string, string>;
+  meta: Record<string, string>;
+  droppedKeys: string[];
+}
+
 export class OrcaEngine {
   protected constructor(worker: Worker, options: CreateEngineOptions);
 
@@ -629,6 +636,8 @@ export class OrcaEngine {
     kind: 'print' | 'printer' | 'filament' | 'sla_print' | 'sla_material';
     filamentIndex?: number;
   }): Promise<EvaluateRulesResult>;
+
+  parsePreset(format: 'json' | 'ini', text: string): Promise<ParsedPreset>;
 
   setOptions(options: Record<string, string>): Promise<SetOptionsResult>;
 

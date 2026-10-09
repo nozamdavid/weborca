@@ -37,7 +37,8 @@ import {
   deleteUserPresetHelper,
   renameUserPresetHelper,
   importUserPresetsHelper,
-  exportUserPresetsHelper
+  exportUserPresetsHelper,
+  exportDesktopArchiveHelper
 } from '../presets/presetActions';
 
 export interface AppState {
@@ -154,6 +155,7 @@ export interface AppState {
   selectUserPreset: (kind: PresetKind, name: string) => Promise<void>;
   importPresetBundleAction: (bundleData: unknown, strategy?: ConflictStrategy) => Promise<ImportBundleResult>;
   exportPresetBundleAction: (kinds?: PresetKind[], description?: string) => PresetBundle;
+  exportDesktopArchiveAction: (archiveType?: 'printer' | 'filament' | 'all', targetName?: string) => Uint8Array;
   saveCurrentUserPreset: (kind: PresetKind, name: string) => Promise<void>;
   deleteUserPresetAction: (kind: PresetKind, name: string) => Promise<void>;
   renameUserPresetAction: (kind: PresetKind, oldName: string, newName: string) => Promise<void>;
@@ -1060,7 +1062,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   importPresetBundleAction: async (bundleData: unknown, strategy: ConflictStrategy = 'overwrite') =>
     importUserPresetsHelper(get, set, bundleData, strategy),
   exportPresetBundleAction: (kinds?: PresetKind[], description?: string) =>
-    exportUserPresetsHelper(get, kinds, description)
+    exportUserPresetsHelper(get, kinds, description),
+  exportDesktopArchiveAction: (archiveType?: 'printer' | 'filament' | 'all', targetName?: string) =>
+    exportDesktopArchiveHelper(get, archiveType, targetName)
 }));
 
 if (typeof window !== 'undefined') {

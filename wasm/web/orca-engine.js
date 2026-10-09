@@ -240,6 +240,16 @@ export class OrcaEngine {
    * @param {Record<string, string>} options
    * @returns {Promise<{ errors: Array<{ key: string, error: string }> }>}
    */
+  /**
+   * Parses one desktop preset file the way desktop loads it, migrating legacy keys.
+   * @param {'json'|'ini'} format
+   * @param {string} text
+   * @returns {Promise<{ config: Record<string, string>, meta: Record<string, string>, droppedKeys: string[] }>}
+   */
+  async parsePreset(format, text) {
+    return await this._call('parsePreset', { format, text });
+  }
+
   async setOptions(options) {
     return await this._call('setOptions', { options });
   }

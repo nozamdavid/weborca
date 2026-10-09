@@ -8,9 +8,14 @@ import {
 } from './presetStorage';
 import {
   exportPresetBundle,
-  validatePresetBundle,
   resolvePresetBundleImport
 } from './presetBundle';
+import {
+  parsePresetsFromUniversalInput,
+  exportDesktopPrinterBundle,
+  exportDesktopFilamentBundle,
+  exportDesktopPresetsZip
+} from './presetArchive';
 
 type StoreGet = () => AppState;
 type StoreSet = (
@@ -310,11 +315,24 @@ export async function importUserPresetsHelper(
   bundleInput: unknown,
   strategy: ConflictStrategy = 'overwrite'
 ): Promise<ImportBundleResult> {
-  const validation = validatePresetBundle(bundleInput);
-  if (!validation.valid) {
-    const errorMsg = validation.error;
+  let bundleToResolve: PresetBundle;
+
+  try {
+    const parsed = await parsePresetsFromUniversalInput(bundleInput);
+    if (parsed.kind === 'web-bundle') {
+      bundleToResolve = parsed.bundle;
+    } else {
+      bundleToResolve = {
+        format: 'orcaslicer-web-preset-bundle',
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        presets: parsed.presets
+      };
+    }
+  } catch (err: any) {
+    const errorMsg = err.message || String(err);
     set({ engineError: errorMsg });
-    throw new Error(errorMsg);
+    throw err;
   }
 
   const { userPresets, processes, filaments, printers } = get();
@@ -325,7 +343,7 @@ export async function importUserPresetsHelper(
   };
 
   try {
-    const result = resolvePresetBundleImport(validation.bundle, userPresets, systemPresetNames, strategy);
+    const result = resolvePresetBundleImport(bundleToResolve, userPresets, systemPresetNames, strategy);
     const updated = await saveUserPresetsBatch(result.allPresets);
     set({
       userPresets: updated,
@@ -346,4 +364,28 @@ export function exportUserPresetsHelper(
 ): PresetBundle {
   const { userPresets } = get();
   return exportPresetBundle(userPresets, { kinds, description });
+}
+
+export function exportDesktopArchiveHelper(
+  get: StoreGet,
+  archiveType: 'printer' | 'filament' | 'all' = 'all',
+  targetName?: string
+): Uint8Array {
+  const { userPresets, selectedPrinter, selectedFilament } = get();
+
+  if (archiveType === 'printer') {
+    const name = targetName || selectedPrinter;
+    const printerPreset = userPresets.find((p) => p.kind === 'printer' && p.name === name);
+    if (!printerPreset) throw new Error(`"${name}" is not a user printer preset`);
+    return exportDesktopPrinterBundle(printerPreset, userPresets);
+  }
+
+  if (archiveType === 'filament') {
+    const name = targetName || selectedFilament;
+    const filPreset = userPresets.find((p) => p.kind === 'filament' && p.name === name);
+    if (!filPreset) throw new Error(`"${name}" is not a user filament preset`);
+    return exportDesktopFilamentBundle(filPreset);
+  }
+
+  return exportDesktopPresetsZip(userPresets);
 }

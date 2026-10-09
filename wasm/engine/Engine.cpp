@@ -47,6 +47,7 @@
 #include <deque>
 #include <limits>
 #include <filesystem>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -236,6 +237,7 @@ private:
     json op_setSeamPainting(const json& args);
     json op_clearSeamPainting(const json& args);
     json op_cutObject(const json& args);
+    json op_parsePreset(const json& args);
     json op_cutObjectWithConnectors(const json& args);
     json op_getMeshHealth(const json& args);
     json op_checkMeshHealth(const json& args);
@@ -472,6 +474,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_setSeamPainting(args);
         } else if (op == "clearSeamPainting") {
             result_data = op_clearSeamPainting(args);
+        } else if (op == "parsePreset") {
+            result_data = op_parsePreset(args);
         } else if (op == "cutObject") {
             result_data = op_cutObject(args);
         } else if (op == "cutObjectWithConnectors") {
@@ -985,6 +989,38 @@ json Engine::Impl::op_setOptions(const json& args) {
         }
     }
     return json{{"errors", errors_arr}};
+}
+
+
+// Parses one desktop preset file (.json or a single-preset .ini) the way desktop loads it,
+// including legacy key migration, and returns its options serialized like op_getConfig.
+json Engine::Impl::op_parsePreset(const json& args) {
+    const std::string format = args.value("format", "json");
+    const std::string text = args.at("text").get<std::string>();
+
+    Slic3r::DynamicPrintConfig config;
+    Slic3r::ConfigSubstitutionContext ctx(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+    json meta = json::object();
+    if (format == "ini") {
+        config.load_from_ini_string(text, Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+    } else {
+        // load_from_json() only reads files, so stage the text in MEMFS.
+        const std::string path = "/tmp/orca_preset_import.json";
+        {
+            std::ofstream out(path, std::ios::binary | std::ios::trunc);
+            out << text;
+        }
+        std::map<std::string, std::string> key_values;
+        std::string reason;
+        const int rc = config.load_from_json(path, ctx, false, key_values, reason);
+        std::remove(path.c_str());
+        if (rc != 0) throw Slic3r::RuntimeError("Invalid preset JSON: " + reason);
+        for (const auto& [key, value] : key_values) meta[key] = value;
+    }
+
+    json values = json::object();
+    for (const std::string& key : config.keys()) values[key] = config.opt_serialize(key);
+    return {{"config", values}, {"meta", meta}, {"droppedKeys", ctx.unrecogized_keys}};
 }
 
 json Engine::Impl::op_resetOptions(const json& /*args*/) {

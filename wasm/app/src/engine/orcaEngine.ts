@@ -4,6 +4,7 @@
  */
 
 import { OrcaEngine } from '../../../web/orca-engine.js';
+import type { ParsedPreset } from '../../../web/orca-engine.js';
 import type {
   PresetItem,
   LoadModelResult,
@@ -88,6 +89,11 @@ export async function evaluateRules(options?: {
 }): Promise<EvaluateRulesResult> {
   const engine = await getEngine();
   return (await engine.evaluateRules(options)) as EvaluateRulesResult;
+}
+
+export async function parsePreset(format: 'json' | 'ini', text: string): Promise<ParsedPreset> {
+  const engine = await getEngine();
+  return await engine.parsePreset(format, text);
 }
 
 export async function setOptions(options: Record<string, string>): Promise<SetOptionsResult> {

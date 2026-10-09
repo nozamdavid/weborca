@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { PresetKind, ConflictStrategy } from './types';
 import { exportPresetBundle, downloadPresetBundle, BUNDLE_BOUNDARY_NOTE } from './presetBundle';
+import { exportDesktopPresetsZip, downloadBinaryArchive } from './presetArchive';
 
 export const ManagePresetsDialog: React.FC = () => {
   const {
@@ -18,7 +19,8 @@ export const ManagePresetsDialog: React.FC = () => {
     duplicateUserPresetAction,
     renameUserPresetAction,
     deleteUserPresetAction,
-    importPresetBundleAction
+    importPresetBundleAction,
+    exportDesktopArchiveAction
   } = useAppStore();
 
   const [activeKind, setActiveKind] = useState<PresetKind>('process');
@@ -178,11 +180,40 @@ export const ManagePresetsDialog: React.FC = () => {
     }
   };
 
-  const executeImport = async (content: string) => {
+  const handleExportArchive = (kind: 'printer' | 'filament') => {
     setError(null);
     setSuccessMsg(null);
     try {
-      const result = await importPresetBundleAction(content, conflictStrategy);
+      const data = exportDesktopArchiveAction(kind, selectedPreset);
+      const fileName = `${selectedPreset}.orca_${kind}`;
+      downloadBinaryArchive(data, fileName);
+      setSuccessMsg(`Exported "${fileName}".`);
+    } catch (err: any) {
+      setError(`Failed to export ${kind} archive: ${err.message || String(err)}`);
+    }
+  };
+
+  const handleExportZipArchive = () => {
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      if (userPresets.length === 0) {
+        setError('No user presets to export.');
+        return;
+      }
+      const data = exportDesktopPresetsZip(userPresets);
+      downloadBinaryArchive(data, 'OrcaSlicer_User_Presets.zip');
+      setSuccessMsg(`Presets archive exported with ${userPresets.length} preset(s).`);
+    } catch (err: any) {
+      setError(`Failed to export zip archive: ${err.message || String(err)}`);
+    }
+  };
+
+  const executeImport = async (inputData: unknown) => {
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const result = await importPresetBundleAction(inputData, conflictStrategy);
       setSuccessMsg(result.message);
       setBundleJsonText('');
       if (fileInputRef.current) {
@@ -197,8 +228,19 @@ export const ManagePresetsDialog: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const text = await file.text();
-      await executeImport(text);
+      const isBinary =
+        file.name.endsWith('.orca_printer') ||
+        file.name.endsWith('.orca_filament') ||
+        file.name.endsWith('.orca_bundle') ||
+        file.name.endsWith('.zip');
+
+      if (isBinary) {
+        const buffer = await file.arrayBuffer();
+        await executeImport(new Uint8Array(buffer));
+      } else {
+        const text = await file.text();
+        await executeImport(text);
+      }
     } catch (err: any) {
       setError(`Failed to read file: ${err.message || String(err)}`);
     }
@@ -516,24 +558,58 @@ export const ManagePresetsDialog: React.FC = () => {
               gap: 10
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
               <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#f4f4f5' }}>
-                Preset Bundles (Import & Export)
+                Preset Bundles & Archives (Import & Export)
               </div>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                data-testid="export-bundle-btn"
-                onClick={handleExportBundle}
-                style={{ fontSize: '0.8rem', padding: '4px 10px' }}
-                aria-label="Export all user presets to bundle JSON"
-              >
-                Export Bundle JSON
-              </button>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  data-testid="export-bundle-btn"
+                  onClick={handleExportBundle}
+                  style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                  aria-label="Export all user presets to bundle JSON"
+                >
+                  Export Bundle JSON
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  data-testid="export-desktop-printer-btn"
+                  onClick={() => handleExportArchive('printer')}
+                  disabled={activeKind !== 'printer' || !isSelectedUserPreset}
+                  style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                  aria-label="Export printer preset archive"
+                >
+                  Export .orca_printer
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  data-testid="export-desktop-filament-btn"
+                  onClick={() => handleExportArchive('filament')}
+                  disabled={activeKind !== 'filament' || !isSelectedUserPreset}
+                  style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                  aria-label="Export filament preset archive"
+                >
+                  Export .orca_filament
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  data-testid="export-desktop-zip-btn"
+                  onClick={handleExportZipArchive}
+                  style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                  aria-label="Export all presets as zip archive"
+                >
+                  Export .zip
+                </button>
+              </div>
             </div>
 
             <div style={{ fontSize: '0.78rem', color: '#a1a1aa' }}>
-              Export all user presets or import a versioned preset bundle. System presets remain immutable.
+              Import and export presets in native OrcaSlicer formats (.orca_printer, .orca_filament, .zip, .json, .ini) or web bundles. System presets remain immutable.
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -571,7 +647,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 ref={fileInputRef}
                 id="bundle-file-input"
                 data-testid="bundle-file-input"
-                accept=".json,application/json"
+                accept=".json,.ini,.zip,.orca_printer,.orca_filament,.orca_bundle,application/json"
                 onChange={handleFileImport}
                 aria-label="Import preset bundle file"
                 style={{ display: 'none' }}
@@ -582,9 +658,9 @@ export const ManagePresetsDialog: React.FC = () => {
                 data-testid="import-bundle-btn"
                 onClick={() => fileInputRef.current?.click()}
                 style={{ fontSize: '0.85rem', padding: '6px 12px' }}
-                aria-label="Choose preset bundle JSON file to import"
+                aria-label="Choose preset bundle or archive file to import"
               >
-                Import Bundle File...
+                Import Archive / Preset File...
               </button>
             </div>
 
@@ -593,13 +669,13 @@ export const ManagePresetsDialog: React.FC = () => {
                 htmlFor="bundle-json-textarea"
                 style={{ fontSize: '0.78rem', color: '#a1a1aa' }}
               >
-                Or paste bundle JSON directly:
+                Or paste bundle JSON, preset JSON, or INI directly:
               </label>
               <textarea
                 id="bundle-json-textarea"
                 data-testid="bundle-json-textarea"
-                aria-label="Paste bundle JSON content"
-                placeholder='{"format":"orcaslicer-web-preset-bundle","version":1,"presets":[...]}'
+                aria-label="Paste bundle JSON or INI content"
+                placeholder='{"format":"orcaslicer-web-preset-bundle","version":1,"presets":[...]} or preset JSON / INI'
                 value={bundleJsonText}
                 onChange={(e) => {
                   setBundleJsonText(e.target.value);
@@ -629,12 +705,12 @@ export const ManagePresetsDialog: React.FC = () => {
                 onClick={handleJsonImport}
                 style={{ alignSelf: 'flex-start', fontSize: '0.8rem', padding: '4px 10px' }}
               >
-                Import Pasted JSON
+                Import Pasted Content
               </button>
             </div>
 
             <div style={{ fontSize: '0.75rem', color: '#71717a', fontStyle: 'italic', marginTop: 2 }}>
-              Supported format: {BUNDLE_BOUNDARY_NOTE}
+              Supported formats: .orca_printer, .orca_filament, .zip, .json, .ini ({BUNDLE_BOUNDARY_NOTE})
             </div>
           </div>
         </div>
