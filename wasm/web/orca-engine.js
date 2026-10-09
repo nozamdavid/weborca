@@ -594,6 +594,9 @@ export class OrcaEngine {
   async addText(params) { return await this._call('addText', params); }
   async updateText(params) { return await this._call('updateText', params); }
   async getText(params) { return await this._call('getText', params); }
+  async getLayerEvents(params = {}) { return await this._call('getLayerEvents', params); }
+  async setLayerEvents(params) { return await this._call('setLayerEvents', params); }
+  async clearLayerEvents(params = {}) { return await this._call('clearLayerEvents', params); }
 
   /**
    * Runs the slicing pipeline.

@@ -560,6 +560,51 @@ export interface TextInfo {
   align: { horizontal: 'left' | 'center' | 'right'; vertical: 'top' | 'center' | 'bottom' };
 }
 
+
+export interface LayerEvent {
+  printZ: number;
+  type: 'pause' | 'custom' | string;
+  gcode?: string;
+  message?: string;
+  extruder?: number;
+  color?: string;
+  extra?: string;
+}
+
+export interface GetLayerEventsParams {
+  plateIndex?: number;
+}
+
+export interface GetLayerEventsResult {
+  plateIndex: number;
+  count: number;
+  events: LayerEvent[];
+}
+
+export interface SetLayerEventsParams {
+  plateIndex?: number;
+  events: LayerEvent[];
+}
+
+export interface SetLayerEventsResult {
+  plateIndex: number;
+  count: number;
+  events: LayerEvent[];
+}
+
+export interface ClearLayerEventsParams {
+  plateIndex?: number;
+  printZ?: number;
+  allPlates?: boolean;
+}
+
+export interface ClearLayerEventsResult {
+  plateIndex?: number;
+  allPlates?: boolean;
+  clearedCount: number;
+  remainingCount: number;
+}
+
 export class OrcaEngine {
   protected constructor(worker: Worker, options: CreateEngineOptions);
 
@@ -705,6 +750,10 @@ export class OrcaEngine {
   addText(params: TextParams): Promise<TextResult>;
   updateText(params: Partial<TextParams> & { objectId: number; volumeId: number }): Promise<TextResult>;
   getText(params: { objectId: number; volumeId: number }): Promise<TextInfo>;
+
+  getLayerEvents(params?: GetLayerEventsParams): Promise<GetLayerEventsResult>;
+  setLayerEvents(params: SetLayerEventsParams): Promise<SetLayerEventsResult>;
+  clearLayerEvents(params?: ClearLayerEventsParams): Promise<ClearLayerEventsResult>;
 
   slice(options?: SliceOptions): Promise<SliceResult>;
 

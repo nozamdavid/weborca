@@ -10,6 +10,7 @@
 #include "CutOps.hpp"
 #include "RepairOps.hpp"
 #include "CutConnectorOps.hpp"
+#include "LayerEventOps.hpp"
 #include "libslic3r/Arrange.hpp"
 
 #include "libslic3r/libslic3r.h"
@@ -40,7 +41,9 @@
 #include <cfloat>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <deque>
+#include <limits>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -251,6 +254,9 @@ private:
     json op_addText(const json& args);
     json op_updateText(const json& args);
     json op_getText(const json& args);
+    json op_getLayerEvents(const json& args);
+    json op_setLayerEvents(const json& args);
+    json op_clearLayerEvents(const json& args);
     Slic3r::DynamicPrintConfig layer_config() const;
     std::string op_slice(int jobId, const json& args);
 
@@ -506,6 +512,12 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_updateText(args);
         } else if (op == "getText") {
             result_data = op_getText(args);
+        } else if (op == "getLayerEvents") {
+            result_data = op_getLayerEvents(args);
+        } else if (op == "setLayerEvents") {
+            result_data = op_setLayerEvents(args);
+        } else if (op == "clearLayerEvents") {
+            result_data = op_clearLayerEvents(args);
         } else {
             throw Slic3r::RuntimeError("Unknown operation: " + op);
         }
@@ -1467,11 +1479,15 @@ json Engine::Impl::op_getObjectLayers(const json& args) { return OrcaWasm::getOb
 json Engine::Impl::op_addText(const json& args) { return OrcaWasm::addText(m_model, m_plate_data, args); }
 json Engine::Impl::op_updateText(const json& args) { return OrcaWasm::updateText(m_model, args); }
 json Engine::Impl::op_getText(const json& args) { return OrcaWasm::getText(m_model, args); }
+json Engine::Impl::op_getLayerEvents(const json& args) { return OrcaWasm::getLayerEvents(m_model, args); }
+json Engine::Impl::op_setLayerEvents(const json& args) { return OrcaWasm::setLayerEvents(m_model, args); }
+json Engine::Impl::op_clearLayerEvents(const json& args) { return OrcaWasm::clearLayerEvents(m_model, args); }
 
 
 std::string Engine::Impl::op_slice(int jobId, const json& args) {
     struct SliceCleanupGuard {
         Engine::Impl* impl;
+        int saved_curr_plate_index{0};
         std::vector<std::pair<Slic3r::ModelObject*, std::vector<bool>>> saved_inst;
         std::vector<std::pair<Slic3r::ModelObject*, bool>> saved_obj;
 
@@ -1482,6 +1498,7 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
             if (impl->m_slice_jobs_queued_or_running > 0) {
                 impl->m_slice_jobs_queued_or_running--;
             }
+            impl->m_model.curr_plate_index = saved_curr_plate_index;
             for (auto& item : saved_obj) {
                 item.first->printable = item.second;
             }
@@ -1492,6 +1509,7 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
             }
         }
     } slice_cleanup{this};
+    slice_cleanup.saved_curr_plate_index = m_model.curr_plate_index;
 
     if (m_model.objects.empty())
         throw Slic3r::RuntimeError("No model loaded");
@@ -1500,7 +1518,30 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
 
     std::string out_path = args.at("outPath").get<std::string>();
     int threads = args.value("threads", 0);
-    int plate_index = args.value("plateIndex", -1);
+    int plate_index = -1;
+    if (args.contains("plateIndex")) {
+        const auto& v = args["plateIndex"];
+        if (!v.is_number_integer()) {
+            throw Slic3r::RuntimeError("Invalid plateIndex: must be an integer");
+        }
+        if (v.is_number_unsigned()) {
+            uint64_t u = v.get<uint64_t>();
+            if (u > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+                throw Slic3r::RuntimeError("Invalid plateIndex: out of range");
+            }
+            plate_index = static_cast<int>(u);
+        } else {
+            int64_t s = v.get<int64_t>();
+            if (s < 0) {
+                throw Slic3r::RuntimeError("Invalid plateIndex: must be non-negative");
+            }
+            if (s > std::numeric_limits<int>::max()) {
+                throw Slic3r::RuntimeError("Invalid plateIndex: out of range");
+            }
+            plate_index = static_cast<int>(s);
+        }
+    }
+    m_model.curr_plate_index = (plate_index >= 0 ? plate_index : 0);
 
     // Ensure output directory exists
     std::filesystem::path p(out_path);
