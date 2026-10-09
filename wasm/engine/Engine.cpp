@@ -8,6 +8,7 @@
 #include "LayerHeightOps.hpp"
 #include "TextOps.hpp"
 #include "CutOps.hpp"
+#include "CalibOps.hpp"
 #include "RepairOps.hpp"
 #include "CutConnectorOps.hpp"
 #include "LayerEventOps.hpp"
@@ -237,6 +238,7 @@ private:
     json op_getSeamPainting(const json& args);
     json op_setSeamPainting(const json& args);
     json op_clearSeamPainting(const json& args);
+    json op_setupCalibration(const json& args);
     json op_cutObject(const json& args);
     json op_parsePreset(const json& args);
     json op_cutObjectWithConnectors(const json& args);
@@ -300,6 +302,7 @@ private:
     Slic3r::DynamicPrintConfig m_options_override;
     Slic3r::Model m_model;
     Slic3r::PlateDataPtrs m_plate_data;
+    Slic3r::Calib_Params m_calib_params;
 };
 
 Engine::Impl::Impl() {
@@ -479,6 +482,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_clearSeamPainting(args);
         } else if (op == "parsePreset") {
             result_data = op_parsePreset(args);
+        } else if (op == "setupCalibration") {
+            result_data = op_setupCalibration(args);
         } else if (op == "cutObject") {
             result_data = op_cutObject(args);
         } else if (op == "cutObjectWithConnectors") {
@@ -1253,6 +1258,7 @@ Slic3r::Model read_model_file(const std::string& path, const json& args) {
 json Engine::Impl::op_loadModel(const json& args) {
     std::string path = args.at("path").get<std::string>();
     Slic3r::Model loaded_model = read_model_file(path, args);
+    m_calib_params.mode = Slic3r::CalibMode::Calib_None; // as desktop load_files() does
     if (loaded_model.objects.empty())
         throw Slic3r::RuntimeError("No objects loaded from file: " + path);
 
@@ -1275,6 +1281,7 @@ json Engine::Impl::op_loadModel(const json& args) {
 json Engine::Impl::op_addModel(const json& args) {
     std::string path = args.at("path").get<std::string>();
     Slic3r::Model loaded_model = read_model_file(path, args);
+    m_calib_params.mode = Slic3r::CalibMode::Calib_None; // as desktop load_files() does
     if (loaded_model.objects.empty())
         throw Slic3r::RuntimeError("No objects loaded from file: " + path);
 
@@ -1607,6 +1614,7 @@ json Engine::Impl::op_arrange(const json& args) {
 
 json Engine::Impl::op_openProject(const json& args) {
     if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized; call loadVendors first");
+    m_calib_params.mode = Slic3r::CalibMode::Calib_None;
     return OrcaEngine::op_openProject(args, m_model, m_bundle, m_options_override, m_selected_printer, m_selected_process, m_selected_filaments, m_plate_data);
 }
 
@@ -1904,6 +1912,7 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
         print.auto_assign_extruders(mo);
     }
     print.is_BBL_printer() = m_bundle->is_bbl_vendor();
+    print.set_calib_params(m_calib_params);
     print.apply(m_model, config);
     if (auto err = print.validate(); !err.string.empty())
         throw Slic3r::RuntimeError("Print validation failed: " + err.string);
@@ -2027,4 +2036,10 @@ std::string Engine::progress() {
 
 void Engine::cancel() {
     m_impl->cancel();
+}
+
+json Engine::Impl::op_setupCalibration(const json& args) {
+    if (!m_bundle)
+        throw Slic3r::RuntimeError("Preset bundle not initialized");
+    return OrcaWasm::setupCalibration(m_model, m_options_override, *m_bundle, m_calib_params, args, m_resources_dir);
 }

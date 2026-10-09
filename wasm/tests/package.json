@@ -1,5 +1,6 @@
 {
   "dependencies": {
+    "draco3d": "^1.5.7",
     "playwright": "^1.63.0",
     "serve": "^14.2.6"
   },

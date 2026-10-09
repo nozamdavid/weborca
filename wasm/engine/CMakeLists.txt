@@ -9,6 +9,7 @@ set(ORCA_ENGINE_SOURCES
     LayerHeightOps.cpp
     TextOps.cpp
     CutOps.cpp
+    CalibOps.cpp
     RepairOps.cpp
     CutConnectorOps.cpp
     LayerEventOps.cpp
