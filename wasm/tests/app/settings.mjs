@@ -22,6 +22,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { startServer, stopServer } from './lib/dist.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -42,78 +43,6 @@ const SCREENSHOT_DIR = path.resolve(repoRoot, 'wasm/build/tests-app');
 const LAYOUT_PATH = path.resolve(repoRoot, 'wasm/build/settings/layout.json');
 
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-
-async function isServerRunning() {
-  return new Promise((resolve) => {
-    const req = http.get(BASE_URL, (res) => {
-      resolve(res.statusCode === 200);
-    });
-    req.on('error', () => resolve(false));
-    req.setTimeout(1000, () => {
-      req.destroy();
-      resolve(false);
-    });
-  });
-}
-
-async function waitForServer(timeoutMs = 15000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (await isServerRunning()) return true;
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  return false;
-}
-
-let serverProcess = null;
-
-async function startServer() {
-  if (await isServerRunning()) {
-    throw new Error(`Port ${PORT} is occupied by an unrelated server; failing per test isolation requirements`);
-  }
-
-  const previewArgs = ['vite', 'preview'];
-  if (process.env.APP_TEST_DIST) {
-    previewArgs.push('--outDir', process.env.APP_TEST_DIST);
-  }
-  previewArgs.push('--port', String(PORT), '--host', '127.0.0.1');
-
-  console.log(`[Server] Launching 'vite preview' on port ${PORT}...`);
-  serverProcess = spawn('npx', previewArgs, {
-    cwd: path.resolve(repoRoot, 'wasm/app'),
-    stdio: 'ignore',
-    detached: true
-  });
-
-  const ready = await waitForServer();
-  if (!ready) {
-    throw new Error(`Server failed to respond on port ${PORT} within timeout`);
-  }
-  console.log(`[Server] Vite preview server ready at ${BASE_URL}`);
-}
-
-async function stopServer() {
-  console.log(`[Server] Terminating server on port ${PORT}...`);
-  if (serverProcess && serverProcess.pid) {
-    try {
-      process.kill(-serverProcess.pid, 'SIGTERM');
-    } catch (_) {
-      try {
-        process.kill(serverProcess.pid, 'SIGTERM');
-      } catch (_) {}
-    }
-    serverProcess = null;
-  }
-  await new Promise((r) => setTimeout(r, 500));
-}
-
-process.on('exit', () => {
-  if (serverProcess && serverProcess.pid) {
-    try {
-      process.kill(-serverProcess.pid, 'SIGKILL');
-    } catch (_) {}
-  }
-});
 
 async function runBrowserSettingsSuite(browserType, browserName) {
   console.log(`\n==================================================`);
@@ -561,7 +490,7 @@ async function main() {
   console.log('================================================================================\n');
 
   try {
-    await startServer();
+    await startServer(PORT, 'settings');
 
     const chromiumResults = await runBrowserSettingsSuite(chromium, 'chromium');
     const firefoxResults = await runBrowserSettingsSuite(firefox, 'firefox');
@@ -584,7 +513,7 @@ async function main() {
     console.log('All settings tests passed successfully!');
     console.log('================================================================================\n');
   } finally {
-    await stopServer();
+    await stopServer(PORT);
     const portCheck = execSync(`ss -ltnp | grep ${PORT} || true`).toString().trim();
     if (portCheck) {
       console.warn(`[Warning] Port ${PORT} still in use: ${portCheck}`);

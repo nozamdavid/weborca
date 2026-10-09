@@ -1,49 +1,14 @@
 import { chromium, firefox } from 'playwright';
-import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import fs from 'node:fs';
 import path from 'path';
+import { startServer, stopServer } from './lib/dist.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../..');
 const ISOLATED_BUILD_DIR = path.resolve(repoRoot, 'wasm/build/ui-step-dist');
 const PORT = 5081;
-
-let serverProcess;
-
-async function startServer() {
-  console.log(`[Server] Launching 'vite preview' from ${ISOLATED_BUILD_DIR} on port ${PORT}...`);
-  serverProcess = spawn(
-    'npx',
-    [
-      'vite',
-      'preview',
-      '--outDir',
-      ISOLATED_BUILD_DIR,
-      '--port',
-      String(PORT),
-      '--host',
-      '127.0.0.1'
-    ],
-    {
-      cwd: path.resolve(repoRoot, 'wasm/app'),
-      stdio: 'ignore',
-      detached: true
-    }
-  );
-  
-  // Wait a moment for server to start
-  await new Promise(resolve => setTimeout(resolve, 3000));
-}
-
-async function stopServer() {
-  if (serverProcess) {
-    process.kill(-serverProcess.pid);
-    serverProcess = null;
-    console.log(`[Server] Stopped.`);
-  }
-}
 
 async function runStepSuite(browserType, browserName) {
   const results = [];
@@ -134,7 +99,7 @@ async function runStepSuite(browserType, browserName) {
 
 async function main() {
   console.log(`Starting STEP import end-to-end tests...`);
-  await startServer();
+  await startServer(PORT, 'step');
 
   try {
     for (const [name, browserType] of [
@@ -147,7 +112,7 @@ async function main() {
     console.log(`All STEP import tests passed on all browsers!`);
     console.log(`==================================================`);
   } finally {
-    await stopServer();
+    await stopServer(PORT);
   }
 }
 

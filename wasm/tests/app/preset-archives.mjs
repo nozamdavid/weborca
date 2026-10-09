@@ -17,12 +17,12 @@
  * 8. UI controls & ManagePresetsDialog integration.
  */
 
-import { spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { startServer, stopServer } from './lib/dist.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -49,89 +49,6 @@ const PORT = 5088;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const ISOLATED_BUILD_DIR = process.env.APP_TEST_DIST || path.resolve(repoRoot, 'wasm/build/ui-preset-archives-dist');
 const fixturesDir = path.resolve(repoRoot, 'wasm/tests/fixtures');
-
-async function isServerRunning() {
-  return new Promise((resolve) => {
-    const req = http.get(BASE_URL, (res) => {
-      resolve(res.statusCode === 200);
-    });
-    req.on('error', () => resolve(false));
-    req.setTimeout(1000, () => {
-      req.destroy();
-      resolve(false);
-    });
-  });
-}
-
-async function waitForServer(timeoutMs = 15000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (await isServerRunning()) return true;
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  return false;
-}
-
-let serverProcess = null;
-
-async function startServer() {
-  if (await isServerRunning()) {
-    throw new Error(`Port ${PORT} is occupied by an unrelated server; failing per test isolation requirements`);
-  }
-
-  console.log(`[Server] Launching 'vite preview' from ${ISOLATED_BUILD_DIR} on port ${PORT}...`);
-  serverProcess = spawn(
-    'npx',
-    [
-      'vite',
-      'preview',
-      '--outDir',
-      ISOLATED_BUILD_DIR,
-      '--port',
-      String(PORT),
-      '--host',
-      '127.0.0.1'
-    ],
-    {
-      cwd: path.resolve(repoRoot, 'wasm/app'),
-      stdio: 'ignore',
-      detached: true
-    }
-  );
-
-  const ready = await waitForServer();
-  if (!ready) {
-    throw new Error(`Server failed to respond on port ${PORT} within timeout`);
-  }
-  console.log(`[Server] Vite preview server ready at ${BASE_URL}`);
-}
-
-async function stopServer() {
-  console.log(`[Server] Terminating server on port ${PORT}...`);
-  if (serverProcess && serverProcess.pid) {
-    try {
-      process.kill(-serverProcess.pid, 'SIGTERM');
-    } catch (_) {
-      try {
-        process.kill(serverProcess.pid, 'SIGTERM');
-      } catch (_) {}
-    }
-    serverProcess = null;
-  }
-  await new Promise((r) => setTimeout(r, 500));
-}
-
-process.on('exit', () => {
-  if (serverProcess && serverProcess.pid) {
-    try {
-      process.kill(-serverProcess.pid, 'SIGKILL');
-    } catch (_) {
-      try {
-        process.kill(serverProcess.pid, 'SIGKILL');
-      } catch (_) {}
-    }
-  }
-});
 
 async function runBrowserArchiveSuite(browserType, browserName) {
   console.log(`\n==================================================`);
@@ -632,7 +549,7 @@ wall_loops = 4
 async function main() {
   console.log('Starting Preset Archives E2E test suite...');
   try {
-    await startServer();
+    await startServer(PORT, 'preset-archives');
     // Run Chromium suite
     await runBrowserArchiveSuite(chromium, 'chromium');
     // Run Firefox suite
@@ -642,7 +559,7 @@ async function main() {
     console.error('\nTest suite failed with error:', err);
     process.exitCode = 1;
   } finally {
-    await stopServer();
+    await stopServer(PORT);
   }
 }
 

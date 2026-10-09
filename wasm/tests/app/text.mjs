@@ -8,11 +8,11 @@
 
 import { chromium, firefox } from 'playwright';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { startServer, stopServer } from './lib/dist.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,90 +24,6 @@ const CUBE_MODEL_PATH = path.join(REPO_ROOT, 'tests/data/20mm_cube.obj');
 const SCREENSHOT_DIR = path.join(REPO_ROOT, 'wasm/tests/app/screenshots');
 
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-
-let serverProcess = null;
-
-async function isServerRunning() {
-  return new Promise((resolve) => {
-    const req = http.get(BASE_URL, (res) => {
-      resolve(res.statusCode === 200);
-    });
-    req.on('error', () => resolve(false));
-    req.setTimeout(1000, () => {
-      req.destroy();
-      resolve(false);
-    });
-  });
-}
-
-async function waitForServer(timeoutMs = 15000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (await isServerRunning()) return true;
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  return false;
-}
-
-async function startServer() {
-  if (await isServerRunning()) {
-    console.log(`Server already running on port ${PORT}`);
-    return;
-  }
-
-  if (fs.existsSync(DIST_DIR)) {
-    console.log(`Starting web preview server from ${DIST_DIR} on port ${PORT}...`);
-    serverProcess = spawn(
-      'npx',
-      [
-        'vite',
-        'preview',
-        '--outDir',
-        DIST_DIR,
-        '--port',
-        String(PORT),
-        '--host',
-        '127.0.0.1'
-      ],
-      {
-        cwd: path.join(REPO_ROOT, 'wasm/app'),
-        stdio: 'ignore',
-        detached: true
-      }
-    );
-  } else {
-    console.log(`Starting web dev server on port ${PORT}...`);
-    serverProcess = spawn(
-      'npm',
-      ['run', 'dev', '--', '--port', String(PORT), '--host', '127.0.0.1'],
-      {
-        cwd: path.join(REPO_ROOT, 'wasm/app'),
-        stdio: 'ignore',
-        detached: true,
-        env: { ...process.env, PORT: String(PORT) }
-      }
-    );
-  }
-
-  const ready = await waitForServer();
-  if (!ready) {
-    throw new Error(`Server failed to respond on port ${PORT} within timeout`);
-  }
-  console.log(`Server ready at ${BASE_URL}`);
-}
-
-async function stopServer() {
-  if (serverProcess && serverProcess.pid) {
-    console.log('Stopping server...');
-    try {
-      process.kill(-serverProcess.pid, 'SIGTERM');
-    } catch (_) {}
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      process.kill(-serverProcess.pid, 'SIGKILL');
-    } catch (_) {}
-  }
-}
 
 async function runBrowserTextSuite(browserType, browserName) {
   console.log(`\n==================================================`);
@@ -451,7 +367,7 @@ async function runBrowserTextSuite(browserType, browserName) {
 
 async function main() {
   try {
-    await startServer();
+    await startServer(PORT, 'text');
 
     // Run Chromium suite
     await runBrowserTextSuite(chromium, 'chromium');
@@ -463,7 +379,7 @@ async function main() {
     console.log(`All 3D Text Browser Suites Passed on Chromium & Firefox!`);
     console.log(`==================================================\n`);
   } finally {
-    await stopServer();
+    await stopServer(PORT);
   }
 }
 

@@ -15,13 +15,13 @@
  * 9. Shuts down preview server cleanly and confirms port 5074 is freed.
  */
 
-import { spawn } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { paintPoint, visibleFacets } from './painting-checks.mjs';
 import { fileURLToPath } from 'node:url';
+import { startServer, stopServer } from './lib/dist.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -42,85 +42,6 @@ const CUBE_MODEL_PATH = path.resolve(repoRoot, 'tests/data/20mm_cube.obj');
 const SCREENSHOT_DIR = path.resolve(repoRoot, 'wasm/build/tests-app');
 
 fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-
-async function isServerRunning() {
-  return new Promise((resolve) => {
-    const req = http.get(BASE_URL, (res) => {
-      resolve(res.statusCode === 200);
-    });
-    req.on('error', () => resolve(false));
-    req.setTimeout(1000, () => {
-      req.destroy();
-      resolve(false);
-    });
-  });
-}
-
-async function waitForServer(timeoutMs = 15000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (await isServerRunning()) return true;
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  return false;
-}
-
-let serverProcess = null;
-
-async function startServer() {
-  if (await isServerRunning()) {
-    throw new Error(`Port ${PORT} is occupied by an unrelated server; failing per test isolation requirements`);
-  }
-
-  console.log(`[Server] Launching 'vite preview' from ${ISOLATED_BUILD_DIR} on port ${PORT}...`);
-  serverProcess = spawn(
-    'npx',
-    [
-      'vite',
-      'preview',
-      '--outDir',
-      ISOLATED_BUILD_DIR,
-      '--port',
-      String(PORT),
-      '--host',
-      '127.0.0.1'
-    ],
-    {
-      cwd: path.resolve(repoRoot, 'wasm/app'),
-      stdio: 'ignore',
-      detached: true
-    }
-  );
-
-  const ready = await waitForServer();
-  if (!ready) {
-    throw new Error(`Server failed to respond on port ${PORT} within timeout`);
-  }
-  console.log(`[Server] Vite preview server ready at ${BASE_URL}`);
-}
-
-async function stopServer() {
-  console.log(`[Server] Terminating server on port ${PORT}...`);
-  if (serverProcess && serverProcess.pid) {
-    try {
-      process.kill(-serverProcess.pid, 'SIGTERM');
-    } catch (_) {
-      try {
-        process.kill(serverProcess.pid, 'SIGTERM');
-      } catch (_) {}
-    }
-    serverProcess = null;
-  }
-  await new Promise((r) => setTimeout(r, 500));
-}
-
-process.on('exit', () => {
-  if (serverProcess && serverProcess.pid) {
-    try {
-      process.kill(-serverProcess.pid, 'SIGKILL');
-    } catch (_) {}
-  }
-});
 
 async function runBrowserHistorySuite(browserType, browserName) {
   console.log(`\n==================================================`);
@@ -503,7 +424,7 @@ async function runBrowserHistorySuite(browserType, browserName) {
 
 async function main() {
   try {
-    await startServer();
+    await startServer(PORT, 'history');
 
     console.log('\nRunning Chromium suite...');
     const chromResults = await runBrowserHistorySuite(chromium, 'chromium');
@@ -522,7 +443,7 @@ async function main() {
     }
     console.log('\nAll history undo/redo regression checks PASSED across Chromium and Firefox.');
   } finally {
-    await stopServer();
+    await stopServer(PORT);
   }
 }
 
