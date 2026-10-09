@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { ManagePresetsDialog } from '../presets/ManagePresetsDialog';
 import { useHistoryStore } from '../history';
+import { FlowRateModal, useCalibrationStore } from '../calibration';
 
 export const TopBar: React.FC = () => {
   const {
@@ -35,6 +36,7 @@ export const TopBar: React.FC = () => {
   const canUndo = useHistoryStore((s) => s.canUndo);
   const canRedo = useHistoryStore((s) => s.canRedo);
   const isRestoring = useHistoryStore((s) => s.isRestoring);
+  const isCalibrating = useCalibrationStore((s) => s.isCalibrating);
   const undo = useHistoryStore((s) => s.undo);
   const redo = useHistoryStore((s) => s.redo);
 
@@ -48,10 +50,11 @@ export const TopBar: React.FC = () => {
     e.target.value = '';
   };
 
+  const isBusy = isSlicing || isRestoring || isCalibrating;
+
   const canSlice =
     isEngineReady &&
-    !isSlicing &&
-    !isRestoring &&
+    !isBusy &&
     !!modelFile &&
     !!selectedPrinter &&
     !!selectedProcess &&
@@ -85,7 +88,7 @@ export const TopBar: React.FC = () => {
           <select
             id="vendor-select"
             value={selectedVendor}
-            disabled={isSlicing || vendors.length === 0}
+            disabled={isBusy || vendors.length === 0}
             onChange={(e) => chooseVendor(e.target.value)}
           >
             <option value="">Select Vendor...</option>
@@ -105,7 +108,7 @@ export const TopBar: React.FC = () => {
               id="printer-select"
               data-testid="printer-select"
               value={currentPrinterVal}
-              disabled={isSlicing || !selectedVendor || printers.length === 0}
+              disabled={isBusy || !selectedVendor || printers.length === 0}
               onChange={(e) => {
                 const val = e.target.value;
                 if (val.startsWith('user:')) {
@@ -140,7 +143,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon edit-btn"
               data-testid="edit-printer-btn"
               title="Edit printer settings"
-              disabled={!selectedPrinter || isSlicing}
+              disabled={!selectedPrinter || isBusy}
               onClick={() => openDialog('printer')}
             >
               ✏️
@@ -150,7 +153,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon save-btn"
               data-testid="save-printer-btn"
               title="Save as user printer preset"
-              disabled={!selectedPrinter || isSlicing}
+              disabled={!selectedPrinter || isBusy}
               onClick={() => openSavePresetDialog('printer')}
             >
               💾
@@ -160,7 +163,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon duplicate-btn"
               data-testid="duplicate-printer-btn"
               title="Duplicate printer preset"
-              disabled={!selectedPrinter || isSlicing}
+              disabled={!selectedPrinter || isBusy}
               onClick={() => openManagePresetsDialog('printer', 'duplicate')}
             >
               📋
@@ -170,7 +173,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon manage-btn"
               data-testid="manage-printer-btn"
               title="Manage printer presets"
-              disabled={isSlicing}
+              disabled={isBusy}
               onClick={() => openManagePresetsDialog('printer')}
             >
               ⚙️
@@ -181,7 +184,7 @@ export const TopBar: React.FC = () => {
                 className="btn-icon delete-btn"
                 data-testid="delete-printer-preset-btn"
                 title="Delete user preset"
-                disabled={isSlicing}
+                disabled={isBusy}
                 onClick={() => deleteUserPresetAction('printer', activeUserPreset.printer!)}
               >
                 🗑️
@@ -198,7 +201,7 @@ export const TopBar: React.FC = () => {
               id="filament-select"
               data-testid="filament-select"
               value={currentFilamentVal}
-              disabled={isSlicing || !selectedPrinter || filaments.length === 0}
+              disabled={isBusy || !selectedPrinter || filaments.length === 0}
               onChange={(e) => {
                 const val = e.target.value;
                 if (val.startsWith('user:')) {
@@ -233,7 +236,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon edit-btn"
               data-testid="edit-filament-btn"
               title="Edit filament settings"
-              disabled={!selectedFilament || isSlicing}
+              disabled={!selectedFilament || isBusy}
               onClick={() => openDialog('filament')}
             >
               ✏️
@@ -243,7 +246,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon save-btn"
               data-testid="save-filament-btn"
               title="Save as user filament preset"
-              disabled={!selectedFilament || isSlicing}
+              disabled={!selectedFilament || isBusy}
               onClick={() => openSavePresetDialog('filament')}
             >
               💾
@@ -253,7 +256,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon duplicate-btn"
               data-testid="duplicate-filament-btn"
               title="Duplicate filament preset"
-              disabled={!selectedFilament || isSlicing}
+              disabled={!selectedFilament || isBusy}
               onClick={() => openManagePresetsDialog('filament', 'duplicate')}
             >
               📋
@@ -263,7 +266,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon manage-btn"
               data-testid="manage-filament-btn"
               title="Manage filament presets"
-              disabled={isSlicing}
+              disabled={isBusy}
               onClick={() => openManagePresetsDialog('filament')}
             >
               ⚙️
@@ -274,7 +277,7 @@ export const TopBar: React.FC = () => {
                 className="btn-icon delete-btn"
                 data-testid="delete-filament-preset-btn"
                 title="Delete user preset"
-                disabled={isSlicing}
+                disabled={isBusy}
                 onClick={() => deleteUserPresetAction('filament', activeUserPreset.filament!)}
               >
                 🗑️
@@ -291,7 +294,7 @@ export const TopBar: React.FC = () => {
               id="process-select"
               data-testid="process-select"
               value={currentProcessVal}
-              disabled={isSlicing || !selectedPrinter || processes.length === 0}
+              disabled={isBusy || !selectedPrinter || processes.length === 0}
               onChange={(e) => {
                 const val = e.target.value;
                 if (val.startsWith('user:')) {
@@ -326,7 +329,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon save-btn"
               data-testid="save-process-btn"
               title="Save as user process preset"
-              disabled={!selectedProcess || isSlicing}
+              disabled={!selectedProcess || isBusy}
               onClick={() => openSavePresetDialog('process')}
             >
               💾
@@ -336,7 +339,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon duplicate-btn"
               data-testid="duplicate-process-btn"
               title="Duplicate process preset"
-              disabled={!selectedProcess || isSlicing}
+              disabled={!selectedProcess || isBusy}
               onClick={() => openManagePresetsDialog('process', 'duplicate')}
             >
               📋
@@ -346,7 +349,7 @@ export const TopBar: React.FC = () => {
               className="btn-icon manage-btn"
               data-testid="manage-process-btn"
               title="Manage process presets"
-              disabled={isSlicing}
+              disabled={isBusy}
               onClick={() => openManagePresetsDialog('process')}
             >
               ⚙️
@@ -357,7 +360,7 @@ export const TopBar: React.FC = () => {
                 className="btn-icon delete-btn"
                 data-testid="delete-process-preset-btn"
                 title="Delete user preset"
-                disabled={isSlicing}
+                disabled={isBusy}
                 onClick={() => deleteUserPresetAction('process', activeUserPreset.process!)}
               >
                 🗑️
@@ -380,10 +383,21 @@ export const TopBar: React.FC = () => {
         <button
           id="import-btn"
           className="btn btn-secondary"
-          disabled={isSlicing || isRestoring}
+          disabled={isBusy}
           onClick={() => fileInputRef.current?.click()}
         >
           📂 Import Model
+        </button>
+        {/* Flow Rate Calibration button */}
+        <button
+          id="calibration-btn"
+          className="btn btn-secondary"
+          data-testid="calibration-btn"
+          title="Flow Rate Calibration"
+          disabled={isBusy}
+          onClick={() => useCalibrationStore.getState().openDialog()}
+        >
+          📏 Calibration
         </button>
 
         {/* Undo and Redo TopBar buttons */}
@@ -392,7 +406,7 @@ export const TopBar: React.FC = () => {
           className="btn btn-secondary"
           data-testid="undo-btn"
           title="Undo (Ctrl+Z)"
-          disabled={!canUndo || isRestoring || isSlicing}
+          disabled={!canUndo || isBusy}
           onClick={() => undo()}
         >
           ↩️ Undo
@@ -402,7 +416,7 @@ export const TopBar: React.FC = () => {
           className="btn btn-secondary"
           data-testid="redo-btn"
           title="Redo (Ctrl+Shift+Z)"
-          disabled={!canRedo || isRestoring || isSlicing}
+          disabled={!canRedo || isBusy}
           onClick={() => redo()}
         >
           ↪️ Redo
@@ -431,6 +445,8 @@ export const TopBar: React.FC = () => {
 
       {/* Local Preset Management Dialog */}
       <ManagePresetsDialog />
+      {/* Flow Rate Calibration Modal */}
+      <FlowRateModal />
     </header>
   );
 };
