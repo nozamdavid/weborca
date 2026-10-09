@@ -1,10 +1,16 @@
 import type { AppState } from '../store/appStore';
-import type { PresetKind, UserPreset } from './types';
+import type { PresetKind, UserPreset, ConflictStrategy, PresetBundle, ImportBundleResult } from './types';
 import {
   saveUserPreset,
   deleteUserPreset,
-  renameUserPreset
+  renameUserPreset,
+  saveUserPresetsBatch
 } from './presetStorage';
+import {
+  exportPresetBundle,
+  validatePresetBundle,
+  resolvePresetBundleImport
+} from './presetBundle';
 
 type StoreGet = () => AppState;
 type StoreSet = (
@@ -296,4 +302,48 @@ export async function renameUserPresetHelper(
     set({ engineError: msg });
     throw err;
   }
+}
+
+export async function importUserPresetsHelper(
+  get: StoreGet,
+  set: StoreSet,
+  bundleInput: unknown,
+  strategy: ConflictStrategy = 'overwrite'
+): Promise<ImportBundleResult> {
+  const validation = validatePresetBundle(bundleInput);
+  if (!validation.valid) {
+    const errorMsg = validation.error;
+    set({ engineError: errorMsg });
+    throw new Error(errorMsg);
+  }
+
+  const { userPresets, processes, filaments, printers } = get();
+  const systemPresetNames = {
+    process: processes.map((p) => p.name),
+    filament: filaments.map((f) => f.name),
+    printer: printers.map((p) => p.name)
+  };
+
+  try {
+    const result = resolvePresetBundleImport(validation.bundle, userPresets, systemPresetNames, strategy);
+    const updated = await saveUserPresetsBatch(result.allPresets);
+    set({
+      userPresets: updated,
+      engineError: null
+    });
+    return result;
+  } catch (err: any) {
+    const msg = `Failed to import preset bundle: ${err.message || String(err)}`;
+    set({ engineError: msg });
+    throw err;
+  }
+}
+
+export function exportUserPresetsHelper(
+  get: StoreGet,
+  kinds?: PresetKind[],
+  description?: string
+): PresetBundle {
+  const { userPresets } = get();
+  return exportPresetBundle(userPresets, { kinds, description });
 }

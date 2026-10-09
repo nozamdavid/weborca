@@ -156,7 +156,7 @@ export async function loadUserPresets(): Promise<UserPreset[]> {
  * Writes user presets to OPFS and localStorage.
  * Throws if both storage mechanisms fail. Retains fallback if one works.
  */
-async function persistUserPresets(presets: UserPreset[]): Promise<void> {
+export async function persistUserPresets(presets: UserPreset[]): Promise<void> {
   return withStorageLock(async () => {
     const timestamp = Date.now();
     let opfsSuccess = false;
@@ -293,4 +293,12 @@ export async function duplicateUserPreset(kind: PresetKind, sourceName: string, 
   existing.push(newPreset);
   await persistUserPresets(existing);
   return existing;
+}
+
+/**
+ * Persists a full batch of user presets to durable storage (OPFS / localStorage).
+ */
+export async function saveUserPresetsBatch(presets: UserPreset[]): Promise<UserPreset[]> {
+  await persistUserPresets(presets);
+  return presets;
 }

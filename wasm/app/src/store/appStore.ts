@@ -28,13 +28,15 @@ import type {
   RuleFix,
 } from '../engine/types';
 import type { SettingsLayout, SettingsMode } from '../settings/types';
-import type { UserPreset, PresetKind } from '../presets/types';
+import type { UserPreset, PresetKind, ConflictStrategy, PresetBundle, ImportBundleResult } from '../presets/types';
 import { loadUserPresets } from '../presets/presetStorage';
 import {
   saveCurrentUserPresetHelper,
   duplicateUserPresetHelper,
   deleteUserPresetHelper,
-  renameUserPresetHelper
+  renameUserPresetHelper,
+  importUserPresetsHelper,
+  exportUserPresetsHelper
 } from '../presets/presetActions';
 
 export interface AppState {
@@ -146,6 +148,8 @@ export interface AppState {
 
   // User Preset Actions
   selectUserPreset: (kind: PresetKind, name: string) => Promise<void>;
+  importPresetBundleAction: (bundleData: unknown, strategy?: ConflictStrategy) => Promise<ImportBundleResult>;
+  exportPresetBundleAction: (kinds?: PresetKind[], description?: string) => PresetBundle;
   saveCurrentUserPreset: (kind: PresetKind, name: string) => Promise<void>;
   deleteUserPresetAction: (kind: PresetKind, name: string) => Promise<void>;
   renameUserPresetAction: (kind: PresetKind, oldName: string, newName: string) => Promise<void>;
@@ -1040,7 +1044,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   deleteUserPresetAction: async (kind: PresetKind, name: string) =>
     deleteUserPresetHelper(get, set, kind, name),
   renameUserPresetAction: async (kind: PresetKind, oldName: string, newName: string) =>
-    renameUserPresetHelper(get, set, kind, oldName, newName)
+    renameUserPresetHelper(get, set, kind, oldName, newName),
+  importPresetBundleAction: async (bundleData: unknown, strategy: ConflictStrategy = 'overwrite') =>
+    importUserPresetsHelper(get, set, bundleData, strategy),
+  exportPresetBundleAction: (kinds?: PresetKind[], description?: string) =>
+    exportUserPresetsHelper(get, kinds, description)
 }));
 
 if (typeof window !== 'undefined') {

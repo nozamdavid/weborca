@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
-import type { PresetKind } from './types';
+import type { PresetKind, ConflictStrategy } from './types';
+import { exportPresetBundle, downloadPresetBundle, BUNDLE_BOUNDARY_NOTE } from './presetBundle';
 
 export const ManagePresetsDialog: React.FC = () => {
   const {
@@ -16,15 +17,20 @@ export const ManagePresetsDialog: React.FC = () => {
     selectedPrinter,
     duplicateUserPresetAction,
     renameUserPresetAction,
-    deleteUserPresetAction
+    deleteUserPresetAction,
+    importPresetBundleAction
   } = useAppStore();
 
   const [activeKind, setActiveKind] = useState<PresetKind>('process');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   const [duplicateName, setDuplicateName] = useState<string>('');
   const [renameName, setRenameName] = useState<string>('');
+  const [conflictStrategy, setConflictStrategy] = useState<ConflictStrategy>('overwrite');
+  const [bundleJsonText, setBundleJsonText] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (managePresetsDialogTarget) {
@@ -34,6 +40,7 @@ export const ManagePresetsDialog: React.FC = () => {
       setSuccessMsg(null);
       setDuplicateName('');
       setRenameName('');
+      setBundleJsonText('');
 
       const activeName =
         managePresetsDialogTarget.targetPresetName ||
@@ -159,14 +166,60 @@ export const ManagePresetsDialog: React.FC = () => {
     }
   };
 
+  const handleExportBundle = () => {
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const bundle = exportPresetBundle(userPresets);
+      downloadPresetBundle(bundle);
+      setSuccessMsg(`Preset bundle exported with ${bundle.presets.length} preset(s).`);
+    } catch (err: any) {
+      setError(`Failed to export bundle: ${err.message || String(err)}`);
+    }
+  };
+
+  const executeImport = async (content: string) => {
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const result = await importPresetBundleAction(content, conflictStrategy);
+      setSuccessMsg(result.message);
+      setBundleJsonText('');
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to import bundle.');
+    }
+  };
+
+  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      await executeImport(text);
+    } catch (err: any) {
+      setError(`Failed to read file: ${err.message || String(err)}`);
+    }
+  };
+
+  const handleJsonImport = async () => {
+    if (!bundleJsonText.trim()) {
+      setError('Bundle JSON content cannot be empty.');
+      return;
+    }
+    await executeImport(bundleJsonText);
+  };
+
   return (
     <div className="modal-backdrop" data-testid="manage-presets-dialog">
       <div
         className="modal-box preset-modal"
         style={{
-          width: 560,
-          maxWidth: '90vw',
-          maxHeight: '85vh',
+          width: 580,
+          maxWidth: '92vw',
+          maxHeight: '88vh',
           display: 'flex',
           flexDirection: 'column'
         }}
@@ -178,6 +231,7 @@ export const ManagePresetsDialog: React.FC = () => {
             className="modal-close-btn"
             data-testid="manage-preset-close-btn"
             onClick={closeManagePresetsDialog}
+            aria-label="Close Manage Presets dialog"
           >
             ✕
           </button>
@@ -337,7 +391,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 type="text"
                 data-testid="duplicate-preset-input"
                 className="form-control"
-                placeholder={`Name for duplicate copy...`}
+                placeholder="Name for duplicate copy..."
                 value={duplicateName}
                 onChange={(e) => {
                   setDuplicateName(e.target.value);
@@ -449,6 +503,140 @@ export const ManagePresetsDialog: React.FC = () => {
               </button>
             </div>
           )}
+
+          {/* Preset Bundles Section */}
+          <div
+            style={{
+              background: '#27272a',
+              padding: 12,
+              borderRadius: 6,
+              border: '1px solid #3f3f46',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#f4f4f5' }}>
+                Preset Bundles (Import & Export)
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                data-testid="export-bundle-btn"
+                onClick={handleExportBundle}
+                style={{ fontSize: '0.8rem', padding: '4px 10px' }}
+                aria-label="Export all user presets to bundle JSON"
+              >
+                Export Bundle JSON
+              </button>
+            </div>
+
+            <div style={{ fontSize: '0.78rem', color: '#a1a1aa' }}>
+              Export all user presets or import a versioned preset bundle. System presets remain immutable.
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label
+                htmlFor="bundle-conflict-strategy"
+                style={{ fontSize: '0.8rem', color: '#e4e4e7', fontWeight: 500 }}
+              >
+                Conflict Resolution Strategy for Existing Presets:
+              </label>
+              <select
+                id="bundle-conflict-strategy"
+                data-testid="bundle-conflict-strategy"
+                className="form-control"
+                value={conflictStrategy}
+                onChange={(e) => setConflictStrategy(e.target.value as ConflictStrategy)}
+                aria-label="Conflict resolution strategy"
+                style={{
+                  background: '#18181b',
+                  color: '#fff',
+                  border: '1px solid #52525b',
+                  padding: '5px 8px',
+                  borderRadius: 4,
+                  fontSize: '0.85rem'
+                }}
+              >
+                <option value="overwrite">Overwrite existing presets</option>
+                <option value="rename">Rename imported presets on conflict</option>
+                <option value="skip">Skip existing presets</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="file"
+                ref={fileInputRef}
+                id="bundle-file-input"
+                data-testid="bundle-file-input"
+                accept=".json,application/json"
+                onChange={handleFileImport}
+                aria-label="Import preset bundle file"
+                style={{ display: 'none' }}
+              />
+              <button
+                type="button"
+                className="btn btn-primary"
+                data-testid="import-bundle-btn"
+                onClick={() => fileInputRef.current?.click()}
+                style={{ fontSize: '0.85rem', padding: '6px 12px' }}
+                aria-label="Choose preset bundle JSON file to import"
+              >
+                Import Bundle File...
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label
+                htmlFor="bundle-json-textarea"
+                style={{ fontSize: '0.78rem', color: '#a1a1aa' }}
+              >
+                Or paste bundle JSON directly:
+              </label>
+              <textarea
+                id="bundle-json-textarea"
+                data-testid="bundle-json-textarea"
+                aria-label="Paste bundle JSON content"
+                placeholder='{"format":"orcaslicer-web-preset-bundle","version":1,"presets":[...]}'
+                value={bundleJsonText}
+                onChange={(e) => {
+                  setBundleJsonText(e.target.value);
+                  if (error) setError(null);
+                  if (successMsg) setSuccessMsg(null);
+                }}
+                className="form-control"
+                style={{
+                  width: '100%',
+                  minHeight: 60,
+                  maxHeight: 120,
+                  background: '#18181b',
+                  color: '#fff',
+                  border: '1px solid #52525b',
+                  padding: '6px 8px',
+                  borderRadius: 4,
+                  fontSize: '0.8rem',
+                  fontFamily: 'monospace',
+                  resize: 'vertical'
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                data-testid="import-bundle-json-btn"
+                disabled={!bundleJsonText.trim()}
+                onClick={handleJsonImport}
+                style={{ alignSelf: 'flex-start', fontSize: '0.8rem', padding: '4px 10px' }}
+              >
+                Import Pasted JSON
+              </button>
+            </div>
+
+            <div style={{ fontSize: '0.75rem', color: '#71717a', fontStyle: 'italic', marginTop: 2 }}>
+              Supported format: {BUNDLE_BOUNDARY_NOTE}
+            </div>
+          </div>
         </div>
 
         <div className="modal-footer" style={{ borderTop: '1px solid #3f3f46', padding: 12 }}>
