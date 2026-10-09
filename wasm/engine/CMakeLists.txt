@@ -1,4 +1,25 @@
-add_executable(orca_engine Engine.cpp ConfigRules.cpp ProjectOps.cpp ObjectOps.cpp PlateOps.cpp PaintOps.cpp PaintToolsOps.cpp LayerHeightOps.cpp TextOps.cpp CutOps.cpp RepairOps.cpp CutConnectorOps.cpp LayerEventOps.cpp bindings.cpp)
+set(ORCA_ENGINE_SOURCES
+    Engine.cpp
+    ConfigRules.cpp
+    ProjectOps.cpp
+    ObjectOps.cpp
+    PlateOps.cpp
+    PaintOps.cpp
+    PaintToolsOps.cpp
+    LayerHeightOps.cpp
+    TextOps.cpp
+    CutOps.cpp
+    RepairOps.cpp
+    CutConnectorOps.cpp
+    LayerEventOps.cpp
+    bindings.cpp
+)
+
+if (SLIC3R_WITH_OCCT)
+    list(APPEND ORCA_ENGINE_SOURCES NanoSVGImpl.cpp)
+endif ()
+
+add_executable(orca_engine ${ORCA_ENGINE_SOURCES})
 
 target_link_libraries(orca_engine PRIVATE libslic3r)
 

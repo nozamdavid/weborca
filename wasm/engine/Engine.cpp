@@ -33,12 +33,14 @@
 #include <boost/log/core.hpp>
 #include <boost/log/trivial.hpp>
 #include <boost/log/expressions.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <atomic>
 #include <cfloat>
+#include <cmath>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -990,11 +992,81 @@ json Engine::Impl::op_resetOptions(const json& /*args*/) {
     return json::object();
 }
 
+namespace {
+
+bool is_step_file(const std::string& path) {
+    return boost::algorithm::iends_with(path, ".step") ||
+           boost::algorithm::iends_with(path, ".stp");
+}
+
+Slic3r::Model read_model_file(const std::string& path, const json& args) {
+    if (is_step_file(path)) {
+#ifdef SLIC3R_NO_OCCT
+        throw Slic3r::RuntimeError("STEP format is not supported in this build (OCCT disabled)");
+#else
+        double linear_deflection = 0.003;
+        if (args.contains("linear_deflection")) {
+            if (!args["linear_deflection"].is_number()) {
+                throw Slic3r::RuntimeError("linear_deflection must be a positive finite number");
+            }
+            linear_deflection = args["linear_deflection"].get<double>();
+        } else if (args.contains("linearDeflection")) {
+            if (!args["linearDeflection"].is_number()) {
+                throw Slic3r::RuntimeError("linear_deflection must be a positive finite number");
+            }
+            linear_deflection = args["linearDeflection"].get<double>();
+        }
+
+        double angle_deflection = 0.5;
+        if (args.contains("angle_deflection")) {
+            if (!args["angle_deflection"].is_number()) {
+                throw Slic3r::RuntimeError("angle_deflection must be a positive finite number");
+            }
+            angle_deflection = args["angle_deflection"].get<double>();
+        } else if (args.contains("angleDeflection")) {
+            if (!args["angleDeflection"].is_number()) {
+                throw Slic3r::RuntimeError("angle_deflection must be a positive finite number");
+            }
+            angle_deflection = args["angleDeflection"].get<double>();
+        }
+
+        if (!std::isfinite(linear_deflection) || linear_deflection <= 0.0) {
+            throw Slic3r::RuntimeError("linear_deflection must be a positive finite number");
+        }
+        if (!std::isfinite(angle_deflection) || angle_deflection <= 0.0) {
+            throw Slic3r::RuntimeError("angle_deflection must be a positive finite number");
+        }
+
+        bool is_split_compound = args.value("is_split_compound", args.value("splitCompound", false));
+        return Slic3r::Model::read_from_step(
+            path,
+            Slic3r::LoadStrategy::AddDefaultInstances | Slic3r::LoadStrategy::LoadModel,
+            nullptr,
+            nullptr,
+            nullptr,
+            linear_deflection,
+            angle_deflection,
+            is_split_compound
+        );
+#endif
+    }
+    return Slic3r::Model::read_from_file(
+        path,
+        nullptr,
+        nullptr,
+        Slic3r::LoadStrategy::AddDefaultInstances | Slic3r::LoadStrategy::LoadModel
+    );
+}
+
+} // namespace
+
 json Engine::Impl::op_loadModel(const json& args) {
     std::string path = args.at("path").get<std::string>();
-    m_model = Slic3r::Model::read_from_file(path, nullptr, nullptr, Slic3r::LoadStrategy::AddDefaultInstances | Slic3r::LoadStrategy::LoadModel);
-    if (m_model.objects.empty())
+    Slic3r::Model loaded_model = read_model_file(path, args);
+    if (loaded_model.objects.empty())
         throw Slic3r::RuntimeError("No objects loaded from file: " + path);
+
+    m_model = std::move(loaded_model);
 
     json objects_arr = json::array();
     for (const auto* obj : m_model.objects) {
@@ -1012,7 +1084,7 @@ json Engine::Impl::op_loadModel(const json& args) {
 
 json Engine::Impl::op_addModel(const json& args) {
     std::string path = args.at("path").get<std::string>();
-    Slic3r::Model loaded_model = Slic3r::Model::read_from_file(path, nullptr, nullptr, Slic3r::LoadStrategy::AddDefaultInstances | Slic3r::LoadStrategy::LoadModel);
+    Slic3r::Model loaded_model = read_model_file(path, args);
     if (loaded_model.objects.empty())
         throw Slic3r::RuntimeError("No objects loaded from file: " + path);
 
