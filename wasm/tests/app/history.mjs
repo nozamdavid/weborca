@@ -20,6 +20,7 @@ import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
+import { paintPoint, visibleFacets } from './painting-checks.mjs';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -34,7 +35,7 @@ try {
 }
 const { chromium, firefox } = playwright;
 
-const PORT = 5074;
+const PORT = 5084;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const ISOLATED_BUILD_DIR = process.env.APP_TEST_DIST || path.resolve(repoRoot, 'wasm/build/ui-history-dist');
 const CUBE_MODEL_PATH = path.resolve(repoRoot, 'tests/data/20mm_cube.obj');
@@ -369,26 +370,23 @@ async function runBrowserHistorySuite(browserType, browserName) {
     // 6. Test Painting Restoration
     console.log(`[${browserName}] Testing Support Painting Restoration...`);
     await page.click('#tool-paint-btn');
-    await page.waitForSelector('#painting-panel', { timeout: 5000 });
+    await page.waitForSelector('#paint-tools-panel', { timeout: 5000 });
 
-    const currentObjId = await page.evaluate(() => window.__paintingStore.getState().selectedObjectId);
+    const currentObjId = await page.evaluate(() => window.__paintToolsStore.getState().selectedObjectId);
     assert.ok(currentObjId !== null, 'Painting must target active object');
 
-    // Paint a facet using paintingStore action
-    await page.evaluate(async () => {
-      const pStore = window.__paintingStore.getState();
-      pStore.beginStroke();
-      pStore.paintFacet(2);
-      await pStore.endStroke();
-    });
-    await page.waitForTimeout(300);
+    await page.click('#paint-tool-triangle');
+    await page.uncheck('#triangle-splitting-checkbox');
+    const [paintedPoint] = await visibleFacets(page);
+    assert.ok(paintedPoint, 'History fixture must expose a visible facet');
+    await paintPoint(page, paintedPoint);
 
     // Verify engine confirms painted enforcer facet
     const paintReadback = await page.evaluate(async (objId) => {
-      const volId = window.__paintingStore.getState().selectedVolumeId;
+      const volId = window.__paintToolsStore.getState().selectedVolumeId;
       return await window.__orcaEngine.getSupportPainting(objId, volId);
     }, currentObjId);
-    assert.ok(paintReadback.enforcers.includes(2), 'Engine readback must confirm facet 2 painted');
+    assert.ok(paintReadback.enforcers.includes(paintedPoint.facet), 'Engine readback must confirm facet 2 painted');
     console.log(`[${browserName}] Painted enforcers: [${paintReadback.enforcers.join(', ')}]`);
 
     // Undo painting stroke
@@ -398,12 +396,11 @@ async function runBrowserHistorySuite(browserType, browserName) {
     await page.waitForTimeout(300);
 
     const paintAfterUndo = await page.evaluate(async () => {
-      const objId = window.__paintingStore.getState().selectedObjectId ?? window.__plateStore.getState().selectedObjectId;
-      const volId = window.__paintingStore.getState().selectedVolumeId;
-      return await window.__orcaEngine.getSupportPainting(objId, volId);
+      const tree = await window.__orcaEngine.call('getObjectTree', {});
+      return await window.__orcaEngine.getSupportPainting(tree.objects[0].id, tree.objects[0].volumes[0].id);
     });
     assert.equal(
-      paintAfterUndo.enforcers.includes(2),
+      paintAfterUndo.enforcers.includes(paintedPoint.facet),
       false,
       'Engine readback after undo must NOT have facet 2 painted'
     );
@@ -416,18 +413,17 @@ async function runBrowserHistorySuite(browserType, browserName) {
     await page.waitForTimeout(300);
 
     const paintAfterRedo = await page.evaluate(async () => {
-      const objId = window.__paintingStore.getState().selectedObjectId ?? window.__plateStore.getState().selectedObjectId;
-      const volId = window.__paintingStore.getState().selectedVolumeId;
-      return await window.__orcaEngine.getSupportPainting(objId, volId);
+      const tree = await window.__orcaEngine.call('getObjectTree', {});
+      return await window.__orcaEngine.getSupportPainting(tree.objects[0].id, tree.objects[0].volumes[0].id);
     });
     assert.ok(
-      paintAfterRedo.enforcers.includes(2),
+      paintAfterRedo.enforcers.includes(paintedPoint.facet),
       'Engine readback after redo must restore facet 2 painting'
     );
     console.log(`[${browserName}] Enforcers after redo: [${paintAfterRedo.enforcers.join(', ')}]`);
 
-    // Exit painting mode
-    await page.click('#paint-done-btn');
+    // History restoration closes painting before replacing engine object IDs.
+    await page.waitForSelector('#paint-tools-panel', { state: 'detached' });
     await page.waitForTimeout(300);
     results.push({ name: 'Painting edit undo/redo restoration verified', pass: true });
 

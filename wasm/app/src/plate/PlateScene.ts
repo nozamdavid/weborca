@@ -3,6 +3,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { PlateObject, BedConfig, GizmoMode, MeshBufferData, MeshVolumePartition } from './types';
 import type { SupportPaintingData } from '../painting/types';
+import { renderPaintOverlay, clearPaintOverlay } from '../paint-tools/overlayRenderer';
+import type { ParsedPaintOverlay, PaintLayer } from '../paint-tools/types';
+import type { PaintTool } from '../paint-tools/types';
+import { createPaintCursor, type PaintCursor } from '../paint-tools/paintCursor';
 
 export interface PlateSceneCallbacks {
   onSelect: (objectId: number | null, instanceId: number | null) => void;
@@ -19,6 +23,9 @@ export interface PlateSceneCallbacks {
   onPaintBegin?: () => void;
   onPaintFacet?: (facetId: number) => void;
   onPaintEnd?: () => void;
+  onToolPaintBegin?: (hit: [number, number, number], facet: number, button: number, erase: boolean, cameraPos: [number, number, number]) => void;
+  onToolPaintPoint?: (hit: [number, number, number], facet: number) => void;
+  onToolPaintEnd?: () => void;
 }
 
 export class PlateScene {
@@ -46,6 +53,10 @@ export class PlateScene {
   private isPaintingActive = false;
   private paintingVolumeId: number | null = null;
   private isPaintingStroke = false;
+  private advancedPainting = false;
+  private paintCursor: PaintCursor;
+  private cursorRadius = 1;
+  private cursorTool: PaintTool = 'circle';
   private pointerDownPos = { x: 0, y: 0 };
   private isDestroyed = false;
   private animationFrameId: number | null = null;
@@ -62,6 +73,7 @@ export class PlateScene {
     // 1. Scene setup
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x1e1e24);
+    this.paintCursor = createPaintCursor(this.scene);
 
     const width = container.clientWidth || 800;
     const height = container.clientHeight || 600;
@@ -163,6 +175,7 @@ export class PlateScene {
     this.renderer.domElement.addEventListener('pointerup', this.onPointerUp);
     this.renderer.domElement.addEventListener('pointerleave', this.onPointerLeave);
     this.renderer.domElement.addEventListener('pointercancel', this.onPointerLeave);
+    this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu);
     window.addEventListener('resize', this.onWindowResize);
 
     // Start render loop
@@ -414,6 +427,31 @@ export class PlateScene {
     }
   }
 
+  public setAdvancedPainting(active: boolean, volumeId?: number | null): void {
+    this.advancedPainting = active;
+    this.setPaintingActive(active, volumeId);
+    if (!active) this.paintCursor.setVisible(false);
+  }
+
+  public setPaintCursor(radius: number, tool: PaintTool): void {
+    this.cursorRadius = radius;
+    this.cursorTool = tool;
+  }
+
+  public getObjectMeshes(): Map<string, THREE.Mesh> {
+    return this.objectMeshes;
+  }
+
+  public updateToolOverlay(objectId: number, overlay: ParsedPaintOverlay | null, layer: PaintLayer, colors: string[]): void {
+    for (const mesh of this.objectMeshes.values()) {
+      if (mesh.userData.objectId === objectId) renderPaintOverlay(mesh, overlay, layer, colors);
+    }
+  }
+
+  public clearToolOverlays(): void {
+    for (const mesh of this.objectMeshes.values()) clearPaintOverlay(mesh);
+  }
+
   public setPaintingVolumeId(volumeId: number | null): void {
     this.paintingVolumeId = volumeId;
   }
@@ -649,7 +687,7 @@ export class PlateScene {
     }
   }
 
-  private raycastSelectedMesh(e: PointerEvent): { faceIndex?: number | null } | null {
+  private raycastSelectedMesh(e: PointerEvent): { faceIndex: number; hit: [number, number, number]; normal: THREE.Vector3 } | null {
     const selectedMesh = this.getSelectedMesh();
     if (!selectedMesh) return null;
 
@@ -687,7 +725,9 @@ export class PlateScene {
 
       // Map raycast faceIndex -> partition -> volume local index
       const localFacetIndex = mergedFaceIndex - partition.firstFacet;
-      return { faceIndex: localFacetIndex };
+      const point = intersects[0].point;
+      const normal = intersects[0].face?.normal.clone().transformDirection(selectedMesh.matrixWorld) ?? new THREE.Vector3(0, 0, 1);
+      return { faceIndex: localFacetIndex, hit: [point.x, point.y, point.z], normal };
     }
     return null;
   }
@@ -695,15 +735,18 @@ export class PlateScene {
   private onPointerDown = (e: PointerEvent): void => {
     this.pointerDownPos = { x: e.clientX, y: e.clientY };
 
-    if (this.isPaintingActive && e.button === 0) {
+    if (this.isPaintingActive && (e.button === 0 || (this.advancedPainting && e.button === 2))) {
       const hit = this.raycastSelectedMesh(e);
       if (hit && typeof hit.faceIndex === 'number') {
         this.isPaintingStroke = true;
         this.orbitControls.enabled = false; // Disable orbit during stroke!
-        if (this.callbacks.onPaintBegin) {
+        if (this.advancedPainting) {
+          const camera = this.camera.position;
+          this.callbacks.onToolPaintBegin?.(hit.hit, hit.faceIndex, e.button, e.shiftKey, [camera.x, camera.y, camera.z]);
+        } else if (this.callbacks.onPaintBegin) {
           this.callbacks.onPaintBegin();
         }
-        if (this.callbacks.onPaintFacet) {
+        if (!this.advancedPainting && this.callbacks.onPaintFacet) {
           this.callbacks.onPaintFacet(hit.faceIndex);
         }
         e.preventDefault();
@@ -712,10 +755,16 @@ export class PlateScene {
   };
 
   private onPointerMove = (e: PointerEvent): void => {
+    if (this.advancedPainting) {
+      const hover = this.raycastSelectedMesh(e);
+      if (hover) this.paintCursor.update(new THREE.Vector3(...hover.hit), hover.normal, this.cursorRadius, this.cursorTool);
+      else this.paintCursor.setVisible(false);
+    }
     if (this.isPaintingActive && this.isPaintingStroke) {
       const hit = this.raycastSelectedMesh(e);
       if (hit && typeof hit.faceIndex === 'number') {
-        if (this.callbacks.onPaintFacet) {
+        if (this.advancedPainting) this.callbacks.onToolPaintPoint?.(hit.hit, hit.faceIndex);
+        else if (this.callbacks.onPaintFacet) {
           this.callbacks.onPaintFacet(hit.faceIndex);
         }
       }
@@ -726,7 +775,8 @@ export class PlateScene {
     if (this.isPaintingActive && this.isPaintingStroke) {
       this.isPaintingStroke = false;
       this.orbitControls.enabled = true; // Restore navigation!
-      if (this.callbacks.onPaintEnd) {
+      if (this.advancedPainting) this.callbacks.onToolPaintEnd?.();
+      else if (this.callbacks.onPaintEnd) {
         this.callbacks.onPaintEnd();
       }
       return;
@@ -766,13 +816,19 @@ export class PlateScene {
   };
 
   private onPointerLeave = (): void => {
+    this.paintCursor.setVisible(false);
     if (this.isPaintingStroke) {
       this.isPaintingStroke = false;
       this.orbitControls.enabled = true;
-      if (this.callbacks.onPaintEnd) {
+      if (this.advancedPainting) this.callbacks.onToolPaintEnd?.();
+      else if (this.callbacks.onPaintEnd) {
         this.callbacks.onPaintEnd();
       }
     }
+  };
+
+  private onContextMenu = (e: MouseEvent): void => {
+    if (this.advancedPainting) e.preventDefault();
   };
 
   private onWindowResize = (): void => {
@@ -804,10 +860,12 @@ export class PlateScene {
     this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp);
     this.renderer.domElement.removeEventListener('pointerleave', this.onPointerLeave);
     this.renderer.domElement.removeEventListener('pointercancel', this.onPointerLeave);
+    this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     window.removeEventListener('resize', this.onWindowResize);
 
     this.transformControls.dispose();
     this.orbitControls.dispose();
+    this.paintCursor.dispose();
 
     for (const overlay of this.overlayMeshes.values()) {
       overlay.geometry.dispose();

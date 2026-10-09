@@ -3,9 +3,15 @@ import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
 import { useAppStore } from '../store/appStore';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
-import { usePaintingStore, SupportPaintingPanel } from '../painting';
+import { usePaintToolsStore, PaintToolsPanel, StrokeCollector } from '../paint-tools';
+import { useLayersStore, LayerHeightPanel } from '../layers';
+import { getPaintOverlay, parsePaintOverlayBinary } from '../paint-tools/paintToolsApi';
+import type { PaintState } from '../paint-tools/types';
 import { getEngine } from '../engine/orcaEngine';
 import { useHistoryStore } from '../history';
+import { TextPanel, useTextStore } from '../text';
+import { CutPanel, useCutStore } from '../cut';
+import { RepairBadge, useRepairStore } from '../repair';
 
 function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
@@ -50,15 +56,21 @@ export const PlateView: React.FC = () => {
   const undo = useHistoryStore((s) => s.undo);
   const redo = useHistoryStore((s) => s.redo);
 
-  // Support Painting Store
-  const isPaintingActive = usePaintingStore((s) => s.isPaintingActive);
-  const paintTarget = usePaintingStore((s) => s.paintTarget);
-  const paintingData = usePaintingStore((s) => s.paintingData);
-  const selectedVolumeId = usePaintingStore((s) => s.selectedVolumeId);
-  const paintingError = usePaintingStore((s) => s.error);
-  const startPainting = usePaintingStore((s) => s.startPainting);
-  const stopPainting = usePaintingStore((s) => s.stopPainting);
-  const loadPaintingForObject = usePaintingStore((s) => s.loadPaintingForObject);
+  const isPaintingActive = usePaintToolsStore((s) => s.isActive);
+  const paintLayer = usePaintToolsStore((s) => s.layer);
+  const paintTool = usePaintToolsStore((s) => s.tool);
+  const cursorRadius = usePaintToolsStore((s) => s.cursorRadius);
+  const selectedVolumeId = usePaintToolsStore((s) => s.selectedVolumeId);
+  const paintOverlayRevision = usePaintToolsStore((s) => s.overlayRevision);
+  const stopPainting = usePaintToolsStore((s) => s.stopPainting);
+  const isLayersActive = useLayersStore((s) => s.isLayersActive);
+  const isTextActive = useTextStore((s) => s.isOpen);
+  const isCutActive = useCutStore((s) => s.isCutActive);
+  const isCutting = useCutStore((s) => s.isCutting);
+  const isRepairing = useRepairStore((s) => s.isRepairing);
+  const strokeCollector = useRef<StrokeCollector | null>(null);
+  if (!strokeCollector.current) strokeCollector.current = new StrokeCollector();
+  const [meshRevision, setMeshRevision] = useState(0);
 
   // App Store (for Slicing progress & printer selection)
   const isSlicing = useAppStore((s) => s.isSlicing);
@@ -108,15 +120,16 @@ export const PlateView: React.FC = () => {
         }
         return mesh;
       },
-      onPaintBegin: () => {
-        usePaintingStore.getState().beginStroke();
+      onToolPaintBegin: (hit, facet, button, erase, cameraPos) => {
+        const paint = usePaintToolsStore.getState();
+        if (paint.selectedObjectId === null || paint.selectedVolumeId === null || paint.selectedInstanceId === null) return;
+        const state: PaintState = erase ? 'none' : paint.layer === 'color' ? (button === 2 ? 'none' : paint.activeFilament) : paint.layer === 'fuzzy' ? (button === 2 ? 'none' : 'fuzzy') : (button === 2 ? 'blocker' : 'enforcer');
+        const collector = strokeCollector.current!;
+        collector.beginStroke({ objectId: paint.selectedObjectId, instanceId: paint.selectedInstanceId, volumeId: paint.selectedVolumeId, layer: paint.layer, tool: paint.tool, state, radius: paint.cursorRadius, cameraPos, triangleSplitting: paint.triangleSplitting, overhangAngleDeg: paint.overhangOnly ? paint.overhangAngle : 0, smartFillAngleDeg: paint.smartFillAngle }).catch(console.error);
+        collector.addPoint(hit, facet);
       },
-      onPaintFacet: (facetId) => {
-        usePaintingStore.getState().paintFacet(facetId);
-      },
-      onPaintEnd: () => {
-        usePaintingStore.getState().endStroke();
-      }
+      onToolPaintPoint: (hit, facet) => strokeCollector.current?.addPoint(hit, facet),
+      onToolPaintEnd: () => { void strokeCollector.current?.endStroke(); }
     });
 
     sceneRef.current = scene;
@@ -133,8 +146,9 @@ export const PlateView: React.FC = () => {
       if (typeof window !== 'undefined' && (window as any).__plateScene === scene) {
         delete (window as any).__plateScene;
       }
-      usePaintingStore.getState().cancelStroke();
-      usePaintingStore.getState().stopPainting();
+      strokeCollector.current?.cancelStroke();
+      usePaintToolsStore.getState().stopPainting();
+      useCutStore.getState().closeCut();
     };
   }, []);
 
@@ -148,40 +162,61 @@ export const PlateView: React.FC = () => {
   // Update scene objects when objects change
   useEffect(() => {
     if (sceneRef.current) {
-      const paintState = usePaintingStore.getState();
-      if (paintState.isPaintingActive && paintState.selectedObjectId !== null) {
+      const paintState = usePaintToolsStore.getState();
+      if (paintState.isActive && paintState.selectedObjectId !== null) {
         if (!objects.some((o) => o.id === paintState.selectedObjectId)) {
-          paintState.cancelStroke();
+          strokeCollector.current?.cancelStroke();
           paintState.stopPainting();
         }
       }
       sceneRef.current.setObjects(objects);
+      setMeshRevision((revision) => revision + 1);
     }
   }, [objects]);
 
-  // Update selection in scene
+  // Update selection in scene and stores
   useEffect(() => {
     if (sceneRef.current) {
       sceneRef.current.setSelection(selectedObjectId, selectedInstanceId);
-      const paintState = usePaintingStore.getState();
-      if (paintState.isPaintingActive) {
+      const paintState = usePaintToolsStore.getState();
+      if (paintState.isActive) {
         if (!selectedObjectId || selectedObjectId !== paintState.selectedObjectId) {
-          paintState.cancelStroke();
+          strokeCollector.current?.cancelStroke();
           if (selectedObjectId) {
-            paintState.startPainting(selectedObjectId);
+            const volume = sceneRef.current.getMeshVolumes(selectedObjectId)?.[0]?.volumeId;
+            void paintState.startPainting(selectedObjectId, volume, selectedInstanceId);
           } else {
             paintState.stopPainting();
           }
         }
       }
     }
+    const cutStore = useCutStore.getState();
+    if (cutStore.isCutActive && !cutStore.isCutting && !useHistoryStore.getState().isRestoring && selectedObjectId === null) {
+      cutStore.closeCut();
+    }
+    if (!useRepairStore.getState().isRepairing) {
+      void useRepairStore.getState().selectObject(selectedObjectId);
+    }
   }, [selectedObjectId, selectedInstanceId]);
 
-  // Stop painting if slicing starts
   useEffect(() => {
-    if (isSlicing && usePaintingStore.getState().isPaintingActive) {
-      usePaintingStore.getState().cancelStroke();
-      usePaintingStore.getState().stopPainting();
+    const layers = useLayersStore.getState();
+    if (!layers.isLayersActive || layers.selectedObjectId === selectedObjectId) return;
+    if (selectedObjectId === null) layers.stopEditing();
+    else void layers.startEditing(selectedObjectId);
+  }, [selectedObjectId]);
+
+  // Stop tools if slicing starts
+  useEffect(() => {
+    if (isSlicing) {
+      if (usePaintToolsStore.getState().isActive) {
+        strokeCollector.current?.cancelStroke();
+        usePaintToolsStore.getState().stopPainting();
+      }
+      if (useCutStore.getState().isCutActive) {
+        useCutStore.getState().closeCut();
+      }
     }
   }, [isSlicing]);
 
@@ -195,58 +230,107 @@ export const PlateView: React.FC = () => {
   // Sync painting active mode and selected volume to scene
   useEffect(() => {
     if (sceneRef.current) {
-      sceneRef.current.setPaintingActive(isPaintingActive && !paintingError, selectedVolumeId);
+      sceneRef.current.setAdvancedPainting(isPaintingActive, selectedVolumeId);
     }
-  }, [isPaintingActive, paintingError, selectedVolumeId]);
+  }, [isPaintingActive, selectedVolumeId]);
 
-  // Sync painting overlay to scene
   useEffect(() => {
-    if (sceneRef.current) {
-      const paintStoreObjId = usePaintingStore.getState().selectedObjectId;
-      if (selectedObjectId && paintStoreObjId === selectedObjectId) {
-        sceneRef.current.updatePaintingOverlay(selectedObjectId, paintingData, selectedVolumeId);
-      } else if (selectedObjectId) {
-        sceneRef.current.updatePaintingOverlay(selectedObjectId, null, selectedVolumeId);
-      }
-    }
-  }, [selectedObjectId, paintingData, selectedVolumeId, paintTarget]);
+    sceneRef.current?.setPaintCursor(cursorRadius, paintTool);
+  }, [cursorRadius, paintTool]);
 
-  // Check and display existing annotations on loaded objects (e.g. 3MF load)
+  // Re-query split-triangle overlays on layer, volume, or selection changes.
   useEffect(() => {
     let cancelled = false;
-    if (selectedObjectId && !isPaintingActive) {
-      loadPaintingForObject(selectedObjectId, undefined, paintTarget).then((data) => {
-        if (!cancelled && data && sceneRef.current) {
-          sceneRef.current.updatePaintingOverlay(selectedObjectId, data, data.volumeId);
-        }
-      });
+    const scene = sceneRef.current;
+    scene?.clearToolOverlays();
+    if (isPaintingActive && selectedObjectId && selectedVolumeId && scene) {
+      getPaintOverlay({ objectId: selectedObjectId, volumeId: selectedVolumeId, layer: paintLayer }).then((result) => {
+        if (!cancelled && result.buffer) scene.updateToolOverlay(selectedObjectId, parsePaintOverlayBinary(result.buffer, result.states), paintLayer, usePaintToolsStore.getState().filamentColors);
+      }).catch(console.error);
     }
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedObjectId, isPaintingActive, loadPaintingForObject, paintTarget]);
+    return () => { cancelled = true; };
+  }, [selectedObjectId, selectedVolumeId, paintLayer, isPaintingActive, meshRevision, paintOverlayRevision]);
+
+  useEffect(() => {
+    // Cancel synchronously at the store boundary, before delayed worker replies
+    // or pointer-up can apply an old stroke to a new target.
+    const unsubscribePaint = usePaintToolsStore.subscribe((next, previous) => {
+      if (next.isActive !== previous.isActive || next.layer !== previous.layer ||
+          next.selectedObjectId !== previous.selectedObjectId || next.selectedVolumeId !== previous.selectedVolumeId ||
+          next.selectedInstanceId !== previous.selectedInstanceId) {
+        strokeCollector.current?.cancelStroke();
+        sceneRef.current?.cancelStroke();
+      }
+    });
+    const unsubscribeHistory = useHistoryStore.subscribe((next, previous) => {
+      if (next.isRestoring && !previous.isRestoring) {
+        usePaintToolsStore.getState().stopPainting();
+        void useTextStore.getState().close();
+        useRepairStore.getState().reset();
+      }
+    });
+    strokeCollector.current?.setOptions({
+      onError: (error) => usePaintToolsStore.setState({ error: error instanceof Error ? error.message : 'Painting failed.' }),
+      onOverlayUpdate: (overlay) => {
+        const paint = usePaintToolsStore.getState();
+        if (paint.isActive && paint.selectedObjectId !== null) sceneRef.current?.updateToolOverlay(paint.selectedObjectId, overlay, paint.layer, paint.filamentColors);
+      },
+      onStrokeComplete: async (snapshot) => {
+        if (snapshot.before !== snapshot.after) {
+          useAppStore.getState().invalidateSlicePreview();
+          await useHistoryStore.getState().commitTransaction(`${snapshot.layer} paint stroke`);
+        }
+      }
+    });
+    return () => { unsubscribePaint(); unsubscribeHistory(); };
+  }, []);
 
   // Toggle painting mode
   const handleTogglePainting = useCallback(() => {
     if (isPaintingActive) {
       stopPainting();
     } else if (selectedObjectId) {
-      startPainting(selectedObjectId);
+      useCutStore.getState().closeCut();
+      useLayersStore.getState().stopEditing();
+      void useTextStore.getState().close();
+      usePaintToolsStore.getState().setLayer('support');
+      const volume = sceneRef.current?.getMeshVolumes(selectedObjectId)?.[0]?.volumeId;
+      void usePaintToolsStore.getState().startPainting(selectedObjectId, volume, selectedInstanceId);
     }
-  }, [isPaintingActive, selectedObjectId, startPainting, stopPainting]);
+  }, [isPaintingActive, selectedObjectId, selectedInstanceId, stopPainting]);
 
   // Keyboard shortcuts matching desktop OrcaSlicer
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      // Ignore if typing in an input / textarea
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      if (e.key === 'Escape') {
+        if (isPaintingActive) {
+          strokeCollector.current?.cancelStroke();
+          stopPainting();
+          return;
+        }
+        if (useCutStore.getState().isCutActive) {
+          useCutStore.getState().closeCut();
+          return;
+        }
+      }
+
+      // Ignore if typing in an input / textarea / select or contenteditable
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable ||
+          Boolean(target.closest?.('input, textarea, select, [contenteditable="true"]')))
+      ) {
         return;
       }
 
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'z' || e.key === 'Z') {
           e.preventDefault();
+          if (isCutting || isRepairing) return;
           if (e.shiftKey) {
             redo();
           } else {
@@ -256,6 +340,7 @@ export const PlateView: React.FC = () => {
         }
         if (e.key === 'y' || e.key === 'Y') {
           e.preventDefault();
+          if (isCutting || isRepairing) return;
           redo();
           return;
         }
@@ -268,17 +353,24 @@ export const PlateView: React.FC = () => {
         }
       }
 
-      if (e.key === 'Escape' && isPaintingActive) {
-        usePaintingStore.getState().cancelStroke();
-        stopPainting();
-        return;
-      }
-
       switch (e.key) {
         case 'p':
         case 'P':
           if (selectedObjectId) {
             handleTogglePainting();
+          }
+          break;
+        case 'c':
+        case 'C':
+          if (selectedObjectId && !isPaintingActive && !isTextActive && !isLayersActive && !isCutting && !isRepairing) {
+            const cutStore = useCutStore.getState();
+            if (cutStore.isCutActive) {
+              cutStore.closeCut();
+            } else {
+              const selectedObj = objects.find((o) => o.id === selectedObjectId);
+              const height = selectedObj?.size?.[2] ?? 20.0;
+              cutStore.openCut(selectedObjectId, 0, height, height / 2);
+            }
           }
           break;
         case 'm':
@@ -303,7 +395,7 @@ export const PlateView: React.FC = () => {
           break;
       }
     },
-    [objects, selectObject, setGizmoMode, arrange, deleteSelected, isPaintingActive, selectedObjectId, handleTogglePainting, stopPainting, undo, redo]
+    [objects, selectObject, setGizmoMode, arrange, deleteSelected, isPaintingActive, isTextActive, isLayersActive, isCutting, isRepairing, selectedObjectId, handleTogglePainting, stopPainting, undo, redo]
   );
 
   useEffect(() => {
@@ -369,6 +461,8 @@ export const PlateView: React.FC = () => {
           top: 16,
           left: 16,
           display: 'flex',
+          flexWrap: 'wrap',
+          maxWidth: 'calc(100% - 32px)',
           gap: 6,
           background: 'rgba(30, 30, 36, 0.85)',
           backdropFilter: 'blur(8px)',
@@ -383,21 +477,21 @@ export const PlateView: React.FC = () => {
           id="tool-undo-btn"
           className="btn-tool"
           data-testid="tool-undo-btn"
-          disabled={!canUndo || isRestoring || isSlicing}
+          disabled={!canUndo || isRestoring || isSlicing || isCutting || isRepairing}
           data-can-undo={canUndo}
           data-is-restoring={isRestoring}
           onClick={() => undo()}
           title="Undo (Ctrl+Z)"
           style={{
             background: 'transparent',
-            color: canUndo && !isRestoring && !isSlicing ? '#fff' : '#64748b',
+            color: canUndo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? '#fff' : '#64748b',
             border: 'none',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: '0.85rem',
-            cursor: canUndo && !isRestoring && !isSlicing ? 'pointer' : 'default',
+            cursor: canUndo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? 'pointer' : 'default',
             fontWeight: 500,
-            opacity: canUndo && !isRestoring && !isSlicing ? 1 : 0.5
+            opacity: canUndo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? 1 : 0.5
           }}
         >
           ↩️ Undo
@@ -406,21 +500,21 @@ export const PlateView: React.FC = () => {
           id="tool-redo-btn"
           className="btn-tool"
           data-testid="tool-redo-btn"
-          disabled={!canRedo || isRestoring || isSlicing}
+          disabled={!canRedo || isRestoring || isSlicing || isCutting || isRepairing}
           data-can-redo={canRedo}
           data-is-restoring={isRestoring}
           onClick={() => redo()}
           title="Redo (Ctrl+Shift+Z)"
           style={{
             background: 'transparent',
-            color: canRedo && !isRestoring && !isSlicing ? '#fff' : '#64748b',
+            color: canRedo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? '#fff' : '#64748b',
             border: 'none',
             borderRadius: 6,
             padding: '6px 10px',
             fontSize: '0.85rem',
-            cursor: canRedo && !isRestoring && !isSlicing ? 'pointer' : 'default',
+            cursor: canRedo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? 'pointer' : 'default',
             fontWeight: 500,
-            opacity: canRedo && !isRestoring && !isSlicing ? 1 : 0.5
+            opacity: canRedo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? 1 : 0.5
           }}
         >
           ↪️ Redo
@@ -511,8 +605,92 @@ export const PlateView: React.FC = () => {
             cursor: selectedObject && !isRestoring && !isSlicing ? 'pointer' : 'default',
             fontWeight: isPaintingActive ? 600 : 500
           }}
-        >
+      >
           🖌️ Face Paint [P]
+        </button>
+        {(['seam', 'color', 'fuzzy'] as const).map((layer) => (
+          <button key={layer} id={`tool-${layer}-paint-btn`} className="btn-tool"
+            disabled={!selectedObject || isRestoring || isSlicing}
+            onClick={() => {
+              useCutStore.getState().closeCut();
+              void useTextStore.getState().close();
+              useLayersStore.getState().stopEditing();
+              usePaintToolsStore.getState().setLayer(layer);
+              const volume = sceneRef.current?.getMeshVolumes(selectedObjectId!)?.[0]?.volumeId;
+              void usePaintToolsStore.getState().startPainting(selectedObjectId!, volume, selectedInstanceId);
+            }}
+            style={{ background: isPaintingActive && paintLayer === layer ? '#009688' : 'transparent', color: '#fff', border: 0, borderRadius: 6, padding: '6px 8px', cursor: 'pointer' }}>
+            {layer === 'seam' ? 'Seam' : layer === 'color' ? 'Color' : 'Fuzzy'} Paint
+          </button>
+        ))}
+        <button id="tool-varlayer-btn" className="btn-tool" disabled={!selectedObject || isRestoring || isSlicing}
+          onClick={() => {
+            stopPainting();
+            void useTextStore.getState().close();
+            useCutStore.getState().closeCut();
+            if (isLayersActive) useLayersStore.getState().stopEditing();
+            else void useLayersStore.getState().startEditing(selectedObjectId!);
+          }}
+          style={{ background: isLayersActive ? '#0284c7' : 'transparent', color: '#fff', border: 0, borderRadius: 6, padding: '6px 8px', cursor: 'pointer' }}>
+          Variable Layers
+        </button>
+        <button
+          id="tool-text-btn"
+          data-testid="tool-text-btn"
+          className="btn-tool"
+          disabled={isRestoring || isSlicing}
+          onClick={() => {
+            const textStore = useTextStore.getState();
+            if (textStore.isOpen) {
+              void textStore.close();
+            } else {
+              stopPainting();
+              useLayersStore.getState().stopEditing();
+              useCutStore.getState().closeCut();
+              textStore.openForAdd(selectedObjectId);
+            }
+          }}
+          style={{
+            background: isTextActive ? '#009688' : 'transparent',
+            color: '#fff',
+            border: 0,
+            borderRadius: 6,
+            padding: '6px 8px',
+            cursor: !isRestoring && !isSlicing ? 'pointer' : 'default',
+            fontWeight: isTextActive ? 600 : 500
+          }}
+        >
+          🔤 Text
+        </button>
+        <button
+          id="tool-cut-btn"
+          data-testid="tool-cut-btn"
+          className={`btn-tool ${isCutActive ? 'active' : ''}`}
+          disabled={!selectedObject || isRestoring || isSlicing || isCutting || isRepairing}
+          onClick={() => {
+            const cutStore = useCutStore.getState();
+            if (cutStore.isCutActive) {
+              cutStore.closeCut();
+            } else if (selectedObjectId) {
+              stopPainting();
+              useLayersStore.getState().stopEditing();
+              void useTextStore.getState().close();
+              const height = selectedObject?.size?.[2] ?? 20.0;
+              cutStore.openCut(selectedObjectId, 0, height, height / 2);
+            }
+          }}
+          style={{
+            background: isCutActive ? '#0284c7' : 'transparent',
+            color: selectedObject && !isRestoring && !isSlicing && !isCutting && !isRepairing ? '#fff' : '#64748b',
+            border: 0,
+            borderRadius: 6,
+            padding: '6px 8px',
+            cursor: selectedObject && !isRestoring && !isSlicing && !isCutting && !isRepairing ? 'pointer' : 'default',
+            fontWeight: isCutActive ? 600 : 500
+          }}
+          title="Planar Cut Tool (C)"
+        >
+          ✂️ Cut [C]
         </button>
         <div style={{ width: 1, background: 'rgba(255,255,255,0.15)', margin: '2px 4px' }} />
         <button
@@ -551,8 +729,10 @@ export const PlateView: React.FC = () => {
         </button>
       </div>
 
-      {/* Support Face Painting Panel Overlay */}
-      <SupportPaintingPanel />
+      <PaintToolsPanel />
+      <LayerHeightPanel objectMeshes={sceneRef.current?.getObjectMeshes()} />
+      <TextPanel />
+      <CutPanel />
 
       {/* Selection Info Panel (shown when not in painting mode) */}
       {selectedObject && !isPaintingActive && (
@@ -560,7 +740,7 @@ export const PlateView: React.FC = () => {
           id="selection-panel"
           style={{
             position: 'absolute',
-            bottom: 24,
+            bottom: 64,
             left: 24,
             background: 'rgba(24, 24, 27, 0.9)',
             backdropFilter: 'blur(10px)',
@@ -571,7 +751,7 @@ export const PlateView: React.FC = () => {
             minWidth: 260,
             fontSize: '0.85rem',
             boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-            zIndex: 10
+            zIndex: 25
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -606,6 +786,12 @@ export const PlateView: React.FC = () => {
               </div>
             </>
           )}
+
+          {/* Mesh Health and Repair Badge */}
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>Mesh Health:</span>
+            <RepairBadge />
+          </div>
         </div>
       )}
 

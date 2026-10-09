@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { PrimitiveShape, VolumeType } from './types';
+import { usePaintToolsStore } from '../paint-tools';
+import { usePlateStore } from '../plate/plateStore';
+import { useTextStore } from '../text';
+import { useLayersStore } from '../layers';
+import { useCutStore } from '../cut';
+import { useRepairStore } from '../repair';
 
 export interface ContextMenuProps {
   x: number;
@@ -21,6 +27,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   y,
   isObject,
   objectId,
+  volumeId,
   currentExtruder = 0,
   onClose,
   onAddVolume,
@@ -154,6 +161,98 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
 
           <div
+            id="menu-action-cut"
+            data-testid="menu-action-cut"
+            onClick={async () => {
+              usePaintToolsStore.getState().stopPainting();
+              useLayersStore.getState().stopEditing();
+              await useTextStore.getState().close();
+              const plate = usePlateStore.getState();
+              const instanceId = plate.objects.find((obj) => obj.id === objectId)?.instances[0]?.id ?? null;
+              plate.selectObject(objectId, instanceId);
+              const obj = plate.objects.find((o) => o.id === objectId);
+              const height = obj?.size?.[2] ?? 20.0;
+              useCutStore.getState().openCut(objectId, 0, height, height / 2);
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            ✂️ Cut
+          </div>
+
+          <div
+            id="menu-action-repair"
+            data-testid="menu-action-repair"
+            onClick={async () => {
+              usePaintToolsStore.getState().stopPainting();
+              useLayersStore.getState().stopEditing();
+              useCutStore.getState().closeCut();
+              await useTextStore.getState().close();
+              const plate = usePlateStore.getState();
+              const instanceId = plate.objects.find((obj) => obj.id === objectId)?.instances[0]?.id ?? null;
+              plate.selectObject(objectId, instanceId);
+              await useRepairStore.getState().selectObject(objectId);
+              void useRepairStore.getState().repairSelected();
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            🔧 Repair Non-Manifold
+          </div>
+
+          <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
+
+          <div
+            id="menu-action-add-text"
+            data-testid="menu-action-add-text"
+            onClick={() => {
+              useTextStore.getState().openForAdd(objectId);
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            🔤 Add 3D Text
+          </div>
+
+          <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
+
+          {(['support', 'seam', 'color', 'fuzzy'] as const).map((layer) => (
+            <div key={layer} id={`menu-action-paint-${layer}`}
+              onClick={() => {
+                const plate = usePlateStore.getState();
+                const instanceId = plate.objects.find((obj) => obj.id === objectId)?.instances[0]?.id ?? null;
+                plate.selectObject(objectId, instanceId);
+                const volume = plate.meshCache.get(objectId)?.volumes?.[0]?.volumeId;
+                usePaintToolsStore.getState().setLayer(layer);
+                void usePaintToolsStore.getState().startPainting(objectId, volume, instanceId);
+                onClose();
+              }}
+              style={{ padding: '6px 14px', cursor: 'pointer' }}>
+              {`${layer[0].toUpperCase()}${layer.slice(1)} painting`}
+            </div>
+          ))}
+
+          <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
+
+          <div
             id="menu-action-rename"
             data-testid="menu-action-rename"
             onClick={() => {
@@ -191,6 +290,26 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         </>
       ) : (
         <>
+          {volumeId !== undefined && (
+            <div
+              id="menu-action-edit-text"
+              data-testid="menu-action-edit-text"
+              onClick={() => {
+                void useTextStore.getState().openForEdit(objectId, volumeId);
+                onClose();
+              }}
+              style={{ padding: '6px 14px', cursor: 'pointer' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              🔤 Edit 3D Text
+            </div>
+          )}
+
           {onSetExtruder && (
             <div
               id="menu-item-extruder"

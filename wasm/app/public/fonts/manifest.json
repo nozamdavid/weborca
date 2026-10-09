@@ -1,0 +1,30 @@
+[
+  {
+    "id": "dejavu-sans",
+    "name": "DejaVu Sans",
+    "fileName": "DejaVuSans.ttf",
+    "url": "/fonts/DejaVuSans.ttf",
+    "license": "Bitstream Vera / Public Domain"
+  },
+  {
+    "id": "dejavu-serif",
+    "name": "DejaVu Serif",
+    "fileName": "DejaVuSerif.ttf",
+    "url": "/fonts/DejaVuSerif.ttf",
+    "license": "Bitstream Vera / Public Domain"
+  },
+  {
+    "id": "dejavu-mono",
+    "name": "DejaVu Sans Mono",
+    "fileName": "DejaVuSansMono.ttf",
+    "url": "/fonts/DejaVuSansMono.ttf",
+    "license": "Bitstream Vera / Public Domain"
+  },
+  {
+    "id": "liberation-sans",
+    "name": "Liberation Sans",
+    "fileName": "LiberationSans-Regular.ttf",
+    "url": "/fonts/LiberationSans-Regular.ttf",
+    "license": "SIL Open Font License 1.1"
+  }
+]
