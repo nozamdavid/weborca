@@ -423,10 +423,10 @@ self.onmessage = async (event) => {
 
       case 'addText':
       case 'updateText':
-      case 'getText': {
+      case 'getText':
       case 'getLayerEvents':
       case 'setLayerEvents':
-      case 'clearLayerEvents':
+      case 'clearLayerEvents': {
         if (!core) throw new Error('Engine not initialized');
         const result = await core.call(method, args || {});
         postMessage({ id, ok: true, result });
