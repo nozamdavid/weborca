@@ -664,7 +664,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         8
       );
 
+      let currentPlateIndex: number | undefined;
+      try {
+        const { usePlatesStore } = await import("../plates/platesStore");
+        const pIdx = usePlatesStore.getState().activePlateIndex;
+        if (typeof pIdx === "number" && pIdx >= 0) {
+          currentPlateIndex = pIdx;
+        }
+      } catch (_) {}
+
       const result = await slice({
+        plateIndex: currentPlateIndex,
         threads,
         signal: abortController.signal,
         onProgress: (prog: ProgressNotification) => {

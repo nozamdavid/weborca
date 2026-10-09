@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { usePlatesStore } from './platesStore';
 import { useAppStore } from '../store/appStore';
 
-export const PlateSelectorBar: React.FC = () => {
+export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ style }) => {
   const plates = usePlatesStore((s) => s.plates);
   const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
   const setActivePlate = usePlatesStore((s) => s.setActivePlate);
@@ -33,7 +33,8 @@ export const PlateSelectorBar: React.FC = () => {
         borderRadius: 8,
         border: '1px solid rgba(255, 255, 255, 0.12)',
         zIndex: 20,
-        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)'
+        boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)',
+        ...style
       }}
     >
       {/* Plate Tabs */}

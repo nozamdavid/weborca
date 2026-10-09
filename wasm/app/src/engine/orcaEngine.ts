@@ -4,7 +4,16 @@
  */
 
 import { OrcaEngine } from '../../../web/orca-engine.js';
-import type { ParsedPreset } from '../../../web/orca-engine.js';
+import type {
+  ParsedPreset,
+  LayerEvent,
+  GetLayerEventsParams,
+  GetLayerEventsResult,
+  SetLayerEventsParams,
+  SetLayerEventsResult,
+  ClearLayerEventsParams,
+  ClearLayerEventsResult
+} from '../../../web/orca-engine.js';
 import type {
   PresetItem,
   LoadModelResult,
@@ -15,6 +24,16 @@ import type {
   EvaluateRulesResult,
   SetOptionsResult
 } from './types';
+
+export type {
+  LayerEvent,
+  GetLayerEventsParams,
+  GetLayerEventsResult,
+  SetLayerEventsParams,
+  SetLayerEventsResult,
+  ClearLayerEventsParams,
+  ClearLayerEventsResult
+};
 
 let engineInstance: OrcaEngine | null = null;
 let initPromise: Promise<OrcaEngine> | null = null;
@@ -232,6 +251,21 @@ export async function setPlateConfig(params: {
 }): Promise<void> {
   const engine = await getEngine();
   await engine.setPlateConfig(params);
+}
+
+export async function getLayerEvents(params?: GetLayerEventsParams): Promise<GetLayerEventsResult> {
+  const engine = await getEngine();
+  return await engine.getLayerEvents(params);
+}
+
+export async function setLayerEvents(params: SetLayerEventsParams): Promise<SetLayerEventsResult> {
+  const engine = await getEngine();
+  return await engine.setLayerEvents(params);
+}
+
+export async function clearLayerEvents(params?: ClearLayerEventsParams): Promise<ClearLayerEventsResult> {
+  const engine = await getEngine();
+  return await engine.clearLayerEvents(params);
 }
 
 export async function slice(options?: {

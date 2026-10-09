@@ -13,6 +13,8 @@ import { LayerSlider } from './LayerSlider';
 import { MoveSlider } from './MoveSlider';
 import { ViewTypeLegend } from './ViewTypeLegend';
 import { SliceStatsPanel } from './SliceStatsPanel';
+import { CustomGcodeDialog } from './CustomGcodeDialog';
+import { PlateSelectorBar } from '../plates/PlateSelectorBar';
 
 export const PreviewView: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -22,6 +24,7 @@ export const PreviewView: React.FC = () => {
   const sliceResult = useAppStore((s) => s.sliceResult);
   const currentConfig = useAppStore((s) => s.currentConfig);
   const isSlicing = useAppStore((s) => s.isSlicing);
+  const startSlice = useAppStore((s) => s.startSlice);
 
   // Preview store
   const isInitialized = usePreviewStore((s) => s.isInitialized);
@@ -279,6 +282,52 @@ export const PreviewView: React.FC = () => {
         </button>
       </div>
 
+      {/* Outdated Slice Result Banner (prompting re-slice after layer events change) */}
+      {sliceResult === null && layersCount > 0 && !isSlicing && (
+        <div
+          id="slice-outdated-banner"
+          data-testid="slice-outdated-banner"
+          style={{
+            position: 'absolute',
+            top: 16,
+            left: 16,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            background: 'rgba(234, 88, 12, 0.92)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255, 255, 255, 0.25)',
+            borderRadius: 8,
+            padding: '6px 14px',
+            color: '#fff',
+            zIndex: 25,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)'
+          }}
+        >
+          <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
+            ⚠️ Slice result is outdated. Please re-slice.
+          </span>
+          <button
+            type="button"
+            id="btn-reslice"
+            data-testid="btn-reslice"
+            onClick={() => startSlice()}
+            style={{
+              background: '#fff',
+              color: '#ea580c',
+              border: 'none',
+              borderRadius: 4,
+              padding: '4px 10px',
+              fontWeight: 600,
+              fontSize: '0.8rem',
+              cursor: 'pointer'
+            }}
+          >
+            Re-slice
+          </button>
+        </div>
+      )}
+
       {/* Loading & Status Overlays */}
       {isLoadingModule && (
         <div
@@ -352,11 +401,15 @@ export const PreviewView: React.FC = () => {
       {isInitialized && layersCount > 0 && (
         <>
           <ViewTypeLegend />
-          <LayerSlider />
-          <MoveSlider />
           <SliceStatsPanel />
+          <MoveSlider />
+          <PlateSelectorBar style={{ bottom: 68 }} />
+          <LayerSlider />
         </>
       )}
+
+      {/* Custom G-code Editor Dialog Modal */}
+      <CustomGcodeDialog />
     </div>
   );
 };

@@ -37,3 +37,77 @@
   outline: 2px solid #38bdf8;
   outline-offset: 2px;
 }
+
+/* Layer event controls and popup menu */
+.layer-event-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  color: #f4f4f5;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.layer-event-menu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.layer-event-menu-item.delete:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.layer-event-menu-item.disabled,
+.layer-event-menu-item:disabled {
+  opacity: 0.45;
+  color: #71717a;
+  cursor: not-allowed;
+}
+
+/* Tick marks on slider track */
+.layer-event-tick {
+  user-select: none;
+  transition: transform 0.1s ease;
+}
+
+.layer-event-tick:hover {
+  transform: translateX(-50%) scale(1.15) !important;
+}
+
+.tick-action-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 0.65rem;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.layer-event-tick:hover .tick-action-btn,
+.layer-event-tick:focus-within .tick-action-btn {
+  display: flex;
+}
+
+.tick-action-btn:hover {
+  background: #ef4444;
+}
+
+.tick-action-btn.edit:hover {
+  background: #0284c7;
+}

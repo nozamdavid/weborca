@@ -55,7 +55,7 @@ export const SliceStatsPanel: React.FC = () => {
         borderRadius: 8,
         display: 'flex',
         flexDirection: 'column',
-        zIndex: 20,
+        zIndex: 15,
         fontSize: '0.8rem',
         color: '#e4e4e7',
         boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
