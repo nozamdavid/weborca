@@ -1,18 +1,22 @@
 name: OrcaSlicer WebAssembly CI
 
 on:
-  push:
-    paths:
-      - 'wasm/**'
-      - 'src/libslic3r/**'
-  pull_request:
-    paths:
-      - 'wasm/**'
-      - 'src/libslic3r/**'
+  # NOTE: Full automatic builds on push/PR are temporarily disabled because compiling the full
+  # WebAssembly C++ dependency toolchain (Boost, CGAL, TBB, etc.) is prohibitively expensive (~1-2 hours)
+  # on cold caches. Manual workflow_dispatch is configured; push/PR triggers can be re-enabled once
+  # warm cache infrastructure is established.
+  # push:
+  #   paths:
+  #     - 'wasm/**'
+  #     - 'src/libslic3r/**'
+  # pull_request:
+  #   paths:
+  #     - 'wasm/**'
+  #     - 'src/libslic3r/**'
   workflow_dispatch:
     inputs:
       native_appimage_url:
-        description: 'URL to native Linux AppImage for parity CLI config export (verified via SHA-256)'
+        description: 'URL to native Linux AppImage for parity CLI config export and native parity verification (verified via SHA-256)'
         required: false
         type: string
       native_appimage_sha256:
@@ -33,7 +37,7 @@ permissions:
 
 env:
   # Process-level caps (Node JS heap cap and compilation parallelism).
-  # Total process memory must be enforced by runner cgroup or systemd-run (10GB ceiling).
+  # Heavy commands are executed under wasm/scripts/memcap.sh (10GB ceiling via systemd-run).
   NODE_OPTIONS: '--max-old-space-size=2048'
   WASM_JOBS: '6'
   CMAKE_BUILD_PARALLEL_LEVEL: '6'
@@ -46,36 +50,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Enforce 10GB runner memory ceiling
+      - name: Provision scoped memory boundary (systemd-run)
         run: |
-          # Enforces 10GB total memory limit via container cgroup or systemd-run.
-          # Process-level heap (2048 MB) and concurrency (6 jobs) are not total memory caps.
-          # Uncapped runner execution is forbidden; fail clearly pending a bounded runner.
-          BOUNDED=false
-          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
-            echo "10GB memory enforcement: systemd-run --user is active for wasm/scripts/memcap.sh"
-            BOUNDED=true
+          # Provision systemd user manager session for runner user to enforce 10GB scope boundary
+          sudo loginctl enable-linger "$USER" || true
+          sudo systemctl start "user@$(id -u).service" || true
+          XDG_DIR="/run/user/$(id -u)"
+          if [ -d "$XDG_DIR" ]; then
+            echo "XDG_RUNTIME_DIR=$XDG_DIR" >> "$GITHUB_ENV"
+            echo "DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_DIR/bus" >> "$GITHUB_ENV"
+            export XDG_RUNTIME_DIR="$XDG_DIR"
+            export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_DIR/bus"
           fi
-          if [ -f /sys/fs/cgroup/memory.max ]; then
-            CGROUP_MAX=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "max")
-            if [ "$CGROUP_MAX" != "max" ] && [ "$CGROUP_MAX" -le 10737418240 ] 2>/dev/null; then
-              echo "10GB memory enforcement: cgroup v2 memory.max is bounded ($CGROUP_MAX <= 10GB)"
-              BOUNDED=true
-            fi
-          fi
-          if [ -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
-            CGROUP_V1=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "")
-            if [ -n "$CGROUP_V1" ] && [ "$CGROUP_V1" -le 10737418240 ] 2>/dev/null; then
-              echo "10GB memory enforcement: cgroup v1 memory.limit_in_bytes is bounded ($CGROUP_V1 <= 10GB)"
-              BOUNDED=true
-            fi
-          fi
-          if [ "$BOUNDED" != "true" ]; then
-            echo "::error::Total memory enforcement failed: runner lacks 10GB memory bounding." >&2
-            echo "Runner must be configured with a 10GB container limit (--memory=10g / cgroup) or functional systemd-run --user." >&2
-            echo "Failing clearly pending configured bounded runner. Process-level caps are not total memory enforcement." >&2
+          if ! systemd-run --user --scope --quiet true 2>/dev/null; then
+            echo "::error::Failed to provision functional systemd-run --user for 10GB scoped memory enforcement." >&2
             exit 1
           fi
+          echo "Scoped 10GB execution via wasm/scripts/memcap.sh provisioned and verified."
 
       - name: Install Ninja
         run: |
@@ -115,35 +106,26 @@ jobs:
         if: steps.cache-prefix.outputs.cache-hit != 'true'
         run: |
           source wasm/scripts/env.sh
-          build_dep() {
-            if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
-              wasm/scripts/memcap.sh bash "$1"
-            else
-              bash "$1"
-            fi
-          }
-          # Dependency build order: zlib, png, jpeg, expat, eigen, cereal, nlopt, libnoise, gmp, mpfr, cgal, tbb, boost
-          build_dep wasm/deps/build_zlib.sh
-          build_dep wasm/deps/build_png.sh
-          build_dep wasm/deps/build_jpeg.sh
-          build_dep wasm/deps/build_expat.sh
-          build_dep wasm/deps/build_eigen.sh
-          build_dep wasm/deps/build_cereal.sh
-          build_dep wasm/deps/build_nlopt.sh
-          build_dep wasm/deps/build_libnoise.sh
-          build_dep wasm/deps/build_gmp.sh
-          build_dep wasm/deps/build_mpfr.sh
-          build_dep wasm/deps/build_cgal.sh
-          build_dep wasm/deps/build_tbb.sh
-          build_dep wasm/deps/build_boost.sh
+          for dep in \
+            wasm/deps/build_zlib.sh \
+            wasm/deps/build_png.sh \
+            wasm/deps/build_jpeg.sh \
+            wasm/deps/build_expat.sh \
+            wasm/deps/build_eigen.sh \
+            wasm/deps/build_cereal.sh \
+            wasm/deps/build_nlopt.sh \
+            wasm/deps/build_libnoise.sh \
+            wasm/deps/build_gmp.sh \
+            wasm/deps/build_mpfr.sh \
+            wasm/deps/build_cgal.sh \
+            wasm/deps/build_tbb.sh \
+            wasm/deps/build_boost.sh; do
+            wasm/scripts/memcap.sh bash "$dep"
+          done
 
       - name: Build OrcaSlicer WebAssembly Engine
         run: |
-          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
-            wasm/scripts/memcap.sh bash wasm/scripts/build_orca.sh
-          else
-            bash wasm/scripts/build_orca.sh
-          fi
+          wasm/scripts/memcap.sh bash wasm/scripts/build_orca.sh
 
       - name: Build WebAssembly Preview Engine
         run: |
@@ -165,26 +147,22 @@ jobs:
             -DCMAKE_FIND_ROOT_PATH="$WASM_PREFIX" \
             -DCMAKE_C_FLAGS="$WASM_CFLAGS" \
             -DCMAKE_CXX_FLAGS="$WASM_CFLAGS"
-          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
-            wasm/scripts/memcap.sh cmake --build wasm/build/orca-wasm64-preview --target orca_preview -j "${WASM_JOBS:-6}"
-          else
-            cmake --build wasm/build/orca-wasm64-preview --target orca_preview -j "${WASM_JOBS:-6}"
-          fi
+          wasm/scripts/memcap.sh cmake --build wasm/build/orca-wasm64-preview --target orca_preview -j "${WASM_JOBS:-6}"
 
       - name: Generate Settings Layout
         run: |
           mkdir -p wasm/build/settings
-          node wasm/settings/extract_tab_layout.mjs . wasm/build/settings/layout.json
+          wasm/scripts/memcap.sh node wasm/settings/extract_tab_layout.mjs . wasm/build/settings/layout.json
 
       - name: Pack vendor profiles
         run: |
-          node wasm/web/tools/pack_profiles.mjs . wasm/build/web
-          node wasm/web/tools/pack_profiles.mjs . wasm/build/tests-node Voron OrcaFilamentLibrary BBL Prusa
+          wasm/scripts/memcap.sh node wasm/web/tools/pack_profiles.mjs . wasm/build/web
+          wasm/scripts/memcap.sh node wasm/web/tools/pack_profiles.mjs . wasm/build/tests-node Voron OrcaFilamentLibrary BBL Prusa
 
       - name: Build Web App Production Bundle
         run: |
-          npm --prefix wasm/app ci
-          npm --prefix wasm/app run build
+          wasm/scripts/memcap.sh npm --prefix wasm/app ci
+          wasm/scripts/memcap.sh npm --prefix wasm/app run build
 
       - name: Upload engine and driver artifacts
         uses: actions/upload-artifact@v4
@@ -235,50 +213,35 @@ jobs:
           if-no-files-found: error
 
   test-node:
-    name: Test Node.js & Parity
+    name: Test Node.js Suites & Parity
     needs: build
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Enforce 10GB runner memory ceiling
+      - name: Provision scoped memory boundary (systemd-run)
         run: |
-          # Enforces 10GB total memory limit via container cgroup or systemd-run.
-          # Process-level heap (2048 MB) and concurrency (6 jobs) are not total memory caps.
-          # Uncapped runner execution is forbidden; fail clearly pending a bounded runner.
-          BOUNDED=false
-          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
-            echo "10GB memory enforcement: systemd-run --user is active for wasm/scripts/memcap.sh"
-            BOUNDED=true
+          # Provision systemd user manager session for runner user to enforce 10GB scope boundary
+          sudo loginctl enable-linger "$USER" || true
+          sudo systemctl start "user@$(id -u).service" || true
+          XDG_DIR="/run/user/$(id -u)"
+          if [ -d "$XDG_DIR" ]; then
+            echo "XDG_RUNTIME_DIR=$XDG_DIR" >> "$GITHUB_ENV"
+            echo "DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_DIR/bus" >> "$GITHUB_ENV"
+            export XDG_RUNTIME_DIR="$XDG_DIR"
+            export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_DIR/bus"
           fi
-          if [ -f /sys/fs/cgroup/memory.max ]; then
-            CGROUP_MAX=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "max")
-            if [ "$CGROUP_MAX" != "max" ] && [ "$CGROUP_MAX" -le 10737418240 ] 2>/dev/null; then
-              echo "10GB memory enforcement: cgroup v2 memory.max is bounded ($CGROUP_MAX <= 10GB)"
-              BOUNDED=true
-            fi
-          fi
-          if [ -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
-            CGROUP_V1=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "")
-            if [ -n "$CGROUP_V1" ] && [ "$CGROUP_V1" -le 10737418240 ] 2>/dev/null; then
-              echo "10GB memory enforcement: cgroup v1 memory.limit_in_bytes is bounded ($CGROUP_V1 <= 10GB)"
-              BOUNDED=true
-            fi
-          fi
-          if [ "$BOUNDED" != "true" ]; then
-            echo "::error::Total memory enforcement failed: runner lacks 10GB memory bounding." >&2
-            echo "Runner must be configured with a 10GB container limit (--memory=10g / cgroup) or functional systemd-run --user." >&2
-            echo "Failing clearly pending configured bounded runner. Process-level caps are not total memory enforcement." >&2
+          if ! systemd-run --user --scope --quiet true 2>/dev/null; then
+            echo "::error::Failed to provision functional systemd-run --user for 10GB scoped memory enforcement." >&2
             exit 1
           fi
+          echo "Scoped 10GB execution via wasm/scripts/memcap.sh provisioned and verified."
 
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: 'wasm/tests/package-lock.json'
 
       - name: Download engine and driver artifacts
         uses: actions/download-artifact@v4
@@ -311,7 +274,16 @@ jobs:
         run: |
           bash wasm/tests/data/fetch_models.sh
 
+      - name: Run Node test suite
+        run: |
+          wasm/scripts/memcap.sh node --test --test-concurrency=1 wasm/tests/node/*.test.mjs
+
+      - name: Run engine memory recovery suite
+        run: |
+          wasm/scripts/memcap.sh node wasm/tests/stress/memory-recovery.mjs
+
       - name: Setup native Linux OrcaSlicer CLI for parity check
+        if: ${{ inputs.native_appimage_url != '' || vars.NATIVE_APPIMAGE_URL != '' }}
         env:
           NATIVE_APPIMAGE_URL: ${{ inputs.native_appimage_url || vars.NATIVE_APPIMAGE_URL }}
           NATIVE_APPIMAGE_SHA256: ${{ inputs.native_appimage_sha256 || vars.NATIVE_APPIMAGE_SHA256 }}
@@ -329,21 +301,26 @@ jobs:
           cd /tmp/orca-native
           ./OrcaSlicer.AppImage --appimage-extract
 
-      - name: Run Node test suite
+      - name: Run driver preset-merging and macOS golden parity suite
+        if: ${{ inputs.native_appimage_url != '' || vars.NATIVE_APPIMAGE_URL != '' }}
         run: |
-          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
-            wasm/scripts/memcap.sh node --test --test-concurrency=1 wasm/tests/node/*.test.mjs
-          else
-            node --test --test-concurrency=1 wasm/tests/node/*.test.mjs
-          fi
+          # Note: Check (a) in run_parity.mjs validates PresetBundle merging between the Embind engine
+          # and spike driver using native CLI exported configuration. It does NOT validate native Linux toolpaths.
+          # Check (b) compares engine output against pre-recorded native macOS x86_64 reference G-code.
+          wasm/scripts/memcap.sh node wasm/tests/parity/run_parity.mjs
 
-      - name: Run parity test suite
+      - name: Run native Linux parity suite
+        if: ${{ inputs.native_appimage_url != '' || vars.NATIVE_APPIMAGE_URL != '' }}
+        env:
+          ORCA_ENGINE_MODULE: wasm/build/orca-wasm64/wasm/engine/orca_engine.mjs
+          NATIVE_ORCA: /tmp/orca-native/squashfs-root/AppRun
         run: |
-          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
-            wasm/scripts/memcap.sh node wasm/tests/parity/run_parity.mjs
-          else
-            node wasm/tests/parity/run_parity.mjs
-          fi
+          # Note: Tests real native Linux x86_64 CLI vs WebAssembly engine across 3 test cases:
+          # cube-voron, benchy-voron, cube-bbl.
+          # All 3 cases currently exhibit toolpath differences (compare_gcode exit code 2).
+          # The underlying root causes remain unverified.
+          # This step must NOT silently pass or mask exit code 2.
+          wasm/scripts/memcap.sh node wasm/tests/parity/native-parity.mjs
 
   test-browser:
     name: Test Browser (Playwright) & App Smoke
@@ -353,43 +330,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Enforce 10GB runner memory ceiling
+      - name: Provision scoped memory boundary (systemd-run)
         run: |
-          # Enforces 10GB total memory limit via container cgroup or systemd-run.
-          # Process-level heap (2048 MB) and concurrency (6 jobs) are not total memory caps.
-          # Uncapped runner execution is forbidden; fail clearly pending a bounded runner.
-          BOUNDED=false
-          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
-            echo "10GB memory enforcement: systemd-run --user is active for wasm/scripts/memcap.sh"
-            BOUNDED=true
+          # Provision systemd user manager session for runner user to enforce 10GB scope boundary
+          sudo loginctl enable-linger "$USER" || true
+          sudo systemctl start "user@$(id -u).service" || true
+          XDG_DIR="/run/user/$(id -u)"
+          if [ -d "$XDG_DIR" ]; then
+            echo "XDG_RUNTIME_DIR=$XDG_DIR" >> "$GITHUB_ENV"
+            echo "DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_DIR/bus" >> "$GITHUB_ENV"
+            export XDG_RUNTIME_DIR="$XDG_DIR"
+            export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_DIR/bus"
           fi
-          if [ -f /sys/fs/cgroup/memory.max ]; then
-            CGROUP_MAX=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "max")
-            if [ "$CGROUP_MAX" != "max" ] && [ "$CGROUP_MAX" -le 10737418240 ] 2>/dev/null; then
-              echo "10GB memory enforcement: cgroup v2 memory.max is bounded ($CGROUP_MAX <= 10GB)"
-              BOUNDED=true
-            fi
-          fi
-          if [ -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
-            CGROUP_V1=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null || echo "")
-            if [ -n "$CGROUP_V1" ] && [ "$CGROUP_V1" -le 10737418240 ] 2>/dev/null; then
-              echo "10GB memory enforcement: cgroup v1 memory.limit_in_bytes is bounded ($CGROUP_V1 <= 10GB)"
-              BOUNDED=true
-            fi
-          fi
-          if [ "$BOUNDED" != "true" ]; then
-            echo "::error::Total memory enforcement failed: runner lacks 10GB memory bounding." >&2
-            echo "Runner must be configured with a 10GB container limit (--memory=10g / cgroup) or functional systemd-run --user." >&2
-            echo "Failing clearly pending configured bounded runner. Process-level caps are not total memory enforcement." >&2
+          if ! systemd-run --user --scope --quiet true 2>/dev/null; then
+            echo "::error::Failed to provision functional systemd-run --user for 10GB scoped memory enforcement." >&2
             exit 1
           fi
+          echo "Scoped 10GB execution via wasm/scripts/memcap.sh provisioned and verified."
 
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
-          cache-dependency-path: 'wasm/tests/package-lock.json'
+          cache-dependency-path: |
+            wasm/tests/package-lock.json
+            wasm/app/package-lock.json
 
       - name: Download engine and driver artifacts
         uses: actions/download-artifact@v4
@@ -445,24 +411,17 @@ jobs:
 
       - name: Install Playwright and test dependencies
         run: |
-          npm --prefix wasm/tests ci
-          npx --prefix wasm/tests playwright install --with-deps chromium firefox
+          wasm/scripts/memcap.sh npm --prefix wasm/tests ci
+          wasm/scripts/memcap.sh npm --prefix wasm/app ci
+          wasm/scripts/memcap.sh npx --prefix wasm/tests playwright install --with-deps chromium firefox
 
       - name: Run browser test suite
         run: |
-          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
-            wasm/scripts/memcap.sh node wasm/tests/browser/run.mjs
-          else
-            node wasm/tests/browser/run.mjs
-          fi
+          wasm/scripts/memcap.sh node wasm/tests/browser/run.mjs
 
       - name: Run web app smoke test
         run: |
-          if command -v systemd-run >/dev/null 2>&1 && systemd-run --user --scope --quiet true 2>/dev/null; then
-            wasm/scripts/memcap.sh node wasm/tests/app/smoke.mjs
-          else
-            node wasm/tests/app/smoke.mjs
-          fi
+          wasm/scripts/memcap.sh node wasm/tests/app/smoke.mjs
 
       - name: Upload browser and app test results
         if: always()
@@ -476,7 +435,7 @@ jobs:
 
   refs-macos:
     name: Generate macOS References
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' && (inputs.native_macos_dmg_url != '' || vars.NATIVE_MACOS_DMG_URL != '')
     runs-on: macos-14
     steps:
       - name: Checkout repository
