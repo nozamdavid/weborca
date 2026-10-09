@@ -154,3 +154,7 @@ emcmake cmake -S . -B "$ORCA_STEP_BUILD_DIR" -G Ninja \
 
 echo "Building orca_engine target (jobs: $JOBS)..."
 cmake --build "$ORCA_STEP_BUILD_DIR" --target orca_engine -j "$JOBS"
+
+# Ship OCCT's license texts next to the engine binary that embeds it.
+OCCT_SRC_DIR="$REPO_ROOT/wasm/build/src/OCCT-8_0_1"
+cp "$OCCT_SRC_DIR/LICENSE_LGPL_21.txt" "$OCCT_SRC_DIR/OCCT_LGPL_EXCEPTION.txt" "$ORCA_STEP_BUILD_DIR/wasm/engine/"

@@ -26,6 +26,7 @@ import type {
   ConfigOptionDef,
   FieldState,
   RuleFix,
+  StepImportOptions,
 } from '../engine/types';
 import type { SettingsLayout, SettingsMode } from '../settings/types';
 import type { UserPreset, PresetKind, ConflictStrategy, PresetBundle, ImportBundleResult } from '../presets/types';
@@ -135,7 +136,10 @@ export interface AppState {
   choosePrinter: (printer: string) => Promise<void>;
   chooseProcess: (process: string) => Promise<void>;
   chooseFilament: (filament: string) => Promise<void>;
-  importModelFile: (file: File) => Promise<void>;
+  stepImportState: { file: File } | null;
+  setStepImportState: (state: { file: File } | null) => void;
+  requestImportFile: (file: File) => void;
+  importModelFile: (file: File, options?: StepImportOptions) => Promise<void>;
   startSlice: () => Promise<void>;
   cancelSlice: () => void;
   invalidateSlicePreview: () => void;
@@ -582,19 +586,28 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  importModelFile: async (file: File) => {
+  stepImportState: null,
+  setStepImportState: (state) => set({ stepImportState: state }),
+  requestImportFile: (file: File) => {
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext === "step" || ext === "stp") {
+      get().setStepImportState({ file });
+    } else {
+      get().importModelFile(file);
+    }
+  },
+  importModelFile: async (file: File, options?: StepImportOptions) => {
     if (!file) return;
     set({
       isModelLoading: true,
       engineError: null,
       sliceResult: null,
-      modelFile: null,
       sliceStatusText: `Loading ${file.name}...`
     });
 
     try {
       const buffer = await file.arrayBuffer();
-      const res = await addModel(file.name, new Uint8Array(buffer));
+      const res = await addModel(file.name, new Uint8Array(buffer), options);
       await arrange();
       try {
         const { usePlateStore } = await import("../plate/plateStore");
@@ -612,10 +625,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         await useHistoryStore.getState().commitTransaction(`Import ${file.name}`);
       } catch (_) {}
     } catch (err: any) {
+      // The engine rejects a bad file without touching the existing project, so keep its model state.
       set({
         isModelLoading: false,
-        modelFile: null,
-        modelObjects: null,
         engineError: `Failed to load model '${file.name}': ${err.message || String(err)}`,
         sliceStatusText: 'Model loading failed'
       });

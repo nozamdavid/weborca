@@ -7,6 +7,7 @@ import { OrcaEngine } from '../../../web/orca-engine.js';
 import type {
   PresetItem,
   LoadModelResult,
+  StepImportOptions,
   SliceResult,
   ProgressNotification,
   ConfigOptionDef,
@@ -99,15 +100,15 @@ export async function resetOptions(): Promise<void> {
   await engine.resetOptions();
 }
 
-export async function loadModel(fileName: string, bytes: Uint8Array | ArrayBuffer): Promise<LoadModelResult> {
+export async function loadModel(fileName: string, bytes: Uint8Array | ArrayBuffer, options?: StepImportOptions): Promise<LoadModelResult> {
   const engine = await getEngine();
-  const res = await engine.loadModel(fileName, bytes);
+  const res = await engine.loadModel(fileName, bytes, options);
   return res as LoadModelResult;
 }
 
-export async function addModel(fileName: string, bytes: Uint8Array | ArrayBuffer): Promise<LoadModelResult> {
+export async function addModel(fileName: string, bytes: Uint8Array | ArrayBuffer, options?: StepImportOptions): Promise<LoadModelResult> {
   const engine = await getEngine();
-  const res = await engine.addModel(fileName, bytes);
+  const res = await engine.addModel(fileName, bytes, options);
   return res as LoadModelResult;
 }
 

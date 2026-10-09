@@ -634,9 +634,9 @@ export class OrcaEngine {
 
   resetOptions(): Promise<Record<string, never>>;
 
-  loadModel(fileName: string, bytes: Uint8Array | ArrayBuffer): Promise<LoadModelResult>;
+  loadModel(fileName: string, bytes: Uint8Array | ArrayBuffer, options?: { linearDeflection?: number; angleDeflection?: number }): Promise<LoadModelResult>;
 
-  addModel(fileName: string, bytes: Uint8Array | ArrayBuffer): Promise<LoadModelResult>;
+  addModel(fileName: string, bytes: Uint8Array | ArrayBuffer, options?: { linearDeflection?: number; angleDeflection?: number }): Promise<LoadModelResult>;
 
   listObjects(): Promise<Array<any>>;
 

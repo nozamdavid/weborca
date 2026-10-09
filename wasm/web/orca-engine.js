@@ -256,9 +256,10 @@ export class OrcaEngine {
    * Loads a 3D model into the engine, replacing any existing model.
    * @param {string} fileName
    * @param {Uint8Array|ArrayBuffer} bytes
+   * @param {{ linearDeflection?: number, angleDeflection?: number }} [options] STEP tessellation settings
    * @returns {Promise<{ objects: Array<{ name: string, instances: number, volumes: number, size: [number, number, number] }> }>}
    */
-  async loadModel(fileName, bytes) {
+  async loadModel(fileName, bytes, options = {}) {
     let payload = bytes;
     let transfer = [];
 
@@ -270,16 +271,17 @@ export class OrcaEngine {
       transfer = [bytes.buffer];
     }
 
-    return await this._call('loadModel', { fileName, bytes: payload }, { transfer });
+    return await this._call('loadModel', { fileName, bytes: payload, ...options }, { transfer });
   }
 
   /**
    * Appends a 3D model to the plate.
    * @param {string} fileName
    * @param {Uint8Array|ArrayBuffer} bytes
+   * @param {{ linearDeflection?: number, angleDeflection?: number }} [options] STEP tessellation settings
    * @returns {Promise<{ objects: Array<{ id: number, name: string, instances: number, volumes: number, size: [number, number, number] }> }>}
    */
-  async addModel(fileName, bytes) {
+  async addModel(fileName, bytes, options = {}) {
     let payload = bytes;
     let transfer = [];
 
@@ -291,7 +293,7 @@ export class OrcaEngine {
       transfer = [bytes.buffer];
     }
 
-    return await this._call('addModel', { fileName, bytes: payload }, { transfer });
+    return await this._call('addModel', { fileName, bytes: payload, ...options }, { transfer });
   }
 
   /**

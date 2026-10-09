@@ -3,6 +3,7 @@ import { useAppStore } from './store/appStore';
 import { IsolationNotice } from './components/IsolationNotice';
 import { ErrorBanner } from './components/ErrorBanner';
 import { TopBar } from './components/TopBar';
+import { StepImportModal } from './components/StepImportModal';
 import { ObjectListPanel } from './objectlist/ObjectListPanel';
 import { PlateView } from './plate/PlateView';
 import { PreviewView } from './preview/PreviewView';
@@ -43,6 +44,7 @@ export const App: React.FC = () => {
     <div className="orca-app">
       <ErrorBanner />
       <TopBar />
+      <StepImportModal />
 
       {/* Prepare / Preview Mode Switcher */}
       <div

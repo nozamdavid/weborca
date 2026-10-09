@@ -17,6 +17,12 @@ export interface LoadModelResult {
   objects: ModelObjectInfo[];
 }
 
+/** STEP tessellation settings; ignored for mesh formats. */
+export interface StepImportOptions {
+  linearDeflection?: number;
+  angleDeflection?: number;
+}
+
 export interface ProgressNotification {
   jobId: number;
   percent?: number;

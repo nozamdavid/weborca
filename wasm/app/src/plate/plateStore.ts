@@ -3,6 +3,7 @@ import { getEngine } from '../engine/orcaEngine';
 import { useAppStore } from '../store/appStore';
 import { useHistoryStore } from '../history';
 import type { PlateObject, MeshBufferData, BedConfig, GizmoMode } from './types';
+import type { StepImportOptions } from '../engine/types';
 
 export function parseMeshBuffer(bytes: Uint8Array): MeshBufferData {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -62,7 +63,7 @@ export interface PlateStoreState {
   deleteObject: (objectId: number) => Promise<void>;
   duplicateSelected: () => Promise<void>;
   arrange: (useBed?: boolean) => Promise<void>;
-  importFile: (file: File) => Promise<void>;
+  importFile: (file: File, options?: StepImportOptions) => Promise<void>;
 }
 
 export const usePlateStore = create<PlateStoreState>((set, get) => ({
@@ -325,7 +326,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     }
   },
 
-  importFile: async (file: File) => {
+  importFile: async (file: File, options?: StepImportOptions) => {
     set({ isLoading: true });
     try {
       const engine = await getEngine();
@@ -333,9 +334,9 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
       const bytes = new Uint8Array(buffer);
 
       if (typeof (engine as any).addModel === 'function') {
-        await (engine as any).addModel(file.name, bytes);
+        await (engine as any).addModel(file.name, bytes, options);
       } else if (typeof (engine as any).loadModel === 'function' && get().objects.length === 0) {
-        await (engine as any).loadModel(file.name, bytes);
+        await (engine as any).loadModel(file.name, bytes, options);
       } else {
         await engine.call('addModel', { fileName: file.name, bytes });
       }

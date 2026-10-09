@@ -12,7 +12,8 @@
  * 2. Development Mode Asset Serving:
  *    During development (`npm run dev`), we do not duplicate heavy artifacts. A custom
  *    Vite middleware plugin maps:
- *      - `/engine/*`   -> `wasm/build/orca-wasm64/wasm/engine/*` (orca_engine.mjs, orca_engine.wasm)
+ *      - `/engine/*`   -> `wasm/build/orca-step-runtime/wasm/engine/*` (orca_engine.mjs, orca_engine.wasm,
+ *                         OCCT license texts), falling back to `wasm/build/orca-wasm64/wasm/engine/*`
  *      - `/preview/*`  -> `wasm/build/orca-wasm64-preview/wasm/preview/*` (orca_preview.js, orca_preview.wasm)
  *      - `/profiles/*` -> `wasm/build/web/profiles/*` (packed vendor profiles and index.json)
  *      - `/web/*`      -> `wasm/web/*` (orca-engine.js, engine-worker.js, engine-core.js)
@@ -26,7 +27,7 @@
  *    To ensure `dist/` is a completely self-contained static site that can be hosted on
  *    any static web server (or tested via `vite preview`), a custom `closeBundle` plugin hook
  *    copies:
- *      - `wasm/build/orca-wasm64/wasm/engine` -> `dist/engine`
+ *      - the engine dir above (STEP-enabled if built) -> `dist/engine`
  *      - `wasm/build/orca-wasm64-preview/wasm/preview` -> `dist/preview` and root `dist/`
  *      - `wasm/build/web/profiles`           -> `dist/profiles`
  *      - `wasm/web` (worker & client libs)   -> `dist/web` and root `dist/`
@@ -40,7 +41,13 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 const repoRoot = path.resolve(__dirname, '../..');
-const engineBuildDir = path.resolve(repoRoot, 'wasm/build/orca-wasm64/wasm/engine');
+// The STEP-enabled engine (wasm/scripts/build_step_engine.sh) is preferred. It is always loaded
+// rather than swapped in on STEP import: swapping workers mid-session would mean serializing the
+// whole project. Measured cost: 28 MB vs 15 MB of wasm. Without it, STEP imports fail with an error.
+const stepEngineBuildDir = path.resolve(repoRoot, 'wasm/build/orca-step-runtime/wasm/engine');
+const engineBuildDir = fs.existsSync(path.join(stepEngineBuildDir, 'orca_engine.wasm'))
+  ? stepEngineBuildDir
+  : path.resolve(repoRoot, 'wasm/build/orca-wasm64/wasm/engine');
 const previewBuildDir = path.resolve(repoRoot, 'wasm/build/orca-wasm64-preview/wasm/preview');
 const profilesBuildDir = path.resolve(repoRoot, 'wasm/build/web/profiles');
 const settingsBuildDir = path.resolve(repoRoot, 'wasm/build/settings');
@@ -160,7 +167,7 @@ function orcaAssetsPlugin() {
       if (fs.existsSync(engineBuildDir)) {
         fs.mkdirSync(distEngine, { recursive: true });
         for (const file of fs.readdirSync(engineBuildDir)) {
-          if (file.endsWith('.mjs') || file.endsWith('.wasm')) {
+          if (file.endsWith('.mjs') || file.endsWith('.wasm') || file.endsWith('.txt')) {
             fs.copyFileSync(path.join(engineBuildDir, file), path.join(distEngine, file));
           }
         }

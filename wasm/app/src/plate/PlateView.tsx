@@ -46,7 +46,6 @@ export const PlateView: React.FC = () => {
   const deleteSelected = usePlateStore((s) => s.deleteSelected);
   const arrange = usePlateStore((s) => s.arrange);
   const getMesh = usePlateStore((s) => s.getMesh);
-  const importFile = usePlateStore((s) => s.importFile);
   const initBedConfig = usePlateStore((s) => s.initBedConfig);
 
   // History / Undo-Redo Store
@@ -424,8 +423,8 @@ export const PlateView: React.FC = () => {
     const file = e.dataTransfer.files?.[0];
     if (file) {
       const ext = file.name.split('.').pop()?.toLowerCase();
-      if (ext && ['stl', 'obj', '3mf', 'amf'].includes(ext)) {
-        await importFile(file);
+      if (ext && ['stl', 'obj', '3mf', 'amf', 'step', 'stp'].includes(ext)) {
+        await useAppStore.getState().requestImportFile(file);
       }
     }
   };

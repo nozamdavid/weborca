@@ -25,7 +25,7 @@ export const TopBar: React.FC = () => {
     openSavePresetDialog,
     openManagePresetsDialog,
     deleteUserPresetAction,
-    importModelFile,
+    requestImportFile,
     modelFile,
     isSlicing,
     startSlice,
@@ -45,7 +45,7 @@ export const TopBar: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      importModelFile(file);
+      requestImportFile(file);
     }
     e.target.value = '';
   };
@@ -377,7 +377,7 @@ export const TopBar: React.FC = () => {
           id="model-file"
           ref={fileInputRef}
           style={{ display: 'none' }}
-          accept=".stl,.obj,.3mf,.amf"
+          accept=".stl,.obj,.3mf,.amf,.step,.stp"
           onChange={handleFileChange}
         />
         <button
