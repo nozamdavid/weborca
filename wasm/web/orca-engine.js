@@ -193,6 +193,19 @@ export class OrcaEngine {
   }
 
   /**
+   * Tests preset compatibility against a specified printer without mutating active selection.
+   * @param {Object} params
+   * @param {string} params.printer
+   * @param {string} [params.printerName]
+   * @param {Record<string, string>} [params.printerOverrides]
+   * @param {Array<{ name: string, kind: "process"|"filament", inherits: string, values?: Record<string, string> }>} [params.userPresets]
+   * @returns {Promise<{ compatibleUserPresets: string[], compatibleProcesses: string[], compatibleFilaments: string[] }>}
+   */
+  async getCompatiblePresets(params) {
+    return await this._call("getCompatiblePresets", params);
+  }
+
+  /**
    * Selects active presets for slicing.
    * @param {Object} selection
    * @param {string} selection.printer

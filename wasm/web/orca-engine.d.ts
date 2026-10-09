@@ -626,6 +626,22 @@ export class OrcaEngine {
     options?: ListPresetsOptions
   ): Promise<PresetItem[]>;
 
+  getCompatiblePresets(params: {
+    printer: string;
+    printerName?: string;
+    printerOverrides?: Record<string, string>;
+    userPresets?: Array<{
+      name: string;
+      kind: 'process' | 'filament';
+      inherits: string;
+      values?: Record<string, string>;
+    }>;
+  }): Promise<{
+    compatibleUserPresets: string[];
+    compatibleProcesses: string[];
+    compatibleFilaments: string[];
+  }>;
+
   selectPresets(selection: SelectPresetsOptions): Promise<SelectedPresetsResult>;
 
   getConfig(): Promise<Record<string, string>>;

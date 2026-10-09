@@ -10,6 +10,7 @@ import {
   exportPresetBundle,
   resolvePresetBundleImport
 } from './presetBundle';
+import { getCompatiblePresets } from '../engine/orcaEngine';
 import {
   parsePresetsFromUniversalInput,
   exportDesktopPrinterBundle,
@@ -366,18 +367,27 @@ export function exportUserPresetsHelper(
   return exportPresetBundle(userPresets, { kinds, description });
 }
 
-export function exportDesktopArchiveHelper(
+export async function exportDesktopArchiveHelper(
   get: StoreGet,
   archiveType: 'printer' | 'filament' | 'all' = 'all',
   targetName?: string
-): Uint8Array {
+): Promise<Uint8Array> {
   const { userPresets, selectedPrinter, selectedFilament } = get();
 
   if (archiveType === 'printer') {
     const name = targetName || selectedPrinter;
     const printerPreset = userPresets.find((p) => p.kind === 'printer' && p.name === name);
     if (!printerPreset) throw new Error(`"${name}" is not a user printer preset`);
-    return exportDesktopPrinterBundle(printerPreset, userPresets);
+
+    const candidates = userPresets.filter((p) => p.kind === 'filament' || p.kind === 'process');
+    const { compatibleUserPresets } = await getCompatiblePresets({
+      printer: printerPreset.inherits || printerPreset.name,
+      printerName: printerPreset.name,
+      printerOverrides: printerPreset.values,
+      userPresets: candidates
+    });
+
+    return exportDesktopPrinterBundle(printerPreset, userPresets, new Set(compatibleUserPresets));
   }
 
   if (archiveType === 'filament') {

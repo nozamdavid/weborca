@@ -268,14 +268,23 @@ export async function parseDesktopArchive(data: Uint8Array): Promise<{ presets: 
  */
 export function exportDesktopPrinterBundle(
   printerPreset: UserPreset,
-  allUserPresets: UserPreset[]
+  allUserPresets: UserPreset[],
+  compatiblePresetNames?: Set<string> | string[]
 ): Uint8Array {
   const printerName = printerPreset.name;
   const timestamp = Date.now();
   const bundleId = `offline_${printerName}_${timestamp}`;
 
-  const relatedFilaments = allUserPresets.filter((p) => p.kind === 'filament');
-  const relatedProcesses = allUserPresets.filter((p) => p.kind === 'process');
+  const compatSet = compatiblePresetNames
+    ? (compatiblePresetNames instanceof Set ? compatiblePresetNames : new Set(compatiblePresetNames))
+    : null;
+
+  const relatedFilaments = allUserPresets.filter(
+    (p) => p.kind === 'filament' && (!compatSet || compatSet.has(p.name))
+  );
+  const relatedProcesses = allUserPresets.filter(
+    (p) => p.kind === 'process' && (!compatSet || compatSet.has(p.name))
+  );
 
   const bundleStructure = {
     version: '',

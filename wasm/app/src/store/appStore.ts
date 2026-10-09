@@ -155,7 +155,7 @@ export interface AppState {
   selectUserPreset: (kind: PresetKind, name: string) => Promise<void>;
   importPresetBundleAction: (bundleData: unknown, strategy?: ConflictStrategy) => Promise<ImportBundleResult>;
   exportPresetBundleAction: (kinds?: PresetKind[], description?: string) => PresetBundle;
-  exportDesktopArchiveAction: (archiveType?: 'printer' | 'filament' | 'all', targetName?: string) => Uint8Array;
+  exportDesktopArchiveAction: (archiveType?: 'printer' | 'filament' | 'all', targetName?: string) => Promise<Uint8Array>;
   saveCurrentUserPreset: (kind: PresetKind, name: string) => Promise<void>;
   deleteUserPresetAction: (kind: PresetKind, name: string) => Promise<void>;
   renameUserPresetAction: (kind: PresetKind, oldName: string, newName: string) => Promise<void>;
@@ -1073,8 +1073,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     importUserPresetsHelper(get, set, bundleData, strategy),
   exportPresetBundleAction: (kinds?: PresetKind[], description?: string) =>
     exportUserPresetsHelper(get, kinds, description),
-  exportDesktopArchiveAction: (archiveType?: 'printer' | 'filament' | 'all', targetName?: string) =>
-    exportDesktopArchiveHelper(get, archiveType, targetName)
+  exportDesktopArchiveAction: async (archiveType?: 'printer' | 'filament' | 'all', targetName?: string) =>
+    await exportDesktopArchiveHelper(get, archiveType, targetName)
 }));
 
 if (typeof window !== 'undefined') {

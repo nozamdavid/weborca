@@ -83,6 +83,25 @@ export async function listPresets(
   return res as PresetItem[];
 }
 
+export async function getCompatiblePresets(params: {
+  printer: string;
+  printerName?: string;
+  printerOverrides?: Record<string, string>;
+  userPresets?: Array<{
+    name: string;
+    kind: 'process' | 'filament';
+    inherits: string;
+    values?: Record<string, string>;
+  }>;
+}): Promise<{
+  compatibleUserPresets: string[];
+  compatibleProcesses: string[];
+  compatibleFilaments: string[];
+}> {
+  const engine = await getEngine();
+  return await engine.call('getCompatiblePresets', params);
+}
+
 export async function selectPresets(selection: {
   printer: string;
   process: string;

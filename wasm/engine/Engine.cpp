@@ -202,6 +202,7 @@ private:
     json op_init(const json& args);
     json op_loadVendors(const json& args);
     json op_listPresets(const json& args);
+    json op_getCompatiblePresets(const json& args);
     json op_selectPresets(const json& args);
     json op_getConfig(const json& args);
     json op_getConfigDef(const json& args);
@@ -406,6 +407,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_loadVendors(args);
         } else if (op == "listPresets") {
             result_data = op_listPresets(args);
+        } else if (op == "getCompatiblePresets") {
+            result_data = op_getCompatiblePresets(args);
         } else if (op == "selectPresets") {
             result_data = op_selectPresets(args);
         } else if (op == "getConfig") {
@@ -680,6 +683,157 @@ json Engine::Impl::op_listPresets(const json& args) {
         });
     }
     return list;
+}
+
+namespace {
+
+void apply_json_values_to_config(Slic3r::DynamicPrintConfig& config, const json& values) {
+    if (!values.is_object()) return;
+    Slic3r::ConfigSubstitutionContext subst_ctx(Slic3r::ForwardCompatibilitySubstitutionRule::Enable);
+    for (const auto& [key, val] : values.items()) {
+        if (!Slic3r::print_config_def.has(key)) continue;
+        std::string sval;
+        if (val.is_string()) {
+            sval = val.get<std::string>();
+        } else if (val.is_number_float()) {
+            sval = Slic3r::float_to_string_decimal_point(val.get<double>());
+        } else if (val.is_number()) {
+            sval = val.dump();
+        } else if (val.is_boolean()) {
+            sval = val.get<bool>() ? "1" : "0";
+        } else if (val.is_array()) {
+            const Slic3r::ConfigOptionDef* optdef = Slic3r::print_config_def.get(key);
+            char sep = (optdef && optdef->type == Slic3r::coStrings) ? ';' : ',';
+            for (size_t i = 0; i < val.size(); ++i) {
+                if (i > 0) sval += sep;
+                if (val[i].is_string()) sval += val[i].get<std::string>();
+                else sval += val[i].dump();
+            }
+        } else {
+            continue;
+        }
+        config.set_deserialize_nothrow(key, sval, subst_ctx);
+    }
+}
+
+} // namespace
+
+json Engine::Impl::op_getCompatiblePresets(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized; call loadVendors first");
+
+    std::string printer = args.at("printer").get<std::string>();
+    std::string printer_name = args.value("printerName", printer);
+
+    if (m_bundle->printers.find_preset(printer) == nullptr)
+        throw Slic3r::RuntimeError("Unknown printer preset: " + printer);
+
+    // Make an isolated copy of m_bundle so current selection and compatibility state remain unchanged.
+    Slic3r::PresetBundle temp_bundle(*m_bundle);
+    if (!temp_bundle.printers.select_preset_by_name(printer, true))
+        throw Slic3r::RuntimeError("Failed to select printer: " + printer);
+
+    Slic3r::Preset& active_printer = temp_bundle.printers.get_edited_preset();
+    if (printer_name != printer) {
+        active_printer.name = printer_name;
+        active_printer.inherits() = printer;
+        active_printer.is_system = false;
+        active_printer.is_default = false;
+    }
+
+    if (args.contains("printerOverrides") && args["printerOverrides"].is_object()) {
+        apply_json_values_to_config(active_printer.config, args["printerOverrides"]);
+    }
+
+    temp_bundle.update_compatible(Slic3r::PresetSelectCompatibleType::Always);
+
+    json comp_processes = json::array();
+    for (const auto& p : temp_bundle.prints) {
+        if (p.is_compatible) comp_processes.push_back(p.name);
+    }
+
+    json comp_filaments = json::array();
+    for (const auto& f : temp_bundle.filaments) {
+        if (f.is_compatible) comp_filaments.push_back(f.name);
+    }
+
+    const Slic3r::PresetWithVendorProfile active_printer_with_vendor =
+        temp_bundle.printers.get_preset_with_vendor_profile(active_printer);
+
+    Slic3r::DynamicPrintConfig extra_config;
+    extra_config.set_key_value("printer_preset", new Slic3r::ConfigOptionString(active_printer.name));
+    const Slic3r::ConfigOption* opt = active_printer.config.option("nozzle_diameter");
+    if (opt) {
+        extra_config.set_key_value("num_extruders",
+            new Slic3r::ConfigOptionInt(static_cast<int>(static_cast<const Slic3r::ConfigOptionFloats*>(opt)->values.size())));
+    }
+
+    json comp_user_presets = json::array();
+    if (args.contains("userPresets") && args["userPresets"].is_array()) {
+        for (const auto& up : args["userPresets"]) {
+            std::string uname = up.value("name", "");
+            std::string ukind = up.value("kind", "");
+            std::string uinherits = up.value("inherits", "");
+            if (uname.empty() || ukind.empty()) continue;
+
+            const Slic3r::Preset* parent = nullptr;
+            Slic3r::PresetCollection* collection = nullptr;
+            if (ukind == "process") {
+                collection = &temp_bundle.prints;
+            } else if (ukind == "filament") {
+                collection = &temp_bundle.filaments;
+            }
+            if (!collection) continue;
+
+            if (!uinherits.empty()) {
+                parent = collection->find_preset2(uinherits, true);
+            }
+
+            bool has_custom_compat = false;
+            if (up.contains("values") && up["values"].is_object()) {
+                const auto& vals = up["values"];
+                if (vals.contains("compatible_printers") || vals.contains("compatible_printers_condition")) {
+                    has_custom_compat = true;
+                }
+            }
+
+            if (!has_custom_compat) {
+                // Desktop does not load a user preset whose parent is missing, so it is never exported.
+                if (parent ? parent->is_compatible : uinherits.empty())
+                    comp_user_presets.push_back(uname);
+            } else {
+                Slic3r::Preset custom_preset(ukind == "process" ? Slic3r::Preset::TYPE_PRINT : Slic3r::Preset::TYPE_FILAMENT, uname);
+                if (parent) {
+                    custom_preset = *parent;
+                }
+                custom_preset.name = uname;
+                custom_preset.is_system = false;
+                custom_preset.is_default = false;
+                if (!uinherits.empty()) {
+                    custom_preset.inherits() = uinherits;
+                }
+
+                if (up.contains("values") && up["values"].is_object()) {
+                    apply_json_values_to_config(custom_preset.config, up["values"]);
+                }
+
+                const Slic3r::PresetWithVendorProfile custom_with_vendor(custom_preset, parent ? parent->vendor : nullptr);
+                bool compat = Slic3r::is_compatible_with_printer(custom_with_vendor, active_printer_with_vendor, &extra_config);
+                if (compat && ukind == "filament" && temp_bundle.prints.get_selected_idx() != size_t(-1)) {
+                    const Slic3r::PresetWithVendorProfile print_with_vendor = temp_bundle.prints.get_edited_preset_with_vendor_profile();
+                    compat = Slic3r::is_compatible_with_print(custom_with_vendor, print_with_vendor, active_printer_with_vendor);
+                }
+                if (compat) {
+                    comp_user_presets.push_back(uname);
+                }
+            }
+        }
+    }
+
+    return json{
+        {"compatibleUserPresets", comp_user_presets},
+        {"compatibleProcesses", comp_processes},
+        {"compatibleFilaments", comp_filaments}
+    };
 }
 
 json Engine::Impl::op_selectPresets(const json& args) {

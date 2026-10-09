@@ -44,6 +44,7 @@ Jobs run strictly in submission order.
 | `init` | `{"resourcesDir": "/resources", "dataDir": "/data"}` | `{}` |
 | `loadVendors` | `{}` | `{"vendors": [{"name": "Voron", "printers": n, "processes": n, "filaments": n}]}` loads every vendor found in `<dataDir>/system` into a fresh PresetBundle; previous selections are kept when the names still exist |
 | `listPresets` | `{"kind": "printer" \| "process" \| "filament", "compatibleOnly": bool}` | `[{"name", "vendor", "isSystem", "isCompatible", "inherits"}]`; `compatibleOnly` filters by the selected printer (and process for filaments) |
+| `getCompatiblePresets` | `{"printer": "...", "printerName": "...", "printerOverrides": {key: val}, "userPresets": [{"name", "kind", "inherits", "values": {key: val}}]}` | `{"compatibleUserPresets": [...], "compatibleProcesses": [...], "compatibleFilaments": [...]}`; tests preset compatibility against a printer without mutating active selection; user presets without explicit compatibility rules inherit compatibility from their parent system preset |
 | `selectPresets` | `{"printer": "...", "process": "...", "filaments": ["..."]}` | `{"printer", "process", "filaments"}` actually selected; error if a name is unknown. Clears option overrides |
 | `getConfig` | `{}` | `{key: serializedValue}` for the full config slicing will use (presets merged plus overrides) |
 | `setOptions` | `{"options": {key: serializedValue}}` | `{"errors": [{"key", "error"}]}`; valid keys become overrides on top of the presets; values use the same serialization as Orca profile JSON |

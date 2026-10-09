@@ -180,11 +180,11 @@ export const ManagePresetsDialog: React.FC = () => {
     }
   };
 
-  const handleExportArchive = (kind: 'printer' | 'filament') => {
+  const handleExportArchive = async (kind: 'printer' | 'filament') => {
     setError(null);
     setSuccessMsg(null);
     try {
-      const data = exportDesktopArchiveAction(kind, selectedPreset);
+      const data = await exportDesktopArchiveAction(kind, selectedPreset);
       const fileName = `${selectedPreset}.orca_${kind}`;
       downloadBinaryArchive(data, fileName);
       setSuccessMsg(`Exported "${fileName}".`);

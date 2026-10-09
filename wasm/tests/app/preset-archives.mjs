@@ -67,6 +67,8 @@ async function runBrowserArchiveSuite(browserType, browserName) {
   const browser = await browserType.launch(launchOptions);
   const context = await browser.newContext();
   const page = await context.newPage();
+  page.on("console", msg => console.log(`[${browserName} console]`, msg.type(), msg.text()));
+  page.on("pageerror", err => console.error(`[${browserName} pageerror]`, err));
 
   const results = [];
 
@@ -234,7 +236,7 @@ async function runBrowserArchiveSuite(browserType, browserName) {
     // 6. Native Export & Roundtrip Verification
     console.log(`[${browserName}] Step 6: Testing native archive export & roundtrip...`);
     await clearPresets();
-    // Create known user presets including sensitive printer keys
+    // Create known user presets including sensitive printer keys and compatible/incompatible presets
     await page.evaluate(async () => {
       const store = window.__appStore.getState();
       await store.importPresetBundleAction({
@@ -262,6 +264,14 @@ async function runBrowserArchiveSuite(browserType, browserName) {
             }
           },
           {
+            name: 'Incompatible Bambu Filament',
+            kind: 'filament',
+            inherits: 'Bambu PLA Basic @BBL X1C',
+            values: {
+              nozzle_temperature: '220'
+            }
+          },
+          {
             name: 'Exported Process Custom',
             kind: 'process',
             inherits: '0.20mm Standard @Voron',
@@ -269,14 +279,22 @@ async function runBrowserArchiveSuite(browserType, browserName) {
               layer_height: '0.14',
               wall_loops: '5'
             }
+          },
+          {
+            name: 'Incompatible Bambu Process',
+            kind: 'process',
+            inherits: '0.20mm Standard @BBL X1C',
+            values: {
+              layer_height: '0.14'
+            }
           }
         ]
       }, 'overwrite');
     });
 
     // 6a. Export printer bundle
-    const exportedPrinterArchiveB64 = await page.evaluate(() => {
-      const bytes = window.__appStore.getState().exportDesktopArchiveAction('printer', 'Exported Printer Custom');
+    const exportedPrinterArchiveB64 = await page.evaluate(async () => {
+      const bytes = await window.__appStore.getState().exportDesktopArchiveAction('printer', 'Exported Printer Custom');
       let binary = '';
       for (let i = 0; i < bytes.length; i++) {
         binary += String.fromCharCode(bytes[i]);
@@ -292,6 +310,18 @@ async function runBrowserArchiveSuite(browserType, browserName) {
     assert.equal(bundleStructure.bundle_type, 'printer config bundle');
     assert.equal(bundleStructure.printer_preset_name, 'Exported Printer Custom');
     assert.ok(bundleStructure.printer_config.includes('printer/Exported Printer Custom.json'));
+
+    // Compatible presets must be included in bundle_structure and zip
+    assert.ok(bundleStructure.filament_config.includes('filament/Exported Filament Custom.json'), 'Compatible filament included in bundle_structure');
+    assert.ok(bundleStructure.process_config.includes('process/Exported Process Custom.json'), 'Compatible process included in bundle_structure');
+    assert.ok(printerZipEntries['filament/Exported Filament Custom.json'], 'Compatible filament config exists in zip');
+    assert.ok(printerZipEntries['process/Exported Process Custom.json'], 'Compatible process config exists in zip');
+
+    // Incompatible presets must NOT be included in bundle_structure or zip
+    assert.ok(!bundleStructure.filament_config.includes('filament/Incompatible Bambu Filament.json'), 'Incompatible filament excluded from bundle_structure');
+    assert.ok(!bundleStructure.process_config.includes('process/Incompatible Bambu Process.json'), 'Incompatible process excluded from bundle_structure');
+    assert.ok(!printerZipEntries['filament/Incompatible Bambu Filament.json'], 'Incompatible filament excluded from zip');
+    assert.ok(!printerZipEntries['process/Incompatible Bambu Process.json'], 'Incompatible process excluded from zip');
 
     assert.ok(printerZipEntries['printer/Exported Printer Custom.json'], 'printer config file must exist in zip');
     const exportedPrinterJson = JSON.parse(strFromU8(printerZipEntries['printer/Exported Printer Custom.json']));
@@ -315,6 +345,7 @@ async function runBrowserArchiveSuite(browserType, browserName) {
     }, exportedPrinterArchiveB64);
 
     assert.equal(reimportedRes.success, true);
+    // Exactly 3 presets restored: printer, 1 compatible filament, 1 compatible process
     assert.equal(reimportedRes.importedCount, 3);
 
     const restoredPresets = await page.evaluate(() => window.__appStore.getState().userPresets);
@@ -327,8 +358,8 @@ async function runBrowserArchiveSuite(browserType, browserName) {
     assert.equal(restoredProcess.values.wall_loops, '5');
 
     // 6c. Export filament bundle
-    const exportedFilamentArchiveB64 = await page.evaluate(() => {
-      const bytes = window.__appStore.getState().exportDesktopArchiveAction('filament', 'Exported Filament Custom');
+    const exportedFilamentArchiveB64 = await page.evaluate(async () => {
+      const bytes = await window.__appStore.getState().exportDesktopArchiveAction('filament', 'Exported Filament Custom');
       let binary = '';
       for (let i = 0; i < bytes.length; i++) {
         binary += String.fromCharCode(bytes[i]);
@@ -344,8 +375,8 @@ async function runBrowserArchiveSuite(browserType, browserName) {
     assert.ok(Array.isArray(filBundleStruct.printer_vendor));
 
     // 6d. Export all presets as full .zip archive
-    const exportedZipB64 = await page.evaluate(() => {
-      const bytes = window.__appStore.getState().exportDesktopArchiveAction('all');
+    const exportedZipB64 = await page.evaluate(async () => {
+      const bytes = await window.__appStore.getState().exportDesktopArchiveAction('all');
       let binary = '';
       for (let i = 0; i < bytes.length; i++) {
         binary += String.fromCharCode(bytes[i]);
