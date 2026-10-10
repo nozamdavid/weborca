@@ -83,6 +83,18 @@ const paValues = (gcode) =>
 const feedrates = (gcode) => new Set([...gcode.matchAll(/ F([0-9.]+)/g)].map((m) => +m[1]));
 const maxZ = (gcode) => Math.max(0, ...[...gcode.matchAll(/^G1 Z([0-9.]+)/gm)].map((m) => +m[1]));
 
+/** Values of `pattern`'s first capture group in order of appearance, with repeats collapsed. */
+const series = (gcode, pattern) => {
+  const values = [...gcode.matchAll(pattern)].map((m) => +m[1]);
+  return values.filter((v, i) => i === 0 || v !== values[i - 1]);
+};
+const assertRamp = (values, start, end, tolerance, what) => {
+  assert.ok(values.length > 20, `${what}: expected a ramp, got ${values.length} values`);
+  assert.ok(Math.abs(values[0] - start) < 1e-6, `${what} starts at ${start}, got ${values[0]}`);
+  assert.ok(Math.abs(values.at(-1) - end) <= tolerance, `${what} ends near ${end}, got ${values.at(-1)}`);
+  values.slice(1).forEach((v, i) => assert.ok(v >= values[i], `${what} never goes down (${values[i]} -> ${v})`));
+};
+
 describe('Calibration Engine Operations', () => {
   let core;
 
@@ -284,6 +296,70 @@ describe('Calibration Engine Operations', () => {
     const f = feedrates(gcode);
     for (const speed of range(40, 200, 10)) assert.ok(f.has(speed * 60), `VFA speed ${speed} mm/s missing`);
   });
+
+
+  test('Input Shaping Frequency Test', async () => {
+    await getDrc('calib/input_shaping/ringing_tower.drc', '/MEMFS/ringing_tower.stl');
+    await core.call('setupCalibration', {
+        mode: 10, // Calib_Input_shaping_freq
+        start: 0.15, // Damping factor!
+        test_model: 0,
+        freqStartX: 15,
+        freqEndX: 60,
+        freqStartY: 15,
+        freqEndY: 60,
+        meshes: {
+           "ringing_tower.drc": "/MEMFS/ringing_tower.stl"
+        }
+    });
+    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_isfreq.gcode' });
+    const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_isfreq.gcode'));
+    
+    // The frequency ramps from freqStart to freqEnd along the tower; X and Y move together here.
+    assertRamp(series(gcode, /SHAPER_FREQ_X=([0-9.]+) SHAPER_FREQ_Y=[0-9.]+/g), 15, 60, 0.7, 'shaper frequency');
+    assert.deepEqual(series(gcode, /SET_INPUT_SHAPER DAMPING_RATIO_X=([0-9.]+)/g), [0.15], 'the damping ratio stays at the requested value');
+  });
+
+  test('Input Shaping Damping Test', async () => {
+    await getDrc('calib/input_shaping/ringing_tower.drc', '/MEMFS/ringing_tower.stl');
+    await core.call('setupCalibration', {
+        mode: 11, // Calib_Input_shaping_damp
+        start: 0.05, // damp start
+        end: 0.15, // damp end
+        test_model: 0,
+        freqStartX: 30,
+        freqStartY: 30,
+        shaper_type: "MZV",
+        meshes: {
+           "ringing_tower.drc": "/MEMFS/ringing_tower.stl"
+        }
+    });
+    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_isdamp.gcode' });
+    const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_isdamp.gcode'));
+    
+    assert.ok(gcode.includes('SET_INPUT_SHAPER SHAPER_TYPE=MZV SHAPER_FREQ_X=30.00'), 'sets the shaper type and X frequency');
+    assert.ok(gcode.includes('SET_INPUT_SHAPER SHAPER_TYPE=MZV SHAPER_FREQ_Y=30.00'), 'sets the shaper type and Y frequency');
+    assertRamp(series(gcode, /SET_INPUT_SHAPER DAMPING_RATIO_X=([0-9.]+) DAMPING_RATIO_Y=[0-9.]+/g), 0.05, 0.15, 0.003, 'damping ratio');
+  });
+
+  test('Cornering Test', async () => {
+    await getDrc('calib/cornering/SCV-V2.drc', '/MEMFS/scvv2.stl');
+    await core.call('setupCalibration', {
+        mode: 12, // Calib_Cornering
+        start: 1, // jerk start
+        end: 10, // jerk end
+        test_model: 2, // SCV-V2
+        meshes: {
+           "SCV-V2.drc": "/MEMFS/scvv2.stl"
+        }
+    });
+    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_corner.gcode' });
+    const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_corner.gcode'));
+    
+    // Klipper's square corner velocity ramps from the start value to the end value.
+    assertRamp(series(gcode, /SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=([0-9.]+)/g), 1, 10, 0.3, 'square corner velocity');
+  });
+
 
   test('Reset Calibration Mode', async () => {
     // calib mode is cleared on loadModel

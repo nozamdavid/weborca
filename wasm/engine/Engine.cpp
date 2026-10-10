@@ -7,6 +7,9 @@
 #include "PaintToolsOps.hpp"
 #include "LayerHeightOps.hpp"
 #include "TextOps.hpp"
+#include "EditOps.hpp"
+#include "SvgOps.hpp"
+#include "BrimEarsOps.hpp"
 #include "CutOps.hpp"
 #include "CalibOps.hpp"
 #include "RepairOps.hpp"
@@ -259,6 +262,20 @@ private:
     json op_resetLayerHeights(const json& args);
     json op_getObjectLayers(const json& args);
     json op_addText(const json& args);
+    json op_autoOrient(const json& args);
+    json op_getPlanarFacets(const json& args);
+    json op_placeOnFace(const json& args);
+    json op_splitObject(const json& args);
+    json op_splitVolume(const json& args);
+    json op_simplifyVolume(const json& args);
+    json op_meshBoolean(const json& args);
+    json op_addSvg(const json& args);
+    json op_updateSvg(const json& args);
+    json op_getSvg(const json& args);
+    json op_getBrimEars(const json& args);
+    json op_setBrimEars(const json& args);
+    json op_clearBrimEars(const json& args);
+
     json op_updateText(const json& args);
     json op_getText(const json& args);
     json op_getLayerEvents(const json& args);
@@ -520,7 +537,21 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_resetLayerHeights(args);
         } else if (op == "getObjectLayers") {
             result_data = op_getObjectLayers(args);
-        } else if (op == "addText") {
+        
+        } else if (op == "autoOrient") { result_data = op_autoOrient(args);
+        } else if (op == "getPlanarFacets") { result_data = op_getPlanarFacets(args);
+        } else if (op == "placeOnFace") { result_data = op_placeOnFace(args);
+        } else if (op == "splitObject") { result_data = op_splitObject(args);
+        } else if (op == "splitVolume") { result_data = op_splitVolume(args);
+        } else if (op == "simplifyVolume") { result_data = op_simplifyVolume(args);
+        } else if (op == "meshBoolean") { result_data = op_meshBoolean(args);
+        } else if (op == "addSvg") { result_data = op_addSvg(args);
+        } else if (op == "updateSvg") { result_data = op_updateSvg(args);
+        } else if (op == "getSvg") { result_data = op_getSvg(args);
+        } else if (op == "getBrimEars") { result_data = op_getBrimEars(args);
+        } else if (op == "setBrimEars") { result_data = op_setBrimEars(args);
+        } else if (op == "clearBrimEars") { result_data = op_clearBrimEars(args);
+} else if (op == "addText") {
             result_data = op_addText(args);
         } else if (op == "updateText") {
             result_data = op_updateText(args);
@@ -2043,3 +2074,17 @@ json Engine::Impl::op_setupCalibration(const json& args) {
         throw Slic3r::RuntimeError("Preset bundle not initialized");
     return OrcaWasm::setupCalibration(m_model, m_options_override, *m_bundle, m_calib_params, args, m_resources_dir);
 }
+
+json Engine::Impl::op_autoOrient(const json& args) { return OrcaWasm::autoOrient(m_model, args); }
+json Engine::Impl::op_getPlanarFacets(const json& args) { return OrcaWasm::getPlanarFacets(m_model, args); }
+json Engine::Impl::op_placeOnFace(const json& args) { return OrcaWasm::placeOnFace(m_model, args); }
+json Engine::Impl::op_splitObject(const json& args) { return OrcaWasm::splitObject(m_model, args); }
+json Engine::Impl::op_splitVolume(const json& args) { return OrcaWasm::splitVolume(m_model, args); }
+json Engine::Impl::op_simplifyVolume(const json& args) { return OrcaWasm::simplifyVolume(m_model, args); }
+json Engine::Impl::op_meshBoolean(const json& args) { return OrcaWasm::meshBoolean(m_model, args); }
+json Engine::Impl::op_addSvg(const json& args) { return OrcaWasm::addSvg(m_model, args); }
+json Engine::Impl::op_updateSvg(const json& args) { return OrcaWasm::updateSvg(m_model, args); }
+json Engine::Impl::op_getSvg(const json& args) { return OrcaWasm::getSvg(m_model, args); }
+json Engine::Impl::op_getBrimEars(const json& args) { return OrcaWasm::getBrimEars(m_model, args); }
+json Engine::Impl::op_setBrimEars(const json& args) { return OrcaWasm::setBrimEars(m_model, args); }
+json Engine::Impl::op_clearBrimEars(const json& args) { return OrcaWasm::clearBrimEars(m_model, args); }

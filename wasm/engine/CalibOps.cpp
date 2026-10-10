@@ -97,6 +97,18 @@ static Slic3r::ModelObject* add_cube_to_model(Slic3r::Model& model) {
 }
 
 
+
+static bool has_junction_deviation(const Slic3r::DynamicPrintConfig& current_config)
+{
+    const auto gcode_flavor = current_config.option<Slic3r::ConfigOptionEnum<Slic3r::GCodeFlavor>>("gcode_flavor");
+    const auto junction_dev = current_config.option<Slic3r::ConfigOptionFloats>("machine_max_junction_deviation");
+    return gcode_flavor &&
+           gcode_flavor->value == Slic3r::GCodeFlavor::gcfMarlinFirmware &&
+           junction_dev &&
+           !junction_dev->values.empty() &&
+           junction_dev->values.front() > 0.;
+}
+
 static void calib_pa_line(Slic3r::Model& model, Slic3r::DynamicPrintConfig& options_override, Slic3r::PresetBundle& preset_bundle, Slic3r::Calib_Params& params, const json& args) {
     add_model_from_args(model, args, "pressure_advance_test.drc"); }
 
@@ -556,6 +568,120 @@ static void calib_VFA(Slic3r::Model& model, Slic3r::DynamicPrintConfig& options_
 }
 
 
+
+static void calib_input_shaping(Slic3r::Model& model, Slic3r::DynamicPrintConfig& options_override, Slic3r::PresetBundle& preset_bundle, Slic3r::Calib_Params& params, const json& args) {
+    std::string model_name = (params.test_model < 1) ? "ringing_tower.drc" : "fast_tower_test.drc";
+    if (!add_model_from_args(model, args, model_name))
+        return;
+
+    Slic3r::DynamicPrintConfig current_config = preset_bundle.full_config();
+    current_config.apply(options_override, true);
+
+    const auto gcode_flavor_option = current_config.option<Slic3r::ConfigOptionEnum<Slic3r::GCodeFlavor>>("gcode_flavor");
+
+    if (has_junction_deviation(current_config)) {
+        double max_jd = current_config.option<Slic3r::ConfigOptionFloats>("machine_max_junction_deviation")->values.front();
+        options_override.set_deserialize_strict("machine_max_junction_deviation", std::to_string(std::max(max_jd, 0.25)));
+        options_override.set_deserialize_strict("default_junction_deviation", "0");
+    } else {
+        const double jerk_value = (gcode_flavor_option && gcode_flavor_option->value == Slic3r::GCodeFlavor::gcfKlipper) ? 5.0 : 10.0;
+        double max_jerk_x = current_config.option<Slic3r::ConfigOptionFloats>("machine_max_jerk_x")->values.front();
+        double max_jerk_y = current_config.option<Slic3r::ConfigOptionFloats>("machine_max_jerk_y")->values.front();
+        options_override.set_deserialize_strict("machine_max_jerk_x", std::to_string(std::max(max_jerk_x, jerk_value)));
+        options_override.set_deserialize_strict("machine_max_jerk_y", std::to_string(std::max(max_jerk_y, jerk_value)));
+        options_override.set_deserialize_strict("default_jerk", "0");
+    }
+
+    zero_pressure_advance_where_disabled(options_override, preset_bundle);
+
+    options_override.set_deserialize_strict("resonance_avoidance", "0");
+    options_override.set_deserialize_strict("input_shaping_emit", "0");
+    options_override.set_deserialize_strict("slow_down_layer_time", "0");
+    options_override.set_deserialize_strict("slow_down_min_speed", "0");
+    options_override.set_deserialize_strict("slow_down_for_layer_cooling", "0");
+    options_override.set_deserialize_strict("enable_overhang_speed", "0");
+    options_override.set_deserialize_strict("timelapse_type", "0");
+    options_override.set_deserialize_strict("wall_loops", "1");
+    options_override.set_deserialize_strict("top_shell_layers", "0");
+    options_override.set_deserialize_strict("bottom_shell_layers", "1");
+    options_override.set_key_value("sparse_infill_density", new Slic3r::ConfigOptionPercent(0));
+    options_override.set_deserialize_strict("detect_thin_wall", "0");
+    options_override.set_deserialize_strict("spiral_mode", "1");
+    options_override.set_deserialize_strict("spiral_mode_smooth", "0");
+    options_override.set_deserialize_strict("bottom_surface_pattern", "rectilinear");
+    options_override.set_deserialize_strict("precise_z_height", "0");
+
+    const double machine_max_speed = std::min(current_config.option<Slic3r::ConfigOptionFloats>("machine_max_speed_x")->get_at(0), current_config.option<Slic3r::ConfigOptionFloats>("machine_max_speed_y")->get_at(0));
+    const double machine_max_acceleration = current_config.option<Slic3r::ConfigOptionFloats>("machine_max_acceleration_extruding")->get_at(0);
+    options_override.set_deserialize_strict("outer_wall_speed", std::to_string(machine_max_speed));
+    options_override.set_deserialize_strict("default_acceleration", std::to_string(machine_max_acceleration));
+    options_override.set_deserialize_strict("outer_wall_acceleration", std::to_string(machine_max_acceleration));
+
+    if (params.mode == Slic3r::CalibMode::Calib_Input_shaping_freq) {
+        options_override.set_deserialize_strict("layer_height", "0.2");
+    }
+
+    auto& obj_cfg = model.objects[0]->config;
+    set_object_config(obj_cfg, "brim_type", "outer_only");
+    set_object_config(obj_cfg, "brim_width", "3.0");
+    set_object_config(obj_cfg, "brim_object_gap", "0.0");
+}
+
+static void calib_cornering(Slic3r::Model& model, Slic3r::DynamicPrintConfig& options_override, Slic3r::PresetBundle& preset_bundle, Slic3r::Calib_Params& params, const json& args) {
+    std::string model_name = (params.test_model == 0) ? "ringing_tower.drc" : ((params.test_model == 1) ? "fast_tower_test.drc" : "SCV-V2.drc");
+    if (!add_model_from_args(model, args, model_name))
+        return;
+
+    Slic3r::DynamicPrintConfig current_config = preset_bundle.full_config();
+    current_config.apply(options_override, true);
+
+    const auto gcode_flavor_option = current_config.option<Slic3r::ConfigOptionEnum<Slic3r::GCodeFlavor>>("gcode_flavor");
+
+    if (has_junction_deviation(current_config)) {
+        options_override.set_deserialize_strict("machine_max_junction_deviation", std::to_string(params.end));
+        options_override.set_deserialize_strict("default_junction_deviation", "0");
+    } else {
+        options_override.set_deserialize_strict("machine_max_jerk_x", std::to_string(params.end));
+        options_override.set_deserialize_strict("machine_max_jerk_y", std::to_string(params.end));
+        options_override.set_deserialize_strict("default_jerk", "0");
+    }
+
+    zero_pressure_advance_where_disabled(options_override, preset_bundle);
+
+    options_override.set_deserialize_strict("resonance_avoidance", "0");
+    options_override.set_deserialize_strict("input_shaping_emit", "1");
+    options_override.set_key_value("input_shaping_type", new Slic3r::ConfigOptionEnum<Slic3r::InputShaperType>(Slic3r::InputShaperType::Disable));
+    options_override.set_deserialize_strict("slow_down_layer_time", "0");
+    options_override.set_deserialize_strict("slow_down_min_speed", "0");
+    options_override.set_deserialize_strict("slow_down_for_layer_cooling", "0");
+
+    const double filament_max_volumetric_speed = current_config.option<Slic3r::ConfigOptionFloats>("filament_max_volumetric_speed")->get_at(0);
+    options_override.set_deserialize_strict("filament_max_volumetric_speed", std::to_string(std::max(filament_max_volumetric_speed, 200.0)));
+
+    options_override.set_deserialize_strict("enable_overhang_speed", "0");
+    options_override.set_deserialize_strict("timelapse_type", "0");
+    options_override.set_deserialize_strict("wall_loops", "1");
+    options_override.set_deserialize_strict("top_shell_layers", "0");
+    options_override.set_deserialize_strict("bottom_shell_layers", "1");
+    options_override.set_key_value("sparse_infill_density", new Slic3r::ConfigOptionPercent(0));
+    options_override.set_deserialize_strict("detect_thin_wall", "0");
+    options_override.set_deserialize_strict("spiral_mode", "1");
+    options_override.set_deserialize_strict("spiral_mode_smooth", "0");
+    options_override.set_deserialize_strict("bottom_surface_pattern", "rectilinear");
+    options_override.set_deserialize_strict("precise_z_height", "0");
+
+    const double machine_max_speed = std::min(current_config.option<Slic3r::ConfigOptionFloats>("machine_max_speed_x")->get_at(0), current_config.option<Slic3r::ConfigOptionFloats>("machine_max_speed_y")->get_at(0));
+    const double machine_max_acceleration = current_config.option<Slic3r::ConfigOptionFloats>("machine_max_acceleration_extruding")->get_at(0);
+    options_override.set_deserialize_strict("outer_wall_speed", std::to_string(machine_max_speed));
+    options_override.set_deserialize_strict("default_acceleration", std::to_string(machine_max_acceleration));
+    options_override.set_deserialize_strict("outer_wall_acceleration", std::to_string(machine_max_acceleration));
+
+    auto& obj_cfg = model.objects[0]->config;
+    set_object_config(obj_cfg, "brim_type", "outer_only");
+    set_object_config(obj_cfg, "brim_width", "3.0");
+    set_object_config(obj_cfg, "brim_object_gap", "0.0");
+}
+
 json setupCalibration(Slic3r::Model& model, Slic3r::DynamicPrintConfig& options_override, Slic3r::PresetBundle& preset_bundle, Slic3r::Calib_Params& calib_params, const json& args, const std::string& resources_dir) {
     // Desktop starts every calibration from new_project(): fresh params and an empty plate,
     // including any PA pattern G-code left by a previous calibration.
@@ -576,13 +702,30 @@ json setupCalibration(Slic3r::Model& model, Slic3r::DynamicPrintConfig& options_
         calib_params.speeds.clear();
         for (auto& s : args["speeds"]) calib_params.speeds.push_back(s.get<double>());
     }
+
     if (args.contains("accelerations")) {
         calib_params.accelerations.clear();
         for (auto& a : args["accelerations"]) calib_params.accelerations.push_back(a.get<double>());
     }
     
+    if (args.contains("test_model")) calib_params.test_model = args["test_model"].get<int>();
+    if (args.contains("freqStartX")) calib_params.freqStartX = args["freqStartX"].get<double>();
+    if (args.contains("freqEndX")) calib_params.freqEndX = args["freqEndX"].get<double>();
+    if (args.contains("freqStartY")) calib_params.freqStartY = args["freqStartY"].get<double>();
+    if (args.contains("freqEndY")) calib_params.freqEndY = args["freqEndY"].get<double>();
+    if (args.contains("shaper_type")) calib_params.shaper_type = args["shaper_type"].get<std::string>();
+
+    
     model.clear_objects();
+
     switch (calib_params.mode) {
+        case Slic3r::CalibMode::Calib_Input_shaping_freq:
+        case Slic3r::CalibMode::Calib_Input_shaping_damp:
+            calib_input_shaping(model, options_override, preset_bundle, calib_params, args);
+            break;
+        case Slic3r::CalibMode::Calib_Cornering:
+            calib_cornering(model, options_override, preset_bundle, calib_params, args);
+            break;
         case Slic3r::CalibMode::Calib_PA_Line:
         case Slic3r::CalibMode::Calib_PA_Pattern:
         case Slic3r::CalibMode::Calib_PA_Tower:

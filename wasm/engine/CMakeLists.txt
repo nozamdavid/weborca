@@ -8,17 +8,17 @@ set(ORCA_ENGINE_SOURCES
     PaintToolsOps.cpp
     LayerHeightOps.cpp
     TextOps.cpp
+    EditOps.cpp
+    SvgOps.cpp
+    BrimEarsOps.cpp
     CutOps.cpp
     CalibOps.cpp
     RepairOps.cpp
     CutConnectorOps.cpp
     LayerEventOps.cpp
     bindings.cpp
+    NanoSVGImpl.cpp
 )
-
-if (SLIC3R_WITH_OCCT)
-    list(APPEND ORCA_ENGINE_SOURCES NanoSVGImpl.cpp)
-endif ()
 
 add_executable(orca_engine ${ORCA_ENGINE_SOURCES})
 
