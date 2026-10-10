@@ -32,21 +32,25 @@ export interface DiscoverOptions {
 }
 
 const DEFAULT_PORTS = [7125, 80, 5000];
+const VIRTUAL_INTERFACE = /^(docker|br-|veth|virbr|vmnet|vboxnet|vEthernet|tailscale|utun|zt|wg|tun|tap|pelican)/i;
+const MAX_HOSTS = 1024;
 const SSDP_GROUP = { address: '239.255.255.250', port: 1990 };
 
 /** Every address of the /24 networks this computer is on (private ranges only), without its own. */
 export function localScanHosts(interfaces = os.networkInterfaces()): string[] {
   const hosts = new Set<string>();
-  for (const addresses of Object.values(interfaces)) {
+  for (const [name, addresses] of Object.entries(interfaces)) {
+    // Container bridges and VPN tunnels are not where printers are, and a Docker host has dozens of them.
+    if (VIRTUAL_INTERFACE.test(name)) continue;
     for (const a of addresses ?? []) {
-      if (a.family !== 'IPv4' || a.internal) continue;
+      if (a.family !== 'IPv4' || a.internal || a.netmask === '255.255.255.255') continue;
       const [o1, o2, o3] = a.address.split('.').map(Number);
       const isPrivate = o1 === 10 || (o1 === 172 && o2 >= 16 && o2 <= 31) || (o1 === 192 && o2 === 168);
       if (!isPrivate) continue;
       for (let i = 1; i < 255; i++) if (`${o1}.${o2}.${o3}.${i}` !== a.address) hosts.add(`${o1}.${o2}.${o3}.${i}`);
     }
   }
-  return [...hosts];
+  return [...hosts].slice(0, MAX_HOSTS);
 }
 
 async function get(url: string, timeoutMs: number, signal?: AbortSignal) {

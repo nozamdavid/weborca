@@ -79,8 +79,10 @@ describe('discovery', () => {
   test('scans only private /24 networks of this computer, not itself', () => {
     const hosts = localScanHosts({
       eth0: [{ family: 'IPv4', address: '192.168.0.10', internal: false }],
+      vpn: [{ family: 'IPv4', address: '8.8.4.4', internal: false }],
       lo: [{ family: 'IPv4', address: '127.0.0.1', internal: true }],
-      vpn: [{ family: 'IPv4', address: '8.8.4.4', internal: false }]
+      'br-1a2b3c': [{ family: 'IPv4', address: '172.17.0.1', internal: false }],
+      tailscale0: [{ family: 'IPv4', address: '100.105.38.125', netmask: '255.255.255.255', internal: false }]
     });
     assert.equal(hosts.length, 253);
     assert.ok(hosts.includes('192.168.0.238') && !hosts.includes('192.168.0.10'));
