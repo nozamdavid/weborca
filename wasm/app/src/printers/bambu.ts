@@ -1,4 +1,4 @@
-import { bambuMqttUrl, parseHost, sendWithProgress } from './gatewayUrl';
+import { bambuFtpUrl, bambuMqttUrl, sendWithProgress } from './gatewayUrl';
 import type { Heater, PhysicalPrinter, PrinterApi, PrinterRunState, PrinterState, UploadOptions } from './types';
 
 const CONNECT_TIMEOUT_MS = 12_000;
@@ -122,10 +122,9 @@ export class BambuApi implements PrinterApi {
   }
 
   async upload({ filename, gcode, print, onProgress }: UploadOptions): Promise<void> {
-    const { hostPort } = parseHost(this.printer.print_host);
     await sendWithProgress(
       'POST',
-      `/_printer/bambu/ftp/${hostPort}`,
+      bambuFtpUrl(this.printer),
       { 'x-bambu-filename': encodeURIComponent(filename), 'x-bambu-access-code': this.printer.printhost_apikey ?? '', 'content-type': 'application/octet-stream' },
       new Blob([gcode as BlobPart]),
       onProgress

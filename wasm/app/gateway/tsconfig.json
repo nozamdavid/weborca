@@ -12,5 +12,5 @@
     "erasableSyntaxOnly": true,
     "types": ["node"]
   },
-  "include": ["../printerGateway.ts", "./policy.ts"]
+  "include": ["../printerGateway.ts", "./policy.ts", "./local.ts"]
 }

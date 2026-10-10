@@ -55,6 +55,28 @@ Anyone who can reach the app server can use the gateway, so it is restricted:
 - Bambu uploads accept plain `.gcode` / `.3mf` names only.
 - API keys, access codes and passwords are stored in this browser's local storage and sent only to the gateway.
 
+## Gateway on your own computer
+
+When the app is hosted somewhere else (a VPS), its server cannot reach a printer on your LAN. For that case the
+same gateway also runs as a small program on your computer, bound to loopback only:
+
+```bash
+node orca-gateway.mjs --allow-origin https://slicer.example.com   # file is served at <app>/orca-gateway.mjs
+# or, from a checkout: npm run gateway -- --allow-origin http://127.0.0.1:5173
+```
+
+Options: `--port` (default 5199), `--proxy private|<hosts>`, `--readonly`, `--allow-origin` (repeatable, or
+`ORCA_GATEWAY_ORIGINS`). In the printer dialog choose "Use the gateway program on this computer" and enter its
+address. The browser asks once to allow access to the local network (Chrome's Local Network Access prompt).
+
+- Only the allowed origins may call it: it checks `Origin` (or `Referer` for images), answers CORS and the
+  private-network preflight for them only, and rejects any `Host` that is not a loopback name.
+- The printer's web UI is served at the root of its own `http://<label>.localhost:<port>/` origin, where the label
+  is 16 random hex digits created for one session (12 h, at most 50). `*.localhost` is a secure context and
+  loopback in Chrome and Firefox, so an https page may frame it, and the framed UI cannot read the app's storage.
+  Only the app's origin (or the UI itself) may load that host.
+- Everything else (private-address policy, read-only filters, DNS pinning) is the server gateway's code.
+
 ## Printing from the app
 
 After slicing, **Send to printer** (Preview) uploads the G-code. "Upload and print" needs a second click to
@@ -70,6 +92,10 @@ status mapping follow the community-documented MQTT messages and are tested agai
 
 ## Tests
 
+- `wasm/tests/node/local-gateway.test.mjs`: origin and Host policy, CORS and preflight, the UI host,
+  redirects, websockets, read-only mode.
+- `wasm/tests/app/printers-local.mjs`: Chromium and Firefox with the app served without a gateway and the
+  local gateway in front of a mock Moonraker (status, live updates, camera, framed UI).
 - `wasm/tests/node/printer-gateway.test.mjs`: address policy, read-only filters, streaming, websocket
   relay, Digest, the MQTT bridge.
 - `wasm/tests/node/printer-drivers.test.mjs`: the app's drivers against mock Moonraker, OctoPrint,

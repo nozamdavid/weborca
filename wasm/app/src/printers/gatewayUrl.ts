@@ -8,14 +8,31 @@ export interface GatewayStatus {
 }
 
 /** Asks the app server whether the printer gateway is on. Resolves to undefined when there is no gateway (static hosting). */
-export async function fetchGatewayStatus(): Promise<GatewayStatus | undefined> {
+export async function fetchGatewayStatus(localBase?: string): Promise<GatewayStatus | undefined> {
   try {
-    const res = await fetch('/_printer/status');
+    const res = await fetch(localBase ? `${trimBase(localBase)}/_gw/status` : '/_printer/status');
     const type = res.headers.get('content-type') ?? '';
     return res.ok && type.includes('json') ? ((await res.json()) as GatewayStatus) : undefined;
   } catch {
     return undefined;
   }
+}
+
+export const DEFAULT_LOCAL_GATEWAY = 'http://127.0.0.1:5199';
+
+const trimBase = (base: string) => base.trim().replace(/\/+$/, '');
+
+/** Address of the gateway program on the user's computer when the printer uses it, else undefined (the app server's gateway). */
+export function localGatewayBase(printer: PhysicalPrinter): string | undefined {
+  return printer.use_gateway && printer.local_gateway ? trimBase(printer.local_gateway) : undefined;
+}
+
+/** `scheme://host` of the gateway the printer goes through, with the page's own origin for the app server. */
+function gatewayOrigin(printer: PhysicalPrinter, websocket: boolean): string {
+  const base = localGatewayBase(printer) ?? window.location.origin;
+  const url = new URL(base);
+  const secure = url.protocol === 'https:';
+  return websocket ? `${secure ? 'wss' : 'ws'}://${url.host}` : url.origin;
 }
 
 /** Splits a hostname, IP or URL into scheme, host:port and base path, like desktop's print_host field. */
@@ -33,7 +50,7 @@ const withSlash = (path: string) => (path.startsWith('/') ? path : `/${path}`);
 export function httpUrl(printer: PhysicalPrinter, path: string): string {
   const { scheme, hostPort, basePath } = parseHost(printer.print_host);
   return printer.use_gateway
-    ? `/_printer/${scheme}/${hostPort}${basePath}${withSlash(path)}`
+    ? `${localGatewayBase(printer) ? gatewayOrigin(printer, false) : ''}/_printer/${scheme}/${hostPort}${basePath}${withSlash(path)}`
     : `${scheme}://${hostPort}${basePath}${withSlash(path)}`;
 }
 
@@ -42,8 +59,7 @@ export function wsUrl(printer: PhysicalPrinter, path: string): string {
   const { scheme, hostPort, basePath } = parseHost(printer.print_host);
   const wsScheme = scheme === 'https' ? 'wss' : 'ws';
   if (printer.use_gateway) {
-    const pageScheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${pageScheme}//${window.location.host}/_printer/${wsScheme}/${hostPort}${basePath}${withSlash(path)}`;
+    return `${gatewayOrigin(printer, true)}/_printer/${wsScheme}/${hostPort}${basePath}${withSlash(path)}`;
   }
   return `${wsScheme}://${hostPort}${basePath}${withSlash(path)}`;
 }
@@ -51,8 +67,20 @@ export function wsUrl(printer: PhysicalPrinter, path: string): string {
 /** Websocket URL of the gateway's Bambu MQTT bridge. */
 export function bambuMqttUrl(printer: PhysicalPrinter): string {
   const { hostPort } = parseHost(printer.print_host);
-  const pageScheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${pageScheme}//${window.location.host}/_printer/bambu/mqtt/${hostPort}`;
+  return `${gatewayOrigin(printer, true)}/_printer/bambu/mqtt/${hostPort}`;
+}
+
+/** URL of the gateway's Bambu FTPS bridge. */
+export function bambuFtpUrl(printer: PhysicalPrinter): string {
+  const { hostPort } = parseHost(printer.print_host);
+  return `${localGatewayBase(printer) ? gatewayOrigin(printer, false) : ''}/_printer/bambu/ftp/${hostPort}`;
+}
+
+/** Asks the local gateway for an address under which the printer's web UI can be framed on its own origin. */
+export async function createUiSession(printer: PhysicalPrinter, url: string): Promise<string> {
+  const res = await fetch(`${gatewayOrigin(printer, false)}/_gw/ui-session`, { method: 'POST', body: JSON.stringify({ url }) });
+  if (!res.ok) throw new Error((await res.text().catch(() => '')) || `The local gateway answered ${res.status}.`);
+  return ((await res.json()) as { url: string }).url;
 }
 
 /** Headers carrying the printer's credentials. Digest credentials are used by the gateway, never sent to the printer as is. */
@@ -72,7 +100,10 @@ export async function describeFetchFailure(printer: PhysicalPrinter, res?: Respo
     if (res.status === 401) return 'The printer rejected the credentials (401). Check the API key or password.';
     return body ? `${res.status}: ${body}` : `The printer answered with status ${res.status}.`;
   }
-  const status = printer.use_gateway ? await fetchGatewayStatus() : undefined;
+  const status = printer.use_gateway ? await fetchGatewayStatus(localGatewayBase(printer)) : undefined;
+  if (printer.use_gateway && !status && localGatewayBase(printer)) {
+    return `The gateway on this computer (${localGatewayBase(printer)}) did not answer. Start it, allow this app's address (--allow-origin ${window.location.origin}), and accept the browser's local network access prompt.`;
+  }
   if (printer.use_gateway && !status) {
     return 'This server has no printer gateway. Turn off "Use the app server as gateway" to connect directly, or host the app with the gateway.';
   }

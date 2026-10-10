@@ -129,9 +129,17 @@ async function digestHeader(
   return digestAuthorization(entry.challenge, creds.user, creds.password, method, path, entry.count);
 }
 
+/** How the response of a proxied printer is adjusted for the browser that asked. */
+export interface ProxyMode {
+  /** The printer's own web UI, shown in an iframe of the (cross-origin isolated) app: drop framing headers, opt in to COEP. */
+  ui?: boolean;
+  /** The origin the gateway answers on, to point redirects of the printer back at it. */
+  ownOrigin?: string;
+}
+
 async function handleProxy(
   req: http.IncomingMessage, res: http.ServerResponse, scheme: 'http' | 'https', hostPort: string, path: string,
-  options: GatewayOptions
+  options: GatewayOptions, mode: ProxyMode = {}
 ) {
   const config = { ...configFromEnv(), ...options };
   const target = await resolveTarget(hostPort, scheme === 'https' ? 443 : 80, config, options.resolver);
@@ -157,6 +165,14 @@ async function handleProxy(
     const out: http.OutgoingHttpHeaders = {};
     for (const [name, value] of Object.entries(up.headers)) {
       if (!HOP_BY_HOP.includes(name) && name !== 'set-cookie') out[name] = value;
+    }
+    if (mode.ui) {
+      delete out['x-frame-options'];
+      delete out['content-security-policy'];
+      delete out['content-security-policy-report-only'];
+      out['cross-origin-embedder-policy'] = 'require-corp';
+      out['cross-origin-resource-policy'] = 'cross-origin';
+      if (typeof out.location === 'string' && mode.ownOrigin) out.location = out.location.replace(`${scheme}://${hostPort}`, mode.ownOrigin);
     }
     res.writeHead(up.statusCode ?? 502, out);
     up.pipe(res);
@@ -336,62 +352,103 @@ async function handleBambuFtp(req: http.IncomingMessage, res: http.ServerRespons
 const ROUTE = /^\/_printer\/(http|https|ws|wss)\/([^/]+)(\/.*)?$/;
 const BAMBU_ROUTE = /^\/_printer\/bambu\/(mqtt|ftp)\/([^/?]+)/;
 
+/** The gateway's request handlers, independent of the server that hosts them (Vite plugin or the local gateway). */
+export function createGateway(options: GatewayOptions = {}) {
+  const sockets = new WebSocketServer({ noServer: true });
+
+  function status() {
+    const config = { ...configFromEnv(), ...options };
+    return {
+      enabled: !!config.proxy,
+      mode: config.proxy === 'private' ? 'private' : config.proxy ? 'list' : 'off',
+      readOnly: !!config.readOnly,
+      message: config.proxy ? undefined : GATEWAY_OFF_MESSAGE
+    };
+  }
+
+  /** Handles `/_printer/...`; resolves false for other URLs. Errors become an HTTP error response. */
+  async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
+    const url = req.url ?? '';
+    if (!url.startsWith('/_printer/')) return false;
+    try {
+      if (url === '/_printer/status') {
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify(status()));
+        return true;
+      }
+      const bambu = BAMBU_ROUTE.exec(url);
+      if (bambu?.[1] === 'ftp') {
+        await handleBambuFtp(req, res, bambu[2], options);
+        return true;
+      }
+      const match = ROUTE.exec(url);
+      if (match && (match[1] === 'http' || match[1] === 'https')) {
+        await handleProxy(req, res, match[1], match[2], match[3] ?? '/', options);
+        return true;
+      }
+      throw new GatewayError(404, 'Unknown printer gateway route');
+    } catch (err) {
+      fail(res, err instanceof GatewayError ? err.status : 502, err instanceof Error ? err.message : String(err));
+      return true;
+    }
+  }
+
+  /** Proxies one request to a printer for a caller that already resolved scheme, host and path (the local gateway's UI hosts). */
+  function proxyRequest(req: http.IncomingMessage, res: http.ServerResponse, scheme: 'http' | 'https', hostPort: string, path: string, mode: ProxyMode) {
+    return handleProxy(req, res, scheme, hostPort, path, options, mode).catch((err) => {
+      fail(res, err instanceof GatewayError ? err.status : 502, err instanceof Error ? err.message : String(err));
+    });
+  }
+
+  /** Relays a websocket upgrade to a printer for a caller that already resolved the target. */
+  async function relayUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer, scheme: 'ws' | 'wss', hostPort: string, path: string) {
+    const config = { ...configFromEnv(), ...options };
+    const target = await resolveTarget(hostPort, scheme === 'wss' ? 443 : 80, config, options.resolver);
+    relayWebSocket(sockets, req, socket, head, scheme, target, path, !!config.readOnly);
+  }
+
+  /** Handles a websocket upgrade of `/_printer/...`; resolves false for other URLs. */
+  async function handleUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): Promise<boolean> {
+    const url = req.url ?? '';
+    if (!url.startsWith('/_printer/')) return false;
+    const refuse = (statusCode: number, message: string) => {
+      socket.end(`HTTP/1.1 ${statusCode} ${http.STATUS_CODES[statusCode] ?? 'Error'}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n${message}`);
+    };
+    try {
+      const config = { ...configFromEnv(), ...options };
+      const bambu = BAMBU_ROUTE.exec(url);
+      if (bambu?.[1] === 'mqtt') {
+        const target = await resolveTarget(bambu[2], 8883, config, options.resolver);
+        handleBambuMqtt(sockets, req, socket, head, target, options);
+        return true;
+      }
+      const match = ROUTE.exec(url);
+      if (match && (match[1] === 'ws' || match[1] === 'wss')) {
+        await relayUpgrade(req, socket, head, match[1], match[2], match[3] ?? '/');
+        return true;
+      }
+      refuse(404, 'Unknown printer gateway route');
+    } catch (err) {
+      refuse(err instanceof GatewayError ? err.status : 502, err instanceof Error ? err.message : String(err));
+    }
+    return true;
+  }
+
+  return { status, handleRequest, handleUpgrade, proxyRequest, relayUpgrade };
+}
+
 export function printerGatewayPlugin(options: GatewayOptions = {}): Plugin {
-  let wss: WebSocketServer | undefined;
+  const gateway = createGateway(options);
+  const attached = new WeakSet<object>();
 
   function attach(server: ViteDevServer | PreviewServer) {
     server.middlewares.use(async (req, res, next) => {
-      const url = req.url ?? '';
-      if (!url.startsWith('/_printer/')) return next();
-      try {
-        const config = { ...configFromEnv(), ...options };
-        if (url === '/_printer/status') {
-          res.setHeader('content-type', 'application/json');
-          res.end(JSON.stringify({
-            enabled: !!config.proxy,
-            mode: config.proxy === 'private' ? 'private' : config.proxy ? 'list' : 'off',
-            readOnly: !!config.readOnly,
-            message: config.proxy ? undefined : GATEWAY_OFF_MESSAGE
-          }));
-          return;
-        }
-        const bambu = BAMBU_ROUTE.exec(url);
-        if (bambu?.[1] === 'ftp') return await handleBambuFtp(req, res, bambu[2], options);
-        const match = ROUTE.exec(url);
-        if (match && (match[1] === 'http' || match[1] === 'https')) {
-          return await handleProxy(req, res, match[1], match[2], match[3] ?? '/', options);
-        }
-        throw new GatewayError(404, 'Unknown printer gateway route');
-      } catch (err) {
-        fail(res, err instanceof GatewayError ? err.status : 502, err instanceof Error ? err.message : String(err));
-      }
+      if (!(await gateway.handleRequest(req, res))) next();
     });
-
-    if (!wss && server.httpServer) {
-      const sockets = (wss = new WebSocketServer({ noServer: true }));
-      server.httpServer.on('upgrade', async (req, socket, head) => {
-        const url = req.url ?? '';
-        if (!url.startsWith('/_printer/')) return; // Vite's own HMR upgrades
-        const refuse = (status: number, message: string) => {
-          socket.end(`HTTP/1.1 ${status} ${http.STATUS_CODES[status] ?? 'Error'}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n${message}`);
-        };
-        try {
-          const config = { ...configFromEnv(), ...options };
-          const bambu = BAMBU_ROUTE.exec(url);
-          if (bambu?.[1] === 'mqtt') {
-            const target = await resolveTarget(bambu[2], 8883, config, options.resolver);
-            return handleBambuMqtt(sockets, req, socket, head, target, options);
-          }
-          const match = ROUTE.exec(url);
-          if (match && (match[1] === 'ws' || match[1] === 'wss')) {
-            const target = await resolveTarget(match[2], match[1] === 'wss' ? 443 : 80, config, options.resolver);
-            return relayWebSocket(sockets, req, socket, head, match[1], target, match[3] ?? '/', !!config.readOnly);
-          }
-          refuse(404, 'Unknown printer gateway route');
-        } catch (err) {
-          refuse(err instanceof GatewayError ? err.status : 502, err instanceof Error ? err.message : String(err));
-        }
-      });
+    if (server.httpServer && !attached.has(server.httpServer)) {
+      attached.add(server.httpServer);
+      // Anything else (Vite's own HMR upgrades) is left to the other listeners.
+      server.httpServer.on('upgrade', (req, socket, head) => void gateway.handleUpgrade(req, socket, head));
     }
   }
 

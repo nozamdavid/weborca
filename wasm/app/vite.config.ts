@@ -42,6 +42,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import fs from 'node:fs';
+import { buildSync } from 'esbuild';
 
 const repoRoot = path.resolve(__dirname, '../..');
 // The STEP-enabled engine (wasm/scripts/build_step_engine.sh) is preferred. It is always loaded
@@ -233,6 +234,23 @@ function orcaAssetsPlugin() {
       if (fs.existsSync(layoutSrc)) {
         fs.copyFileSync(layoutSrc, path.join(distSettings, 'layout.json'));
         fs.copyFileSync(layoutSrc, path.join(distDir, 'layout.json'));
+      }
+
+      // 7. The local gateway as one file users can run on their own computer (see PRINTERS.md)
+      try {
+        buildSync({
+          entryPoints: [path.resolve(__dirname, 'gateway/local.ts')],
+          outfile: path.join(distDir, 'orca-gateway.mjs'),
+          bundle: true,
+          platform: 'node',
+          format: 'esm',
+          target: 'node20',
+          external: ['bufferutil', 'utf-8-validate'],
+          banner: { js: "import { createRequire as __orcaCreateRequire } from 'node:module'; const require = __orcaCreateRequire(import.meta.url);" },
+          logLevel: 'warning'
+        });
+      } catch (err) {
+        console.warn('[orca-assets] Could not bundle the local gateway:', err instanceof Error ? err.message : err);
       }
 
       console.log('[orca-assets] Assets successfully copied to dist/.');

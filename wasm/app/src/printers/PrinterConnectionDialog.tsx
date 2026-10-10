@@ -3,7 +3,7 @@ import { useAppStore } from '../store/appStore';
 import { createPrinterApi } from './api';
 import { usePrinterConnectionStore } from './connectionStore';
 import type { GatewayStatus } from './gatewayUrl';
-import { fetchGatewayStatus, parseHost } from './gatewayUrl';
+import { DEFAULT_LOCAL_GATEWAY, fetchGatewayStatus, parseHost } from './gatewayUrl';
 import type { HostType, PhysicalPrinter } from './types';
 import { HOST_TYPE_LABELS } from './types';
 
@@ -59,9 +59,15 @@ export const PrinterConnectionDialog: React.FC = () => {
     const existing = printers.find((p) => p.id === editingId);
     setDraft(existing ?? { ...blank(), preset: selectedPreset || undefined });
     setResult(null);
-    fetchGatewayStatus().then((s) => setGateway(s ?? null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogOpen, editingId]);
+
+  const localBase = draft.use_gateway || draft.host_type === 'bambu' ? draft.local_gateway : undefined;
+  useEffect(() => {
+    if (!dialogOpen) return;
+    setGateway(undefined);
+    fetchGatewayStatus(localBase).then((s) => setGateway(s ?? null));
+  }, [dialogOpen, localBase]);
 
   if (!dialogOpen) return null;
 
@@ -91,7 +97,7 @@ export const PrinterConnectionDialog: React.FC = () => {
   };
 
   const gatewayNote = gateway === undefined ? 'Checking the gateway...'
-    : gateway === null ? 'This server has no printer gateway.'
+    : gateway === null ? (localBase ? 'The gateway on this computer did not answer.' : 'This server has no printer gateway.')
     : !gateway.enabled ? gateway.message ?? 'The printer gateway is off.'
     : `Gateway on: ${gateway.mode === 'private' ? 'private networks only' : 'listed hosts only'}${gateway.readOnly ? ', read-only' : ''}.`;
 
@@ -160,6 +166,19 @@ export const PrinterConnectionDialog: React.FC = () => {
               <br /><span id="pc-gateway-status" style={{ color: 'var(--text-muted, #a0a0a0)', fontSize: 11 }}>{gatewayNote}</span>
             </span>
           </label>
+          {(draft.use_gateway || isBambu) && (
+            <>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 }}>
+                <input id="pc-local-gateway" type="checkbox" checked={draft.local_gateway !== undefined} onChange={(e) => set('local_gateway', e.target.checked ? DEFAULT_LOCAL_GATEWAY : undefined)} />
+                <span>Use the gateway program on this computer instead (for a printer the app server cannot reach)</span>
+              </label>
+              {draft.local_gateway !== undefined && (
+                <Field label="Local gateway address" hint={`Run: node orca-gateway.mjs --allow-origin ${window.location.origin} (download it from ${window.location.origin}/orca-gateway.mjs). The browser asks once to allow access to your local network.`}>
+                  <input id="pc-local-gateway-url" style={inputStyle} value={draft.local_gateway} onChange={(e) => set('local_gateway', e.target.value)} />
+                </Field>
+              )}
+            </>
+          )}
           <div style={{ color: 'var(--text-muted, #a0a0a0)', fontSize: 11 }}>
             The API key and passwords are stored in this browser only.
           </div>

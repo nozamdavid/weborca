@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { usePrinterConnectionStore } from './connectionStore';
 import { formatBytes, formatDuration } from './format';
-import { parseHost } from './gatewayUrl';
+import { createUiSession, localGatewayBase, parseHost } from './gatewayUrl';
 import type { PhysicalPrinter, PrinterState } from './types';
 import { HOST_TYPE_LABELS } from './types';
 import './DevicePanel.css';
@@ -119,7 +119,17 @@ const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ 
     if (active) setVisited(true);
   }, [active]);
   useEffect(() => setVisited(active), [url]);
-  const mixed = !!url && window.location.protocol === 'https:' && url.startsWith('http:');
+  // With a gateway on the user's computer the UI is framed from its own http://<label>.localhost origin, which an https page may embed.
+  const local = !!url && !!localGatewayBase(printer);
+  const [session, setSession] = useState<{ url?: string; error?: string }>({});
+  useEffect(() => {
+    setSession({});
+    if (!local || !url || !visited) return;
+    let cancelled = false;
+    createUiSession(printer, url).then((u) => !cancelled && setSession({ url: u }), (e) => !cancelled && setSession({ error: e instanceof Error ? e.message : String(e) }));
+    return () => { cancelled = true; };
+  }, [local, url, visited, printer.local_gateway]); // eslint-disable-line react-hooks/exhaustive-deps
+  const mixed = !local && !!url && window.location.protocol === 'https:' && url.startsWith('http:');
   if (!url) {
     return (
       <div className="device-ui-col">
@@ -138,7 +148,10 @@ const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ 
         <a href={url} target="_blank" rel="noreferrer" className="btn btn-secondary" id="device-webui-open" style={{ textDecoration: 'none' }}>Open in new tab</a>
       </div>
       <div className="device-ui-frame">
-        {mixed ? (
+        {local ? (
+          session.error ? <div className="device-notice" id="device-webui-blocked">{session.error}</div>
+            : session.url && <iframe id="device-webui-frame" src={session.url} title="Printer Web UI" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+        ) : mixed ? (
           <div className="device-notice" id="device-webui-blocked">
             This page is served over https, so the browser blocks the printer's http web UI inside it. Use "Open in new tab".
           </div>

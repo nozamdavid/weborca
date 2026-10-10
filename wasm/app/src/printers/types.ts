@@ -27,6 +27,8 @@ export interface PhysicalPrinter {
   serial?: string;
   /** Go through the app server's printer gateway. Needed unless the printer allows this origin. */
   use_gateway: boolean;
+  /** Address of the gateway program on the user's computer. When set, requests go there instead of to the app server. */
+  local_gateway?: string;
 }
 
 export type PrinterRunState = 'offline' | 'ready' | 'printing' | 'paused' | 'complete' | 'error';

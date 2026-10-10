@@ -110,7 +110,7 @@ export class MoonrakerApi implements PrinterApi {
       const pi = await fetch(httpUrl(this.printer, '/printer/info'), { headers });
       if (pi.ok) printerInfo = (await pi.json()).result;
     } catch (error) {
-      throw new Error(error instanceof Error && error.message !== 'Failed to fetch' ? error.message : await describeFetchFailure(this.printer, undefined, error));
+      throw new Error(error instanceof Error && !(error instanceof TypeError) ? error.message : await describeFetchFailure(this.printer, undefined, error));
     }
     const host = printerInfo?.hostname ? ` on ${printerInfo.hostname}` : '';
     return `Moonraker ${info.moonraker_version ?? ''}${host}, Klipper ${info.klippy_state}`.replace(/\s+/g, ' ');
