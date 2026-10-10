@@ -28,6 +28,7 @@ export const TopBar: React.FC = () => {
     requestImportFile,
     modelFile,
     isSlicing,
+    isModelLoading,
     startSlice,
     cancelSlice,
     isEngineReady
@@ -50,7 +51,7 @@ export const TopBar: React.FC = () => {
     e.target.value = '';
   };
 
-  const isBusy = isSlicing || isRestoring || isCalibrating;
+  const isBusy = isSlicing || isModelLoading || isRestoring || isCalibrating;
 
   const canSlice =
     isEngineReady &&

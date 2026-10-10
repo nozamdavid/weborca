@@ -19,6 +19,8 @@ export const App: React.FC = () => {
   const initApp = useAppStore((state) => state.initApp);
   const sliceResult = useAppStore((state) => state.sliceResult);
   const isSlicing = useAppStore((state) => state.isSlicing);
+  const isModelLoading = useAppStore((state) => state.isModelLoading);
+  const sliceStatusText = useAppStore((state) => state.sliceStatusText);
 
   const [activeTab, setActiveTab] = useState<'prepare' | 'preview'>('prepare');
 
@@ -99,7 +101,7 @@ export const App: React.FC = () => {
         </button>
       </div>
 
-      <main className="orca-workspace" style={{ position: 'relative', flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <main className="orca-workspace" aria-busy={isModelLoading} style={{ position: 'relative', flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div style={{ display: activeTab === 'prepare' ? 'flex' : 'none', flex: 1, height: '100%', width: '100%' }}>
           <ObjectListPanel />
           <PlateView />
@@ -108,6 +110,17 @@ export const App: React.FC = () => {
         <div style={{ display: activeTab === 'preview' ? 'block' : 'none', flex: 1, height: '100%', width: '100%', position: 'relative' }}>
           <PreviewView />
         </div>
+        {isModelLoading && (
+          <div id="model-loading-overlay" className="model-loading-overlay">
+            <div className="model-loading-card" role="status" aria-live="polite" aria-atomic="true">
+              <span className="model-loading-spinner" aria-hidden="true" />
+              <div>
+                <strong>Importing model</strong>
+                <p>{sliceStatusText}</p>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       <SettingsDialog />
