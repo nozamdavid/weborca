@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { usePrinterConnectionStore } from './connectionStore';
 import { formatBytes, formatDuration } from './format';
-import { fetchGatewayStatus, parseHost, uiProxyUrl } from './gatewayUrl';
+import { parseHost } from './gatewayUrl';
 import type { PhysicalPrinter, PrinterState } from './types';
 import { HOST_TYPE_LABELS } from './types';
 import './DevicePanel.css';
@@ -120,12 +120,6 @@ const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ 
   }, [active]);
   useEffect(() => setVisited(active), [url]);
   const mixed = !!url && window.location.protocol === 'https:' && url.startsWith('http:');
-  const [gatewayOn, setGatewayOn] = useState(false);
-  useEffect(() => {
-    if (mixed) void fetchGatewayStatus().then((status) => setGatewayOn(!!status?.enabled));
-  }, [mixed]);
-  // Behind the gateway the UI is served from this origin, which also lifts the mixed-content block.
-  const frameUrl = url && mixed && gatewayOn ? uiProxyUrl(url) : url;
   if (!url) {
     return (
       <div className="device-ui-col">
@@ -144,12 +138,12 @@ const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ 
         <a href={url} target="_blank" rel="noreferrer" className="btn btn-secondary" id="device-webui-open" style={{ textDecoration: 'none' }}>Open in new tab</a>
       </div>
       <div className="device-ui-frame">
-        {mixed && !gatewayOn ? (
+        {mixed ? (
           <div className="device-notice" id="device-webui-blocked">
-            This page is served over https, so the browser blocks the printer's http web UI inside it. Use "Open in new tab", or start the app server with the printer gateway (ORCA_PRINTER_PROXY=private) to show it here.
+            This page is served over https, so the browser blocks the printer's http web UI inside it. Use "Open in new tab".
           </div>
         ) : (
-          visited && <iframe id="device-webui-frame" src={frameUrl} title="Printer Web UI" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+          visited && <iframe id="device-webui-frame" src={url} title="Printer Web UI" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
         )}
       </div>
     </div>
