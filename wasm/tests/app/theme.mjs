@@ -1,0 +1,58 @@
+#!/usr/bin/env node
+/** Browser test of the theme preference: Light inverts the page, the choice persists, and Follow the system tracks the OS. */
+import assert from 'node:assert/strict';
+import { chromium, firefox } from 'playwright';
+import { startServer, stopServer } from './lib/dist.mjs';
+
+const PORT = parseInt(process.env.PORT || '5128', 10);
+const BASE_URL = `http://127.0.0.1:${PORT}`;
+
+async function runSuite(browserType, name) {
+  const browser = await browserType.launch();
+  const page = await browser.newPage({ viewport: { width: 1400, height: 850 }, colorScheme: 'dark' });
+  page.on('pageerror', (err) => console.error(`[${name} pageerror]`, err));
+  const log = (msg) => console.log(`[${name}] ${msg}`);
+  const theme = () => page.evaluate(() => document.documentElement.dataset.theme);
+  const setTheme = (value) => page.evaluate((v) => window.__prefsStore.getState().setDisplayPref('theme', v), value);
+
+  try {
+    await page.goto(BASE_URL);
+    await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
+    assert.equal(await theme(), 'dark');
+
+    log('Light sets the attribute and inverts the page, but not the 3D canvas');
+    await setTheme('light');
+    assert.equal(await theme(), 'light');
+    assert.match(await page.evaluate(() => getComputedStyle(document.documentElement).filter), /invert/);
+    assert.match(await page.evaluate(() => getComputedStyle(document.querySelector('canvas')).filter), /invert/);
+
+    log('the choice survives a reload');
+    await page.reload();
+    await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
+    assert.equal(await theme(), 'light');
+
+    log('Follow the system tracks the OS setting');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await setTheme('system');
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+    log('all checks passed');
+  } finally {
+    await browser.close();
+  }
+}
+
+await startServer(PORT, 'theme');
+try {
+  await runSuite(chromium, 'chromium');
+  await runSuite(firefox, 'firefox');
+  console.log('All theme tests passed on Chromium and Firefox.');
+} catch (err) {
+  console.error('Theme tests FAILED:', err);
+  process.exitCode = 1;
+} finally {
+  await stopServer(PORT);
+}

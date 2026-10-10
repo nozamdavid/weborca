@@ -30,7 +30,7 @@ export interface DisplayPreferences {
   showNavigator: boolean;
   cameraType: 'perspective' | 'orthographic';
   showSidebar: boolean;
-  theme: 'dark' | 'light';
+  theme: 'dark' | 'light' | 'system';
 }
 
 export interface PreferencesData {

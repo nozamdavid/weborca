@@ -349,9 +349,11 @@ export const PreferencesDialog: React.FC = () => {
                   id="pref-theme"
                   aria-label="Theme"
                   value={display.theme}
-                  onChange={(e) => setDisplayPref('theme', e.target.value as 'dark' | 'light')}
+                  onChange={(e) => setDisplayPref('theme', e.target.value as 'dark' | 'light' | 'system')}
                 >
                   <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                  <option value="system">Follow the system</option>
                 </select>
               </div>
             </div>

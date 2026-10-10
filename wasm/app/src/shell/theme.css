@@ -35,3 +35,14 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: #65656a; }
 ::-webkit-scrollbar-track { background: transparent; }
 * { scrollbar-width: thin; scrollbar-color: #54545b transparent; }
+
+/*
+ * Light theme. Much of the app sets its dark colours inline, so rather than a second palette the whole page is inverted
+ * (with the hue turned back), which maps the dark palette to its light counterpart. The 3D canvases, images and
+ * embedded printer UIs are inverted back so the model and its colours are unchanged.
+ */
+:root[data-theme="light"] { color-scheme: light; filter: invert(1) hue-rotate(180deg); }
+:root[data-theme="light"] canvas,
+:root[data-theme="light"] img,
+:root[data-theme="light"] video,
+:root[data-theme="light"] iframe { filter: invert(1) hue-rotate(180deg); }

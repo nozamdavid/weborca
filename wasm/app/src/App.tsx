@@ -36,6 +36,15 @@ export const App: React.FC = () => {
   const slicePercent = useAppStore((state) => state.slicePercent);
   const cancelSlice = useAppStore((state) => state.cancelSlice);
   const showSidebar = usePrefsStore((state) => state.display.showSidebar);
+  const themePref = usePrefsStore((state) => state.display.theme);
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: light)');
+    const apply = () => { document.documentElement.dataset.theme = themePref === 'system' ? (query.matches ? 'light' : 'dark') : themePref; };
+    apply();
+    if (themePref !== 'system') return;
+    query.addEventListener('change', apply);
+    return () => query.removeEventListener('change', apply);
+  }, [themePref]);
 
   const [activeTab, setActiveTab] = useState<TabId>('prepare');
 
