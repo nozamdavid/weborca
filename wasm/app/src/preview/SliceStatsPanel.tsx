@@ -7,6 +7,8 @@
 import React, { useState } from 'react';
 import { usePreviewStore } from './previewStore';
 import { useAppStore } from '../store/appStore';
+import { usePrinterConnectionStore } from '../printers/connectionStore';
+import { SendToPrinterDialog } from '../printers/SendToPrinterDialog';
 
 function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
@@ -22,6 +24,7 @@ export const SliceStatsPanel: React.FC = () => {
   const stats = usePreviewStore((s) => s.stats);
   const showStatsPanel = usePreviewStore((s) => s.showStatsPanel);
   const toggleStatsPanel = usePreviewStore((s) => s.toggleStatsPanelAction);
+  const openSendDialog = usePrinterConnectionStore((s) => s.openSendDialog);
 
   const gcodeUrl = useAppStore((s) => s.gcodeUrl);
   const modelFile = useAppStore((s) => s.modelFile);
@@ -210,7 +213,7 @@ export const SliceStatsPanel: React.FC = () => {
 
           {/* Download G-code Link */}
           {gcodeUrl && (
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
               <a
                 id="download-link"
                 href={gcodeUrl}
@@ -218,6 +221,7 @@ export const SliceStatsPanel: React.FC = () => {
                 className="btn btn-download"
                 style={{
                   display: 'block',
+                  flex: 1,
                   textAlign: 'center',
                   background: '#009688',
                   color: '#fff',
@@ -228,10 +232,21 @@ export const SliceStatsPanel: React.FC = () => {
                   fontSize: '0.8rem'
                 }}
               >
-                ⬇️ Download G-code
+                ⬇️ Download
               </a>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1, padding: '6px 12px', borderRadius: 6, fontWeight: 600, fontSize: '0.8rem', background: '#3b82f6', color: '#fff', border: 'none', cursor: 'pointer' }}
+                onClick={() => openSendDialog()}
+              >
+                🖨️ Send to Printer
+              </button>
             </div>
           )}
+          <SendToPrinterDialog 
+             getGcode={() => useAppStore.getState().sliceResult?.gcode || null}
+             defaultFilename={downloadFileName}
+          />
         </div>
       )}
     </div>

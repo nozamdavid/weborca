@@ -1,18 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { useAppStore } from './store/appStore';
-import { IsolationNotice } from './components/IsolationNotice';
+import './App.css';
+import { FlowRateModal } from './calibration/FlowRateModal';
+import { OtherCalibrationsDialogs } from './calibration/OtherCalibrationsDialogs';
+import { OtherCalibrationsMenu } from './calibration/OtherCalibrationsMenu';
 import { ErrorBanner } from './components/ErrorBanner';
-import { TopBar } from './components/TopBar';
+import { IsolationNotice } from './components/IsolationNotice';
 import { StepImportModal } from './components/StepImportModal';
-import { ObjectListPanel } from './objectlist/ObjectListPanel';
+import { disposeEngine } from './engine/orcaEngine';
 import { PlateView } from './plate/PlateView';
 import { PreviewView } from './preview/PreviewView';
-import { SettingsPanel } from './settings/SettingsPanel';
-import { SettingsDialog } from './settings/SettingsDialog';
+import { ManagePresetsDialog } from './presets/ManagePresetsDialog';
+import { DevicePanel, PrinterConnectionDialog } from './printers';
 import { FixesDialog } from './settings/FixesDialog';
 import { SavePresetDialog } from './settings/SavePresetDialog';
-import { disposeEngine } from './engine/orcaEngine';
-import './App.css';
+import { SettingsDialog } from './settings/SettingsDialog';
+import { useAppStore } from './store/appStore';
+import { CalibrationPage } from './shell/CalibrationPage';
+import { HelpDialogs } from './shell/HelpDialogs';
+import { PrepareSidebar } from './shell/PrepareSidebar';
+import { TopBar } from './shell/TopBar';
+import type { TabId } from './shell/TopBar';
 
 export const App: React.FC = () => {
   const isIsolated = useAppStore((state) => state.isIsolated);
@@ -22,7 +29,7 @@ export const App: React.FC = () => {
   const isModelLoading = useAppStore((state) => state.isModelLoading);
   const sliceStatusText = useAppStore((state) => state.sliceStatusText);
 
-  const [activeTab, setActiveTab] = useState<'prepare' | 'preview'>('prepare');
+  const [activeTab, setActiveTab] = useState<TabId>('prepare');
 
   useEffect(() => {
     initApp();
@@ -31,85 +38,33 @@ export const App: React.FC = () => {
     };
   }, [initApp]);
 
-  // Auto-switch to Preview after slicing completes
   useEffect(() => {
-    if (sliceResult?.gcode && !isSlicing) {
-      setActiveTab('preview');
-    }
+    if (sliceResult?.gcode && !isSlicing) setActiveTab('preview');
   }, [sliceResult, isSlicing]);
 
-  if (!isIsolated) {
-    return <IsolationNotice />;
-  }
+  if (!isIsolated) return <IsolationNotice />;
 
   return (
-    <div className="orca-app">
+    <div className="orca-app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden' }}>
       <ErrorBanner />
-      <TopBar />
+      <TopBar activeTab={activeTab} setActiveTab={setActiveTab} />
       <StepImportModal />
 
-      {/* Prepare / Preview Mode Switcher */}
-      <div
-        id="mode-switcher-bar"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '4px 16px',
-          background: '#18181b',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          zIndex: 10
-        }}
-      >
-        <button
-          type="button"
-          id="tab-prepare"
-          data-testid="tab-prepare"
-          onClick={() => setActiveTab('prepare')}
-          style={{
-            background: activeTab === 'prepare' ? '#009688' : 'rgba(255, 255, 255, 0.08)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            padding: '4px 14px',
-            fontSize: '0.85rem',
-            fontWeight: 500,
-            cursor: 'pointer',
-            transition: 'background 0.15s ease'
-          }}
-        >
-          Prepare
-        </button>
-        <button
-          type="button"
-          id="tab-preview"
-          data-testid="tab-preview"
-          onClick={() => setActiveTab('preview')}
-          style={{
-            background: activeTab === 'preview' ? '#009688' : 'rgba(255, 255, 255, 0.08)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 4,
-            padding: '4px 14px',
-            fontSize: '0.85rem',
-            fontWeight: 500,
-            cursor: 'pointer',
-            transition: 'background 0.15s ease'
-          }}
-        >
-          Preview
-        </button>
-      </div>
-
-      <main className="orca-workspace" aria-busy={isModelLoading} style={{ position: 'relative', flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <div style={{ display: activeTab === 'prepare' ? 'flex' : 'none', flex: 1, height: '100%', width: '100%' }}>
-          <ObjectListPanel />
+      <main className="workspace orca-workspace" aria-busy={isModelLoading}>
+        <div className="tab-page prepare-page" hidden={activeTab !== 'prepare'}>
+          <PrepareSidebar />
           <PlateView />
-          <SettingsPanel />
         </div>
-        <div style={{ display: activeTab === 'preview' ? 'block' : 'none', flex: 1, height: '100%', width: '100%', position: 'relative' }}>
+        <div className="tab-page" style={{ position: 'relative' }} hidden={activeTab !== 'preview'}>
           <PreviewView />
         </div>
+        <div className="tab-page" hidden={activeTab !== 'device'}>
+          <DevicePanel active={activeTab === 'device'} />
+        </div>
+        <div className="tab-page" hidden={activeTab !== 'calibration'}>
+          <CalibrationPage />
+        </div>
+
         {isModelLoading && (
           <div id="model-loading-overlay" className="model-loading-overlay">
             <div className="model-loading-card" role="status" aria-live="polite" aria-atomic="true">
@@ -126,6 +81,12 @@ export const App: React.FC = () => {
       <SettingsDialog />
       <FixesDialog />
       <SavePresetDialog />
+      <ManagePresetsDialog />
+      <FlowRateModal />
+      <OtherCalibrationsMenu />
+      <OtherCalibrationsDialogs />
+      <PrinterConnectionDialog />
+      <HelpDialogs />
     </div>
   );
 };

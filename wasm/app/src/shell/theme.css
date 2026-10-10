@@ -1,0 +1,37 @@
+/*
+ * Palette of desktop OrcaSlicer's dark mode (src/slic3r/GUI/Widgets/StateColor.cpp, dark column),
+ * under the names the rest of the app already uses.
+ */
+:root {
+  --panel-bg: #2d2d31;          /* window background */
+  --panel-header-bg: #36363c;   /* sidebar title bars, cards */
+  --topbar-bg: #2d2d30;
+  --canvas-bg: #232327;
+  --control-bg: #36363d;
+  --control-hover-bg: #4d4d54;
+  --control-disabled-bg: #333337;
+  --border-color: #4c4c55;      /* separators and title lines */
+  --input-border: #4a4a51;
+  --accent-color: #009688;
+  --accent-hover: #008172;
+  --text-color: #e5e5e4;
+  --text-muted: #b2b3b5;        /* labels */
+  --text-disabled: #818183;
+  --text-dim: #65656a;
+  --danger-color: #d01b1b;
+  --warning-color: #ff6f00;
+  --slice-btn-bg: var(--accent-color);
+  --slice-btn-hover: var(--accent-hover);
+}
+
+body {
+  background-color: var(--panel-bg);
+  color: var(--text-color);
+  font-size: 13px;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #54545b; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #65656a; }
+::-webkit-scrollbar-track { background: transparent; }
+* { scrollbar-width: thin; scrollbar-color: #54545b transparent; }

@@ -168,8 +168,10 @@ async function runBrowserSuite(browserType, browserName) {
     results.push({ name: 'Voron Cube Parity Slice (SHA-256 match)', pass: true });
 
     // -------------------------------------------------------------------------
+    await page.click("#tab-prepare"); await page.waitForSelector("#vendor-select", { state: "visible", timeout: 5000 });
     // Step 3: Bambu Lab X1 Carbon Slicing (100 Layers)
     // -------------------------------------------------------------------------
+    await page.click("#tab-prepare"); await page.waitForSelector("#vendor-select", { state: "visible", timeout: 5000 });
     console.log(`[${browserName}] Step 3: Slicing with Bambu Lab X1 Carbon 0.4 nozzle...`);
     await page.selectOption('#vendor-select', 'BBL');
 
@@ -219,6 +221,7 @@ async function runBrowserSuite(browserType, browserName) {
     // -------------------------------------------------------------------------
     // Step 4: Cancel Slicing on 3DBenchy.stl (< 1 s)
     // -------------------------------------------------------------------------
+    await page.click("#tab-prepare");
     console.log(`[${browserName}] Step 4: Testing Cancel slicing on 3DBenchy.stl...`);
     if (!fs.existsSync(BENCHY_MODEL_PATH)) {
       console.log(`[${browserName}] Fetching 3DBenchy.stl...`);

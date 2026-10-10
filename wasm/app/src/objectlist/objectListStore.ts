@@ -267,12 +267,16 @@ if (typeof window !== 'undefined') {
 }
 
 // Sync selection from plate store
-usePlateStore.subscribe((state) => {
-  const current = useObjectListStore.getState();
-  if (state.selectedObjectId !== current.selectedObjectId) {
-    useObjectListStore.setState({
-      selectedObjectId: state.selectedObjectId,
-      selectedVolumeId: null
-    });
-  }
+// plateStore, history and this store import each other, so plateStore may still be initializing when this
+// module runs. Subscribing in a microtask makes the link independent of the import order.
+queueMicrotask(() => {
+  usePlateStore.subscribe((state) => {
+    const current = useObjectListStore.getState();
+    if (state.selectedObjectId !== current.selectedObjectId) {
+      useObjectListStore.setState({
+        selectedObjectId: state.selectedObjectId,
+        selectedVolumeId: null
+      });
+    }
+  });
 });

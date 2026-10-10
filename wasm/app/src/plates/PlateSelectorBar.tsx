@@ -125,7 +125,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
           disabled={isSlicing}
           onClick={() => slicePlate(activePlateIndex)}
           style={{
-            background: '#2563eb',
+            background: 'var(--accent-color, #009688)',
             border: 'none',
             color: '#fff',
             borderRadius: '4px 0 0 4px',
@@ -145,7 +145,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
           disabled={isSlicing}
           onClick={() => setSliceMenuOpen(!sliceMenuOpen)}
           style={{
-            background: '#1d4ed8',
+            background: 'var(--accent-hover, #008172)',
             border: 'none',
             borderLeft: '1px solid rgba(255, 255, 255, 0.2)',
             color: '#fff',

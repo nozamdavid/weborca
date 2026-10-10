@@ -855,6 +855,41 @@ export class PlateScene {
     this.renderer.render(this.scene, this.camera);
   };
 
+
+  public setCameraView(view: number | 'Z'): void {
+    const cx = this.bedConfig.center[0];
+    const cy = this.bedConfig.center[1];
+    const span = Math.max(this.bedConfig.width, this.bedConfig.depth);
+    const d = span * 1.5;
+
+    if (view === 'Z') {
+      const mesh = this.getSelectedMesh();
+      if (mesh) {
+        const box = new THREE.Box3().setFromObject(mesh);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z);
+        this.orbitControls.target.copy(center);
+        this.camera.position.set(center.x, center.y - maxDim * 1.5, center.z + maxDim);
+      } else {
+        this.orbitControls.target.set(cx, cy, 0);
+        this.camera.position.set(cx, cy - span * 1.5, span * 1.2);
+      }
+    } else {
+      this.orbitControls.target.set(cx, cy, 0);
+      switch (view) {
+        case 1: this.camera.position.set(cx, cy, d); break; // Top
+        case 2: this.camera.position.set(cx, cy, -d); break; // Bottom
+        case 3: this.camera.position.set(cx, cy - d, 0); break; // Front
+        case 4: this.camera.position.set(cx, cy + d, 0); break; // Back
+        case 5: this.camera.position.set(cx - d, cy, 0); break; // Left
+        case 6: this.camera.position.set(cx + d, cy, 0); break; // Right
+        case 0: this.camera.position.set(cx - span, cy - d, span * 1.2); break; // Iso
+      }
+    }
+    this.orbitControls.update();
+  }
+
   public destroy(): void {
     this.isDestroyed = true;
     if (this.animationFrameId !== null) {

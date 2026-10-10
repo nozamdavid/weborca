@@ -12,6 +12,11 @@ import { useHistoryStore } from '../history';
 import { TextPanel, useTextStore } from '../text';
 import { CutPanel, useCutStore } from '../cut';
 import { RepairBadge, useRepairStore } from '../repair';
+import { CanvasToolbar, ViewButtons } from '../shell/CanvasToolbar';
+import type { CanvasTool } from '../shell/CanvasToolbar';
+import { registerCameraHandler, setCameraView } from '../shell/cameraBridge';
+import type { CameraView } from '../shell/cameraBridge';
+import { RedoIcon, UndoIcon } from '../shell/glyphs';
 
 function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
@@ -392,10 +397,19 @@ export const PlateView: React.FC = () => {
         case 'Backspace':
           if (!isPaintingActive) deleteSelected();
           break;
+        case '0': case '1': case '2': case '3': case '4': case '5': case '6':
+          setCameraView(Number(e.key) as CameraView);
+          break;
+        case 'z':
+        case 'Z':
+          setCameraView('Z');
+          break;
       }
     },
     [objects, selectObject, setGizmoMode, arrange, deleteSelected, isPaintingActive, isTextActive, isLayersActive, isCutting, isRepairing, selectedObjectId, handleTogglePainting, stopPainting, undo, redo]
   );
+
+  useEffect(() => registerCameraHandler((view) => sceneRef.current?.setCameraView(view)), []);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -436,6 +450,82 @@ export const PlateView: React.FC = () => {
     ? `${modelFile.name.substring(0, modelFile.name.lastIndexOf('.')) || modelFile.name}.gcode`
     : 'plate.gcode';
 
+  const busy = isRestoring || isSlicing;
+  const toolGroups: CanvasTool[][] = [
+    [
+      {
+        id: 'tool-undo-btn', testId: 'tool-undo-btn', label: 'Undo', shortcut: 'Ctrl+Z', icon: <UndoIcon />,
+        disabled: !canUndo || isRestoring || isSlicing || isCutting || isRepairing, data: { 'can-undo': canUndo, 'is-restoring': isRestoring }, onClick: () => undo()
+      },
+      {
+        id: 'tool-redo-btn', testId: 'tool-redo-btn', label: 'Redo', shortcut: 'Ctrl+Shift+Z', icon: <RedoIcon />,
+        disabled: !canRedo || isRestoring || isSlicing || isCutting || isRepairing, data: { 'can-redo': canRedo, 'is-restoring': isRestoring }, onClick: () => redo()
+      }
+    ],
+    [
+      ...([['translate', 'move', 'Move', 'M'], ['rotate', 'rotate', 'Rotate', 'R'], ['scale', 'scale', 'Scale', 'S']] as const).map(([mode, key, label, shortcut]): CanvasTool => ({
+        id: `tool-${key}-btn`, label, shortcut, icon: `toolbar_${key}`, active: gizmoMode === mode && !isPaintingActive, disabled: busy,
+        onClick: () => {
+          if (isPaintingActive) stopPainting();
+          setGizmoMode(mode);
+        }
+      }))
+    ],
+    [
+      { id: 'tool-cut-btn', testId: 'tool-cut-btn', label: 'Cut', shortcut: 'C', icon: 'toolbar_cut', active: isCutActive, disabled: !selectedObject || busy || isCutting || isRepairing,
+        onClick: () => {
+          const cutStore = useCutStore.getState();
+          if (cutStore.isCutActive) {
+            cutStore.closeCut();
+          } else if (selectedObjectId) {
+            stopPainting();
+            useLayersStore.getState().stopEditing();
+            void useTextStore.getState().close();
+            const height = selectedObject?.size?.[2] ?? 20.0;
+            cutStore.openCut(selectedObjectId, 0, height, height / 2);
+          }
+        } },
+      { id: 'tool-text-btn', testId: 'tool-text-btn', label: 'Text', icon: 'toolbar_text', active: isTextActive, disabled: busy,
+        onClick: () => {
+          const textStore = useTextStore.getState();
+          if (textStore.isOpen) {
+            void textStore.close();
+          } else {
+            stopPainting();
+            useLayersStore.getState().stopEditing();
+            useCutStore.getState().closeCut();
+            textStore.openForAdd(selectedObjectId);
+          }
+        } },
+      { id: 'tool-varlayer-btn', label: 'Variable layer height', icon: 'toolbar_variable_layer_height', active: isLayersActive, disabled: !selectedObject || busy,
+        onClick: () => {
+          stopPainting();
+          void useTextStore.getState().close();
+          useCutStore.getState().closeCut();
+          if (isLayersActive) useLayersStore.getState().stopEditing();
+          else void useLayersStore.getState().startEditing(selectedObjectId!);
+        } }
+    ],
+    [
+      { id: 'tool-paint-btn', label: 'Support painting', shortcut: 'P', icon: 'toolbar_support', active: isPaintingActive && paintLayer === 'support', disabled: !selectedObject || busy, onClick: handleTogglePainting },
+      ...([['seam', 'toolbar_seam', 'Seam painting'], ['color', 'mmu_segmentation', 'Color painting'], ['fuzzy', 'toolbar_fuzzy_skin_paint', 'Fuzzy skin painting']] as const).map(([layer, icon, label]): CanvasTool => ({
+        id: `tool-${layer}-paint-btn`, label, icon, active: isPaintingActive && paintLayer === layer, disabled: !selectedObject || busy,
+        onClick: () => {
+          useCutStore.getState().closeCut();
+          void useTextStore.getState().close();
+          useLayersStore.getState().stopEditing();
+          usePaintToolsStore.getState().setLayer(layer);
+          const volume = sceneRef.current?.getMeshVolumes(selectedObjectId!)?.[0]?.volumeId;
+          void usePaintToolsStore.getState().startPainting(selectedObjectId!, volume, selectedInstanceId);
+        }
+      }))
+    ],
+    [
+      { id: 'tool-arrange-btn', label: 'Arrange', shortcut: 'A', icon: 'toolbar_arrange', disabled: busy, onClick: () => arrange(true) },
+      { id: 'tool-delete-btn', label: 'Delete', shortcut: 'Del', icon: 'delete', danger: true, disabled: !selectedObject || busy, onClick: () => deleteSelected() }
+    ]
+  ];
+
   return (
     <div
       className={`plate-view ${isDragOver ? 'drag-over' : ''}`}
@@ -452,281 +542,8 @@ export const PlateView: React.FC = () => {
         style={{ width: '100%', height: '100%', outline: 'none', cursor: isPaintingActive ? 'crosshair' : 'grab' }}
       />
 
-      {/* Floating Plate Toolbar */}
-      <div
-        id="plate-toolbar"
-        style={{
-          position: 'absolute',
-          top: 16,
-          left: 16,
-          display: 'flex',
-          flexWrap: 'wrap',
-          maxWidth: 'calc(100% - 32px)',
-          gap: 6,
-          background: 'rgba(30, 30, 36, 0.85)',
-          backdropFilter: 'blur(8px)',
-          padding: '6px 8px',
-          borderRadius: 8,
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          zIndex: 10
-        }}
-      >
-        {/* Undo and Redo buttons */}
-        <button
-          id="tool-undo-btn"
-          className="btn-tool"
-          data-testid="tool-undo-btn"
-          disabled={!canUndo || isRestoring || isSlicing || isCutting || isRepairing}
-          data-can-undo={canUndo}
-          data-is-restoring={isRestoring}
-          onClick={() => undo()}
-          title="Undo (Ctrl+Z)"
-          style={{
-            background: 'transparent',
-            color: canUndo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? '#fff' : '#64748b',
-            border: 'none',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: '0.85rem',
-            cursor: canUndo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? 'pointer' : 'default',
-            fontWeight: 500,
-            opacity: canUndo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? 1 : 0.5
-          }}
-        >
-          ↩️ Undo
-        </button>
-        <button
-          id="tool-redo-btn"
-          className="btn-tool"
-          data-testid="tool-redo-btn"
-          disabled={!canRedo || isRestoring || isSlicing || isCutting || isRepairing}
-          data-can-redo={canRedo}
-          data-is-restoring={isRestoring}
-          onClick={() => redo()}
-          title="Redo (Ctrl+Shift+Z)"
-          style={{
-            background: 'transparent',
-            color: canRedo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? '#fff' : '#64748b',
-            border: 'none',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: '0.85rem',
-            cursor: canRedo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? 'pointer' : 'default',
-            fontWeight: 500,
-            opacity: canRedo && !isRestoring && !isSlicing && !isCutting && !isRepairing ? 1 : 0.5
-          }}
-        >
-          ↪️ Redo
-        </button>
-        <div style={{ width: 1, background: 'rgba(255,255,255,0.15)', margin: '2px 4px' }} />
-
-        <button
-          id="tool-move-btn"
-          className={`btn-tool ${gizmoMode === 'translate' && !isPaintingActive ? 'active' : ''}`}
-          onClick={() => {
-            if (isPaintingActive) stopPainting();
-            setGizmoMode('translate');
-          }}
-          disabled={isRestoring || isSlicing}
-          title="Move tool (M)"
-          style={{
-            background: gizmoMode === 'translate' && !isPaintingActive ? '#2563eb' : 'transparent',
-            color: isRestoring || isSlicing ? '#64748b' : '#fff',
-            border: 'none',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: '0.85rem',
-            cursor: isRestoring || isSlicing ? 'default' : 'pointer',
-            fontWeight: 500
-          }}
-        >
-          ✋ Move [M]
-        </button>
-        <button
-          id="tool-rotate-btn"
-          className={`btn-tool ${gizmoMode === 'rotate' && !isPaintingActive ? 'active' : ''}`}
-          onClick={() => {
-            if (isPaintingActive) stopPainting();
-            setGizmoMode('rotate');
-          }}
-          disabled={isRestoring || isSlicing}
-          title="Rotate tool (R)"
-          style={{
-            background: gizmoMode === 'rotate' && !isPaintingActive ? '#2563eb' : 'transparent',
-            color: isRestoring || isSlicing ? '#64748b' : '#fff',
-            border: 'none',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: '0.85rem',
-            cursor: isRestoring || isSlicing ? 'default' : 'pointer',
-            fontWeight: 500
-          }}
-        >
-          🔄 Rotate [R]
-        </button>
-        <button
-          id="tool-scale-btn"
-          className={`btn-tool ${gizmoMode === 'scale' && !isPaintingActive ? 'active' : ''}`}
-          onClick={() => {
-            if (isPaintingActive) stopPainting();
-            setGizmoMode('scale');
-          }}
-          disabled={isRestoring || isSlicing}
-          title="Scale tool (S)"
-          style={{
-            background: gizmoMode === 'scale' && !isPaintingActive ? '#2563eb' : 'transparent',
-            color: isRestoring || isSlicing ? '#64748b' : '#fff',
-            border: 'none',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: '0.85rem',
-            cursor: isRestoring || isSlicing ? 'default' : 'pointer',
-            fontWeight: 500
-          }}
-        >
-          📐 Scale [S]
-        </button>
-        <div style={{ width: 1, background: 'rgba(255,255,255,0.15)', margin: '2px 4px' }} />
-        {/* Support Face Painting tool button */}
-        <button
-          id="tool-paint-btn"
-          className={`btn-tool ${isPaintingActive ? 'active' : ''}`}
-          onClick={handleTogglePainting}
-          disabled={!selectedObject || isRestoring || isSlicing}
-          title="Support Face Painting (P)"
-          style={{
-            background: isPaintingActive ? '#009688' : 'transparent',
-            color: selectedObject && !isRestoring && !isSlicing ? '#fff' : '#64748b',
-            border: 'none',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: '0.85rem',
-            cursor: selectedObject && !isRestoring && !isSlicing ? 'pointer' : 'default',
-            fontWeight: isPaintingActive ? 600 : 500
-          }}
-      >
-          🖌️ Face Paint [P]
-        </button>
-        {(['seam', 'color', 'fuzzy'] as const).map((layer) => (
-          <button key={layer} id={`tool-${layer}-paint-btn`} className="btn-tool"
-            disabled={!selectedObject || isRestoring || isSlicing}
-            onClick={() => {
-              useCutStore.getState().closeCut();
-              void useTextStore.getState().close();
-              useLayersStore.getState().stopEditing();
-              usePaintToolsStore.getState().setLayer(layer);
-              const volume = sceneRef.current?.getMeshVolumes(selectedObjectId!)?.[0]?.volumeId;
-              void usePaintToolsStore.getState().startPainting(selectedObjectId!, volume, selectedInstanceId);
-            }}
-            style={{ background: isPaintingActive && paintLayer === layer ? '#009688' : 'transparent', color: '#fff', border: 0, borderRadius: 6, padding: '6px 8px', cursor: 'pointer' }}>
-            {layer === 'seam' ? 'Seam' : layer === 'color' ? 'Color' : 'Fuzzy'} Paint
-          </button>
-        ))}
-        <button id="tool-varlayer-btn" className="btn-tool" disabled={!selectedObject || isRestoring || isSlicing}
-          onClick={() => {
-            stopPainting();
-            void useTextStore.getState().close();
-            useCutStore.getState().closeCut();
-            if (isLayersActive) useLayersStore.getState().stopEditing();
-            else void useLayersStore.getState().startEditing(selectedObjectId!);
-          }}
-          style={{ background: isLayersActive ? '#0284c7' : 'transparent', color: '#fff', border: 0, borderRadius: 6, padding: '6px 8px', cursor: 'pointer' }}>
-          Variable Layers
-        </button>
-        <button
-          id="tool-text-btn"
-          data-testid="tool-text-btn"
-          className="btn-tool"
-          disabled={isRestoring || isSlicing}
-          onClick={() => {
-            const textStore = useTextStore.getState();
-            if (textStore.isOpen) {
-              void textStore.close();
-            } else {
-              stopPainting();
-              useLayersStore.getState().stopEditing();
-              useCutStore.getState().closeCut();
-              textStore.openForAdd(selectedObjectId);
-            }
-          }}
-          style={{
-            background: isTextActive ? '#009688' : 'transparent',
-            color: '#fff',
-            border: 0,
-            borderRadius: 6,
-            padding: '6px 8px',
-            cursor: !isRestoring && !isSlicing ? 'pointer' : 'default',
-            fontWeight: isTextActive ? 600 : 500
-          }}
-        >
-          🔤 Text
-        </button>
-        <button
-          id="tool-cut-btn"
-          data-testid="tool-cut-btn"
-          className={`btn-tool ${isCutActive ? 'active' : ''}`}
-          disabled={!selectedObject || isRestoring || isSlicing || isCutting || isRepairing}
-          onClick={() => {
-            const cutStore = useCutStore.getState();
-            if (cutStore.isCutActive) {
-              cutStore.closeCut();
-            } else if (selectedObjectId) {
-              stopPainting();
-              useLayersStore.getState().stopEditing();
-              void useTextStore.getState().close();
-              const height = selectedObject?.size?.[2] ?? 20.0;
-              cutStore.openCut(selectedObjectId, 0, height, height / 2);
-            }
-          }}
-          style={{
-            background: isCutActive ? '#0284c7' : 'transparent',
-            color: selectedObject && !isRestoring && !isSlicing && !isCutting && !isRepairing ? '#fff' : '#64748b',
-            border: 0,
-            borderRadius: 6,
-            padding: '6px 8px',
-            cursor: selectedObject && !isRestoring && !isSlicing && !isCutting && !isRepairing ? 'pointer' : 'default',
-            fontWeight: isCutActive ? 600 : 500
-          }}
-          title="Planar Cut Tool (C)"
-        >
-          ✂️ Cut [C]
-        </button>
-        <div style={{ width: 1, background: 'rgba(255,255,255,0.15)', margin: '2px 4px' }} />
-        <button
-          id="tool-arrange-btn"
-          onClick={() => arrange(true)}
-          disabled={isRestoring || isSlicing}
-          title="Arrange objects on bed (A)"
-          style={{
-            background: 'transparent',
-            color: isRestoring || isSlicing ? '#64748b' : '#fff',
-            border: 'none',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: '0.85rem',
-            cursor: isRestoring || isSlicing ? 'default' : 'pointer'
-          }}
-        >
-          🧩 Arrange [A]
-        </button>
-        <button
-          id="tool-delete-btn"
-          onClick={() => deleteSelected()}
-          disabled={!selectedObject || isRestoring || isSlicing}
-          title="Delete selected object (Delete)"
-          style={{
-            background: 'transparent',
-            color: selectedObject && !isRestoring && !isSlicing ? '#ef4444' : '#64748b',
-            border: 'none',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: '0.85rem',
-            cursor: selectedObject && !isRestoring && !isSlicing ? 'pointer' : 'default'
-          }}
-        >
-          🗑️ Delete
-        </button>
-      </div>
+      <CanvasToolbar groups={toolGroups} />
+      <ViewButtons />
 
       <PaintToolsPanel />
       <LayerHeightPanel objectMeshes={sceneRef.current?.getObjectMeshes()} />

@@ -43,8 +43,9 @@ async function runSuite(browserType, name) {
   }
 
   async function openDialog(item) {
-    await page.click('#other-calibration-btn');
-    await page.getByRole('menuitem', { name: item, exact: true }).click();
+    const tiles = { 'Temp Tower': 'cal-temp', 'VFA': 'cal-vfa', 'PA Line': 'cal-pa-line' };
+    await page.click('#tab-calibration');
+    await page.click(`#${tiles[item]}`);
     await page.waitForSelector('.modal-content .btn-primary');
   }
 
@@ -60,6 +61,7 @@ async function runSuite(browserType, name) {
 
   async function slice() {
     await page.waitForFunction(() => !document.getElementById('slice-btn')?.disabled);
+    await page.click('#tab-prepare');
     await page.click('#slice-btn');
     await page.waitForFunction(() => {
       const s = window.__appStore.getState();

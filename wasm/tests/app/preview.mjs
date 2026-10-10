@@ -645,13 +645,13 @@ async function runBrowserSuite(browserType, browserName) {
       await page.setViewportSize({ width: w, height: h });
       await page.waitForTimeout(100);
       const topbarCheck = await page.evaluate(() => {
-        const topbar = document.querySelector('.orca-topbar');
-        const title = document.querySelector('.logo-title');
+        const topbar = document.querySelector('.topbar');
+        const title = document.querySelector('.topbar-logo');
         if (!topbar || !title) return { ok: false, error: 'Elements not found' };
         const tbRect = topbar.getBoundingClientRect();
         const tRect = title.getBoundingClientRect();
         return {
-          ok: tbRect.top >= 0 && tRect.top >= 0 && tbRect.height >= 50,
+          ok: tbRect.top >= 0 && tRect.top >= 0 && tbRect.height >= 36,
           tbTop: tbRect.top,
           tbHeight: tbRect.height,
           titleTop: tRect.top

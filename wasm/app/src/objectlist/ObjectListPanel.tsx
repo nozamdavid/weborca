@@ -23,7 +23,7 @@ export const ObjectListPanel: React.FC = () => {
       data-testid="object-list-panel"
       className="orca-object-list-panel"
       style={{
-        width: 300,
+        width: '100%',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',

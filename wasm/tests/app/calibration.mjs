@@ -131,7 +131,7 @@ async function runCalibrationSuite(browserType, browserName) {
     // Step 3: Cancellation preserving original project
     // -------------------------------------------------------------------------
     console.log(`[${browserName}] Step 3: Verifying cancellation preserves original project...`);
-    await page.click('#calibration-btn');
+    await page.click('#tab-calibration'); await page.click('#calibration-btn');
     await page.waitForSelector('#calibration-dialog', { state: 'visible', timeout: 5000 });
 
     // Click Generate -> triggers confirmation prompt because plate has objects
@@ -163,7 +163,7 @@ async function runCalibrationSuite(browserType, browserName) {
     assert.equal(preSaveFailObjs.length, 1, 'Plate should have 1 object before failed snapshot attempt');
 
     // Open calibration dialog
-    await page.click('#calibration-btn');
+    await page.click('#tab-calibration'); await page.click('#calibration-btn');
     await page.waitForSelector('#calibration-dialog', { state: 'visible', timeout: 5000 });
 
     // Inject temporary failure into engine saveProject and monitor loadModel
@@ -258,7 +258,7 @@ async function runCalibrationSuite(browserType, browserName) {
     assert.equal(preFailObjs.length, 1, 'Plate should have 1 object before failed calibration');
 
     // Open calibration dialog
-    await page.click('#calibration-btn');
+    await page.click('#tab-calibration'); await page.click('#calibration-btn');
     await page.waitForSelector('#calibration-dialog', { state: 'visible', timeout: 5000 });
 
     // Inject temporary failure into engine setObjectConfig (triggers after loadModel replaces plate)
@@ -325,7 +325,7 @@ async function runCalibrationSuite(browserType, browserName) {
     // Step 4: Pass 1 Calibration Generation & Config Readback
     // -------------------------------------------------------------------------
     console.log(`[${browserName}] Step 4: Generating Flow Rate Pass 1...`);
-    await page.click('#calibration-btn');
+    await page.click('#tab-calibration'); await page.click('#calibration-btn');
     await page.waitForSelector('#calibration-dialog', { state: 'visible', timeout: 5000 });
 
     // Ensure Pass 1 is selected
@@ -418,7 +418,7 @@ async function runCalibrationSuite(browserType, browserName) {
     // Step 6: Pass 2 Calibration Generation & Config Readback
     // -------------------------------------------------------------------------
     console.log(`[${browserName}] Step 6: Generating Flow Rate Pass 2...`);
-    await page.click('#calibration-btn');
+    await page.click('#tab-calibration'); await page.click('#calibration-btn');
     await page.waitForSelector('#calibration-dialog', { state: 'visible', timeout: 5000 });
 
     // Select Pass 2
@@ -477,7 +477,7 @@ async function runCalibrationSuite(browserType, browserName) {
     // Step 7: Flow Rate Calculator Validation & System Preset Preservation
     // -------------------------------------------------------------------------
     console.log(`[${browserName}] Step 7: Testing Flow Rate Calculator...`);
-    await page.click('#calibration-btn');
+    await page.click('#tab-calibration'); await page.click('#calibration-btn');
     await page.waitForSelector('#calibration-dialog', { state: 'visible', timeout: 5000 });
 
     await page.click('[data-testid="calib-tab-calculator"]');
@@ -540,6 +540,7 @@ async function runCalibrationSuite(browserType, browserName) {
     // Step 8: Calibration Plate Slicing producing real G-code with expected 10 layers
     // -------------------------------------------------------------------------
     console.log(`[${browserName}] Step 8: Slicing calibration plate...`);
+    await page.click('#tab-prepare');
     await page.click('#slice-btn');
 
     // Wait for slicing completion
@@ -563,6 +564,7 @@ async function runCalibrationSuite(browserType, browserName) {
     // -------------------------------------------------------------------------
     console.log(`[${browserName}] Step 9: Testing non-0.4 nozzle scaling and preserved first layer...`);
     // Select 0.6mm nozzle printer
+    await page.click('#tab-prepare');
     await page.selectOption('#printer-select', 'Voron 2.4 300 0.6 nozzle');
     await page.waitForTimeout(500);
 
@@ -572,7 +574,7 @@ async function runCalibrationSuite(browserType, browserName) {
     });
 
     // Generate Pass 1
-    await page.click('#calibration-btn');
+    await page.click('#tab-calibration'); await page.click('#calibration-btn');
     await page.waitForSelector('#calibration-dialog', { state: 'visible', timeout: 5000 });
     await page.click('[data-testid="calib-pass1-btn"]');
     await page.click('#calib-generate-btn');
@@ -601,6 +603,7 @@ async function runCalibrationSuite(browserType, browserName) {
     assert.equal(parseFloat(config06['layer_height']), 0.3, 'Layer height must be 0.30 for 0.6 nozzle');
 
     // Slice to prove 10 layers with non-0.4 nozzle and preserved first layer
+    await page.click('#tab-prepare');
     await page.click('#slice-btn');
     await page.waitForFunction(() => {
       const sliceBtn = document.getElementById('slice-btn');
@@ -615,10 +618,11 @@ async function runCalibrationSuite(browserType, browserName) {
 
     // Verify 0.8 nozzle large nozzle XY enlargement (xyScale = 0.8 / 0.6 = 1.3333 > 1.2)
     console.log(`[${browserName}] Testing large nozzle XY enlargement on 0.8 nozzle...`);
+    await page.click('#tab-prepare');
     await page.selectOption('#printer-select', 'Voron 2.4 300 0.8 nozzle');
     await page.waitForTimeout(500);
 
-    await page.click('#calibration-btn');
+    await page.click('#tab-calibration'); await page.click('#calibration-btn');
     await page.waitForSelector('#calibration-dialog', { state: 'visible', timeout: 5000 });
     await page.click('#calib-generate-btn');
     await page.waitForSelector('#calib-confirm-proceed', { state: 'visible', timeout: 5000 });
