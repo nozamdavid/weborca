@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { isDefaultPlateName, plateTitle } from './plateName';
+import { PlateSettingsPopover } from './PlateSettingsPopover';
 import { usePlatesStore } from './platesStore';
 import { useAppStore } from '../store/appStore';
 
@@ -16,6 +17,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
   const isSlicing = useAppStore((s) => s.isSlicing);
 
   const [sliceMenuOpen, setSliceMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [renaming, setRenaming] = useState<{ index: number; value: string } | null>(null);
 
   // An empty title goes back to the default "Plate N".
@@ -153,6 +155,18 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
       >
         + Add Plate
       </button>
+
+      {/* Settings of the active plate */}
+      <div style={{ position: 'relative' }}>
+        <button
+          type="button" id="plate-settings-btn" data-testid="plate-settings-btn" aria-expanded={settingsOpen}
+          onClick={() => setSettingsOpen(!settingsOpen)} title="Settings of this plate"
+          style={{ background: settingsOpen ? '#009688' : 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.25)', color: '#fff', borderRadius: 4, padding: '4px 10px', fontSize: '0.85rem', cursor: 'pointer' }}
+        >
+          Plate settings
+        </button>
+        {settingsOpen && plates.find((p) => p.index === activePlateIndex) && <PlateSettingsPopover plate={plates.find((p) => p.index === activePlateIndex)!} />}
+      </div>
 
       {/* Vertical separator */}
       <div style={{ width: 1, height: 20, background: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
