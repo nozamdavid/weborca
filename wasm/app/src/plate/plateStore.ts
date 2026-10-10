@@ -68,6 +68,10 @@ export interface PlateStoreState {
   /** Copied instances; pasting adds another instance of each. */
   clipboard: InstanceRef[];
   gizmoMode: GizmoMode;
+  measureActive: boolean;
+  measurePoints: Array<[number, number, number]>;
+  setMeasureActive: (active: boolean) => void;
+  setMeasurePoints: (points: Array<[number, number, number]>) => void;
   bedConfig: BedConfig;
   isLoading: boolean;
   meshCache: Map<number, MeshBufferData>;
@@ -125,6 +129,8 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     try { localStorage.setItem(ARRANGE_KEY, JSON.stringify(next)); } catch (_) {}
   },
   gizmoMode: 'translate',
+  measureActive: false,
+  measurePoints: [],
   bedConfig: {
     points: [
       [0, 0],
@@ -327,6 +333,9 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
       await useHistoryStore.getState().commitTransaction('Transform objects');
     } catch (_) {}
   },
+
+  setMeasureActive: (active) => set({ measureActive: active, measurePoints: [] }),
+  setMeasurePoints: (points) => set({ measurePoints: points }),
 
   setGizmoMode: (mode: GizmoMode) => {
     set({ gizmoMode: mode });

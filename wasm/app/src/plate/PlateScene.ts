@@ -35,6 +35,7 @@ export interface PlateSceneCallbacks {
   onToolPaintEnd?: () => void;
   onFlattenFacetClick?: (facetIndex: number) => void;
   onBrimEarClick?: (position: [number, number, number], clickedEarIndex?: number) => void;
+  onMeasureChange?: (points: Array<[number, number, number]>) => void;
 }
 
 export class PlateScene {
@@ -64,6 +65,9 @@ export class PlateScene {
   private flattenGroup: THREE.Group;
   private brimEarsGroup: THREE.Group;
   private brimEarsActive = false;
+  private measureActive = false;
+  private measurePoints: THREE.Vector3[] = [];
+  private measureGroup = new THREE.Group();
 
   private objectMeshes: Map<string, THREE.Mesh> = new Map();
   private overlayMeshes: Map<string, THREE.Mesh> = new Map();
@@ -287,6 +291,7 @@ export class PlateScene {
     this.scene.add(this.objectsGroup);
     this.scene.add(this.flattenGroup);
     this.scene.add(this.brimEarsGroup);
+    this.scene.add(this.measureGroup);
     this.scene.add(this.labelsGroup);
     this.scene.add(this.plateLabelGroup);
     this.scene.add(this.extraBedsGroup);
@@ -945,7 +950,7 @@ export class PlateScene {
     }
 
     // The other selected instances only follow a move, so rotating or scaling is for a single selection.
-    if (selectedMesh && !this.isPaintingActive && (this.extraKeys.size === 0 || this.gizmoMode === 'translate')) {
+    if (selectedMesh && !this.isPaintingActive && !this.measureActive && (this.extraKeys.size === 0 || this.gizmoMode === 'translate')) {
       this.transformControls.attach(selectedMesh);
     } else {
       this.transformControls.detach();
@@ -957,7 +962,7 @@ export class PlateScene {
     this.transformControls.setMode(mode);
     if (this.extraKeys.size > 0) {
       const selected = this.getSelectedMesh();
-      if (mode === 'translate' && selected && !this.isPaintingActive) this.transformControls.attach(selected);
+      if (mode === 'translate' && selected && !this.isPaintingActive && !this.measureActive) this.transformControls.attach(selected);
       else this.transformControls.detach();
     }
   }
@@ -1066,6 +1071,53 @@ export class PlateScene {
       this.flattenGroup.remove(child);
     }
     this.flattenClusters = [];
+  }
+
+  /** Measure mode: two clicks on the model surface mark a segment; a third click starts a new one. */
+  public setMeasureActive(active: boolean): void {
+    if (this.measureActive === active) return;
+    this.measureActive = active;
+    if (active) this.transformControls.detach();
+    else this.clearMeasure();
+    this.setSelection(this.selectedObjectId, this.selectedInstanceId, [...this.extraKeys].map((k) => { const [objectId, instanceId] = k.split('_').map(Number); return { objectId, instanceId }; }));
+  }
+
+  public clearMeasure(): void {
+    this.measurePoints = [];
+    this.drawMeasure();
+    this.callbacks.onMeasureChange?.([]);
+  }
+
+  private drawMeasure(): void {
+    while (this.measureGroup.children.length > 0) {
+      const child = this.measureGroup.children[0] as THREE.Mesh;
+      child.geometry.dispose();
+      (child.material as THREE.Material).dispose();
+      this.measureGroup.remove(child);
+    }
+    const marker = Math.max(1, this.camera.position.distanceTo(this.orbitControls.target) / 120);
+    for (const p of this.measurePoints) {
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(marker, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffb300, depthTest: false }));
+      dot.position.copy(p);
+      dot.renderOrder = 10;
+      this.measureGroup.add(dot);
+    }
+    if (this.measurePoints.length === 2) {
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(this.measurePoints), new THREE.LineBasicMaterial({ color: 0xffb300, depthTest: false }));
+      line.renderOrder = 10;
+      this.measureGroup.add(line as unknown as THREE.Mesh);
+    }
+  }
+
+  private pickMeasurePoint(e: PointerEvent): void {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1), this.camera);
+    const hit = raycaster.intersectObjects(Array.from(this.objectMeshes.values()), false)[0];
+    if (!hit) return;
+    this.measurePoints = this.measurePoints.length >= 2 ? [hit.point.clone()] : [...this.measurePoints, hit.point.clone()];
+    this.drawMeasure();
+    this.callbacks.onMeasureChange?.(this.measurePoints.map((p) => [p.x, p.y, p.z]));
   }
 
   public setBrimEarsActive(active: boolean): void {
@@ -1358,6 +1410,11 @@ export class PlateScene {
 
     if (this.transformControls.dragging) return;
 
+    if (this.measureActive) {
+      this.pickMeasurePoint(e);
+      return;
+    }
+
     if (this.flattenClusters.length > 0) {
       const selectedMesh = this.getSelectedMesh();
       if (selectedMesh) {
@@ -1577,6 +1634,8 @@ export class PlateScene {
     this.clearBrimEarsOverlay();
     this.scene.remove(this.flattenGroup);
     this.scene.remove(this.brimEarsGroup);
+    this.clearMeasure();
+    this.scene.remove(this.measureGroup);
 
     for (const sprite of this.labelSprites.values()) {
       if (sprite.material.map) sprite.material.map.dispose();

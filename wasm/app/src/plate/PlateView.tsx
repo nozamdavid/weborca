@@ -17,6 +17,7 @@ import { TextPanel, useTextStore } from '../text';
 import { CutPanel, useCutStore } from '../cut';
 import { NumericTransform } from './NumericTransform';
 import { ArrangeDialog } from './ArrangeDialog';
+import { MeasurePanel } from './MeasurePanel';
 import { ViewCube } from './ViewCube';
 import { usePrefsStore } from '../prefs/prefsStore';
 import { RepairBadge, useRepairStore } from '../repair';
@@ -167,6 +168,7 @@ export const PlateView: React.FC = () => {
       onFlattenFacetClick: (facetIndex) => {
         void useEditOpsStore.getState().applyPlaceOnFace(facetIndex);
       },
+      onMeasureChange: (points) => usePlateStore.getState().setMeasurePoints(points),
       onBrimEarClick: (position, clickedEarIndex) => {
         const store = useEditOpsStore.getState();
         if (typeof clickedEarIndex === 'number') {
@@ -205,6 +207,9 @@ export const PlateView: React.FC = () => {
       sceneRef.current.updateBedConfig(bedConfig);
     }
   }, [bedConfig]);
+
+  const measureActive = usePlateStore((s) => s.measureActive);
+  useEffect(() => { sceneRef.current?.setMeasureActive(measureActive); }, [measureActive]);
 
   // Sync active edit tool with scene overlays
   useEffect(() => {
@@ -510,6 +515,10 @@ export const PlateView: React.FC = () => {
             }
           }
           break;
+        case 'u':
+        case 'U':
+          if (!isPaintingActive && !isCutting && !isTextActive && !isOperatingEdit) usePlateStore.getState().setMeasureActive(!usePlateStore.getState().measureActive);
+          break;
         case 'Delete':
         case 'Backspace':
           if (!isPaintingActive && !isOperatingEdit) deleteSelected();
@@ -619,6 +628,23 @@ export const PlateView: React.FC = () => {
             void useTextStore.getState().close();
             void editOps.startFlatten(selectedObjectId);
           }
+        }
+      },
+      {
+        id: 'tool-measure-btn',
+        testId: 'tool-measure-btn',
+        label: 'Measure',
+        shortcut: 'U',
+        icon: 'toolbar_measure',
+        active: measureActive,
+        disabled: busy || isOperatingEdit,
+        onClick: () => {
+          if (!measureActive) {
+            stopPainting();
+            useEditOpsStore.getState().stopFlatten();
+            useEditOpsStore.getState().stopBrimEars();
+          }
+          usePlateStore.getState().setMeasureActive(!measureActive);
         }
       }
     ],
@@ -794,6 +820,7 @@ export const PlateView: React.FC = () => {
       onDrop={handleDrop}
     >
       <ArrangeDialog />
+      <MeasurePanel />
       {showNavigator && <ViewCube getCameraQuaternion={getCameraQuaternion} />}
 
       {/* 3D WebGL Canvas Container */}
