@@ -1,4 +1,5 @@
 import { useCompareStore } from '../settings/ComparePresetsDialog';
+import { useWizardStore } from '../wizard';
 import React, { useEffect, useRef, useState } from 'react';
 import { useCalibrationStore } from '../calibration/calibrationStore';
 import { useInputShapingStore } from '../calibration/inputShapingStore';
@@ -344,6 +345,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         { label: 'Filament presets...', onClick: () => openManagePresetsDialog('filament') },
         { label: 'Process presets...', onClick: () => openManagePresetsDialog('process') },
         { label: 'Compare presets...', onClick: () => useCompareStore.getState().setOpen(true) },
+        { label: 'Configuration wizard...', onClick: () => useWizardStore.getState().setOpen(true) },
         'sep',
         { label: 'Preferences...', keys: 'Ctrl+P', onClick: () => openPrefs('general') }
       ]

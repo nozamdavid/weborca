@@ -1,4 +1,5 @@
 import { ComparePresetsDialog } from './settings/ComparePresetsDialog';
+import { WizardDialog } from './wizard';
 import React, { useEffect, useState } from 'react';
 import './App.css';
 import { FlowRateModal } from './calibration/FlowRateModal';
@@ -170,6 +171,7 @@ export const App: React.FC = () => {
       <PrinterConnectionDialog />
       <HelpDialogs />
       <ComparePresetsDialog />
+      <WizardDialog />
       <PreferencesDialog />
       <EditOpsDialogs />
       <ToastContainer />
