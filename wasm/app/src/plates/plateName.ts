@@ -1,7 +1,8 @@
-export const DEFAULT_PLATE_TITLE = 'Untitled plate';
+/** A plate without a name of its own is called "Plate N" after its number. */
+export function plateTitle(name: string | undefined, index: number): string {
+  return (name ?? '').trim() || `Plate ${index + 1}`;
+}
 
-/** A plate without a name of its own (the engine leaves it empty or numbers it) shows as "Untitled plate". */
-export function plateTitle(name: string | undefined): string {
-  const trimmed = (name ?? '').trim();
-  return !trimmed || /^Plate \d+$/.test(trimmed) ? DEFAULT_PLATE_TITLE : trimmed;
+export function isDefaultPlateName(name: string | undefined, index: number): boolean {
+  return plateTitle(name, index) === `Plate ${index + 1}`;
 }

@@ -171,8 +171,8 @@ async function runBrowserSuite(browserType, browserName) {
     await page.dblclick('#plate-tab-1');
     await page.fill('#plate-name-input-1', '');
     await page.keyboard.press('Enter');
-    await page.waitForFunction(() => window.__platesStore.getState().plates[1]?.name === 'Untitled plate', null, { timeout: 10000 });
-    assert.equal(await page.locator('#plate-name-1').innerText(), 'Untitled plate', 'an empty title is the default one');
+    await page.waitForFunction(() => window.__platesStore.getState().plates[1]?.name === 'Plate 2', null, { timeout: 10000 });
+    assert.equal(await page.locator('#plate-name-1').innerText(), 'Plate 2', 'an empty title is the default one, numbered after the plate');
     await page.dblclick('#plate-tab-1');
     await page.fill('#plate-name-input-1', 'Benchy plate');
     await page.keyboard.press('Enter');

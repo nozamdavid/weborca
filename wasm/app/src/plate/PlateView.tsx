@@ -3,7 +3,7 @@ import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
 import { useAppStore } from '../store/appStore';
 import { PlateContextMenu } from './PlateContextMenu';
-import { plateTitle } from '../plates/plateName';
+import { isDefaultPlateName } from '../plates/plateName';
 import { usePlatesStore } from '../plates/platesStore';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
 import { usePaintToolsStore, PaintToolsPanel, StrokeCollector } from '../paint-tools';
@@ -722,7 +722,7 @@ export const PlateView: React.FC = () => {
         const title = scene?.titleAt(e.clientX, e.clientY);
         if (title) {
           const current = usePlatesStore.getState().plates.find((p) => p.index === title.index)?.name ?? '';
-          setRenamingPlate({ ...title, value: plateTitle(current) === plateTitle('') ? '' : current });
+          setRenamingPlate({ ...title, value: isDefaultPlateName(current, title.index) ? '' : current });
           return;
         }
         const picked = scene && !usePaintToolsStore.getState().isActive && !scene.isObjectAt(e.clientX, e.clientY) ? scene.plateAt(e.clientX, e.clientY) : null;
@@ -904,7 +904,7 @@ export const PlateView: React.FC = () => {
         <input
           id="plate-title-input"
           autoFocus
-          placeholder="Untitled plate"
+          placeholder={`Plate ${renamingPlate.index + 1}`}
           value={renamingPlate.value}
           onChange={(e) => setRenamingPlate({ ...renamingPlate, value: e.target.value })}
           onBlur={() => setRenamingPlate(null)}

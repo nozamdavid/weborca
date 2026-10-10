@@ -559,7 +559,7 @@ export class PlateScene {
       const number = text(String(plate.index + 1).padStart(2, '0'), 'bold 96px sans-serif', size * 0.1, orange(active), 'right', ox + cx + width / 2, oy + cy - depth / 2 - size * 0.07);
       number.position.z = oz + 0.05;
       this.plateLabelGroup.add(number);
-      const title = plateTitle(plate.name);
+      const title = plateTitle(plate.name, plate.index);
       const shown = title.length > 40 ? `${title.slice(0, 38)}...` : title;
       const label = text(shown, 'bold 64px sans-serif', size * 0.075, orange(active), 'left', ox + cx - width / 2, oy + cy + depth / 2 + size * 0.06, true);
       label.name = 'plate-title';

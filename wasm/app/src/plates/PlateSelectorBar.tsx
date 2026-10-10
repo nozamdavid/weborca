@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { plateTitle } from './plateName';
+import { isDefaultPlateName, plateTitle } from './plateName';
 import { usePlatesStore } from './platesStore';
 import { useAppStore } from '../store/appStore';
 
@@ -23,8 +23,8 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
     if (!renaming) return;
     const { index, value } = renaming;
     setRenaming(null);
-    const title = plateTitle(value);
-    if (title !== plates.find((p) => p.index === index)?.name) void setPlateConfig(index, {}, plateTitle(value) === plateTitle('') ? '' : title);
+    const title = plateTitle(value, index);
+    if (title !== plates.find((p) => p.index === index)?.name) void setPlateConfig(index, {}, isDefaultPlateName(title, index) ? '' : title);
   };
 
   return (
@@ -59,7 +59,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
               id={`plate-tab-${plate.index}`}
               data-testid={`plate-tab-${plate.index}`}
               onClick={() => setActivePlate(plate.index)}
-              onDoubleClick={() => setRenaming({ index: plate.index, value: plateTitle(plate.name) === plateTitle('') ? '' : plate.name })}
+              onDoubleClick={() => setRenaming({ index: plate.index, value: isDefaultPlateName(plate.name, plate.index) ? '' : plate.name })}
               title="Double-click to rename"
               style={{
                 display: 'flex',
@@ -101,7 +101,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
                   style={{ width: 110, background: 'rgba(0, 0, 0, 0.35)', color: '#fff', border: '1px solid rgba(255, 255, 255, 0.4)', borderRadius: 3, padding: '1px 4px', fontSize: '0.85rem' }}
                 />
               ) : (
-                <span id={`plate-name-${plate.index}`}>{plateTitle(plate.name)}</span>
+                <span id={`plate-name-${plate.index}`}>{plateTitle(plate.name, plate.index)}</span>
               )}
               {plates.length > 1 && (
                 <button
@@ -112,7 +112,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
                     e.stopPropagation();
                     deletePlate(plate.index);
                   }}
-                  title={`Delete ${plateTitle(plate.name)}`}
+                  title={`Delete ${plateTitle(plate.name, plate.index)}`}
                   style={{
                     background: 'transparent',
                     border: 'none',

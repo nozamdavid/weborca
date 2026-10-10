@@ -30,7 +30,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
   plates: [
     {
       index: 0,
-      name: plateTitle(''),
+      name: plateTitle('', 0),
       locked: false,
       origin: [0, 0, 0],
       size: [256, 256, 256],
@@ -50,7 +50,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
       const plates: PlateInfo[] = Array.isArray(platesRaw)
         ? platesRaw.map((p) => ({
             index: p.index ?? 0,
-            name: plateTitle(p.name),
+            name: plateTitle(p.name, p.index ?? 0),
             locked: !!p.locked,
             origin: p.origin || [0, 0, 0],
             size: p.size || [256, 256, 256],
