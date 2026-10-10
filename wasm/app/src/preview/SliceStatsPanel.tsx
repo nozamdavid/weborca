@@ -4,7 +4,7 @@
  * filament usage, and feature breakdown matching desktop OrcaSlicer.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { usePreviewStore } from './previewStore';
 import { useAppStore } from '../store/appStore';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
@@ -20,6 +20,59 @@ function formatPrintTime(seconds: number): string {
   return `${secs}s`;
 }
 
+interface SlotFilamentStat {
+  slot: number;
+  name: string;
+  color: string;
+  mm: number;
+  g: number;
+}
+
+function parseFilamentStats(
+  gcodeBytes: Uint8Array | undefined,
+  selectedFilaments: string[],
+  currentConfig: Record<string, string>
+): SlotFilamentStat[] {
+  if (!selectedFilaments || selectedFilaments.length <= 1) return [];
+
+  const rawColors = (currentConfig['filament_colour'] || '')
+    .split(';')
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .map((c) => {
+      let hex = c.startsWith('#') ? c : `#${c}`;
+      return hex.length > 7 ? hex.slice(0, 7) : hex;
+    });
+
+  let mmValues: number[] = [];
+  let gValues: number[] = [];
+
+  if (gcodeBytes && gcodeBytes.length > 0) {
+    const offset = Math.max(0, gcodeBytes.length - 65536);
+    const tail = new TextDecoder('utf-8', { fatal: false }).decode(gcodeBytes.subarray(offset));
+
+    const mmMatch = tail.match(/;\s*filament used \[mm\]\s*=\s*([0-9., ]+)/);
+    const gMatch = tail.match(/;\s*filament used \[g\]\s*=\s*([0-9., ]+)/);
+
+    if (mmMatch) {
+      mmValues = mmMatch[1].split(',').map((s) => parseFloat(s.trim()) || 0);
+    }
+    if (gMatch) {
+      gValues = gMatch[1].split(',').map((s) => parseFloat(s.trim()) || 0);
+    }
+  }
+
+  return selectedFilaments.map((name, idx) => {
+    return {
+      slot: idx + 1,
+      name,
+      color: rawColors[idx] || '#009688',
+      mm: mmValues[idx] || 0,
+      g: gValues[idx] || 0
+    };
+  });
+}
+
 export const SliceStatsPanel: React.FC = () => {
   const stats = usePreviewStore((s) => s.stats);
   const showStatsPanel = usePreviewStore((s) => s.showStatsPanel);
@@ -28,8 +81,15 @@ export const SliceStatsPanel: React.FC = () => {
 
   const gcodeUrl = useAppStore((s) => s.gcodeUrl);
   const modelFile = useAppStore((s) => s.modelFile);
+  const sliceResult = useAppStore((s) => s.sliceResult);
+  const selectedFilaments = useAppStore((s) => s.selectedFilaments);
+  const currentConfig = useAppStore((s) => s.currentConfig);
 
   const [isBreakdownOpen, setIsBreakdownOpen] = useState(true);
+
+  const filamentStats = useMemo(() => {
+    return parseFilamentStats(sliceResult?.gcode, selectedFilaments, currentConfig);
+  }, [sliceResult?.gcode, selectedFilaments, currentConfig]);
 
   if (!stats) return null;
 
@@ -163,6 +223,73 @@ export const SliceStatsPanel: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Multi-filament Breakdown */}
+          {filamentStats.length > 1 && (
+            <div id="stat-filaments-section" style={{ marginBottom: 10 }}>
+              <div
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  color: '#94a3b8',
+                  marginBottom: 6,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <span>Filaments ({filamentStats.length})</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {filamentStats.map((item) => (
+                  <div
+                    key={item.slot}
+                    id={`stat-filament-slot-${item.slot}`}
+                    className="stat-filament-row"
+                    data-testid={`stat-filament-slot-${item.slot}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '4px 8px',
+                      background: 'rgba(255, 255, 255, 0.04)',
+                      borderRadius: 4,
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: '50%',
+                          backgroundColor: item.color,
+                          flexShrink: 0
+                        }}
+                      />
+                      <span style={{ color: '#38bdf8', fontWeight: 600 }}>#{item.slot}</span>
+                      <span
+                        style={{
+                          color: '#d4d4d8',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}
+                        title={item.name}
+                      >
+                        {item.name}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, color: '#f59e0b', fontWeight: 500, flexShrink: 0, fontSize: '0.7rem' }}>
+                      <span>{(item.mm / 1000).toFixed(2)} m</span>
+                      <span style={{ color: '#a1a1aa' }}>({item.g.toFixed(2)} g)</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Feature Breakdown Table */}
           {stats.features && stats.features.length > 0 && (

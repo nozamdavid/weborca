@@ -6,6 +6,7 @@ import type { ObjectTreeNode, VolumeTreeNode } from './types';
 
 const OBJECT_CATEGORIES: Record<string, string[]> = {
   Quality: [
+    'extruder',
     'layer_height',
     'seam_position',
     'slice_closing_radius',
@@ -39,6 +40,7 @@ const OBJECT_CATEGORIES: Record<string, string[]> = {
 
 const PART_CATEGORIES: Record<string, string[]> = {
   Quality: [
+    'extruder',
     'ironing_type',
     'ironing_flow',
     'ironing_spacing',

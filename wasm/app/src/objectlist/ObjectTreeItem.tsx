@@ -12,6 +12,7 @@ import {
 } from './Icons';
 import { ContextMenu } from './ContextMenu';
 import { useObjectListStore } from './objectListStore';
+import { useAppStore } from '../store/appStore';
 import type { ObjectTreeNode, VolumeTreeNode, VolumeType, PrimitiveShape } from './types';
 
 interface ObjectTreeItemProps {
@@ -28,8 +29,13 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
     deleteObject,
     renameObject,
     renameVolume,
-    setVolumeExtruder
+    setVolumeExtruder,
+    setObjectExtruder
   } = useObjectListStore();
+
+  const currentConfig = useAppStore((s) => s.currentConfig);
+  const rawColors = (currentConfig['filament_colour'] || '').split(';').map((c) => c.trim());
+  const defaultColors = ['#16417C', '#58B957', '#F5D130', '#E53935', '#8E24AA', '#00ACC1', '#FB8C00', '#D81B60'];
 
   const [isExpanded, setIsExpanded] = useState(true);
   const [renamingTarget, setRenamingTarget] = useState<'object' | number | null>(null);
@@ -187,6 +193,39 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
           </span>
         )}
 
+        {(() => {
+          const objExt = parseInt(object.config?.extruder || '0', 10) || 0;
+          const allSameExt = object.volumes && object.volumes.length > 0 && object.volumes.every(v => v.extruder === object.volumes[0].extruder) ? object.volumes[0].extruder : 0;
+          const effectiveExt = allSameExt > 0 ? allSameExt : objExt;
+          if (effectiveExt <= 0) return null;
+          return (
+            <span
+              id={`badge-extruder-object-${object.id}`}
+              data-testid={`badge-extruder-object-${object.id}`}
+              style={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                color: '#a1a1aa',
+                fontSize: '0.65rem',
+                padding: '1px 4px',
+                borderRadius: 4,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: rawColors[effectiveExt - 1] || defaultColors[(effectiveExt - 1) % defaultColors.length]
+                }}
+              />
+              E{effectiveExt}
+            </span>
+          );
+        })()}
+
         {object.overrides && object.overrides.length > 0 && (
           <span
             id={`badge-overrides-object-${object.id}`}
@@ -316,9 +355,20 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
                       color: '#a1a1aa',
                       fontSize: '0.65rem',
                       padding: '1px 4px',
-                      borderRadius: 4
+                      borderRadius: 4,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4
                     }}
                   >
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        backgroundColor: rawColors[vol.extruder - 1] || defaultColors[(vol.extruder - 1) % defaultColors.length]
+                      }}
+                    />
                     E{vol.extruder}
                   </span>
                 )}
@@ -375,7 +425,11 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
           objectId={object.id}
           volumeId={contextMenuState.volume?.id}
           volumeType={contextMenuState.volume?.type}
-          currentExtruder={contextMenuState.volume?.extruder}
+          currentExtruder={
+            contextMenuState.isObject
+              ? (parseInt(object.config?.extruder || '0', 10) || (object.volumes?.[0]?.extruder || 0))
+              : (contextMenuState.volume?.extruder || 0)
+          }
           onClose={() => setContextMenuState(null)}
           onAddVolume={(objId: number, type: VolumeType, shape: PrimitiveShape) => {
             addVolume({ objectId: objId, type, shape });
@@ -394,13 +448,13 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
               deleteVolume(object.id, contextMenuState.volume.id);
             }
           }}
-          onSetExtruder={
-            !contextMenuState.isObject && contextMenuState.volume
-              ? (ext: number) => {
-                  setVolumeExtruder(object.id, contextMenuState.volume!.id, ext);
-                }
-              : undefined
-          }
+          onSetExtruder={(ext: number) => {
+            if (contextMenuState.isObject) {
+              setObjectExtruder(object.id, ext);
+            } else if (contextMenuState.volume) {
+              setVolumeExtruder(object.id, contextMenuState.volume!.id, ext);
+            }
+          }}
         />
       )}
     </div>

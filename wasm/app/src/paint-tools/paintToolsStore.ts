@@ -126,8 +126,16 @@ export const usePaintToolsStore = create<PaintToolsState>((set, get) => ({
 
   loadFilamentColors: async () => {
     try {
-      const config = await getConfig();
-      const rawColors = config['filament_colour'];
+      let rawColors: string | undefined;
+      try {
+        const { useAppStore } = await import('../store/appStore');
+        rawColors = useAppStore.getState().currentConfig['filament_colour'];
+      } catch (_) {}
+
+      if (!rawColors) {
+        const config = await getConfig();
+        rawColors = config['filament_colour'];
+      }
       if (typeof rawColors === 'string' && rawColors.trim().length > 0) {
         const parsed = rawColors
           .split(';')

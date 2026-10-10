@@ -8,7 +8,7 @@ import type { PresetKind } from '../presets/types';
 import { exportGcode } from './exportGcode';
 import { EditIcon, GearIcon, PlugIcon, SaveIcon, TrashIcon } from './glyphs';
 
-const Section: React.FC<{ title: string; badge?: string; children: React.ReactNode; defaultOpen?: boolean; className?: string }> = ({ title, badge, children, defaultOpen = true, className = '' }) => {
+const Section: React.FC<{ title: string; badge?: string; children: React.ReactNode; defaultOpen?: boolean; className?: string; headerExtra?: React.ReactNode }> = ({ title, badge, children, defaultOpen = true, className = '', headerExtra }) => {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className={`sb-section ${open ? '' : 'closed'} ${className}`}>
@@ -16,6 +16,7 @@ const Section: React.FC<{ title: string; badge?: string; children: React.ReactNo
         <span className="chev">▼</span>
         <span className="grow">{title}</span>
         {badge && <span className="badge">{badge}</span>}
+        {headerExtra && <div className="sb-head-extra" onClick={(e) => e.stopPropagation()}>{headerExtra}</div>}
       </div>
       {open && <div className="sb-body">{children}</div>}
     </section>
@@ -68,8 +69,10 @@ const PresetRow: React.FC<{
 export const PrepareSidebar: React.FC = () => {
   const {
     vendors, selectedVendor, chooseVendor, printers, selectedPrinter, choosePrinter,
-    processes, selectedProcess, chooseProcess, filaments, selectedFilament, chooseFilament,
-    userPresets, activeUserPreset, isSlicing, isModelLoading, startSlice, cancelSlice, isEngineReady, modelFile, sliceResult, modelObjects
+    processes, selectedProcess, chooseProcess, filaments, selectedFilament, selectedFilaments, chooseFilament,
+    addFilamentSlot, removeFilamentSlot, setSlotColor, currentConfig,
+    userPresets, activeUserPreset, isSlicing, isModelLoading, startSlice, cancelSlice, isEngineReady, modelFile, sliceResult, modelObjects,
+    selectUserPreset, openDialog, openSavePresetDialog, openManagePresetsDialog, deleteUserPresetAction
   } = useAppStore();
   const isRestoring = useHistoryStore((s) => s.isRestoring);
   const printerStatus = usePrinterConnectionStore((s) => s.status);
@@ -77,7 +80,81 @@ export const PrepareSidebar: React.FC = () => {
   const openSendDialog = usePrinterConnectionStore((s) => s.openSendDialog);
 
   const isBusy = isSlicing || isModelLoading || isRestoring;
-  const canSlice = isEngineReady && !isBusy && !!modelFile && !!selectedPrinter && !!selectedProcess && !!selectedFilament;
+  const activeFilaments = selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments : (selectedFilament ? [selectedFilament] : []);
+  const canSlice = isEngineReady && !isBusy && !!modelFile && !!selectedPrinter && !!selectedProcess && (activeFilaments.length > 0);
+
+  const extrudersCount = Math.max(1, (currentConfig['nozzle_diameter'] || '').split(',').length);
+  const isMultiMaterial = currentConfig['single_extruder_multi_material'] === '1' || currentConfig['single_extruder_multi_material'] === 'true' || selectedVendor === 'BBL' || extrudersCount === 1;
+  const maxFilaments = isMultiMaterial ? 16 : Math.min(16, extrudersCount);
+
+  const rawColors = (currentConfig['filament_colour'] || '').split(';').map((c) => c.trim());
+  const defaultColors = ['#16417C', '#58B957', '#F5D130', '#E53935', '#8E24AA', '#00ACC1', '#FB8C00', '#D81B60', '#3949AB', '#00897B', '#7CB342', '#C0CA33', '#FDD835', '#FFB300', '#F4511E', '#6D4C41'];
+  const getSlotColor = (idx: number) => {
+    if (rawColors[idx]) return rawColors[idx];
+    return defaultColors[idx % defaultColors.length];
+  };
+  const toHexColor = (col: string) => {
+    if (!col) return '#16417C';
+    let c = col.trim();
+    if (!c.startsWith('#')) c = '#' + c;
+    if (c.length > 7) c = c.substring(0, 7);
+    return c;
+  };
+
+  const filamentHeaderActions = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <button
+        type="button"
+        id="add-filament-btn"
+        data-testid="add-filament-btn"
+        className="icon-btn btn-add-filament"
+        title="Add filament"
+        aria-label="Add filament"
+        disabled={isBusy || activeFilaments.length >= maxFilaments}
+        onClick={(e) => {
+          e.stopPropagation();
+          addFilamentSlot();
+        }}
+        style={{
+          width: 22,
+          height: 22,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '1rem',
+          lineHeight: 1,
+          padding: 0
+        }}
+      >
+        +
+      </button>
+      <button
+        type="button"
+        id="remove-filament-btn"
+        data-testid="remove-filament-btn"
+        className="icon-btn btn-remove-filament"
+        title="Remove filament"
+        aria-label="Remove filament"
+        disabled={isBusy || activeFilaments.length <= 1}
+        onClick={(e) => {
+          e.stopPropagation();
+          removeFilamentSlot();
+        }}
+        style={{
+          width: 22,
+          height: 22,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '1rem',
+          lineHeight: 1,
+          padding: 0
+        }}
+      >
+        −
+      </button>
+    </div>
+  );
   const user = (kind: PresetKind) => userPresets.filter((p) => p.kind === kind);
   const current = (kind: PresetKind, system: string) => (activeUserPreset[kind] ? `user:${activeUserPreset[kind]}` : system);
 
@@ -100,9 +177,153 @@ export const PrepareSidebar: React.FC = () => {
             value={current('printer', selectedPrinter)} onSystem={choosePrinter} extra={connectButton} canEdit={!!selectedPrinter} canSave={!!selectedPrinter} />
         </Section>
 
-        <Section title="Filament">
-          <PresetRow kind="filament" disabled={isBusy} selectDisabled={isBusy || !selectedPrinter || filaments.length === 0} placeholder="Select filament..." system={filaments} user={user('filament')}
-            value={current('filament', selectedFilament)} onSystem={chooseFilament} canEdit={!!selectedFilament} canSave={!!selectedFilament} />
+        <Section title="Filament" headerExtra={filamentHeaderActions}>
+          <div className="filament-slots-list" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {activeFilaments.map((filamentName, idx) => {
+              const slotNumber = idx + 1;
+              const selectId = idx === 0 ? 'filament-select' : `filament-select-${slotNumber}`;
+              const slotColor = getSlotColor(idx);
+              const activeUser = activeUserPreset['filament'];
+
+              return (
+                <div key={idx} className="preset-row filament-slot-row" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span
+                    className="filament-slot-number"
+                    style={{
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      color: '#a1a1aa',
+                      minWidth: 12,
+                      textAlign: 'center'
+                    }}
+                  >
+                    {slotNumber}
+                  </span>
+
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      id={`filament-color-${slotNumber}`}
+                      data-testid={`filament-color-${slotNumber}`}
+                      className="filament-color-swatch"
+                      title={`Slot ${slotNumber} color: ${slotColor}. Click to change`}
+                      aria-label={`Slot ${slotNumber} color`}
+                      onClick={() => {
+                        const input = document.getElementById(`filament-color-input-${slotNumber}`) as HTMLInputElement;
+                        input?.click();
+                      }}
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: 3,
+                        backgroundColor: slotColor,
+                        border: '1px solid rgba(255, 255, 255, 0.3)',
+                        cursor: 'pointer',
+                        padding: 0,
+                        flexShrink: 0
+                      }}
+                    />
+                    <input
+                      type="color"
+                      id={`filament-color-input-${slotNumber}`}
+                      data-testid={`filament-color-input-${slotNumber}`}
+                      value={toHexColor(slotColor)}
+                      onChange={(e) => setSlotColor(idx, e.target.value)}
+                      style={{
+                        position: 'absolute',
+                        opacity: 0,
+                        width: 0,
+                        height: 0,
+                        pointerEvents: 'none'
+                      }}
+                    />
+                  </div>
+
+                  <select
+                    id={selectId}
+                    data-testid={selectId}
+                    aria-label={`filament preset ${slotNumber}`}
+                    value={current('filament', filamentName)}
+                    disabled={isBusy || !selectedPrinter || filaments.length === 0}
+                    onChange={(e) => {
+                      if (e.target.value.startsWith('user:')) {
+                        selectUserPreset('filament', e.target.value.substring(5), idx);
+                      } else {
+                        chooseFilament(e.target.value, idx);
+                      }
+                    }}
+                  >
+                    <option value="">Select filament...</option>
+                    {filaments.length > 0 && (
+                      <optgroup label="System presets">
+                        {filaments.map((p) => (
+                          <option key={p.name} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {user('filament').length > 0 && (
+                      <optgroup label="User presets">
+                        {user('filament').map((u) => (
+                          <option key={u.name} value={`user:${u.name}`}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+
+                  <button
+                    className="icon-btn"
+                    id={idx === 0 ? 'edit-filament-btn' : `edit-filament-btn-${slotNumber}`}
+                    data-testid={idx === 0 ? 'edit-filament-btn' : `edit-filament-btn-${slotNumber}`}
+                    title="Edit filament preset"
+                    aria-label="Edit filament preset"
+                    disabled={!filamentName || isBusy}
+                    onClick={() => openDialog('filament')}
+                  >
+                    <EditIcon />
+                  </button>
+                  <button
+                    className="icon-btn"
+                    id={idx === 0 ? 'save-filament-btn' : `save-filament-btn-${slotNumber}`}
+                    data-testid={idx === 0 ? 'save-filament-btn' : `save-filament-btn-${slotNumber}`}
+                    title="Save as a user preset"
+                    aria-label="Save filament preset"
+                    disabled={!filamentName || isBusy}
+                    onClick={() => openSavePresetDialog('filament')}
+                  >
+                    <SaveIcon />
+                  </button>
+                  <button
+                    className="icon-btn"
+                    id={idx === 0 ? 'manage-filament-btn' : `manage-filament-btn-${slotNumber}`}
+                    data-testid={idx === 0 ? 'manage-filament-btn' : `manage-filament-btn-${slotNumber}`}
+                    title="Manage presets, import and export"
+                    aria-label="Manage filament presets"
+                    disabled={isBusy}
+                    onClick={() => openManagePresetsDialog('filament')}
+                  >
+                    <GearIcon />
+                  </button>
+                  {activeUser && idx === 0 && (
+                    <button
+                      className="icon-btn"
+                      id="delete-filament-preset-btn"
+                      data-testid="delete-filament-preset-btn"
+                      title="Delete this user preset"
+                      aria-label="Delete filament preset"
+                      disabled={isBusy}
+                      onClick={() => deleteUserPresetAction('filament', activeUser)}
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </Section>
 
         <Section title="Process">

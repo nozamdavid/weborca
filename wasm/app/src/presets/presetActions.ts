@@ -100,7 +100,7 @@ export async function saveCurrentUserPresetHelper(
       engineError: null,
       activeUserPreset: { ...state.activeUserPreset, [kind]: trimmed },
       ...(kind === 'process' ? { selectedProcess: trimmed } : {}),
-      ...(kind === 'filament' ? { selectedFilament: trimmed } : {}),
+      ...(kind === 'filament' ? { selectedFilament: trimmed, selectedFilaments: state.selectedFilaments && state.selectedFilaments.length > 0 ? [trimmed, ...state.selectedFilaments.slice(1)] : [trimmed] } : {}),
       ...(kind === 'printer' ? { selectedPrinter: trimmed } : {})
     }));
   } catch (err: any) {
@@ -196,7 +196,7 @@ export async function duplicateUserPresetHelper(
       engineError: null,
       activeUserPreset: { ...state.activeUserPreset, [kind]: trimmed },
       ...(kind === 'process' ? { selectedProcess: trimmed } : {}),
-      ...(kind === 'filament' ? { selectedFilament: trimmed } : {}),
+      ...(kind === 'filament' ? { selectedFilament: trimmed, selectedFilaments: state.selectedFilaments && state.selectedFilaments.length > 0 ? [trimmed, ...state.selectedFilaments.slice(1)] : [trimmed] } : {}),
       ...(kind === 'printer' ? { selectedPrinter: trimmed } : {})
     }));
   } catch (err: any) {
@@ -300,7 +300,10 @@ export async function renameUserPresetHelper(
         [kind]: state.activeUserPreset[kind] === oldName ? trimmed : state.activeUserPreset[kind]
       },
       ...(kind === 'process' && state.selectedProcess === oldName ? { selectedProcess: trimmed } : {}),
-      ...(kind === 'filament' && state.selectedFilament === oldName ? { selectedFilament: trimmed } : {}),
+      ...(kind === 'filament' ? {
+        ...(state.selectedFilament === oldName ? { selectedFilament: trimmed } : {}),
+        selectedFilaments: (state.selectedFilaments || []).map((f) => f === oldName ? trimmed : f)
+      } : {}),
       ...(kind === 'printer' && state.selectedPrinter === oldName ? { selectedPrinter: trimmed } : {})
     }));
   } catch (err: any) {

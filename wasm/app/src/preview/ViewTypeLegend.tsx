@@ -6,6 +6,7 @@
 
 import React, { useState } from 'react';
 import { usePreviewStore } from './previewStore';
+import { useAppStore } from '../store/appStore';
 import type { PreviewViewType } from './types';
 
 function formatDuration(seconds?: number): string {
@@ -18,6 +19,14 @@ function formatDuration(seconds?: number): string {
   return `${secs}s`;
 }
 
+function normalizeHexColor(c: string): string {
+  if (!c) return '#009688';
+  let hex = c.trim();
+  if (!hex.startsWith('#')) hex = '#' + hex;
+  if (hex.length > 7) hex = hex.slice(0, 7);
+  return hex;
+}
+
 export const ViewTypeLegend: React.FC = () => {
   const viewType = usePreviewStore((s) => s.viewType);
   const legend = usePreviewStore((s) => s.legend);
@@ -25,11 +34,45 @@ export const ViewTypeLegend: React.FC = () => {
   const toggleExtrusionRole = usePreviewStore((s) => s.toggleExtrusionRoleAction);
   const toggleOption = usePreviewStore((s) => s.toggleOptionAction);
 
+  const selectedFilaments = useAppStore((s) => s.selectedFilaments);
+  const currentConfig = useAppStore((s) => s.currentConfig);
+
   const [isFolded, setIsFolded] = useState(false);
 
   const handleViewTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setViewType(e.target.value as PreviewViewType);
   };
+
+  const parsedColors = (currentConfig['filament_colour'] || '')
+    .split(';')
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .map(normalizeHexColor);
+
+  let displayItems = legend.items || [];
+  if (viewType === 'Tool') {
+    if (displayItems.length > 0) {
+      displayItems = displayItems.map((item) => {
+        const slotIdx = item.id;
+        const name = selectedFilaments[slotIdx]
+          ? `Filament ${slotIdx + 1} (${selectedFilaments[slotIdx]})`
+          : item.name;
+        const color = parsedColors[slotIdx] || item.color;
+        return {
+          ...item,
+          name,
+          color
+        };
+      });
+    } else if (selectedFilaments && selectedFilaments.length > 0) {
+      displayItems = selectedFilaments.map((fName, idx) => ({
+        id: idx,
+        name: `Filament ${idx + 1} (${fName})`,
+        color: parsedColors[idx] || '#009688',
+        visible: true
+      }));
+    }
+  }
 
   return (
     <div
@@ -144,13 +187,13 @@ export const ViewTypeLegend: React.FC = () => {
               padding: '2px 4px'
             }}
           >
-            {legend.title}
+            {viewType === 'Tool' ? 'Filament' : legend.title}
           </div>
 
-          {/* 1. Feature Types List */}
-          {legend.items && legend.items.length > 0 && (
+          {/* 1. Feature Types / Tools List */}
+          {displayItems && displayItems.length > 0 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 8 }}>
-              {legend.items.map((item) => (
+              {displayItems.map((item) => (
                 <div
                   key={item.id}
                   className="legend-row"
@@ -161,11 +204,11 @@ export const ViewTypeLegend: React.FC = () => {
                     justifyContent: 'space-between',
                     padding: '3px 6px',
                     borderRadius: 4,
-                    cursor: 'pointer',
+                    cursor: legend.type === 'features' ? 'pointer' : 'default',
                     opacity: item.visible ? 1 : 0.4,
                     background: item.visible ? 'transparent' : 'rgba(255, 255, 255, 0.02)'
                   }}
-                  title={`Click to ${item.visible ? 'hide' : 'show'} ${item.name}`}
+                  title={legend.type === 'features' ? `Click to ${item.visible ? 'hide' : 'show'} ${item.name}` : item.name}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                     <span
@@ -221,7 +264,7 @@ export const ViewTypeLegend: React.FC = () => {
           )}
 
           {/* 2. Range Values List */}
-          {(legend.ranges || legend.type === 'range') && (
+          {viewType !== 'Tool' && (legend.ranges || legend.type === 'range') && (
             <div
               id="legend-ranges-list"
               style={{

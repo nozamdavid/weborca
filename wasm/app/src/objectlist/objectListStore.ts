@@ -34,6 +34,10 @@ export interface ObjectListState {
     volumeId: number,
     extruder: number
   ) => Promise<void>;
+  setObjectExtruder: (
+    objectId: number,
+    extruder: number
+  ) => Promise<void>;
 }
 
 export const useObjectListStore = create<ObjectListState>((set, get) => ({
@@ -187,6 +191,24 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
     options: Record<string, string>
   ) => {
     try {
+      if (options.extruder !== undefined) {
+        const extNum = parseInt(options.extruder, 10) || 0;
+        if (volumeId !== null) {
+          await get().setVolumeExtruder(objectId, volumeId, extNum);
+        } else {
+          await get().setObjectExtruder(objectId, extNum);
+        }
+        const remainingKeys = Object.keys(options).filter((k) => k !== 'extruder');
+        if (remainingKeys.length === 0) {
+          return { errors: [] };
+        }
+        const remainingOptions: Record<string, string> = {};
+        for (const k of remainingKeys) {
+          remainingOptions[k] = options[k];
+        }
+        options = remainingOptions;
+      }
+
       const engine = await getEngine();
       const payload: any = { objectId, options };
       if (volumeId !== null) {
@@ -215,6 +237,24 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
     keys?: string[]
   ) => {
     try {
+      if (keys && keys.includes('extruder')) {
+        if (volumeId !== null) {
+          await get().setVolumeExtruder(objectId, volumeId, 0);
+        } else {
+          await get().setObjectExtruder(objectId, 0);
+        }
+        keys = keys.filter((k) => k !== 'extruder');
+        if (keys.length === 0) {
+          return;
+        }
+      } else if (!keys) {
+        if (volumeId !== null) {
+          await get().setVolumeExtruder(objectId, volumeId, 0);
+        } else {
+          await get().setObjectExtruder(objectId, 0);
+        }
+      }
+
       const engine = await getEngine();
       const payload: any = { objectId };
       if (volumeId !== null) {
@@ -256,6 +296,33 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
       } catch (_) {}
     } catch (err: any) {
       set({ error: err.message || 'Failed to set volume extruder' });
+      throw err;
+    }
+  },
+
+  setObjectExtruder: async (
+    objectId: number,
+    extruder: number
+  ) => {
+    try {
+      const { objects } = get();
+      const obj = objects.find((o) => o.id === objectId);
+      const engine = await getEngine();
+      if (obj && obj.volumes && obj.volumes.length > 0) {
+        for (const vol of obj.volumes) {
+          if (typeof (engine as any).setVolumeExtruder === 'function') {
+            await (engine as any).setVolumeExtruder(objectId, vol.id, extruder);
+          } else {
+            await engine.call('setVolumeExtruder', { objectId, volumeId: vol.id, extruder });
+          }
+        }
+      }
+      await get().refreshTree();
+      try {
+        await useHistoryStore.getState().commitTransaction('Set object extruder');
+      } catch (_) {}
+    } catch (err: any) {
+      set({ error: err.message || 'Failed to set object extruder' });
       throw err;
     }
   }

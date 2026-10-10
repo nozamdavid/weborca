@@ -24,6 +24,50 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
   const unit = def?.sidetext || '';
 
   const renderInput = () => {
+    if (optionKey === 'extruder') {
+      const selectedFilaments = useAppStore.getState().selectedFilaments;
+      const count = Math.max(1, selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments.length : 1);
+      const rawColors = (useAppStore.getState().currentConfig['filament_colour'] || '').split(';').map((c) => c.trim());
+      const defaultColors = ['#16417C', '#58B957', '#F5D130', '#E53935', '#8E24AA', '#00ACC1', '#FB8C00', '#D81B60'];
+      const currentValNum = parseInt(value || '0', 10);
+      const currentColor = currentValNum > 0 ? (rawColors[currentValNum - 1] || defaultColors[(currentValNum - 1) % defaultColors.length]) : null;
+
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
+          {currentColor && (
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                backgroundColor: currentColor,
+                flexShrink: 0
+              }}
+            />
+          )}
+          <select
+            id={`override-input-${optionKey}`}
+            data-testid={`override-input-${optionKey}`}
+            value={value || '0'}
+            onChange={(e) => onChange(e.target.value)}
+            className="setting-select"
+            style={{ flex: 1, fontSize: '0.8rem' }}
+          >
+            <option value="0">0: Default (Inherit)</option>
+            {Array.from({ length: count }, (_, i) => {
+              const ext = i + 1;
+              const name = selectedFilaments?.[i] || `Filament ${ext}`;
+              return (
+                <option key={ext} value={String(ext)}>
+                  {ext}: {name}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+      );
+    }
+
     if (optType === 'bool' || optType === 'bools') {
       const isChecked = value === '1' || value === 'true';
       return (

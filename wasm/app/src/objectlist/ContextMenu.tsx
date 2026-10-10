@@ -7,6 +7,7 @@ import { useLayersStore } from '../layers';
 import { useCutStore } from '../cut';
 import { useRepairStore } from '../repair';
 import { useEditOpsStore } from '../editops';
+import { useAppStore } from '../store/appStore';
 
 export interface ContextMenuProps {
   x: number;
@@ -38,6 +39,17 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
+  const selectedFilaments = useAppStore((s) => s.selectedFilaments);
+  const currentConfig = useAppStore((s) => s.currentConfig);
+
+  const rawColors = (currentConfig['filament_colour'] || '').split(';').map((c) => c.trim());
+  const defaultColors = ['#16417C', '#58B957', '#F5D130', '#E53935', '#8E24AA', '#00ACC1', '#FB8C00', '#D81B60'];
+  const slotCount = Math.max(1, selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments.length : 1);
+  const slotItems = Array.from({ length: slotCount }, (_, i) => ({
+    ext: i + 1,
+    name: selectedFilaments?.[i] || `Filament ${i + 1}`,
+    color: rawColors[i] || defaultColors[i % defaultColors.length]
+  }));
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -72,6 +84,106 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     { label: 'Add Support Enforcer', type: 'support_enforcer' }
   ];
 
+  const renderExtruderMenuItem = () => {
+    if (!onSetExtruder) return null;
+    return (
+      <div
+        id="menu-item-extruder"
+        data-testid="menu-item-extruder"
+        onMouseEnter={() => setActiveSubmenu('extruder')}
+        style={{
+          position: 'relative',
+          padding: '6px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          background: activeSubmenu === 'extruder' ? 'rgba(255, 255, 255, 0.08)' : 'transparent'
+        }}
+      >
+        <span>Change Filament</span>
+        <span style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>▶</span>
+
+        {activeSubmenu === 'extruder' && (
+          <div
+            id="submenu-extruder"
+            data-testid="submenu-extruder"
+            style={{
+              position: 'absolute',
+              left: '100%',
+              top: 0,
+              background: '#27272a',
+              border: '1px solid #3f3f46',
+              borderRadius: 6,
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+              minWidth: 140,
+              padding: '4px 0',
+              zIndex: 10000
+            }}
+          >
+            <div
+              id="menu-action-extruder-0"
+              data-testid="menu-action-extruder-0"
+              onClick={() => {
+                onSetExtruder(0);
+                onClose();
+              }}
+              style={{
+                padding: '6px 14px',
+                cursor: 'pointer',
+                fontWeight: currentExtruder === 0 ? 600 : 400
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              Default (Inherit)
+            </div>
+            {slotItems.map((slot) => (
+              <div
+                key={slot.ext}
+                id={`menu-action-extruder-${slot.ext}`}
+                data-testid={`menu-action-extruder-${slot.ext}`}
+                onClick={() => {
+                  onSetExtruder(slot.ext);
+                  onClose();
+                }}
+                style={{
+                  padding: '6px 14px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontWeight: currentExtruder === slot.ext ? 600 : 400
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
+              >
+                <span
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    backgroundColor: slot.color,
+                    flexShrink: 0
+                  }}
+                />
+                <span>Filament {slot.ext}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div
       ref={menuRef}
@@ -80,7 +192,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       style={{
         position: 'fixed',
         left: Math.min(x, window.innerWidth - 220),
-        top: Math.min(y, window.innerHeight - 300),
+        top: Math.max(10, Math.min(y, window.innerHeight - 420)),
+        maxHeight: 'calc(100vh - 40px)',
+        overflowY: 'auto',
         zIndex: 9999,
         background: '#27272a',
         border: '1px solid #3f3f46',
@@ -158,6 +272,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               )}
             </div>
           ))}
+
+          <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
+
+          {renderExtruderMenuItem()}
 
           <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
 
@@ -401,90 +519,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             Simplify...
           </div>
 
-          {onSetExtruder && (
-            <div
-              id="menu-item-extruder"
-              data-testid="menu-item-extruder"
-              onMouseEnter={() => setActiveSubmenu('extruder')}
-              style={{
-                position: 'relative',
-                padding: '6px 14px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                background: activeSubmenu === 'extruder' ? 'rgba(255, 255, 255, 0.08)' : 'transparent'
-              }}
-            >
-              <span>Change Filament</span>
-              <span style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>▶</span>
-
-              {activeSubmenu === 'extruder' && (
-                <div
-                  id="submenu-extruder"
-                  data-testid="submenu-extruder"
-                  style={{
-                    position: 'absolute',
-                    left: '100%',
-                    top: 0,
-                    background: '#27272a',
-                    border: '1px solid #3f3f46',
-                    borderRadius: 6,
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-                    minWidth: 140,
-                    padding: '4px 0',
-                    zIndex: 10000
-                  }}
-                >
-                  <div
-                    id="menu-action-extruder-0"
-                    data-testid="menu-action-extruder-0"
-                    onClick={() => {
-                      onSetExtruder(0);
-                      onClose();
-                    }}
-                    style={{
-                      padding: '6px 14px',
-                      cursor: 'pointer',
-                      fontWeight: currentExtruder === 0 ? 600 : 400
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                    }}
-                  >
-                    Default (Inherit)
-                  </div>
-                  {[1, 2, 3, 4].map((ext) => (
-                    <div
-                      key={ext}
-                      id={`menu-action-extruder-${ext}`}
-                      data-testid={`menu-action-extruder-${ext}`}
-                      onClick={() => {
-                        onSetExtruder(ext);
-                        onClose();
-                      }}
-                      style={{
-                        padding: '6px 14px',
-                        cursor: 'pointer',
-                        fontWeight: currentExtruder === ext ? 600 : 400
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent';
-                      }}
-                    >
-                      Filament {ext}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {renderExtruderMenuItem()}
 
           <div
             id="menu-action-rename-volume"
