@@ -53,6 +53,7 @@ export const PrinterConnectionDialog: React.FC = () => {
   const { dialogOpen, editingId, printers, savePrinter, deletePrinter, closeDialog } = usePrinterConnectionStore();
   const presets = useAppStore((s) => s.printers);
   const selectedPreset = useAppStore((s) => s.selectedPrinter);
+  const selectedVendor = useAppStore((s) => s.selectedVendor);
   const [draft, setDraft] = useState<PhysicalPrinter>(blank);
   const [baseline, setBaseline] = useState('');
   const [gateway, setGateway] = useState<GatewayStatus | null | undefined>(undefined);
@@ -62,7 +63,7 @@ export const PrinterConnectionDialog: React.FC = () => {
   useEffect(() => {
     if (!dialogOpen) return;
     const existing = printers.find((p) => p.id === editingId);
-    const initial = existing ?? { ...blank(), preset: selectedPreset || undefined };
+    const initial = existing ?? { ...blank(), preset: selectedPreset || undefined, vendor: selectedVendor || undefined };
     setDraft(initial);
     setBaseline(JSON.stringify(initial));
     setResult(null);
@@ -180,7 +181,7 @@ export const PrinterConnectionDialog: React.FC = () => {
             <input id="pc-name" style={inputStyle} value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="My Voron" />
           </Field>
           <Field label="Printer preset" hint="The slicer's printer profile this machine uses.">
-            <select id="pc-preset" style={inputStyle} value={draft.preset ?? ''} onChange={(e) => set('preset', e.target.value || undefined)}>
+            <select id="pc-preset" style={inputStyle} value={draft.preset ?? ''} onChange={(e) => setDraft({ ...draft, preset: e.target.value || undefined, vendor: e.target.value ? selectedVendor || undefined : undefined })}>
               <option value="">(none)</option>
               {presets.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
             </select>

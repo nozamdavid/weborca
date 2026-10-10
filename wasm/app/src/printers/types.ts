@@ -14,6 +14,8 @@ export interface PhysicalPrinter {
   name: string;
   /** Name of the printer preset this machine uses. */
   preset?: string;
+  /** Brand of that preset, so it can be selected again after a refresh. */
+  vendor?: string;
   host_type: HostType;
   /** Hostname, IP or URL of the API (`print_host`). */
   print_host: string;

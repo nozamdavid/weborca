@@ -114,7 +114,10 @@ export const PrepareSidebar: React.FC = () => {
   } = useAppStore();
   const isRestoring = useHistoryStore((s) => s.isRestoring);
   const printerStatus = usePrinterConnectionStore((s) => s.status);
-  const printerCount = usePrinterConnectionStore((s) => s.printers.length);
+  const devices = usePrinterConnectionStore((s) => s.printers);
+  const selectedDeviceId = usePrinterConnectionStore((s) => s.selectedPrinterId);
+  const selectDevice = usePrinterConnectionStore((s) => s.selectPrinter);
+  const printerCount = devices.length;
   const openSendDialog = usePrinterConnectionStore((s) => s.openSendDialog);
 
   const isBusy = isSlicing || isModelLoading || isRestoring;
@@ -217,6 +220,14 @@ export const PrepareSidebar: React.FC = () => {
     <aside className="sidebar" aria-label="Print settings">
       <div className="sidebar-scroll">
         <Section title="Printer">
+          {devices.length > 0 && (
+            <>
+              <label className="field-label" htmlFor="device-select">Device</label>
+              <select id="device-select" value={selectedDeviceId ?? ''} disabled={isBusy} onChange={(e) => selectDevice(e.target.value)}>
+                {devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </>
+          )}
           <label className="field-label" htmlFor="vendor-select">Brand</label>
           <select id="vendor-select" value={selectedVendor} disabled={isBusy || vendors.length === 0} onChange={(e) => chooseVendor(e.target.value)}>
             <option value="">Select brand...</option>

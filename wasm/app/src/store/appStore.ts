@@ -1,3 +1,4 @@
+import { usePrinterConnectionStore } from '../printers/connectionStore';
 import { showToast } from '../shell/toastStore';
 import { storeRecentFile } from '../shell/recentFiles';
 /**
@@ -365,9 +366,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? 'Voron'
         : vendors[0]?.name || '';
 
-      if (defaultVendor) {
-        await get().chooseVendor(defaultVendor);
+      // The last used device decides the printer; otherwise the default vendor's.
+      const device = selectedDevice();
+      const startVendor = device?.preset && device.vendor && vendors.some((v) => v.name === device.vendor) ? device.vendor : defaultVendor;
+      if (startVendor) {
+        await get().chooseVendor(startVendor);
       }
+      if (device?.preset && device.vendor === startVendor) await get().choosePrinter(device.preset);
     } catch (err: any) {
       set({
         isEngineInitializing: false,
@@ -1470,3 +1475,25 @@ export const useAppStore = create<AppState>((set, get) => ({
 if (typeof window !== 'undefined') {
   (window as any).__appStore = useAppStore;
 }
+
+const selectedDevice = () => {
+  const { printers, selectedPrinterId } = usePrinterConnectionStore.getState();
+  return printers.find((p) => p.id === selectedPrinterId);
+};
+
+/** Selects the printer preset of the connected device, so the Prepare tab slices for the machine that will print. */
+async function applyDevicePreset() {
+  const device = selectedDevice();
+  const state = useAppStore.getState();
+  if (!state.isEngineReady || !device?.preset || state.selectedPrinter === device.preset) return;
+  if (device.vendor && device.vendor !== state.selectedVendor) await state.chooseVendor(device.vendor);
+  else if (!state.printers.some((p) => p.name === device.preset)) return;
+  await useAppStore.getState().choosePrinter(device.preset);
+}
+
+let lastDeviceId = usePrinterConnectionStore.getState().selectedPrinterId;
+usePrinterConnectionStore.subscribe((s) => {
+  if (s.selectedPrinterId === lastDeviceId) return;
+  lastDeviceId = s.selectedPrinterId;
+  void applyDevicePreset();
+});
