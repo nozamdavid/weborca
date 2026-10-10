@@ -18,6 +18,7 @@ import { CutPanel, useCutStore } from '../cut';
 import { NumericTransform } from './NumericTransform';
 import { ArrangeDialog } from './ArrangeDialog';
 import { MeasurePanel } from './MeasurePanel';
+import { ExplodePanel } from './ExplodePanel';
 import { ViewCube } from './ViewCube';
 import { usePrefsStore } from '../prefs/prefsStore';
 import { RepairBadge, useRepairStore } from '../repair';
@@ -211,6 +212,11 @@ export const PlateView: React.FC = () => {
   const measureActive = usePlateStore((s) => s.measureActive);
   useEffect(() => { sceneRef.current?.setMeasureActive(measureActive); }, [measureActive]);
 
+  const explodeActive = usePlateStore((s) => s.explodeActive);
+  const explodeFactor = usePlateStore((s) => s.explodeFactor);
+  useEffect(() => { sceneRef.current?.setExplodeActive(explodeActive); }, [explodeActive]);
+  useEffect(() => { sceneRef.current?.setExplodeFactor(explodeFactor); }, [explodeFactor]);
+
   // Sync active edit tool with scene overlays
   useEffect(() => {
     if (sceneRef.current) {
@@ -376,6 +382,10 @@ export const PlateView: React.FC = () => {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (usePlateStore.getState().explodeActive) {
+          usePlateStore.getState().setExplodeActive(false);
+          return;
+        }
         const editOps = useEditOpsStore.getState();
         if (editOps.activeTool === 'flatten') {
           editOps.stopFlatten();
@@ -646,6 +656,30 @@ export const PlateView: React.FC = () => {
           }
           usePlateStore.getState().setMeasureActive(!measureActive);
         }
+      },
+      {
+        id: 'tool-explode-btn',
+        testId: 'tool-explode-btn',
+        label: 'Explode view',
+        icon: (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="4" y1="12" x2="9" y2="12" />
+            <line x1="20" y1="12" x2="15" y2="12" />
+            <line x1="12" y1="4" x2="12" y2="9" />
+            <line x1="12" y1="20" x2="12" y2="15" />
+            <circle cx="12" cy="12" r="2" />
+          </svg>
+        ),
+        active: explodeActive,
+        disabled: busy || isOperatingEdit,
+        onClick: () => {
+          if (!explodeActive) {
+            stopPainting();
+            useEditOpsStore.getState().stopFlatten();
+            useEditOpsStore.getState().stopBrimEars();
+          }
+          usePlateStore.getState().setExplodeActive(!explodeActive);
+        }
       }
     ],
     [
@@ -821,6 +855,7 @@ export const PlateView: React.FC = () => {
     >
       <ArrangeDialog />
       <MeasurePanel />
+      <ExplodePanel />
       {showNavigator && <ViewCube getCameraQuaternion={getCameraQuaternion} />}
 
       {/* 3D WebGL Canvas Container */}

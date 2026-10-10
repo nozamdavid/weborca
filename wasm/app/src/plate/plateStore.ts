@@ -72,6 +72,10 @@ export interface PlateStoreState {
   measurePoints: Array<[number, number, number]>;
   setMeasureActive: (active: boolean) => void;
   setMeasurePoints: (points: Array<[number, number, number]>) => void;
+  explodeActive: boolean;
+  explodeFactor: number;
+  setExplodeActive: (active: boolean) => void;
+  setExplodeFactor: (factor: number) => void;
   bedConfig: BedConfig;
   isLoading: boolean;
   meshCache: Map<number, MeshBufferData>;
@@ -131,6 +135,8 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   gizmoMode: 'translate',
   measureActive: false,
   measurePoints: [],
+  explodeActive: false,
+  explodeFactor: 0,
   bedConfig: {
     points: [
       [0, 0],
@@ -334,8 +340,10 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     } catch (_) {}
   },
 
-  setMeasureActive: (active) => set({ measureActive: active, measurePoints: [] }),
+  setMeasureActive: (active) => set({ measureActive: active, measurePoints: [], ...(active ? { explodeActive: false } : {}) }),
   setMeasurePoints: (points) => set({ measurePoints: points }),
+  setExplodeActive: (active) => set({ explodeActive: active, ...(active ? { measureActive: false } : { explodeFactor: 0 }) }),
+  setExplodeFactor: (factor) => set({ explodeFactor: factor }),
 
   setGizmoMode: (mode: GizmoMode) => {
     set({ gizmoMode: mode });

@@ -68,6 +68,8 @@ export class PlateScene {
   private measureActive = false;
   private measurePoints: THREE.Vector3[] = [];
   private measureGroup = new THREE.Group();
+  private explodeActive = false;
+  private explodeFactor = 0;
 
   private objectMeshes: Map<string, THREE.Mesh> = new Map();
   private overlayMeshes: Map<string, THREE.Mesh> = new Map();
@@ -883,14 +885,14 @@ export class PlateScene {
 
         if (!mesh) {
           mesh = new THREE.Mesh(geo, isSelected ? this.selectedMaterial : this.defaultMaterial);
-          mesh.userData = { objectId: obj.id, instanceId: inst.id, name: obj.name };
+          mesh.userData = { objectId: obj.id, instanceId: inst.id, name: obj.name, baseOffset: [...inst.offset] };
           mesh.castShadow = true;
           mesh.receiveShadow = true;
           this.objectsGroup.add(mesh);
           this.objectMeshes.set(key, mesh);
         } else {
           mesh.geometry = geo;
-          mesh.userData = { ...mesh.userData, name: obj.name };
+          mesh.userData = { ...mesh.userData, name: obj.name, baseOffset: [...inst.offset] };
           mesh.material = isSelected ? this.selectedMaterial : this.defaultMaterial;
         }
 
@@ -900,7 +902,7 @@ export class PlateScene {
         const mirror = inst.mirror ?? [1, 1, 1];
         mesh.scale.set(inst.scale[0] * mirror[0], inst.scale[1] * mirror[1], inst.scale[2] * mirror[2]);
 
-        if (isPrimary && !this.isPaintingActive) {
+        if (isPrimary && !this.isPaintingActive && !this.measureActive && !this.explodeActive) {
           this.transformControls.attach(mesh);
         }
       }
@@ -927,6 +929,9 @@ export class PlateScene {
       }
     }
 
+    if (this.explodeActive && this.explodeFactor > 0) {
+      this.applyExplode(this.explodeFactor);
+    }
     this.updateLabels();
   }
 
@@ -950,7 +955,7 @@ export class PlateScene {
     }
 
     // The other selected instances only follow a move, so rotating or scaling is for a single selection.
-    if (selectedMesh && !this.isPaintingActive && !this.measureActive && (this.extraKeys.size === 0 || this.gizmoMode === 'translate')) {
+    if (selectedMesh && !this.isPaintingActive && !this.measureActive && !this.explodeActive && (this.extraKeys.size === 0 || this.gizmoMode === 'translate')) {
       this.transformControls.attach(selectedMesh);
     } else {
       this.transformControls.detach();
@@ -962,7 +967,7 @@ export class PlateScene {
     this.transformControls.setMode(mode);
     if (this.extraKeys.size > 0) {
       const selected = this.getSelectedMesh();
-      if (mode === 'translate' && selected && !this.isPaintingActive && !this.measureActive) this.transformControls.attach(selected);
+      if (mode === 'translate' && selected && !this.isPaintingActive && !this.measureActive && !this.explodeActive) this.transformControls.attach(selected);
       else this.transformControls.detach();
     }
   }
@@ -1071,6 +1076,86 @@ export class PlateScene {
       this.flattenGroup.remove(child);
     }
     this.flattenClusters = [];
+  }
+
+  /** Explode view: a purely visual radial spread of the objects; the instances' real transforms are untouched. */
+  public setExplodeActive(active: boolean): void {
+    if (this.explodeActive === active) return;
+    this.explodeActive = active;
+    if (active) {
+      this.transformControls.detach();
+      this.applyExplode(this.explodeFactor);
+    } else {
+      this.applyExplode(0);
+      this.setSelection(
+        this.selectedObjectId,
+        this.selectedInstanceId,
+        [...this.extraKeys].map((k) => {
+          const [objectId, instanceId] = k.split('_').map(Number);
+          return { objectId, instanceId };
+        })
+      );
+      this.updateLabels();
+    }
+  }
+
+  public setExplodeFactor(factor: number): void {
+    this.explodeFactor = factor;
+    if (this.explodeActive) {
+      this.applyExplode(factor);
+    }
+  }
+
+  private applyExplode(factor: number): void {
+    const meshes = Array.from(this.objectMeshes.values());
+    if (meshes.length === 0) return;
+
+    if (factor <= 0) {
+      for (const mesh of meshes) {
+        const base = mesh.userData.baseOffset as [number, number, number] | undefined;
+        if (base) {
+          mesh.position.set(base[0], base[1], base[2]);
+        }
+      }
+      this.updateLabels();
+      return;
+    }
+
+    const center = new THREE.Vector3();
+    for (const mesh of meshes) {
+      const base = (mesh.userData.baseOffset as [number, number, number] | undefined) ?? [
+        mesh.position.x,
+        mesh.position.y,
+        mesh.position.z
+      ];
+      center.add(new THREE.Vector3(base[0], base[1], base[2]));
+    }
+    center.divideScalar(meshes.length);
+
+    const t = factor / 100;
+    meshes.forEach((mesh, index) => {
+      const base = (mesh.userData.baseOffset as [number, number, number] | undefined) ?? [
+        mesh.position.x,
+        mesh.position.y,
+        mesh.position.z
+      ];
+      const basePos = new THREE.Vector3(base[0], base[1], base[2]);
+      const dir = basePos.clone().sub(center);
+      const dist = dir.length();
+
+      let radialDir: THREE.Vector3;
+      if (dist > 1e-4) {
+        radialDir = dir.normalize();
+      } else {
+        const angle = (index / meshes.length) * 2 * Math.PI;
+        radialDir = new THREE.Vector3(Math.cos(angle), Math.sin(angle), 0);
+      }
+
+      const displacement = (dist * 1.0 + 40) * t;
+      mesh.position.copy(basePos).addScaledVector(radialDir, displacement);
+    });
+
+    this.updateLabels();
   }
 
   /** Measure mode: two clicks on the model surface mark a segment; a third click starts a new one. */
@@ -1412,6 +1497,10 @@ export class PlateScene {
 
     if (this.measureActive) {
       this.pickMeasurePoint(e);
+      return;
+    }
+
+    if (this.explodeActive) {
       return;
     }
 

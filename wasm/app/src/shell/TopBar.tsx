@@ -29,6 +29,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
 
 interface Item {
   label: string;
+  id?: string;
   keys?: string;
   disabled?: boolean;
   checked?: boolean;
@@ -86,6 +87,7 @@ const Menu: React.FC<{
             return (
               <button
                 key={e.label}
+                id={e.id}
                 className={`menu-item ${isCheckbox ? 'menu-item-checkbox' : ''}`}
                 role={isCheckbox ? 'menuitemcheckbox' : 'menuitem'}
                 aria-checked={e.checked}
@@ -153,6 +155,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
   const redo = useHistoryStore((s) => s.redo);
   const hasSelection = usePlateStore((s) => s.selectedObjectId != null);
   const hasClipboard = usePlateStore((s) => s.clipboard.length > 0);
+  const explodeActive = usePlateStore((s) => s.explodeActive);
 
   // Preferences & View Store
   const prefsDisplay = usePrefsStore((s) => s.display);
@@ -449,6 +452,13 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           keys: 'Ctrl+Shift+Enter',
           checked: prefsDisplay.showWireframe,
           onClick: toggleShowWireframe
+        },
+        'sep',
+        {
+          label: 'Explode view',
+          id: 'menu-view-explode',
+          checked: explodeActive,
+          onClick: () => usePlateStore.getState().setExplodeActive(!explodeActive)
         },
         'sep',
         {
