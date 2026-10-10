@@ -20,6 +20,24 @@ async function runSuite(browserType, name) {
     await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
     assert.equal(await theme(), 'dark');
 
+    log('checkboxes are drawn from the palette, not natively');
+    const box = await page.evaluate(() => {
+      const el = document.createElement('input');
+      el.type = 'checkbox';
+      document.body.appendChild(el);
+      const un = getComputedStyle(el);
+      const off = { appearance: un.appearance, bg: un.backgroundColor };
+      el.checked = true;
+      const on = getComputedStyle(el).backgroundColor;
+      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim();
+      el.remove();
+      return { off, on, accent };
+    });
+    assert.equal(box.off.appearance, 'none');
+    assert.notEqual(box.off.bg, box.on);
+    assert.equal(box.on, 'rgb(0, 150, 136)');
+    assert.equal(box.accent.toLowerCase(), '#009688');
+
     log('Light sets the attribute and inverts the page, but not the 3D canvas');
     await setTheme('light');
     assert.equal(await theme(), 'light');
