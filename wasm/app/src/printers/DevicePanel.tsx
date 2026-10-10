@@ -95,7 +95,7 @@ const StatusColumn: React.FC<{ state: PrinterState | null; active: boolean }> = 
               {state.webcams!.map((w, i) => <option key={w.name} value={i}>{w.name}</option>)}
             </select>
           )}
-          <img src={cam.snapshot ? `${cam.url}${cam.url.includes('?') ? '&' : '?'}t=${tick}` : cam.url} alt={cam.name} />
+          <img crossOrigin={cam.url.startsWith('http') ? 'anonymous' : undefined} referrerPolicy="origin" src={cam.snapshot ? `${cam.url}${cam.url.includes('?') ? '&' : '?'}t=${tick}` : cam.url} alt={cam.name} />
         </div>
       )}
 
@@ -150,7 +150,7 @@ const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ 
       <div className="device-ui-frame">
         {local ? (
           session.error ? <div className="device-notice" id="device-webui-blocked">{session.error}</div>
-            : session.url && <iframe id="device-webui-frame" src={session.url} title="Printer Web UI" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+            : session.url && <iframe id="device-webui-frame" src={session.url} referrerPolicy="origin" title="Printer Web UI" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
         ) : mixed ? (
           <div className="device-notice" id="device-webui-blocked">
             This page is served over https, so the browser blocks the printer's http web UI inside it. Use "Open in new tab".

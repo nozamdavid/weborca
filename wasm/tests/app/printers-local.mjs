@@ -26,6 +26,13 @@ async function runSuite(browserType, name, mock, gateway) {
   const text = (selector) => page.locator(selector).innerText();
 
   try {
+    // A proxy or extension may strip the Referer; the camera and the frame must still be accepted.
+    await page.addInitScript(() => document.addEventListener('DOMContentLoaded', () => {
+      const meta = document.createElement('meta');
+      meta.name = 'referrer';
+      meta.content = 'no-referrer';
+      document.head.append(meta);
+    }));
     await page.goto(BASE_URL);
     await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
     await page.click('#tab-device');
@@ -64,6 +71,7 @@ async function runSuite(browserType, name, mock, gateway) {
     const camera = page.locator('#device-camera img');
     assert.equal(await camera.getAttribute('src'), `http://127.0.0.1:${gateway.port}/_printer/http/127.0.0.1:${mock.port}/webcam/?action=stream`);
     assert.equal(await page.evaluate(() => crossOriginIsolated), true);
+    for (let i = 0; i < 50 && !mock.httpRequests.some((r) => r.url.startsWith('/webcam/')); i++) await page.waitForTimeout(100);
     assert.ok(mock.httpRequests.some((r) => r.url.startsWith('/webcam/')), 'the gateway fetched the camera');
 
     log('the web UI is framed from its own <label>.localhost origin');
@@ -72,6 +80,7 @@ async function runSuite(browserType, name, mock, gateway) {
     await page.waitForFunction(() => document.getElementById('device-webui-frame') !== null);
     for (let i = 0; i < 50 && !frameResponses.length; i++) await page.waitForTimeout(100);
     assert.equal(frameResponses.length > 0 && frameResponses[0].url(), src, 'the frame loaded its session address');
+    assert.notEqual(frameResponses[0].status(), 403, 'the gateway accepted the frame');
     // The mock has no web UI, so its 404 reaches the frame; what matters is the framing headers.
     const headers = frameResponses[0].headers();
     assert.equal(headers['cross-origin-embedder-policy'], 'require-corp');

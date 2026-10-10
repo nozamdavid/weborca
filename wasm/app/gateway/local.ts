@@ -61,7 +61,8 @@ function originOf(value: string | undefined): string | undefined {
 
 function send(res: http.ServerResponse, status: number, body: string, headers: http.OutgoingHttpHeaders = {}) {
   if (res.headersSent) return res.destroy();
-  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', ...headers });
+  // CORP lets the isolated app (and its frames) show the refusal instead of a blocked-by-COEP error.
+  res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', 'cross-origin-resource-policy': 'cross-origin', ...headers });
   res.end(body);
 }
 
