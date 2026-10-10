@@ -1268,6 +1268,8 @@ export class PlateScene {
     this.animationFrameId = requestAnimationFrame(this.animate);
 
     this.orbitControls.update();
+    // See-through when the camera is below the bed, so parts stay visible from underneath.
+    if (this.bedFloorMaterial) this.bedFloorMaterial.opacity = this.camera.position.z < 0 ? 0.25 : 1;
     this.renderer.render(this.scene, this.camera);
   };
 

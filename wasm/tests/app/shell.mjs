@@ -73,6 +73,15 @@ async function runSuite(browserType, name) {
     await page.keyboard.press('1');
     assert.deepEqual(await cameraPosition(), top, 'key 1 selects the Top view, like desktop');
 
+    log('the plate turns see-through when seen from below');
+    const plateOpacity = () => page.evaluate(() => window.__plateScene.bedFloorMaterial.opacity);
+    assert.equal(await plateOpacity(), 1, 'opaque from above');
+    await page.keyboard.press('2');
+    await page.waitForFunction(() => window.__plateScene.camera.position.z < 0);
+    await page.waitForFunction(() => window.__plateScene.bedFloorMaterial.opacity < 1);
+    await page.keyboard.press('1');
+    await page.waitForFunction(() => window.__plateScene.bedFloorMaterial.opacity === 1);
+
     log('all checks passed');
   } finally {
     await browser.close();
