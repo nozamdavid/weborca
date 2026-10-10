@@ -662,16 +662,18 @@ public:
             m_last_view_type = libvgcode::EViewType::Speed;
         } else if (s == "actualspeed") {
             m_last_view_type = libvgcode::EViewType::ActualSpeed;
-        } else if (s == "height") {
+        } else if (s == "height" || s == "layerheight") {
             m_last_view_type = libvgcode::EViewType::Height;
-        } else if (s == "width") {
+        } else if (s == "width" || s == "linewidth") {
             m_last_view_type = libvgcode::EViewType::Width;
         } else if (s == "tool") {
             m_last_view_type = libvgcode::EViewType::Tool;
         } else if (s == "colorprint") {
             m_last_view_type = libvgcode::EViewType::ColorPrint;
-        } else if (s == "volumetricflowrate" || s == "volumetric" || s == "flow") {
+        } else if (s == "volumetricflowrate" || s == "volumetric" || s == "flow" || s == "flowrate") {
             m_last_view_type = libvgcode::EViewType::VolumetricFlowRate;
+        } else if (s == "actualvolumetricflowrate" || s == "actualvolumetric" || s == "actualflow" || s == "actualflowrate") {
+            m_last_view_type = libvgcode::EViewType::ActualVolumetricFlowRate;
         } else if (s == "fanspeed" || s == "fan") {
             m_last_view_type = libvgcode::EViewType::FanSpeed;
         } else if (s == "temperature" || s == "temp") {
@@ -682,6 +684,8 @@ public:
             m_last_view_type = libvgcode::EViewType::Acceleration;
         } else if (s == "jerk") {
             m_last_view_type = libvgcode::EViewType::Jerk;
+        } else if (s == "layertimelogarithmic" || s == "layertimelog" || s == "timelog") {
+            m_last_view_type = libvgcode::EViewType::LayerTimeLogarithmic;
         } else if (s == "layertime" || s == "layertimelinear" || s == "time") {
             m_last_view_type = libvgcode::EViewType::LayerTimeLinear;
         } else if (s == "summary") {
@@ -747,19 +751,56 @@ public:
             ss << "],\"options\":[]}";
             break;
         }
+        case libvgcode::EViewType::ColorPrint: {
+            ss << "{\"viewType\":\"ColorPrint\",\"title\":\"Filament\",\"type\":\"tool\",\"items\":[";
+            const auto& tools = m_viewer.get_used_extruders_ids();
+            const auto& pal = m_viewer.get_color_print_colors_count() > 0 ? m_viewer.get_color_print_colors() : m_viewer.get_tool_colors();
+            for (size_t i = 0; i < tools.size(); ++i) {
+                if (i > 0) ss << ",";
+                uint8_t tool_id = tools[i];
+                std::string col = (tool_id < pal.size()) ? to_hex(pal[tool_id]) : "#009688";
+                ss << "{\"id\":" << static_cast<int>(tool_id)
+                   << ",\"name\":\"Filament " << (tool_id + 1) << "\""
+                   << ",\"color\":\"" << col << "\""
+                   << ",\"visible\":true}";
+            }
+            ss << "],\"options\":[]}";
+            break;
+        }
+        case libvgcode::EViewType::Summary: {
+            ss << "{\"viewType\":\"Summary\",\"title\":\"Summary\",\"type\":\"tool\",\"items\":[";
+            const auto& tools = m_viewer.get_used_extruders_ids();
+            const auto& pal = m_viewer.get_color_print_colors_count() > 0 ? m_viewer.get_color_print_colors() : m_viewer.get_tool_colors();
+            for (size_t i = 0; i < tools.size(); ++i) {
+                if (i > 0) ss << ",";
+                uint8_t tool_id = tools[i];
+                std::string col = (tool_id < pal.size()) ? to_hex(pal[tool_id]) : "#009688";
+                ss << "{\"id\":" << static_cast<int>(tool_id)
+                   << ",\"name\":\"Extruder " << (tool_id + 1) << "\""
+                   << ",\"color\":\"" << col << "\""
+                   << ",\"visible\":true}";
+            }
+            ss << "],\"options\":[]}";
+            break;
+        }
         default: {
-            // Range views: Speed, Height, Width, FanSpeed, Temperature, VolumetricFlowRate, LayerTimeLinear
             std::string title = "Range";
-            if (m_last_view_type == libvgcode::EViewType::Speed) title = "Speed (mm/s)";
-            else if (m_last_view_type == libvgcode::EViewType::ActualSpeed) title = "Actual Speed (mm/s)";
-            else if (m_last_view_type == libvgcode::EViewType::Height) title = "Layer Height (mm)";
-            else if (m_last_view_type == libvgcode::EViewType::Width) title = "Line Width (mm)";
-            else if (m_last_view_type == libvgcode::EViewType::FanSpeed) title = "Fan Speed (%)";
-            else if (m_last_view_type == libvgcode::EViewType::Temperature) title = "Temperature (°C)";
-            else if (m_last_view_type == libvgcode::EViewType::VolumetricFlowRate) title = "Flow Rate (mm³/s)";
-            else if (m_last_view_type == libvgcode::EViewType::LayerTimeLinear) title = "Layer Time (s)";
+            std::string vt_name = "Range";
+            if (m_last_view_type == libvgcode::EViewType::Speed) { title = "Speed (mm/s)"; vt_name = "Speed"; }
+            else if (m_last_view_type == libvgcode::EViewType::ActualSpeed) { title = "Actual Speed (mm/s)"; vt_name = "ActualSpeed"; }
+            else if (m_last_view_type == libvgcode::EViewType::Height) { title = "Layer Height (mm)"; vt_name = "Height"; }
+            else if (m_last_view_type == libvgcode::EViewType::Width) { title = "Line Width (mm)"; vt_name = "Width"; }
+            else if (m_last_view_type == libvgcode::EViewType::FanSpeed) { title = "Fan Speed (%)"; vt_name = "FanSpeed"; }
+            else if (m_last_view_type == libvgcode::EViewType::Temperature) { title = "Temperature (°C)"; vt_name = "Temperature"; }
+            else if (m_last_view_type == libvgcode::EViewType::VolumetricFlowRate) { title = "Flow Rate (mm³/s)"; vt_name = "VolumetricFlowRate"; }
+            else if (m_last_view_type == libvgcode::EViewType::ActualVolumetricFlowRate) { title = "Actual Flow Rate (mm³/s)"; vt_name = "ActualVolumetricFlowRate"; }
+            else if (m_last_view_type == libvgcode::EViewType::LayerTimeLinear) { title = "Layer Time (s)"; vt_name = "LayerTimeLinear"; }
+            else if (m_last_view_type == libvgcode::EViewType::LayerTimeLogarithmic) { title = "Layer Time (log)"; vt_name = "LayerTimeLogarithmic"; }
+            else if (m_last_view_type == libvgcode::EViewType::PressureAdvance) { title = "Pressure Advance"; vt_name = "PressureAdvance"; }
+            else if (m_last_view_type == libvgcode::EViewType::Acceleration) { title = "Acceleration (mm/s²)"; vt_name = "Acceleration"; }
+            else if (m_last_view_type == libvgcode::EViewType::Jerk) { title = "Jerk (mm/s)"; vt_name = "Jerk"; }
 
-            ss << "{\"viewType\":\"" << title << "\",\"title\":\"" << title << "\",\"type\":\"range\",\"ranges\":[";
+            ss << "{\"viewType\":\"" << vt_name << "\",\"title\":\"" << title << "\",\"type\":\"range\",\"ranges\":[";
             const auto& range = m_viewer.get_color_range(m_last_view_type);
             const auto& pal = range.get_palette();
             const auto& vals = range.get_values();
@@ -793,6 +834,7 @@ public:
 
         return ss.str();
     }
+
 
     void toggleExtrusionRole(int role) {
         if (!m_initialized) return;

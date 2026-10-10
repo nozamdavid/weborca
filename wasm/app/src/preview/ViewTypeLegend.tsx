@@ -50,7 +50,7 @@ export const ViewTypeLegend: React.FC = () => {
     .map(normalizeHexColor);
 
   let displayItems = legend.items || [];
-  if (viewType === 'Tool') {
+  if (viewType === 'Tool' || viewType === 'ColorPrint' || viewType === 'Summary') {
     if (displayItems.length > 0) {
       displayItems = displayItems.map((item) => {
         const slotIdx = item.id;
@@ -156,13 +156,21 @@ export const ViewTypeLegend: React.FC = () => {
         >
           <option value="FeatureType">Line type</option>
           <option value="Speed">Speed</option>
+          <option value="ActualSpeed">Actual speed</option>
+          <option value="Acceleration">Acceleration</option>
+          <option value="Jerk">Jerk</option>
           <option value="Height">Layer height</option>
           <option value="Width">Line width</option>
           <option value="VolumetricFlowRate">Flow rate</option>
+          <option value="ActualVolumetricFlowRate">Actual flow rate</option>
+          <option value="LayerTimeLinear">Layer time</option>
+          <option value="LayerTimeLogarithmic">Layer time (log)</option>
           <option value="FanSpeed">Fan speed</option>
           <option value="Temperature">Temperature</option>
+          <option value="PressureAdvance">Pressure advance</option>
           <option value="Tool">Filament</option>
-          <option value="LayerTimeLinear">Layer time</option>
+          <option value="ColorPrint">Color print</option>
+          <option value="Summary">Summary</option>
         </select>
       </div>
 
@@ -264,7 +272,7 @@ export const ViewTypeLegend: React.FC = () => {
           )}
 
           {/* 2. Range Values List */}
-          {viewType !== 'Tool' && (legend.ranges || legend.type === 'range') && (
+          {viewType !== 'Tool' && viewType !== 'ColorPrint' && viewType !== 'Summary' && (legend.ranges || legend.type === 'range') && (
             <div
               id="legend-ranges-list"
               style={{
@@ -295,7 +303,7 @@ export const ViewTypeLegend: React.FC = () => {
                         }}
                       />
                       <span style={{ fontSize: '0.75rem', color: '#d4d4d8' }}>
-                        {typeof range.value === 'number' ? range.value.toFixed(1) : range.value}
+                        {typeof range.value === 'number' ? (viewType === 'PressureAdvance' ? range.value.toFixed(3) : range.value.toFixed(1)) : range.value}
                       </span>
                     </div>
                   </div>

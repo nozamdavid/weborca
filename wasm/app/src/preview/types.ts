@@ -54,10 +54,18 @@ export interface PreviewStatistics {
 export type PreviewViewType =
   | 'FeatureType'
   | 'Speed'
+  | 'ActualSpeed'
+  | 'Acceleration'
+  | 'Jerk'
   | 'Height'
   | 'Width'
+  | 'VolumetricFlowRate'
+  | 'ActualVolumetricFlowRate'
+  | 'LayerTimeLinear'
+  | 'LayerTimeLogarithmic'
   | 'FanSpeed'
   | 'Temperature'
-  | 'VolumetricFlowRate'
+  | 'PressureAdvance'
   | 'Tool'
-  | 'LayerTimeLinear';
+  | 'ColorPrint'
+  | 'Summary';
