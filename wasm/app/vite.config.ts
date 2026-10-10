@@ -57,6 +57,7 @@ const profilesBuildDir = path.resolve(repoRoot, 'wasm/build/web/profiles');
 const settingsBuildDir = path.resolve(repoRoot, 'wasm/build/settings');
 const webDir = path.resolve(repoRoot, 'wasm/web');
 const calibBuildDir = path.resolve(repoRoot, 'resources/calib');
+const handyModelsDir = path.resolve(repoRoot, 'resources/handy_models');
 
 function getMimeType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
@@ -116,6 +117,12 @@ function orcaAssetsPlugin() {
         if (url.startsWith('/resources/calib/')) {
           const subPath = url.replace(/^\/resources\/calib\//, '');
           if (serveStaticFile(subPath, calibBuildDir, res)) return;
+        }
+
+        // Serve the handy example models (Draco) at /resources/handy_models/
+        if (url.startsWith('/resources/handy_models/')) {
+          const subPath = url.replace(/^\/resources\/handy_models\//, '');
+          if (serveStaticFile(subPath, handyModelsDir, res)) return;
         }
 
         // Serve engine module at /engine/
@@ -222,6 +229,13 @@ function orcaAssetsPlugin() {
       // 5. Copy the calibration models (.drc only) into dist/resources/calib
       if (fs.existsSync(calibBuildDir)) {
         fs.cpSync(calibBuildDir, path.join(distDir, 'resources/calib'), {
+          recursive: true,
+          filter: (src) => fs.statSync(src).isDirectory() || src.endsWith('.drc')
+        });
+      }
+
+      if (fs.existsSync(handyModelsDir)) {
+        fs.cpSync(handyModelsDir, path.join(distDir, 'resources/handy_models'), {
           recursive: true,
           filter: (src) => fs.statSync(src).isDirectory() || src.endsWith('.drc')
         });

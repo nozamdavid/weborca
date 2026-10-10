@@ -779,6 +779,15 @@ export class PlateScene {
     this.cursorTool = tool;
   }
 
+  /** True when an object lies under the given client position, so a right-click there is not on empty plate. */
+  public isObjectAt(clientX: number, clientY: number): boolean {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, this.camera);
+    return raycaster.intersectObjects(Array.from(this.objectMeshes.values()), false).length > 0;
+  }
+
   public getObjectMeshes(): Map<string, THREE.Mesh> {
     return this.objectMeshes;
   }

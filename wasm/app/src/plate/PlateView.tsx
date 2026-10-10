@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
 import { useAppStore } from '../store/appStore';
+import { PlateContextMenu } from './PlateContextMenu';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
 import { usePaintToolsStore, PaintToolsPanel, StrokeCollector } from '../paint-tools';
 import { useLayersStore, LayerHeightPanel } from '../layers';
@@ -94,6 +95,7 @@ export const PlateView: React.FC = () => {
   const currentConfig = useAppStore((s) => s.currentConfig);
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const [plateMenu, setPlateMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Initialize Bed Config on Mount
   useEffect(() => {
@@ -689,6 +691,31 @@ export const PlateView: React.FC = () => {
     ]
   ];
 
+  // A right-click on the empty plate opens its menu. Dragging with the right button pans, so the menu opens on release
+  // when the pointer barely moved (browsers fire `contextmenu` on press on Linux and macOS, on release on Windows).
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    let down: { x: number; y: number } | null = null;
+    const onDown = (e: PointerEvent) => { down = e.button === 2 ? { x: e.clientX, y: e.clientY } : null; };
+    const onUp = (e: PointerEvent) => {
+      if (e.button !== 2 || !down) return;
+      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+      down = null;
+      if (moved > 4 || usePaintToolsStore.getState().isActive || sceneRef.current?.isObjectAt(e.clientX, e.clientY)) return;
+      setPlateMenu({ x: e.clientX, y: e.clientY });
+    };
+    const onMenu = (e: MouseEvent) => e.preventDefault();
+    container.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointerup', onUp);
+    container.addEventListener('contextmenu', onMenu);
+    return () => {
+      container.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointerup', onUp);
+      container.removeEventListener('contextmenu', onMenu);
+    };
+  }, []);
+
   return (
     <div
       className={`plate-view ${isDragOver ? 'drag-over' : ''}`}
@@ -841,6 +868,7 @@ export const PlateView: React.FC = () => {
 
       {/* Plate Selector Bar */}
       <PlateSelectorBar />
+      {plateMenu && <PlateContextMenu x={plateMenu.x} y={plateMenu.y} onClose={() => setPlateMenu(null)} />}
 
       {/* Slicing Results & Statistics */}
       {sliceResult && !isSlicing && (
