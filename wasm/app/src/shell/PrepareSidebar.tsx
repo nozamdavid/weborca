@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { ModifiedSettingsDialog } from '../settings/ModifiedSettingsDialog';
+import { modifiedSettings } from '../settings/modifiedSettings';
 import { FlushVolumesDialog } from '../flush/FlushVolumesDialog';
 import { useHistoryStore } from '../history';
 import { ObjectListPanel } from '../objectlist/ObjectListPanel';
@@ -70,8 +72,12 @@ const PresetRow: React.FC<{
 /** The process switches desktop keeps next to the preset: support, brim, prime tower and ironing. */
 const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({ disabled, multiFilament }) => {
   const [flushOpen, setFlushOpen] = useState(false);
+  const [modifiedOpen, setModifiedOpen] = useState(false);
+  const layout = useAppStore((s) => s.layout);
+  const presetConfig = useAppStore((s) => s.presetConfig);
   const currentConfig = useAppStore((s) => s.currentConfig);
   const applyOptionChange = useAppStore((s) => s.applyOptionChange);
+  const changedCount = modifiedSettings(layout, currentConfig, presetConfig).length;
   const toggles: { id: string; label: string; checked: boolean; off?: string; apply: [string, string, string]; disabled?: boolean; title?: string }[] = [
     { id: 'support', label: 'Support', checked: currentConfig.enable_support === '1', apply: ['enable_support', '1', '0'] },
     { id: 'brim', label: 'Brim', checked: !!currentConfig.brim_type && currentConfig.brim_type !== 'no_brim', apply: ['brim_type', 'auto_brim', 'no_brim'] },
@@ -89,6 +95,8 @@ const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({
           {t.label}
         </label>
       ))}
+      {changedCount > 0 && <button id="modified-open" className="btn btn-secondary" style={{ padding: '1px 8px', fontSize: 12 }} onClick={() => setModifiedOpen(true)}>{changedCount} modified...</button>}
+      {modifiedOpen && <ModifiedSettingsDialog onClose={() => setModifiedOpen(false)} />}
       {multiFilament && <button id="flush-open" className="btn btn-secondary" style={{ padding: '1px 8px', fontSize: 12 }} disabled={disabled} onClick={() => setFlushOpen(true)}>Flushing volumes...</button>}
       {flushOpen && <FlushVolumesDialog onClose={() => setFlushOpen(false)} />}
     </div>
