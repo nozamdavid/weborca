@@ -4,6 +4,7 @@
  */
 
 import { showToast } from './toastStore';
+import { usePrefsStore } from '../prefs/prefsStore';
 
 export interface RecentFileItem {
   name: string;
@@ -53,6 +54,8 @@ export async function storeRecentFile(
   bytes: Uint8Array | ArrayBuffer,
   type: 'project' | 'model' | 'gcode'
 ): Promise<void> {
+  if (!usePrefsStore.getState().general.rememberRecentFiles) return;
+
   const current = getRecentFiles();
   const filtered = current.filter((item) => item.name !== name);
   const size = bytes instanceof Uint8Array ? bytes.byteLength : (bytes as ArrayBuffer).byteLength;

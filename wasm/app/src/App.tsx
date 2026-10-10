@@ -22,6 +22,7 @@ import { TopBar } from './shell/TopBar';
 import { ToastContainer } from './shell/Toast';
 import { showToast } from './shell/toastStore';
 import { EditOpsDialogs } from './editops';
+import { PreferencesDialog, usePrefsStore } from './prefs';
 import type { TabId } from './shell/TopBar';
 
 export const App: React.FC = () => {
@@ -31,8 +32,14 @@ export const App: React.FC = () => {
   const isSlicing = useAppStore((state) => state.isSlicing);
   const isModelLoading = useAppStore((state) => state.isModelLoading);
   const sliceStatusText = useAppStore((state) => state.sliceStatusText);
+  const showSidebar = usePrefsStore((state) => state.display.showSidebar);
 
   const [activeTab, setActiveTab] = useState<TabId>('prepare');
+
+  // The 3D view resizes itself on window resize, so nudge it when the sidebar is shown or hidden.
+  useEffect(() => {
+    window.dispatchEvent(new Event('resize'));
+  }, [showSidebar]);
 
   useEffect(() => {
     initApp();
@@ -96,7 +103,7 @@ export const App: React.FC = () => {
 
       <main className="workspace orca-workspace" aria-busy={isModelLoading}>
         <div className="tab-page prepare-page" hidden={activeTab !== 'prepare'}>
-          <PrepareSidebar />
+          {showSidebar && <PrepareSidebar />}
           <PlateView />
         </div>
         <div className="tab-page" style={{ position: 'relative' }} hidden={activeTab !== 'preview'}>
@@ -131,6 +138,7 @@ export const App: React.FC = () => {
       <OtherCalibrationsDialogs />
       <PrinterConnectionDialog />
       <HelpDialogs />
+      <PreferencesDialog />
       <EditOpsDialogs />
       <ToastContainer />
     </div>

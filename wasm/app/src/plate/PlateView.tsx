@@ -722,7 +722,7 @@ export const PlateView: React.FC = () => {
           style={{
             position: 'absolute',
             bottom: 64,
-            right: 24,
+            left: 76, // clear of the vertical tool bar
             background: 'rgba(24, 24, 27, 0.9)',
             backdropFilter: 'blur(10px)',
             border: '1px solid rgba(255, 255, 255, 0.12)',

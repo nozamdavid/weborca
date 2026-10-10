@@ -1,5 +1,5 @@
 /** Camera views of the Prepare scene, with desktop's number keys. The scene registers itself here. */
-export type CameraView = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 'Z';
+export type CameraView = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 'Z' | 'BED';
 
 export const CAMERA_VIEWS: Array<{ view: CameraView; label: string; key: string }> = [
   { view: 0, label: 'Iso', key: '0' },
@@ -21,3 +21,4 @@ export function registerCameraHandler(fn: (view: CameraView) => void): () => voi
 }
 
 export const setCameraView = (view: CameraView) => handler?.(view);
+export const zoomToBed = () => handler?.('BED');

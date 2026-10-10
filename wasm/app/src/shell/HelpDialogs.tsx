@@ -8,17 +8,22 @@ export const useHelpStore = create<{ dialog: 'about' | 'shortcuts' | null; open:
 }));
 
 const SHORTCUTS: Array<[string, string]> = [
+  ['Ctrl+P', 'Preferences'],
   ['Ctrl+I', 'Import a model'],
   ['Ctrl+G', 'Export the G-code'],
   ['Ctrl+Z', 'Undo'],
   ['Ctrl+Y / Ctrl+Shift+Z', 'Redo'],
   ['Ctrl+A', 'Select the object'],
+  ['Ctrl+E', 'Toggle object labels'],
   ['M / R / S', 'Move, rotate, scale'],
   ['P', 'Support painting'],
   ['C', 'Cut'],
   ['A', 'Arrange'],
+  ['K', 'Toggle perspective / orthographic camera'],
+  ['Shift+Tab', 'Toggle sidebar'],
   ['Delete', 'Delete the selected object'],
   ['0 to 6', 'Iso, top, bottom, front, rear, left, right view'],
+  ['Ctrl+0', 'Zoom to bed'],
   ['Z', 'Zoom to the selection, or to the whole plate'],
   ['Esc', 'Leave the active tool'],
   ['Left drag', 'Rotate the view'],
@@ -37,19 +42,39 @@ export const HelpDialogs: React.FC = () => {
           <>
             <h3 style={{ marginBottom: 8 }}>OrcaSlicer Web</h3>
             <p>A browser port of OrcaSlicer. Slicing runs on this computer: the OrcaSlicer engine is compiled to WebAssembly and nothing is uploaded.</p>
-            <p style={{ marginTop: 8, color: 'var(--text-muted)' }}>
+            <div style={{ marginTop: 12, padding: '8px 12px', background: 'var(--control-bg)', borderRadius: 6, fontSize: '0.85rem' }}>
+              <div><strong>App Version:</strong> 0.1.0</div>
+              <div style={{ marginTop: 4 }}><strong>Engine:</strong> OrcaSlicer 02.08.01.55 (WASM engine)</div>
+              <div style={{ marginTop: 4 }}><strong>Architecture:</strong> WebAssembly (Multi-threaded POSIX pthreads)</div>
+            </div>
+            <p style={{ marginTop: 12, color: 'var(--text-muted)' }}>
               Based on OrcaSlicer, licensed under the GNU AGPL-3.0. The STEP importer uses Open CASCADE Technology (LGPL-2.1 with the OCCT exception).
             </p>
-            <p style={{ marginTop: 8 }}><a href="https://github.com/OrcaSlicer/OrcaSlicer" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color)' }}>github.com/OrcaSlicer/OrcaSlicer</a></p>
+            <p style={{ marginTop: 8 }}>
+              <a href="https://github.com/OrcaSlicer/OrcaSlicer" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-color)' }}>
+                github.com/OrcaSlicer/OrcaSlicer
+              </a>
+            </p>
           </>
         ) : (
           <>
             <h3 style={{ marginBottom: 8 }}>Keyboard shortcuts</h3>
-            <table className="shortcut-table"><tbody>{SHORTCUTS.map(([keys, what]) => <tr key={keys}><td>{keys}</td><td>{what}</td></tr>)}</tbody></table>
+            <table className="shortcut-table">
+              <tbody>
+                {SHORTCUTS.map(([keys, what]) => (
+                  <tr key={keys}>
+                    <td>{keys}</td>
+                    <td>{what}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </>
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-          <button className="btn btn-primary" onClick={close}>Close</button>
+          <button className="btn btn-primary" onClick={close}>
+            Close
+          </button>
         </div>
       </div>
     </div>

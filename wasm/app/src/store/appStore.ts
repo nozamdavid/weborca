@@ -62,6 +62,7 @@ export interface AppState {
   selectedProcess: string;
   filaments: PresetItem[];
   selectedFilament: string;
+  selectedFilaments: string[];
 
   // Model state
   modelFile: { name: string; size: number } | null;
@@ -138,7 +139,10 @@ export interface AppState {
   chooseVendor: (vendor: string) => Promise<void>;
   choosePrinter: (printer: string) => Promise<void>;
   chooseProcess: (process: string) => Promise<void>;
-  chooseFilament: (filament: string) => Promise<void>;
+  chooseFilament: (filament: string, slotIndex?: number) => Promise<void>;
+  addFilamentSlot: (presetName?: string) => Promise<void>;
+  removeFilamentSlot: (slotIndex?: number) => Promise<void>;
+  setSlotColor: (slotIndex: number, color: string) => Promise<void>;
   stepImportState: { file: File } | null;
   setStepImportState: (state: { file: File } | null) => void;
   requestImportFile: (file: File) => void;
@@ -157,7 +161,7 @@ export interface AppState {
   closeFixesDialog: () => void;
 
   // User Preset Actions
-  selectUserPreset: (kind: PresetKind, name: string) => Promise<void>;
+  selectUserPreset: (kind: PresetKind, name: string, slotIndex?: number) => Promise<void>;
   importPresetBundleAction: (bundleData: unknown, strategy?: ConflictStrategy) => Promise<ImportBundleResult>;
   exportPresetBundleAction: (kinds?: PresetKind[], description?: string) => PresetBundle;
   exportDesktopArchiveAction: (archiveType?: 'printer' | 'filament' | 'all', targetName?: string) => Promise<Uint8Array>;
@@ -193,6 +197,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedProcess: '',
   filaments: [],
   selectedFilament: '',
+  selectedFilaments: [],
 
   modelFile: null,
   modelObjects: null,
@@ -473,6 +478,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           selectedProcess: defaultProc,
           filaments,
           selectedFilament: defaultFilament,
+          selectedFilaments: [defaultFilament],
           presetConfig: baselineConfig,
           currentConfig: effectiveConfig,
           rulesState: {
@@ -489,11 +495,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   chooseProcess: async (process: string) => {
     if (!process) return;
-    const { selectedPrinter, selectedFilament, userPresets } = get();
+    const { selectedPrinter, selectedFilament, selectedFilaments, userPresets } = get();
     set({ selectedProcess: process, engineError: null });
 
     try {
-      if (selectedPrinter && selectedFilament) {
+      if (selectedPrinter && (selectedFilament || (selectedFilaments && selectedFilaments.length > 0))) {
         // Clear process overrides when selecting a new system process
         set((state) => ({
           processOverrides: {},
@@ -501,12 +507,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         }));
 
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
-        const systemFilament = resolveSystemPreset('filament', selectedFilament, userPresets);
+        const filamentsList = selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments : [selectedFilament];
+        const systemFilaments = filamentsList.map((f) => resolveSystemPreset('filament', f, userPresets));
 
         await selectPresets({
           printer: systemPrinter,
           process,
-          filaments: [systemFilament]
+          filaments: systemFilaments
         });
 
         const baselineConfig = await getConfig();
@@ -544,33 +551,47 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  chooseFilament: async (filament: string) => {
+  chooseFilament: async (filament: string, slotIndex: number = 0) => {
     if (!filament) return;
-    const { selectedPrinter, selectedProcess, userPresets } = get();
-    set({ selectedFilament: filament, engineError: null });
+    const { selectedPrinter, selectedProcess, selectedFilaments, selectedFilament, userPresets } = get();
+    const currentList = selectedFilaments && selectedFilaments.length > 0 ? [...selectedFilaments] : [selectedFilament || filament];
+    if (slotIndex < currentList.length) {
+      currentList[slotIndex] = filament;
+    } else {
+      currentList.push(filament);
+    }
+    const firstFilament = currentList[0];
+    set({
+      selectedFilament: firstFilament,
+      selectedFilaments: currentList,
+      engineError: null
+    });
 
     try {
       if (selectedPrinter && selectedProcess) {
-        // Clear filament overrides when selecting a new system filament
-        set((state) => ({
-          filamentOverrides: {},
-          activeUserPreset: { ...state.activeUserPreset, filament: null }
-        }));
+        if (slotIndex === 0) {
+          // Clear filament overrides when selecting a new system filament for slot 0
+          set((state) => ({
+            filamentOverrides: {},
+            activeUserPreset: { ...state.activeUserPreset, filament: null }
+          }));
+        }
 
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
+        const systemFilaments = currentList.map((f) => resolveSystemPreset('filament', f, userPresets));
 
         await selectPresets({
           printer: systemPrinter,
           process: systemProcess,
-          filaments: [filament]
+          filaments: systemFilaments
         });
 
         const baselineConfig = await getConfig();
 
-        // Re-apply process and printer overrides
-        const { processOverrides, printerOverrides } = get();
-        const activeOverrides = { ...processOverrides, ...printerOverrides };
+        // Re-apply process, printer and filament overrides
+        const { processOverrides, printerOverrides, filamentOverrides } = get();
+        const activeOverrides = { ...processOverrides, ...printerOverrides, ...filamentOverrides };
         if (Object.keys(activeOverrides).length > 0) {
           await setOptions(activeOverrides);
         }
@@ -591,6 +612,148 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (err: any) {
       set({ engineError: `Failed to select filament '${filament}': ${err.message || String(err)}` });
     }
+  },
+
+  addFilamentSlot: async (presetName?: string) => {
+    const { selectedFilaments, selectedFilament, filaments, selectedPrinter, selectedProcess, userPresets } = get();
+    const candidate = presetName || (selectedFilaments[selectedFilaments.length - 1] || selectedFilament || (filaments[0]?.name ?? 'Generic PLA'));
+    const nextList = [...(selectedFilaments.length > 0 ? selectedFilaments : [selectedFilament]), candidate];
+    if (nextList.length > 16) return;
+
+    try {
+      if (selectedPrinter && selectedProcess) {
+        const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
+        const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
+        const systemFilaments = nextList.map((f) => resolveSystemPreset('filament', f, userPresets));
+
+        await selectPresets({
+          printer: systemPrinter,
+          process: systemProcess,
+          filaments: systemFilaments
+        });
+
+        const baselineConfig = await getConfig();
+
+        const { processOverrides, printerOverrides, filamentOverrides } = get();
+        const nextFilOverrides = { ...filamentOverrides };
+        if (nextFilOverrides['filament_colour']) {
+          const colors = nextFilOverrides['filament_colour'].split(';').map(c => c.trim()).filter(Boolean);
+          const baselineColors = (baselineConfig['filament_colour'] || '').split(';').map(c => c.trim()).filter(Boolean);
+          while (colors.length < nextList.length) {
+            colors.push(baselineColors[colors.length] || colors[colors.length - 1] || '#009688');
+          }
+          nextFilOverrides['filament_colour'] = colors.slice(0, nextList.length).join(';');
+        }
+        const activeOverrides = { ...processOverrides, ...printerOverrides, ...nextFilOverrides };
+        if (Object.keys(activeOverrides).length > 0) {
+          await setOptions(activeOverrides);
+        }
+
+        const effectiveConfig = await getConfig();
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: 0 });
+
+        set({
+          selectedFilaments: nextList,
+          selectedFilament: nextList[0],
+          filamentOverrides: nextFilOverrides,
+          presetConfig: baselineConfig,
+          currentConfig: effectiveConfig,
+          rulesState: {
+            fields: rulesRes.fields || {},
+            fixes: rulesRes.fixes || [],
+            messages: rulesRes.messages || []
+          }
+        });
+      } else {
+        set({
+          selectedFilaments: nextList,
+          selectedFilament: nextList[0]
+        });
+      }
+    } catch (err: any) {
+      set({ engineError: 'Failed to add filament slot: ' + (err.message || String(err)) });
+    }
+  },
+
+  removeFilamentSlot: async (slotIndex?: number) => {
+    const { selectedPrinter, selectedProcess, selectedFilaments, selectedFilament, userPresets } = get();
+    const currentList = selectedFilaments && selectedFilaments.length > 0 ? [...selectedFilaments] : [selectedFilament];
+    if (currentList.length <= 1) return;
+
+    let nextList: string[];
+    if (typeof slotIndex === 'number' && slotIndex >= 0 && slotIndex < currentList.length) {
+      nextList = currentList.filter((_, i) => i !== slotIndex);
+    } else {
+      nextList = currentList.slice(0, -1);
+    }
+    if (nextList.length === 0) return;
+
+    try {
+      if (selectedPrinter && selectedProcess) {
+        const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
+        const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
+        const systemFilaments = nextList.map((f) => resolveSystemPreset('filament', f, userPresets));
+
+        await selectPresets({
+          printer: systemPrinter,
+          process: systemProcess,
+          filaments: systemFilaments
+        });
+
+        const baselineConfig = await getConfig();
+
+        const { processOverrides, printerOverrides, filamentOverrides } = get();
+        const nextFilOverrides = { ...filamentOverrides };
+        if (nextFilOverrides['filament_colour']) {
+          const colors = nextFilOverrides['filament_colour'].split(';').slice(0, nextList.length);
+          nextFilOverrides['filament_colour'] = colors.join(';');
+        }
+        const activeOverrides = { ...processOverrides, ...printerOverrides, ...nextFilOverrides };
+        if (Object.keys(activeOverrides).length > 0) {
+          await setOptions(activeOverrides);
+        }
+
+        const effectiveConfig = await getConfig();
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: 0 });
+
+        set({
+          selectedFilaments: nextList,
+          selectedFilament: nextList[0],
+          filamentOverrides: nextFilOverrides,
+          presetConfig: baselineConfig,
+          currentConfig: effectiveConfig,
+          rulesState: {
+            fields: rulesRes.fields || {},
+            fixes: rulesRes.fixes || [],
+            messages: rulesRes.messages || []
+          }
+        });
+      } else {
+        set({
+          selectedFilaments: nextList,
+          selectedFilament: nextList[0]
+        });
+      }
+    } catch (err: any) {
+      set({ engineError: 'Failed to remove filament slot: ' + (err.message || String(err)) });
+    }
+  },
+  setSlotColor: async (slotIndex: number, newColor: string) => {
+    const { currentConfig, selectedFilaments, applyOptionChange } = get();
+    const count = selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments.length : 1;
+    const rawColors = (currentConfig['filament_colour'] || '').split(';').map(c => c.trim());
+    const defaultColors = ['#16417C', '#58B957', '#F5D130', '#E53935', '#8E24AA', '#00ACC1', '#FB8C00', '#D81B60'];
+    const colors: string[] = [];
+    for (let i = 0; i < count; i++) {
+      if (i === slotIndex) {
+        colors.push(newColor.toUpperCase());
+      } else if (rawColors[i]) {
+        colors.push(rawColors[i]);
+      } else {
+        colors.push(defaultColors[i % defaultColors.length]);
+      }
+    }
+    await applyOptionChange('filament_colour', colors.join(';'), 'filament');
   },
 
   stepImportState: null,
@@ -622,13 +785,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       if (res.selectedPresets) {
         const { printer, process, filaments } = res.selectedPresets;
-        set((state) => ({
-          selectedPrinter: printer || state.selectedPrinter,
-          selectedProcess: process || state.selectedProcess,
-          selectedFilament: Array.isArray(filaments) && filaments.length > 0
-            ? filaments[0]
-            : (filaments || state.selectedFilament)
-        }));
+        set((state) => {
+          const loadedFilaments = Array.isArray(filaments) && filaments.length > 0
+            ? filaments
+            : (typeof filaments === 'string' && filaments ? [filaments] : (state.selectedFilaments.length > 0 ? state.selectedFilaments : [state.selectedFilament]));
+          return {
+            selectedPrinter: printer || state.selectedPrinter,
+            selectedProcess: process || state.selectedProcess,
+            selectedFilaments: loadedFilaments,
+            selectedFilament: loadedFilaments[0] || state.selectedFilament
+          };
+        });
         try {
           const cfg = await getConfig(); set({ currentConfig: cfg });
         } catch (_) {}
@@ -785,6 +952,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         await useHistoryStore.getState().commitTransaction(`Import ${file.name}`);
       } catch (_) {}
 
+      try {
+        const { usePrefsStore } = await import('../prefs/prefsStore');
+        if (usePrefsStore.getState().general.autoArrangeOnImport) {
+          const { usePlateStore } = await import('../plate/plateStore');
+          await usePlateStore.getState().arrange(true);
+        }
+      } catch (_) {}
+
       showToast(`Imported ${file.name}`, 'success');
       try {
         const buffer = await file.arrayBuffer();
@@ -801,14 +976,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   startSlice: async () => {
-    const { isEngineReady, isSlicing, modelFile, selectedPrinter, selectedProcess, selectedFilament } = get();
+    const { isEngineReady, isSlicing, modelFile, selectedPrinter, selectedProcess, selectedFilament, selectedFilaments } = get();
     try {
       const { useHistoryStore } = await import('../history');
       if (useHistoryStore.getState().isRestoring) {
         return;
       }
     } catch (_) {}
-    if (!isEngineReady || isSlicing || !modelFile || !selectedPrinter || !selectedProcess || !selectedFilament) {
+    if (!isEngineReady || isSlicing || !modelFile || !selectedPrinter || !selectedProcess || (!selectedFilament && (!selectedFilaments || selectedFilaments.length === 0))) {
       return;
     }
 
@@ -967,6 +1142,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           pendingFixTriggerKey: key
         });
       }
+
+      try {
+        const { usePrefsStore } = await import('../prefs/prefsStore');
+        if (usePrefsStore.getState().general.autoSliceAfterChange) {
+          void get().startSlice();
+        }
+      } catch (_) {}
     } catch (err: any) {
       set({ engineError: `Failed to set option '${key}': ${err.message || String(err)}` });
     }
@@ -1100,7 +1282,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ pendingFixes: null, pendingFixReason: null, pendingFixTriggerKey: null });
   },
 
-  selectUserPreset: async (kind: PresetKind, name: string) => {
+  selectUserPreset: async (kind: PresetKind, name: string, slotIndex: number = 0) => {
     const { userPresets, selectedPrinter, selectedProcess, selectedFilament } = get();
     const preset = userPresets.find((p) => p.kind === kind && p.name === name);
     if (!preset) return;
@@ -1114,12 +1296,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         }));
 
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
-        const systemFilament = resolveSystemPreset('filament', selectedFilament, userPresets);
+        const { selectedFilaments: curFils } = get();
+        const filamentsList = curFils && curFils.length > 0 ? curFils : [selectedFilament];
+        const systemFilaments = filamentsList.map((f) => resolveSystemPreset('filament', f, userPresets));
 
         await selectPresets({
           printer: systemPrinter,
           process: preset.inherits,
-          filaments: [systemFilament]
+          filaments: systemFilaments
         });
 
         const baselineConfig = await getConfig();
@@ -1142,19 +1326,24 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         });
       } else if (kind === 'filament') {
+        const { selectedFilaments: curFils } = get();
+        const currentList = curFils && curFils.length > 0 ? [...curFils] : [name];
+        currentList[slotIndex] = name;
         set((state) => ({
           activeUserPreset: { ...state.activeUserPreset, filament: name },
-          selectedFilament: name,
+          selectedFilament: currentList[0],
+          selectedFilaments: currentList,
           filamentOverrides: { ...preset.values }
         }));
 
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
+        const systemFilaments = currentList.map((f) => resolveSystemPreset('filament', f, userPresets));
 
         await selectPresets({
           printer: systemPrinter,
           process: systemProcess,
-          filaments: [preset.inherits]
+          filaments: systemFilaments
         });
 
         const baselineConfig = await getConfig();
@@ -1184,12 +1373,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         }));
 
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
-        const systemFilament = resolveSystemPreset('filament', selectedFilament, userPresets);
+        const { selectedFilaments: curFils } = get();
+        const filamentsList = curFils && curFils.length > 0 ? curFils : [selectedFilament];
+        const systemFilaments = filamentsList.map((f) => resolveSystemPreset('filament', f, userPresets));
 
         await selectPresets({
           printer: preset.inherits,
           process: systemProcess,
-          filaments: [systemFilament]
+          filaments: systemFilaments
         });
 
         const baselineConfig = await getConfig();

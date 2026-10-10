@@ -7,6 +7,8 @@ import { renderPaintOverlay, clearPaintOverlay } from '../paint-tools/overlayRen
 import type { ParsedPaintOverlay, PaintLayer } from '../paint-tools/types';
 import type { PaintTool } from '../paint-tools/types';
 import { createPaintCursor, type PaintCursor } from '../paint-tools/paintCursor';
+import { usePrefsStore } from '../prefs/prefsStore';
+import type { CameraView } from '../shell/cameraBridge';
 
 export interface PlateSceneCallbacks {
   onSelect: (objectId: number | null, instanceId: number | null) => void;
@@ -33,18 +35,25 @@ export interface PlateSceneCallbacks {
 export class PlateScene {
   private container: HTMLElement;
   private scene: THREE.Scene;
-  private camera: THREE.PerspectiveCamera;
+  public perspectiveCamera: THREE.PerspectiveCamera;
+  public orthographicCamera: THREE.OrthographicCamera;
+  public camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
   private renderer: THREE.WebGLRenderer;
   private orbitControls: OrbitControls;
   private transformControls: TransformControls;
 
   private bedGroup: THREE.Group;
-    private objectsGroup: THREE.Group;
+  private objectsGroup: THREE.Group;
+  private bedGridHelper: THREE.GridHelper | null = null;
+  private axesHelper: THREE.AxesHelper | null = null;
+  private buildVolumeHelper: THREE.LineSegments | null = null;
+  private labelsGroup: THREE.Group;
+  private labelSprites: Map<string, THREE.Sprite> = new Map();
 
   private flattenClusters: Array<{ normal: [number, number, number]; center: [number, number, number]; area: number; outline: Array<[number, number, number]> }> = [];
   private flattenGroup: THREE.Group;
   private brimEarsGroup: THREE.Group;
-    private brimEarsActive = false;
+  private brimEarsActive = false;
 
   private objectMeshes: Map<string, THREE.Mesh> = new Map();
   private overlayMeshes: Map<string, THREE.Mesh> = new Map();
@@ -74,10 +83,39 @@ export class PlateScene {
   private defaultMaterial: THREE.MeshStandardMaterial;
   private selectedMaterial: THREE.MeshStandardMaterial;
 
+  // Scene view & camera preferences
+  public showGrid = true;
+  public showAxes = true;
+  public showLabels = false;
+  public showBuildVolume = true;
+  public showWireframe = false;
+  public cameraType: 'perspective' | 'orthographic' = 'perspective';
+  public invertMouseWheelZoom = false;
+  public invertOrbitHorizontal = false;
+  public invertOrbitVertical = false;
+  public rotateSensitivity = 1.0;
+  public zoomSpeed = 1.0;
+
+  private unsubscribePrefs: (() => void) | null = null;
+
   constructor(container: HTMLElement, bedConfig: BedConfig, callbacks: PlateSceneCallbacks) {
     this.container = container;
     this.bedConfig = bedConfig;
     this.callbacks = callbacks;
+
+    // Load initial preferences
+    const prefs = usePrefsStore.getState();
+    this.showGrid = prefs.display.showGrid;
+    this.showAxes = prefs.display.showAxes;
+    this.showLabels = prefs.display.showLabels;
+    this.showBuildVolume = prefs.display.showBuildVolume;
+    this.showWireframe = prefs.display.showWireframe;
+    this.cameraType = prefs.display.cameraType || prefs.camera.defaultCameraType || 'perspective';
+    this.invertMouseWheelZoom = prefs.camera.invertMouseWheelZoom;
+    this.invertOrbitHorizontal = prefs.camera.invertOrbitHorizontal;
+    this.invertOrbitVertical = prefs.camera.invertOrbitVertical;
+    this.rotateSensitivity = prefs.camera.rotateSensitivity;
+    this.zoomSpeed = prefs.camera.zoomSpeed;
 
     // 1. Scene setup
     this.scene = new THREE.Scene();
@@ -86,24 +124,35 @@ export class PlateScene {
 
     const width = container.clientWidth || 800;
     const height = container.clientHeight || 600;
+    const aspect = width / height;
 
     // 2. Camera setup: Z is UP (matching Slic3r world coordinates)
-    this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 5000);
-    this.camera.up.set(0, 0, 1);
-
-    // Initial camera position looking at bed center
     const cx = bedConfig.center[0];
     const cy = bedConfig.center[1];
     const span = Math.max(bedConfig.width, bedConfig.depth);
-    this.camera.position.set(cx, cy - span * 1.5, span * 1.2);
-    this.camera.lookAt(cx, cy, 0);
+
+    this.perspectiveCamera = new THREE.PerspectiveCamera(45, aspect, 1, 5000);
+    this.perspectiveCamera.up.set(0, 0, 1);
+    this.perspectiveCamera.position.set(cx, cy - span * 1.5, span * 1.2);
+    this.perspectiveCamera.lookAt(cx, cy, 0);
+
+    const d = this.perspectiveCamera.position.distanceTo(new THREE.Vector3(cx, cy, 0));
+    const halfHeight = d * Math.tan(THREE.MathUtils.degToRad(45 / 2));
+    const halfWidth = halfHeight * aspect;
+
+    this.orthographicCamera = new THREE.OrthographicCamera(-halfWidth, halfWidth, halfHeight, -halfHeight, 1, 5000);
+    this.orthographicCamera.up.set(0, 0, 1);
+    this.orthographicCamera.position.copy(this.perspectiveCamera.position);
+    this.orthographicCamera.lookAt(cx, cy, 0);
+
+    this.camera = this.cameraType === 'orthographic' ? this.orthographicCamera : this.perspectiveCamera;
 
     // 3. Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.domElement.style.display = "block";
+    this.renderer.domElement.style.display = 'block';
     container.appendChild(this.renderer.domElement);
 
     // 4. OrbitControls: left rotate, right/middle pan, wheel zoom (matching desktop GLCanvas3D)
@@ -111,11 +160,48 @@ export class PlateScene {
     this.orbitControls.target.set(cx, cy, 0);
     this.orbitControls.enableDamping = true;
     this.orbitControls.dampingFactor = 0.1;
+    this.orbitControls.zoomSpeed = this.zoomSpeed;
+    this.orbitControls.rotateSpeed = this.rotateSensitivity;
     this.orbitControls.mouseButtons = {
       LEFT: THREE.MOUSE.ROTATE,
       MIDDLE: THREE.MOUSE.PAN,
       RIGHT: THREE.MOUSE.PAN
     };
+
+    // OrbitControls customizations for mouse wheel zoom inversion and orbit axis inversion
+    const origHandleMouseWheel = (this.orbitControls as any)._handleMouseWheel.bind(this.orbitControls);
+    (this.orbitControls as any)._handleMouseWheel = (event: any) => {
+      if (this.invertMouseWheelZoom) {
+        const invertedEvent = {
+          ...event,
+          deltaY: -event.deltaY,
+          clientX: event.clientX,
+          clientY: event.clientY
+        };
+        origHandleMouseWheel(invertedEvent);
+      } else {
+        origHandleMouseWheel(event);
+      }
+    };
+
+    const origRotate = (this.orbitControls as any)._handleMouseMoveRotate.bind(this.orbitControls);
+    (this.orbitControls as any)._handleMouseMoveRotate = (event: any) => {
+      if (!this.invertOrbitHorizontal && !this.invertOrbitVertical) {
+        origRotate(event);
+        return;
+      }
+      const ctrl = this.orbitControls as any;
+      ctrl._rotateEnd.set(event.clientX, event.clientY);
+      ctrl._rotateDelta.subVectors(ctrl._rotateEnd, ctrl._rotateStart).multiplyScalar(ctrl.rotateSpeed);
+      const element = ctrl.domElement;
+      const factorX = this.invertOrbitHorizontal ? -1 : 1;
+      const factorY = this.invertOrbitVertical ? -1 : 1;
+      ctrl._rotateLeft((factorX * 2 * Math.PI * ctrl._rotateDelta.x) / element.clientHeight);
+      ctrl._rotateUp((factorY * 2 * Math.PI * ctrl._rotateDelta.y) / element.clientHeight);
+      ctrl._rotateStart.copy(ctrl._rotateEnd);
+      ctrl.update();
+    };
+
     this.orbitControls.update();
 
     // 5. TransformControls
@@ -126,7 +212,6 @@ export class PlateScene {
     this.transformControls.addEventListener('dragging-changed', (event) => {
       this.orbitControls.enabled = !event.value;
       if (!event.value) {
-        // Drag finished - apply transform to backend
         const target = this.transformControls.object;
         if (target && target.userData) {
           const { objectId, instanceId } = target.userData;
@@ -159,28 +244,73 @@ export class PlateScene {
     this.objectsGroup = new THREE.Group();
     this.flattenGroup = new THREE.Group();
     this.brimEarsGroup = new THREE.Group();
+    this.labelsGroup = new THREE.Group();
+    this.labelsGroup.visible = this.showLabels;
+
     this.scene.add(this.bedGroup);
     this.scene.add(this.objectsGroup);
     this.scene.add(this.flattenGroup);
     this.scene.add(this.brimEarsGroup);
+    this.scene.add(this.labelsGroup);
 
     // 8. Materials
     this.defaultMaterial = new THREE.MeshStandardMaterial({
-      color: 0x3b82f6, // Vibrant blue
+      color: 0x3b82f6,
       roughness: 0.35,
-      metalness: 0.1
+      metalness: 0.1,
+      wireframe: this.showWireframe
     });
 
     this.selectedMaterial = new THREE.MeshStandardMaterial({
-      color: 0x10b981, // Vibrant emerald green highlight
+      color: 0x10b981,
       emissive: 0x064e3b,
       emissiveIntensity: 0.35,
       roughness: 0.3,
-      metalness: 0.15
+      metalness: 0.15,
+      wireframe: this.showWireframe
     });
 
     // Build bed
     this.buildBed();
+
+    // Subscribe to preferences store changes
+    this.unsubscribePrefs = usePrefsStore.subscribe((state, prevState) => {
+      if (state.display.showGrid !== prevState.display.showGrid) {
+        this.setShowGrid(state.display.showGrid);
+      }
+      if (state.display.showAxes !== prevState.display.showAxes) {
+        this.setShowAxes(state.display.showAxes);
+      }
+      if (state.display.showLabels !== prevState.display.showLabels) {
+        this.setShowLabels(state.display.showLabels);
+      }
+      if (state.display.showBuildVolume !== prevState.display.showBuildVolume) {
+        this.setShowBuildVolume(state.display.showBuildVolume);
+      }
+      if (state.display.showWireframe !== prevState.display.showWireframe) {
+        this.setShowWireframe(state.display.showWireframe);
+      }
+      if (state.display.cameraType !== prevState.display.cameraType) {
+        this.setCameraType(state.display.cameraType);
+      }
+      if (state.camera.invertMouseWheelZoom !== prevState.camera.invertMouseWheelZoom) {
+        this.invertMouseWheelZoom = state.camera.invertMouseWheelZoom;
+      }
+      if (state.camera.invertOrbitHorizontal !== prevState.camera.invertOrbitHorizontal) {
+        this.invertOrbitHorizontal = state.camera.invertOrbitHorizontal;
+      }
+      if (state.camera.invertOrbitVertical !== prevState.camera.invertOrbitVertical) {
+        this.invertOrbitVertical = state.camera.invertOrbitVertical;
+      }
+      if (state.camera.rotateSensitivity !== prevState.camera.rotateSensitivity) {
+        this.rotateSensitivity = state.camera.rotateSensitivity;
+        this.orbitControls.rotateSpeed = this.rotateSensitivity;
+      }
+      if (state.camera.zoomSpeed !== prevState.camera.zoomSpeed) {
+        this.zoomSpeed = state.camera.zoomSpeed;
+        this.orbitControls.zoomSpeed = this.zoomSpeed;
+      }
+    });
 
     // Event listeners
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
@@ -202,6 +332,9 @@ export class PlateScene {
       if (child.geometry) child.geometry.dispose();
       this.bedGroup.remove(child);
     }
+    this.bedGridHelper = null;
+    this.axesHelper = null;
+    this.buildVolumeHelper = null;
 
     const { width, depth, height, center } = this.bedConfig;
     const shape = (this.bedConfig as any).shape;
@@ -219,7 +352,6 @@ export class PlateScene {
         points.push([cx + radius * Math.cos(theta), cy + radius * Math.sin(theta)]);
       }
     } else {
-      // Default rectangle
       floorGeo = new THREE.PlaneGeometry(width, depth);
       const halfW = width / 2;
       const halfD = depth / 2;
@@ -245,16 +377,18 @@ export class PlateScene {
 
     // 2. Bed Grid (in XY plane at Z=0)
     const gridSize = Math.max(width, depth);
-    const gridDivisions = Math.round(gridSize / 10); // 10mm grid cells
+    const gridDivisions = Math.round(gridSize / 10);
     const grid = new THREE.GridHelper(gridSize, gridDivisions, 0x475569, 0x334155);
     grid.rotation.x = Math.PI / 2;
     grid.position.set(cx, cy, 0);
+    grid.visible = this.showGrid;
+    this.bedGridHelper = grid;
     this.bedGroup.add(grid);
 
     // 3. Bed boundary outline
     if (points.length >= 3) {
       const outlinePoints: THREE.Vector3[] = points.map(([x, y]) => new THREE.Vector3(x, y, 0.2));
-      outlinePoints.push(outlinePoints[0].clone()); // Close loop
+      outlinePoints.push(outlinePoints[0].clone());
       const outlineGeo = new THREE.BufferGeometry().setFromPoints(outlinePoints);
       const outlineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 });
       const outlineLine = new THREE.Line(outlineGeo, outlineMat);
@@ -264,6 +398,8 @@ export class PlateScene {
     // 4. Origin Axes Helper (Red=X, Green=Y, Blue=Z)
     const axesHelper = new THREE.AxesHelper(40);
     axesHelper.position.set(0, 0, 0.5);
+    axesHelper.visible = this.showAxes;
+    this.axesHelper = axesHelper;
     this.bedGroup.add(axesHelper);
 
     // 5. Printable height faint bounding box
@@ -276,7 +412,178 @@ export class PlateScene {
     });
     const boxLines = new THREE.LineSegments(edgesGeo, boxMat);
     boxLines.position.set(cx, cy, height / 2);
+    boxLines.visible = this.showBuildVolume;
+    this.buildVolumeHelper = boxLines;
     this.bedGroup.add(boxLines);
+  }
+
+  public setShowGrid(visible: boolean): void {
+    this.showGrid = visible;
+    if (this.bedGridHelper) {
+      this.bedGridHelper.visible = visible;
+    }
+  }
+  public getShowGrid(): boolean {
+    return this.showGrid;
+  }
+
+  public setShowAxes(visible: boolean): void {
+    this.showAxes = visible;
+    if (this.axesHelper) {
+      this.axesHelper.visible = visible;
+    }
+  }
+  public getShowAxes(): boolean {
+    return this.showAxes;
+  }
+
+  public setShowLabels(visible: boolean): void {
+    this.showLabels = visible;
+    this.labelsGroup.visible = visible;
+    if (visible) {
+      this.updateLabels();
+    }
+  }
+  public getShowLabels(): boolean {
+    return this.showLabels;
+  }
+
+  public setShowBuildVolume(visible: boolean): void {
+    this.showBuildVolume = visible;
+    if (this.buildVolumeHelper) {
+      this.buildVolumeHelper.visible = visible;
+    }
+  }
+  public getShowBuildVolume(): boolean {
+    return this.showBuildVolume;
+  }
+
+  public setShowWireframe(visible: boolean): void {
+    this.showWireframe = visible;
+    this.defaultMaterial.wireframe = visible;
+    this.selectedMaterial.wireframe = visible;
+    this.defaultMaterial.needsUpdate = true;
+    this.selectedMaterial.needsUpdate = true;
+  }
+  public getShowWireframe(): boolean {
+    return this.showWireframe;
+  }
+
+  public setCameraType(type: 'perspective' | 'orthographic'): void {
+    if (
+      this.cameraType === type &&
+      ((type === 'perspective' && this.camera === this.perspectiveCamera) ||
+        (type === 'orthographic' && this.camera === this.orthographicCamera))
+    ) {
+      return;
+    }
+    this.cameraType = type;
+    const target = this.orbitControls.target.clone();
+    const width = this.container.clientWidth || 800;
+    const height = this.container.clientHeight || 600;
+    const aspect = width / height;
+
+    if (type === 'orthographic') {
+      const d = this.perspectiveCamera.position.distanceTo(target);
+      const halfHeight = Math.max(10, d * Math.tan(THREE.MathUtils.degToRad(this.perspectiveCamera.fov / 2)));
+      const halfWidth = halfHeight * aspect;
+      this.orthographicCamera.left = -halfWidth;
+      this.orthographicCamera.right = halfWidth;
+      this.orthographicCamera.top = halfHeight;
+      this.orthographicCamera.bottom = -halfHeight;
+      this.orthographicCamera.zoom = 1;
+      this.orthographicCamera.position.copy(this.perspectiveCamera.position);
+      this.orthographicCamera.quaternion.copy(this.perspectiveCamera.quaternion);
+      this.orthographicCamera.updateProjectionMatrix();
+      this.camera = this.orthographicCamera;
+    } else {
+      this.perspectiveCamera.aspect = aspect;
+      this.perspectiveCamera.position.copy(this.orthographicCamera.position);
+      this.perspectiveCamera.quaternion.copy(this.orthographicCamera.quaternion);
+      this.perspectiveCamera.updateProjectionMatrix();
+      this.camera = this.perspectiveCamera;
+    }
+
+    this.orbitControls.object = this.camera;
+    (this.transformControls as any).camera = this.camera;
+    this.orbitControls.update();
+  }
+
+  public getCameraType(): 'perspective' | 'orthographic' {
+    return this.cameraType;
+  }
+
+  public toggleCameraType(): void {
+    const next = this.cameraType === 'perspective' ? 'orthographic' : 'perspective';
+    this.setCameraType(next);
+    usePrefsStore.getState().setDisplayPref('cameraType', next);
+  }
+
+  public zoomToBed(): void {
+    const cx = this.bedConfig.center[0];
+    const cy = this.bedConfig.center[1];
+    const span = Math.max(this.bedConfig.width, this.bedConfig.depth);
+    this.orbitControls.target.set(cx, cy, 0);
+    this.camera.position.set(cx, cy - span * 1.5, span * 1.2);
+    this.orbitControls.update();
+  }
+
+  private createLabelSprite(text: string): THREE.Sprite {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = 'rgba(24, 24, 27, 0.85)';
+      ctx.beginPath();
+      if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(8, 8, 240, 48, 8);
+      } else {
+        ctx.rect(8, 8, 240, 48);
+      }
+      ctx.fill();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.font = 'bold 20px sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const labelText = text.length > 20 ? text.slice(0, 18) + '...' : text;
+      ctx.fillText(labelText, 128, 32);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(30, 8, 1);
+    return sprite;
+  }
+
+  private updateLabels(): void {
+    const activeKeys = new Set<string>();
+    for (const [key, mesh] of this.objectMeshes.entries()) {
+      activeKeys.add(key);
+      let sprite = this.labelSprites.get(key);
+      const name = mesh.userData?.name || 'Object';
+      if (!sprite) {
+        sprite = this.createLabelSprite(name);
+        this.labelsGroup.add(sprite);
+        this.labelSprites.set(key, sprite);
+      }
+      const box = new THREE.Box3().setFromObject(mesh);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      sprite.position.set(center.x, center.y, box.max.z + 10);
+    }
+    for (const [key, sprite] of Array.from(this.labelSprites.entries())) {
+      if (!activeKeys.has(key)) {
+        this.labelsGroup.remove(sprite);
+        if (sprite.material.map) sprite.material.map.dispose();
+        sprite.material.dispose();
+        this.labelSprites.delete(key);
+      }
+    }
   }
 
   public updateBedConfig(bedConfig: BedConfig): void {
@@ -328,7 +635,6 @@ export class PlateScene {
             geo.computeBoundingSphere();
             this.geometries.set(obj.id, geo);
           } else {
-            // Refresh geometry buffers when positions or indices change even though counts stay equal
             let positionsModified = false;
             const currentPos = posAttr.array;
             for (let i = 0; i < currentPos.length; i++) {
@@ -380,6 +686,7 @@ export class PlateScene {
           this.objectMeshes.set(key, mesh);
         } else {
           mesh.geometry = geo;
+          mesh.userData = { ...mesh.userData, name: obj.name };
           mesh.material = isSelected ? this.selectedMaterial : this.defaultMaterial;
         }
 
@@ -400,13 +707,6 @@ export class PlateScene {
         if (this.transformControls.object === mesh) {
           this.transformControls.detach();
         }
-        for (const [oKey, overlay] of this.overlayMeshes.entries()) {
-          if (oKey.startsWith(key)) {
-            mesh.remove(overlay);
-            overlay.geometry.dispose();
-            this.overlayMeshes.delete(oKey);
-          }
-        }
         this.objectsGroup.remove(mesh);
         this.objectMeshes.delete(key);
       }
@@ -421,6 +721,8 @@ export class PlateScene {
         this.meshVolumes.delete(objId);
       }
     }
+
+    this.updateLabels();
   }
 
   public setSelection(objectId: number | null, instanceId: number | null): void {
@@ -459,9 +761,6 @@ export class PlateScene {
     if (active) {
       this.transformControls.detach();
     } else {
-      // Restore navigation and gizmo on exit/cancel
-      this.isPaintingStroke = false;
-      this.orbitControls.enabled = true;
       const selectedMesh = this.getSelectedMesh();
       if (selectedMesh) {
         this.transformControls.attach(selectedMesh);
@@ -589,10 +888,6 @@ export class PlateScene {
     this.brimEarPoints = [];
   }
 
-  /**
-   * Calculates viewport screen coordinates (pixels) for a facet's centroid.
-   * Useful for deterministic testing with actual browser pointer events.
-   */
   public getFacetScreenCoordinates(
     objectId: number,
     facetIndex: number,
@@ -667,7 +962,6 @@ export class PlateScene {
     const volId = paintingData?.volumeId ?? targetVolumeId;
     const partitions = this.meshVolumes.get(objectId);
 
-    // Never assume volume zero; missing metadata disables overlay safely
     if (!partitions || partitions.length === 0 || volId === null || volId === undefined) {
       return;
     }
@@ -719,10 +1013,10 @@ export class PlateScene {
       };
 
       for (const facet of paintingData.blockers) {
-        addFacet(facet, 0xef4444); // Red for blockers
+        addFacet(facet, 0xef4444);
       }
       for (const facet of paintingData.enforcers) {
-        addFacet(facet, 0x3b82f6); // Blue for enforcers
+        addFacet(facet, 0x3b82f6);
       }
 
       if (overlayIndices.length === 0) continue;
@@ -773,20 +1067,17 @@ export class PlateScene {
     raycaster.setFromCamera(mouse, this.camera);
 
     const intersects = raycaster.intersectObject(selectedMesh, false);
-    if (intersects.length > 0 && typeof intersects[0].faceIndex === "number") {
+    if (intersects.length > 0 && typeof intersects[0].faceIndex === 'number') {
       let mergedFaceIndex = intersects[0].faceIndex;
 
-      // Find partition containing merged faceIndex
       const partition = partitions.find(
         (p) => mergedFaceIndex >= p.firstFacet && mergedFaceIndex < p.firstFacet + p.facetCount
       );
 
-      // Restrict edits strictly to selected volume!
       if (!partition || partition.volumeId !== this.paintingVolumeId) {
         return null;
       }
 
-      // Map raycast faceIndex -> partition -> volume local index
       const localFacetIndex = mergedFaceIndex - partition.firstFacet;
       const point = intersects[0].point;
       const normal = intersects[0].face?.normal.clone().transformDirection(selectedMesh.matrixWorld) ?? new THREE.Vector3(0, 0, 1);
@@ -802,7 +1093,7 @@ export class PlateScene {
       const hit = this.raycastSelectedMesh(e);
       if (hit && typeof hit.faceIndex === 'number') {
         this.isPaintingStroke = true;
-        this.orbitControls.enabled = false; // Disable orbit during stroke!
+        this.orbitControls.enabled = false;
         if (this.advancedPainting) {
           const camera = this.camera.position;
           this.callbacks.onToolPaintBegin?.(hit.hit, hit.faceIndex, e.button, e.shiftKey, [camera.x, camera.y, camera.z]);
@@ -837,7 +1128,7 @@ export class PlateScene {
   private onPointerUp = (e: PointerEvent): void => {
     if (this.isPaintingActive && this.isPaintingStroke) {
       this.isPaintingStroke = false;
-      this.orbitControls.enabled = true; // Restore navigation!
+      this.orbitControls.enabled = true;
       if (this.advancedPainting) this.callbacks.onToolPaintEnd?.();
       else if (this.callbacks.onPaintEnd) {
         this.callbacks.onPaintEnd();
@@ -845,12 +1136,10 @@ export class PlateScene {
       return;
     }
 
-    // Only raycast for selection if pointer didn't move much (click, not orbit drag)
     const dx = e.clientX - this.pointerDownPos.x;
     const dy = e.clientY - this.pointerDownPos.y;
     if (Math.hypot(dx, dy) > 5) return;
 
-    // Check if clicking inside TransformControls gizmo
     if (this.transformControls.dragging) return;
 
     if (this.flattenClusters.length > 0) {
@@ -926,13 +1215,12 @@ export class PlateScene {
       const meshes = Array.from(this.objectMeshes.values());
       const intersects = raycaster.intersectObjects(meshes, false);
 
-      if (intersects.length > 0 && typeof intersects[0].faceIndex === "number") {
+      if (intersects.length > 0 && typeof intersects[0].faceIndex === 'number') {
         const hit = intersects[0].object as THREE.Mesh;
         if (hit.userData) {
           this.callbacks.onSelect(hit.userData.objectId, hit.userData.instanceId);
         }
       } else {
-        // Clicked on empty bed: deselect
         this.callbacks.onSelect(null, null);
       }
     }
@@ -958,9 +1246,20 @@ export class PlateScene {
     if (!this.container || this.isDestroyed) return;
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
+    const aspect = width / height;
 
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
+    this.perspectiveCamera.aspect = aspect;
+    this.perspectiveCamera.updateProjectionMatrix();
+
+    const d = this.camera.position.distanceTo(this.orbitControls.target);
+    const halfHeight = d * Math.tan(THREE.MathUtils.degToRad(this.perspectiveCamera.fov / 2));
+    const halfWidth = halfHeight * aspect;
+    this.orthographicCamera.left = -halfWidth;
+    this.orthographicCamera.right = halfWidth;
+    this.orthographicCamera.top = halfHeight;
+    this.orthographicCamera.bottom = -halfHeight;
+    this.orthographicCamera.updateProjectionMatrix();
+
     this.renderer.setSize(width, height);
   };
 
@@ -972,7 +1271,12 @@ export class PlateScene {
     this.renderer.render(this.scene, this.camera);
   };
 
-  public setCameraView(view: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 'Z'): void {
+  public setCameraView(view: CameraView): void {
+    if (view === 'BED') {
+      this.zoomToBed();
+      return;
+    }
+
     const selectedMesh = this.getSelectedMesh();
     let center = new THREE.Vector3(this.bedConfig.center[0], this.bedConfig.center[1], 0);
     let maxDim = Math.max(this.bedConfig.width, this.bedConfig.depth);
@@ -1003,13 +1307,27 @@ export class PlateScene {
 
     const d = span * 1.8;
     switch (view) {
-      case 1: this.camera.position.set(cx, cy, d); break; // Top
-      case 2: this.camera.position.set(cx, cy, -d); break; // Bottom
-      case 3: this.camera.position.set(cx, cy - d, 0); break; // Front
-      case 4: this.camera.position.set(cx, cy + d, 0); break; // Back
-      case 5: this.camera.position.set(cx - d, cy, 0); break; // Left
-      case 6: this.camera.position.set(cx + d, cy, 0); break; // Right
-      case 0: this.camera.position.set(cx - span, cy - d, span * 1.2); break; // Iso
+      case 1:
+        this.camera.position.set(cx, cy, d);
+        break; // Top
+      case 2:
+        this.camera.position.set(cx, cy, -d);
+        break; // Bottom
+      case 3:
+        this.camera.position.set(cx, cy - d, 0);
+        break; // Front
+      case 4:
+        this.camera.position.set(cx, cy + d, 0);
+        break; // Back
+      case 5:
+        this.camera.position.set(cx - d, cy, 0);
+        break; // Left
+      case 6:
+        this.camera.position.set(cx + d, cy, 0);
+        break; // Right
+      case 0:
+        this.camera.position.set(cx - span, cy - d, span * 1.2);
+        break; // Iso
     }
     this.orbitControls.update();
   }
@@ -1019,6 +1337,9 @@ export class PlateScene {
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
     }
+
+    this.unsubscribePrefs?.();
+    this.unsubscribePrefs = null;
 
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
@@ -1036,6 +1357,13 @@ export class PlateScene {
     this.clearBrimEarsOverlay();
     this.scene.remove(this.flattenGroup);
     this.scene.remove(this.brimEarsGroup);
+
+    for (const sprite of this.labelSprites.values()) {
+      if (sprite.material.map) sprite.material.map.dispose();
+      sprite.material.dispose();
+    }
+    this.labelSprites.clear();
+    this.scene.remove(this.labelsGroup);
 
     for (const overlay of this.overlayMeshes.values()) {
       overlay.geometry.dispose();

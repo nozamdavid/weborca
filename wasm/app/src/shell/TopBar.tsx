@@ -13,6 +13,8 @@ import { exportPlateSlicedFile } from './exportPlateSlicedFile';
 import { getRecentFiles, openRecentFile } from './recentFiles';
 import { ImportIcon, RedoIcon, UndoIcon } from './glyphs';
 import { useHelpStore } from './HelpDialogs';
+import { usePrefsStore } from '../prefs/prefsStore';
+import { usePreviewStore } from '../preview/previewStore';
 
 export type TabId = 'prepare' | 'preview' | 'device' | 'calibration';
 
@@ -27,6 +29,7 @@ interface Item {
   label: string;
   keys?: string;
   disabled?: boolean;
+  checked?: boolean;
   onClick?: () => void;
   submenu?: Item[];
 }
@@ -77,18 +80,38 @@ const Menu: React.FC<{
                 </div>
               );
             }
+            const isCheckbox = e.checked !== undefined;
             return (
               <button
                 key={e.label}
-                className="menu-item"
-                role="menuitem"
+                className={`menu-item ${isCheckbox ? 'menu-item-checkbox' : ''}`}
+                role={isCheckbox ? 'menuitemcheckbox' : 'menuitem'}
+                aria-checked={e.checked}
                 disabled={e.disabled}
                 onClick={() => {
                   setOpenMenu(null);
                   e.onClick?.();
                 }}
               >
-                <span>{e.label}</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {isCheckbox ? (
+                    <span
+                      className="menu-check"
+                      aria-hidden="true"
+                      style={{
+                        display: 'inline-block',
+                        width: 14,
+                        textAlign: 'center',
+                        color: 'var(--accent-color)',
+                        fontWeight: 'bold',
+                        fontSize: 12
+                      }}
+                    >
+                      {e.checked ? '✓' : ''}
+                    </span>
+                  ) : null}
+                  <span>{e.label}</span>
+                </span>
                 {e.keys && <kbd>{e.keys}</kbd>}
               </button>
             );
@@ -128,6 +151,51 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
   const redo = useHistoryStore((s) => s.redo);
   const hasSelection = usePlateStore((s) => s.selectedObjectId != null);
 
+  // Preferences & View Store
+  const prefsDisplay = usePrefsStore((s) => s.display);
+  const openPrefs = usePrefsStore((s) => s.openDialog);
+  const toggleShowGrid = usePrefsStore((s) => s.toggleShowGrid);
+  const toggleShowAxes = usePrefsStore((s) => s.toggleShowAxes);
+  const toggleShowLabels = usePrefsStore((s) => s.toggleShowLabels);
+  const toggleShowBuildVolume = usePrefsStore((s) => s.toggleShowBuildVolume);
+  const toggleShowWireframe = usePrefsStore((s) => s.toggleShowWireframe);
+  const toggleCameraType = usePrefsStore((s) => s.toggleCameraType);
+  const toggleSidebar = usePrefsStore((s) => s.toggleSidebar);
+
+  // Preview options & legend
+  const previewLegend = usePreviewStore((s) => s.legend);
+  const toggleOption = usePreviewStore((s) => s.toggleOptionAction);
+  const toggleExtrusionRole = usePreviewStore((s) => s.toggleExtrusionRoleAction);
+
+  const travelOpt = previewLegend.options?.find((o) => o.name.toLowerCase().includes('travel'));
+  const retractOpt = previewLegend.options?.find((o) => o.name.toLowerCase().includes('retract'));
+  const wipeOpt = previewLegend.options?.find((o) => o.name.toLowerCase().includes('wipe'));
+  const shellsItem = previewLegend.items?.find(
+    (i) =>
+      i.name.toLowerCase().includes('outer wall') ||
+      i.name.toLowerCase().includes('inner wall') ||
+      i.name.toLowerCase().includes('perimeter')
+  );
+
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(
+    typeof document !== 'undefined' && !!document.fullscreenElement
+  );
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
+
   useEffect(() => {
     if (!openMenu) return;
     const close = (e: Event) => {
@@ -150,11 +218,49 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (
-        !(e.ctrlKey || e.metaKey) ||
-        (e.target as HTMLElement | null)?.closest?.('input, textarea, select')
-      )
+      if ((e.target as HTMLElement | null)?.closest?.('input, textarea, select')) {
         return;
+      }
+
+      // Check for Preferences: Ctrl+P
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        openPrefs();
+        return;
+      }
+
+      // Show object labels: Ctrl+E
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'e' || e.key === 'E')) {
+        e.preventDefault();
+        toggleShowLabels();
+        return;
+      }
+
+      // Zoom to bed: Ctrl+0
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault();
+        setActiveTab('prepare');
+        setCameraView('BED');
+        return;
+      }
+
+      // Camera type toggle: K
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        toggleCameraType();
+        return;
+      }
+
+      // Sidebar toggle: Shift+Tab
+      if (e.shiftKey && e.key === 'Tab') {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
+      // Existing Ctrl shortcuts
+      if (!(e.ctrlKey || e.metaKey)) return;
+
       const appState = useAppStore.getState();
       const busy =
         appState.isSlicing ||
@@ -181,10 +287,12 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [openPrefs, toggleShowLabels, toggleCameraType, toggleSidebar, setActiveTab]);
 
   const recentFiles = getRecentFiles();
   const other = useOtherCalibrationStore.getState;
+  const inPreview = activeTab === 'preview';
+
   const menus: Array<[string, Entry[]]> = [
     [
       'File',
@@ -217,7 +325,9 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         'sep',
         { label: 'Printer presets...', onClick: () => openManagePresetsDialog('printer') },
         { label: 'Filament presets...', onClick: () => openManagePresetsDialog('filament') },
-        { label: 'Process presets...', onClick: () => openManagePresetsDialog('process') }
+        { label: 'Process presets...', onClick: () => openManagePresetsDialog('process') },
+        'sep',
+        { label: 'Preferences...', keys: 'Ctrl+P', onClick: () => openPrefs('general') }
       ]
     ],
     [
@@ -241,7 +351,9 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         { label: 'Simplify...', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().openSimplifyDialog() },
         { label: 'Mesh boolean...', disabled: isBusy || objectCount < 2, onClick: () => void useEditOpsStore.getState().openBooleanDialog() },
         { label: 'Brim ears...', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().startBrimEars() },
-        { label: 'Add SVG...', disabled: isBusy, onClick: () => void useEditOpsStore.getState().openSvgDialog() }
+        { label: 'Add SVG...', disabled: isBusy, onClick: () => void useEditOpsStore.getState().openSvgDialog() },
+        'sep',
+        { label: 'Preferences...', keys: 'Ctrl+P', onClick: () => openPrefs('general') }
       ]
     ],
     [
@@ -263,6 +375,95 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
             setActiveTab('prepare');
             setCameraView('Z');
           }
+        },
+        {
+          label: 'Zoom to bed',
+          keys: 'Ctrl+0',
+          onClick: () => {
+            setActiveTab('prepare');
+            setCameraView('BED');
+          }
+        },
+        'sep',
+        {
+          label: 'Orthographic camera',
+          keys: 'K',
+          checked: prefsDisplay.cameraType === 'orthographic',
+          onClick: toggleCameraType
+        },
+        'sep',
+        {
+          label: 'Bed grid',
+          checked: prefsDisplay.showGrid,
+          onClick: toggleShowGrid
+        },
+        {
+          label: 'Axes',
+          checked: prefsDisplay.showAxes,
+          onClick: toggleShowAxes
+        },
+        {
+          label: 'Object labels',
+          keys: 'Ctrl+E',
+          checked: prefsDisplay.showLabels,
+          onClick: toggleShowLabels
+        },
+        {
+          label: 'Build volume wireframe',
+          checked: prefsDisplay.showBuildVolume,
+          onClick: toggleShowBuildVolume
+        },
+        {
+          label: 'Wireframe objects',
+          keys: 'Ctrl+Shift+Enter',
+          checked: prefsDisplay.showWireframe,
+          onClick: toggleShowWireframe
+        },
+        'sep',
+        {
+          label: 'Show shells',
+          checked: shellsItem ? shellsItem.visible : true,
+          disabled: !inPreview || !shellsItem,
+          onClick: () => {
+            if (shellsItem) toggleExtrusionRole(shellsItem.id);
+          }
+        },
+        {
+          label: 'Show travel moves',
+          checked: travelOpt ? travelOpt.visible : true,
+          disabled: !inPreview || !travelOpt,
+          onClick: () => {
+            if (travelOpt) toggleOption(travelOpt.id);
+          }
+        },
+        {
+          label: 'Show retractions',
+          checked: retractOpt ? retractOpt.visible : true,
+          disabled: !inPreview || !retractOpt,
+          onClick: () => {
+            if (retractOpt) toggleOption(retractOpt.id);
+          }
+        },
+        {
+          label: 'Show wipe moves',
+          checked: wipeOpt ? wipeOpt.visible : true,
+          disabled: !inPreview || !wipeOpt,
+          onClick: () => {
+            if (wipeOpt) toggleOption(wipeOpt.id);
+          }
+        },
+        'sep',
+        {
+          label: 'Show sidebar',
+          keys: 'Shift+Tab',
+          checked: prefsDisplay.showSidebar,
+          onClick: toggleSidebar
+        },
+        {
+          label: 'Fullscreen',
+          keys: 'F11',
+          checked: isFullscreen,
+          onClick: toggleFullscreen
         }
       ]
     ],
@@ -286,6 +487,15 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
     [
       'Help',
       [
+        {
+          label: 'OrcaSlicer Wiki',
+          onClick: () => window.open('https://github.com/OrcaSlicer/OrcaSlicer/wiki', '_blank', 'noopener,noreferrer')
+        },
+        {
+          label: 'OrcaSlicer GitHub',
+          onClick: () => window.open('https://github.com/OrcaSlicer/OrcaSlicer', '_blank', 'noopener,noreferrer')
+        },
+        'sep',
         { label: 'Keyboard shortcuts', onClick: () => useHelpStore.getState().open('shortcuts') },
         { label: 'About OrcaSlicer Web', onClick: () => useHelpStore.getState().open('about') }
       ]
