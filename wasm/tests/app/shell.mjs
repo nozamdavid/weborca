@@ -76,7 +76,10 @@ async function runSuite(browserType, name) {
     log('opening Preview with nothing sliced starts the slice');
     assert.equal(await page.evaluate(() => window.__appStore.getState().sliceResult), null);
     await page.click('#tab-preview');
+    await page.waitForSelector('#preview-slicing-overlay');
+    assert.match(await page.locator('#preview-slicing-status').innerText(), /Slic|Starting/, 'progress is shown on the Preview tab');
     await page.waitForFunction(() => window.__appStore.getState().sliceResult?.gcode, null, { timeout: 120000 });
+    await page.waitForSelector('#preview-slicing-overlay', { state: 'detached' });
     await page.click('#tab-prepare');
 
     log('the plate turns see-through when seen from below');

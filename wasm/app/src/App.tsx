@@ -32,6 +32,8 @@ export const App: React.FC = () => {
   const isSlicing = useAppStore((state) => state.isSlicing);
   const isModelLoading = useAppStore((state) => state.isModelLoading);
   const sliceStatusText = useAppStore((state) => state.sliceStatusText);
+  const slicePercent = useAppStore((state) => state.slicePercent);
+  const cancelSlice = useAppStore((state) => state.cancelSlice);
   const showSidebar = usePrefsStore((state) => state.display.showSidebar);
 
   const [activeTab, setActiveTab] = useState<TabId>('prepare');
@@ -123,6 +125,16 @@ export const App: React.FC = () => {
           <CalibrationPage />
         </div>
 
+        {isSlicing && activeTab === 'preview' && (
+          <div id="preview-slicing-overlay" className="model-loading-overlay">
+            <div className="model-loading-card" role="status" aria-live="polite" aria-atomic="true" style={{ flexDirection: 'column', alignItems: 'stretch', minWidth: 320 }}>
+              <strong>Slicing</strong>
+              <div className="progress-bar-wrapper"><div className="progress-bar-fill" id="preview-progress-bar" style={{ width: `${slicePercent}%` }} /></div>
+              <p id="preview-slicing-status">{sliceStatusText}</p>
+              <button className="btn-danger-wide" id="preview-cancel-btn" onClick={() => cancelSlice()}>Cancel</button>
+            </div>
+          </div>
+        )}
         {isModelLoading && (
           <div id="model-loading-overlay" className="model-loading-overlay">
             <div className="model-loading-card" role="status" aria-live="polite" aria-atomic="true">
