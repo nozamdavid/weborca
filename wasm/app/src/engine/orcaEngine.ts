@@ -119,6 +119,11 @@ export async function getConfig(): Promise<Record<string, string>> {
   return await engine.getConfig();
 }
 
+export async function getPresetConfig(kind: 'printer' | 'process' | 'filament', name: string): Promise<Record<string, string>> {
+  const engine = await getEngine();
+  return await engine.call('getPresetConfig', { kind, name });
+}
+
 export async function getConfigDef(keys?: string[]): Promise<Record<string, ConfigOptionDef>> {
   const engine = await getEngine();
   return (await engine.getConfigDef(keys)) as Record<string, ConfigOptionDef>;

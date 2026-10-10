@@ -209,6 +209,7 @@ private:
     json op_getCompatiblePresets(const json& args);
     json op_selectPresets(const json& args);
     json op_getConfig(const json& args);
+    json op_getPresetConfig(const json& args);
     json op_getConfigDef(const json& args);
     json op_evaluateRules(const json& args);
     json op_setOptions(const json& args);
@@ -435,6 +436,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_selectPresets(args);
         } else if (op == "getConfig") {
             result_data = op_getConfig(args);
+        } else if (op == "getPresetConfig") {
+            result_data = op_getPresetConfig(args);
         } else if (op == "getConfigDef") {
             result_data = op_getConfigDef(args);
         } else if (op == "evaluateRules") {
@@ -955,6 +958,26 @@ json Engine::Impl::op_getConfig(const json& /*args*/) {
     for (const std::string& key : config.keys()) {
         res[key] = config.opt_serialize(key);
     }
+    return res;
+}
+
+// The options of one preset as stored, without selecting it, so presets can be compared with the active one.
+json Engine::Impl::op_getPresetConfig(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized; call loadVendors first");
+    const std::string kind = args.at("kind").get<std::string>();
+    const std::string name = args.at("name").get<std::string>();
+
+    Slic3r::PresetCollection* collection = nullptr;
+    if (kind == "printer") collection = &m_bundle->printers;
+    else if (kind == "process") collection = &m_bundle->prints;
+    else if (kind == "filament") collection = &m_bundle->filaments;
+    else throw Slic3r::RuntimeError("Unknown preset kind: " + kind);
+
+    const Slic3r::Preset* preset = collection->find_preset(name, false);
+    if (!preset) throw Slic3r::RuntimeError("Unknown " + kind + " preset: " + name);
+
+    json res = json::object();
+    for (const std::string& key : preset->config.keys()) res[key] = preset->config.opt_serialize(key);
     return res;
 }
 

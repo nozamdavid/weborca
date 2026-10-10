@@ -1,3 +1,4 @@
+import { ComparePresetsDialog } from './settings/ComparePresetsDialog';
 import React, { useEffect, useState } from 'react';
 import './App.css';
 import { FlowRateModal } from './calibration/FlowRateModal';
@@ -168,6 +169,7 @@ export const App: React.FC = () => {
       <OtherCalibrationsDialogs />
       <PrinterConnectionDialog />
       <HelpDialogs />
+      <ComparePresetsDialog />
       <PreferencesDialog />
       <EditOpsDialogs />
       <ToastContainer />
