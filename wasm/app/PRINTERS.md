@@ -55,6 +55,28 @@ Anyone who can reach the app server can use the gateway, so it is restricted:
 - Bambu uploads accept plain `.gcode` / `.3mf` names only.
 - API keys, access codes and passwords are stored in this browser's local storage and sent only to the gateway.
 
+## The printer's own web UI in the Device tab
+
+An https page cannot embed an `http://` printer UI (mixed content). With the gateway on, the Device tab
+loads the UI from `/_printer/ui/<scheme>/<host[:port]>/` instead, on the app's own origin. Mainsail, Fluidd
+and similar UIs assume they live at the root of their origin, so the gateway makes that true for them:
+
+- root-relative `src`/`href`/`action` attributes in HTML and `url(/...)` in CSS are rewritten, and a
+  `<base>` plus a small script are injected into every HTML page;
+- the script sends `fetch`, XHR, `EventSource`, `Worker`, `sendBeacon`, dynamically set `src`/`href` and
+  `WebSocket` through the gateway (websockets to `/_printer/ws/...`, so the read-only filter applies) and gives
+  the page's router a root-relative `location`;
+- `X-Frame-Options` and `Content-Security-Policy` are dropped and the response is marked
+  `Cross-Origin-Embedder-Policy: require-corp`, as the app is cross-origin isolated; responses are fetched
+  uncompressed so they can be rewritten, and cookies are not forwarded;
+- JavaScript files are streamed unchanged.
+
+Limits: this is a best-effort rewrite, not a general web proxy. Service workers are disabled, absolute URLs
+built from string concatenation that do not use the page's host are not rewritten, and in read-only mode the
+UI's own writes (for example the camera's WebRTC handshake, a POST) are refused. **The embedded UI runs on the
+app's origin, so its scripts can read this browser's local storage, including saved printer API keys. Only
+open the UI of printers you trust.** "Open in new tab" still opens the printer's own address.
+
 ## Printing from the app
 
 After slicing, **Send to printer** (Preview) uploads the G-code. "Upload and print" needs a second click to
@@ -74,5 +96,7 @@ status mapping follow the community-documented MQTT messages and are tested agai
   relay, Digest, the MQTT bridge.
 - `wasm/tests/node/printer-drivers.test.mjs`: the app's drivers against mock Moonraker, OctoPrint,
   PrusaLink and a Bambu broker through the real gateway.
+- `wasm/tests/app/printer-ui.mjs`: a mock Mainsail-style UI (root-absolute assets, `fetch`, XHR, a websocket
+  and a script added at run time) opened through the UI proxy in Chromium and Firefox.
 - `wasm/tests/node/printer-live.test.mjs`: read-only check of a real Moonraker printer, only when
   `ORCA_LIVE_PRINTER=<address>` is set. It runs through a read-only gateway and never calls upload.

@@ -7,6 +7,7 @@
  *
  *   GET  /_printer/status                         { enabled, mode, readOnly }
  *   ANY  /_printer/<http|https>/<host[:port]>/... streaming reverse proxy
+ *   GET  /_printer/ui/<http|https>/<host[:port]>/... the printer's web UI with paths rewritten for embedding
  *   WS   /_printer/<ws|wss>/<host[:port]>/...     websocket relay
  *   WS   /_printer/bambu/mqtt/<host[:port]>       Bambu MQTT bridge (see handleBambuMqtt)
  *   POST /_printer/bambu/ftp/<host>               Bambu FTPS upload
@@ -27,6 +28,7 @@ import {
   digestAuthorization, httpAllowedInReadOnly, parseDigestChallenge, resolveTarget
 } from './gateway/policy.ts';
 import type { DigestChallenge, GatewayConfig, Resolver, Target } from './gateway/policy.ts';
+import { UI_ROUTE, rewriteCss, rewriteHtml, rewriteLocation } from './gateway/uiProxy.ts';
 
 export interface GatewayOptions extends GatewayConfig {
   /** Replaces DNS lookups (tests). */
@@ -38,6 +40,7 @@ export interface GatewayOptions extends GatewayConfig {
 const HOP_BY_HOP = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'upgrade'];
 const NOT_FORWARDED = ['host', 'origin', 'referer', 'cookie', 'x-orca-auth', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto'];
 const UPSTREAM_IDLE_MS = 60_000;
+const MAX_REWRITTEN_BYTES = 8 * 1024 * 1024;
 const MAX_QUEUED_WS_FRAMES = 200;
 
 function fail(res: http.ServerResponse, status: number, message: string) {
@@ -131,7 +134,7 @@ async function digestHeader(
 
 async function handleProxy(
   req: http.IncomingMessage, res: http.ServerResponse, scheme: 'http' | 'https', hostPort: string, path: string,
-  options: GatewayOptions
+  options: GatewayOptions, ui = false
 ) {
   const config = { ...configFromEnv(), ...options };
   const target = await resolveTarget(hostPort, scheme === 'https' ? 443 : 80, config, options.resolver);
@@ -143,6 +146,12 @@ async function handleProxy(
   const headers: http.OutgoingHttpHeaders = {};
   for (const [name, value] of Object.entries(req.headers)) {
     if (!HOP_BY_HOP.includes(name) && !NOT_FORWARDED.includes(name)) headers[name] = value;
+  }
+  if (ui) {
+    // Pages are rewritten, so they must arrive uncompressed and unconditionally.
+    headers['accept-encoding'] = 'identity';
+    delete headers['if-none-match'];
+    delete headers['if-modified-since'];
   }
   const creds = parseDigestCredentials(req.headers['x-orca-auth']);
   if (creds) {
@@ -158,7 +167,39 @@ async function handleProxy(
     for (const [name, value] of Object.entries(up.headers)) {
       if (!HOP_BY_HOP.includes(name) && name !== 'set-cookie') out[name] = value;
     }
-    res.writeHead(up.statusCode ?? 502, out);
+    const status = up.statusCode ?? 502;
+    if (ui) {
+      // The page is shown in an iframe of this app, which is cross-origin isolated.
+      delete out['x-frame-options'];
+      delete out['content-security-policy'];
+      delete out['content-security-policy-report-only'];
+      out['cross-origin-embedder-policy'] = 'require-corp';
+      out['cross-origin-resource-policy'] = 'same-origin';
+      if (typeof out.location === 'string') out.location = rewriteLocation(out.location, scheme, hostPort);
+      const type = String(up.headers['content-type'] ?? '');
+      const rewrite = /^text\/html/i.test(type) ? 'html' : /^text\/css/i.test(type) ? 'css' : undefined;
+      if (rewrite && status === 200) {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        up.on('data', (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > MAX_REWRITTEN_BYTES) up.destroy(new Error('The printer page is too large to embed.'));
+          else chunks.push(chunk);
+        });
+        up.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf8');
+          const body = Buffer.from(rewrite === 'html' ? rewriteHtml(text, scheme, hostPort) : rewriteCss(text, `/_printer/ui/${scheme}/${hostPort}`), 'utf8');
+          delete out['content-length'];
+          delete out.etag;
+          out['content-length'] = String(body.length);
+          res.writeHead(status, out);
+          res.end(body);
+        });
+        up.on('error', (err) => fail(res, 502, errorMessage(err)));
+        return;
+      }
+    }
+    res.writeHead(status, out);
     up.pipe(res);
     up.on('error', () => res.destroy());
   });
@@ -357,6 +398,17 @@ export function printerGatewayPlugin(options: GatewayOptions = {}): Plugin {
         }
         const bambu = BAMBU_ROUTE.exec(url);
         if (bambu?.[1] === 'ftp') return await handleBambuFtp(req, res, bambu[2], options);
+        const ui = UI_ROUTE.exec(url);
+        if (ui) {
+          // `/_printer/ui/http/host` without a slash would resolve relative URLs against /_printer/ui/http/.
+          if (!ui[3]) {
+            res.statusCode = 308;
+            res.setHeader('location', `/_printer/ui/${ui[1]}/${ui[2]}/${ui[4] ?? ''}`);
+            res.end();
+            return;
+          }
+          return await handleProxy(req, res, ui[1] as 'http' | 'https', ui[2], ui[3] + (ui[4] ?? ''), options, true);
+        }
         const match = ROUTE.exec(url);
         if (match && (match[1] === 'http' || match[1] === 'https')) {
           return await handleProxy(req, res, match[1], match[2], match[3] ?? '/', options);

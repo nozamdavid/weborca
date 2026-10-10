@@ -27,6 +27,13 @@ export function parseHost(input: string): { scheme: 'http' | 'https'; hostPort: 
   return { scheme: url.protocol === 'https:' ? 'https' : 'http', hostPort: url.host, basePath: url.pathname.replace(/\/+$/, '') };
 }
 
+/** The printer's web UI address as served through the gateway (same origin, so an https page can embed it). */
+export function uiProxyUrl(uiUrl: string): string {
+  const { scheme, hostPort, basePath } = parseHost(uiUrl);
+  const url = new URL(uiUrl.includes('://') ? uiUrl : `http://${uiUrl}`);
+  return `/_printer/ui/${scheme}/${hostPort}${basePath}/${url.search}${url.hash}`;
+}
+
 const withSlash = (path: string) => (path.startsWith('/') ? path : `/${path}`);
 
 /** URL for an HTTP request to the printer, through the gateway or direct. */
