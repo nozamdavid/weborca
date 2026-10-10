@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { getEngine, slice } from '../engine/orcaEngine';
 import { useAppStore } from '../store/appStore';
 import type { ProgressNotification, SliceResult } from '../engine/types';
+import { plateTitle } from './plateName';
 import type { PlateInfo } from './types';
 
 export interface PlatesStoreState {
@@ -29,7 +30,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
   plates: [
     {
       index: 0,
-      name: 'Plate 1',
+      name: plateTitle(''),
       locked: false,
       origin: [0, 0, 0],
       size: [256, 256, 256],
@@ -49,7 +50,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
       const plates: PlateInfo[] = Array.isArray(platesRaw)
         ? platesRaw.map((p) => ({
             index: p.index ?? 0,
-            name: p.name || `Plate ${(p.index ?? 0) + 1}`,
+            name: plateTitle(p.name),
             locked: !!p.locked,
             origin: p.origin || [0, 0, 0],
             size: p.size || [256, 256, 256],

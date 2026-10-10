@@ -699,8 +699,10 @@ export const PlateView: React.FC = () => {
     sceneRef.current?.setPlates(plates.map((p) => ({ index: p.index, name: p.name, origin: p.origin })), activePlateIndex);
   }, [plates, activePlateIndex, meshRevision]);
   const previousPlate = useRef(activePlateIndex);
+  const pickedInView = useRef(false); // clicking a plate in the view must not also move the camera
   useEffect(() => {
-    if (previousPlate.current !== activePlateIndex) sceneRef.current?.focusPlate(activePlateIndex);
+    if (previousPlate.current !== activePlateIndex && !pickedInView.current) sceneRef.current?.focusPlate(activePlateIndex);
+    pickedInView.current = false;
     previousPlate.current = activePlateIndex;
   }, [activePlateIndex]);
 
@@ -709,10 +711,19 @@ export const PlateView: React.FC = () => {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    let down: { x: number; y: number } | null = null;
-    const onDown = (e: PointerEvent) => { down = e.button === 2 ? { x: e.clientX, y: e.clientY } : null; };
+    let down: { x: number; y: number; button: number } | null = null;
+    const onDown = (e: PointerEvent) => { down = { x: e.clientX, y: e.clientY, button: e.button }; };
     const onUp = (e: PointerEvent) => {
-      if (e.button !== 2 || !down) return;
+      if (e.button === 0 && down?.button === 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4 && container.contains(e.target as Node)) {
+        // A click on a plate (off the objects) makes it the active plate.
+        const scene = sceneRef.current;
+        const picked = scene && !usePaintToolsStore.getState().isActive && !scene.isObjectAt(e.clientX, e.clientY) ? scene.plateAt(e.clientX, e.clientY) : null;
+        if (picked !== null && picked !== usePlatesStore.getState().activePlateIndex) {
+          pickedInView.current = true;
+          usePlatesStore.getState().setActivePlate(picked);
+        }
+      }
+      if (e.button !== 2 || !down || down.button !== 2) return;
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       down = null;
       if (moved > 4 || usePaintToolsStore.getState().isActive || sceneRef.current?.isObjectAt(e.clientX, e.clientY)) return;

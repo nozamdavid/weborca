@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { plateTitle } from '../plates/plateName';
 import type { PlateObject, BedConfig, GizmoMode, MeshBufferData, MeshVolumePartition } from './types';
 import type { SupportPaintingData } from '../painting/types';
 import { renderPaintOverlay, clearPaintOverlay } from '../paint-tools/overlayRenderer';
@@ -38,7 +39,7 @@ export class PlateScene {
   public perspectiveCamera: THREE.PerspectiveCamera;
   public orthographicCamera: THREE.OrthographicCamera;
   public camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
-  private renderer: THREE.WebGLRenderer;
+  public renderer: THREE.WebGLRenderer;
   private orbitControls: OrbitControls;
   private transformControls: TransformControls;
 
@@ -452,6 +453,23 @@ export class PlateScene {
   }
 
   /** Moves the view to the given plate, keeping the viewing direction and distance. */
+  /** The plate whose bed lies under the given client position, or null when the click is off every bed. */
+  public plateAt(clientX: number, clientY: number): number | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), this.camera);
+    const hit = raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), new THREE.Vector3());
+    if (!hit) return null;
+    const { width, depth, center } = this.bedConfig;
+    const plate = this.plates.find((p) => Math.abs(hit.x - (p.origin[0] + center[0])) <= width / 2 && Math.abs(hit.y - (p.origin[1] + center[1])) <= depth / 2);
+    return plate ? plate.index : null;
+  }
+
+  /** The middle of a plate's bed in world space (test hook for projecting it to the screen). */
+  public bedConfigCenterWorld(origin: [number, number, number]): THREE.Vector3 {
+    return new THREE.Vector3(origin[0] + this.bedConfig.center[0], origin[1] + this.bedConfig.center[1], origin[2]);
+  }
+
   public focusPlate(index: number): void {
     const plate = this.plates.find((p) => p.index === index);
     if (!plate) return;
@@ -514,8 +532,8 @@ export class PlateScene {
       const number = text(String(plate.index + 1), 'bold 96px sans-serif', size * 0.12, active ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)', 'left', ox + cx - width / 2 + margin, oy + cy - depth / 2 + margin + size * 0.06);
       number.position.z = oz + 0.05;
       this.plateLabelGroup.add(number);
-      const title = plate.name && plate.name !== `Plate ${plate.index + 1}` ? plate.name : '';
-      if (title) {
+      const title = plateTitle(plate.name);
+      {
         const shown = title.length > 40 ? `${title.slice(0, 38)}...` : title;
         const label = text(shown, 'bold 48px sans-serif', size * 0.09, active ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.65)', 'center', ox + cx, oy + cy - depth / 2 - size * 0.07);
         label.position.z = oz + 0.05;

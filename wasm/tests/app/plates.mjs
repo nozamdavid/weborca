@@ -166,13 +166,13 @@ async function runBrowserSuite(browserType, browserName) {
     assert.equal(await page.locator('#plate-name-1').innerText(), 'Benchy plate');
     // The active plate's number and title are printed on the bed
     const printed = await page.evaluate(() => window.__plateScene.plateLabelGroup.children.length);
-    assert.equal(printed, 3, 'both plate numbers and the new title are drawn');
+    assert.equal(printed, 4, 'both plate numbers and titles are drawn');
     assert.equal(await page.evaluate(() => window.__plateScene.extraBedsGroup.children.length), 3, 'the second plate has its own bed beside the first');
     await page.dblclick('#plate-tab-1');
     await page.fill('#plate-name-input-1', '');
     await page.keyboard.press('Enter');
-    await page.waitForFunction(() => window.__platesStore.getState().plates[1]?.name === 'Plate 2', null, { timeout: 10000 });
-    assert.equal(await page.evaluate(() => window.__plateScene.plateLabelGroup.children.length), 2, 'only the numbers remain for default titles');
+    await page.waitForFunction(() => window.__platesStore.getState().plates[1]?.name === 'Untitled plate', null, { timeout: 10000 });
+    assert.equal(await page.locator('#plate-name-1').innerText(), 'Untitled plate', 'an empty title is the default one');
     await page.dblclick('#plate-tab-1');
     await page.fill('#plate-name-input-1', 'Benchy plate');
     await page.keyboard.press('Enter');
@@ -180,6 +180,22 @@ async function runBrowserSuite(browserType, browserName) {
     await page.click('#view-top');
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, `plates-titles-${browserName}.png`) });
+    // Clicking a plate in the 3D view selects it, without moving the camera
+    const screenOf = (index) => page.evaluate((i) => {
+      const scene = window.__plateScene;
+      const plate = window.__platesStore.getState().plates[i];
+      const rect = scene.renderer.domElement.getBoundingClientRect();
+      const v = scene.bedConfigCenterWorld(plate.origin).project(scene.camera);
+      return [rect.left + ((v.x + 1) / 2) * rect.width, rect.top + ((1 - v.y) / 2) * rect.height];
+    }, index);
+    for (const [from, to] of [[1, 0], [0, 1]]) {
+      await page.click(`#plate-tab-${from}`);
+      const cameraBefore = await page.evaluate(() => window.__plateScene.camera.position.toArray().map(Math.round));
+      const [x, y] = await screenOf(to);
+      await page.mouse.click(x, y + 40); // off the objects, on the plate
+      await page.waitForFunction((i) => window.__platesStore.getState().activePlateIndex === i, to, { timeout: 5000 });
+      assert.deepEqual(await page.evaluate(() => window.__plateScene.camera.position.toArray().map(Math.round)), cameraBefore, 'the camera stays put');
+    }
     console.log(`[${browserName}] Plate numbers and titles verified`);
 
     // Take screenshot of multi-plate setup
