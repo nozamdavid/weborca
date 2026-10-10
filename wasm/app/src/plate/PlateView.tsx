@@ -3,6 +3,7 @@ import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
 import { useAppStore } from '../store/appStore';
 import { PlateContextMenu } from './PlateContextMenu';
+import { PlateRenameDialog } from './PlateRenameDialog';
 import { isDefaultPlateName } from '../plates/plateName';
 import { usePlatesStore } from '../plates/platesStore';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
@@ -878,23 +879,15 @@ export const PlateView: React.FC = () => {
       {/* Plate Selector Bar */}
       <PlateSelectorBar />
       {renamingPlate && (
-        <input
-          id="plate-title-input"
-          autoFocus
-          placeholder={`Plate ${renamingPlate.index + 1}`}
-          value={renamingPlate.value}
-          onChange={(e) => setRenamingPlate({ ...renamingPlate, value: e.target.value })}
-          onBlur={() => setRenamingPlate(null)}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === 'Escape') setRenamingPlate(null);
-            if (e.key === 'Enter') {
-              const { index, value } = renamingPlate;
-              setRenamingPlate(null);
-              void usePlatesStore.getState().setPlateConfig(index, {}, value.trim());
-            }
+        <PlateRenameDialog
+          index={renamingPlate.index}
+          initial={renamingPlate.value}
+          onClose={() => setRenamingPlate(null)}
+          onSubmit={(title) => {
+            const { index } = renamingPlate;
+            setRenamingPlate(null);
+            void usePlatesStore.getState().setPlateConfig(index, {}, title);
           }}
-          style={{ position: 'fixed', left: renamingPlate.x, top: renamingPlate.y - 14, zIndex: 50, width: 160, background: '#27272a', color: '#ff7a45', border: '1px solid #ff7a45', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}
         />
       )}
       {plateMenu && <PlateContextMenu x={plateMenu.x} y={plateMenu.y} onClose={() => setPlateMenu(null)} />}

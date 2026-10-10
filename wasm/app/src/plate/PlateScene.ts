@@ -522,7 +522,7 @@ export class PlateScene {
       const ctx = canvas.getContext('2d')!;
       ctx.font = font;
       const textWidth = Math.ceil(ctx.measureText(value).width);
-      const pencilWidth = pencil ? Math.round(px * 0.9) : 0;
+      const pencilWidth = pencil ? Math.round(px * 1.3) : 0;
       canvas.width = textWidth + pencilWidth + 16;
       canvas.height = Math.round(px * 1.4);
       ctx.font = font;
@@ -532,14 +532,21 @@ export class PlateScene {
       ctx.textAlign = 'left';
       ctx.fillText(value, 8, canvas.height / 2);
       if (pencil) {
-        const [x0, y0, len] = [8 + textWidth + px * 0.25, canvas.height / 2 + px * 0.3, px * 0.55];
-        ctx.lineWidth = px * 0.12;
+        // A pencil lying at 45 degrees: body, tip and an eraser band.
+        const [length, thickness] = [px * 1.0, px * 0.32];
+        ctx.save();
+        ctx.translate(8 + textWidth + px * 0.2 + length * 0.5, canvas.height / 2);
+        ctx.rotate(-Math.PI / 4);
         ctx.beginPath();
-        ctx.moveTo(x0, y0);
-        ctx.lineTo(x0 + len, y0 - len);
-        ctx.moveTo(x0 + len * 0.25, y0 + len * 0.1);
-        ctx.lineTo(x0 + len * 1.1, y0 - len * 0.75);
-        ctx.stroke();
+        ctx.moveTo(-length / 2, -thickness / 2);
+        ctx.lineTo(length / 2 - thickness, -thickness / 2);
+        ctx.lineTo(length / 2, 0);
+        ctx.lineTo(length / 2 - thickness, thickness / 2);
+        ctx.lineTo(-length / 2, thickness / 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.clearRect(-length / 2 + thickness * 0.9, -thickness / 2 - 1, thickness * 0.25, thickness + 2);
+        ctx.restore();
       }
       const planeWidth = height * (canvas.width / canvas.height);
       const mesh = new THREE.Mesh(

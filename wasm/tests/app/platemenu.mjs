@@ -55,6 +55,24 @@ async function runSuite(browserType, name) {
     log('the empty plate shows no drop prompt');
     assert.equal(await page.locator('#empty-plate-prompt').count(), 0);
 
+    log('the only plate can be renamed from its title in the view');
+    await page.click('#view-top');
+    await page.waitForTimeout(500); // let the camera settle so the title can be projected
+    const [titleX, titleY] = await page.evaluate(() => {
+      const scene = window.__plateScene;
+      const mesh = scene.plateLabelGroup.children.find((c) => c.name === 'plate-title');
+      const rect = scene.renderer.domElement.getBoundingClientRect();
+      const v = mesh.position.clone().project(scene.camera);
+      return [rect.left + ((v.x + 1) / 2) * rect.width, rect.top + ((1 - v.y) / 2) * rect.height];
+    });
+    await page.mouse.click(titleX, titleY);
+    await page.waitForSelector('#plate-rename-dialog');
+    await page.keyboard.type('My plate');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => window.__platesStore.getState().plates[0]?.name === 'My plate', null, { timeout: 10000 });
+    assert.equal(await page.locator('#plate-name-0').innerText(), 'My plate');
+    await page.waitForSelector('#plate-rename-dialog', { state: 'detached' });
+
     log('every primitive becomes an object standing on the plate');
     let count = 0;
     for (const shape of ['cube', 'cylinder', 'sphere', 'cone', 'disc', 'torus']) {

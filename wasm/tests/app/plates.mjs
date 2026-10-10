@@ -207,10 +207,11 @@ async function runBrowserSuite(browserType, browserName) {
     });
     await page.mouse.click(titleAt[0], titleAt[1]);
     await page.waitForSelector('#plate-title-input');
-    await page.fill('#plate-title-input', 'Calibration');
+    await page.keyboard.type('Calibration 12 a-b', { delay: 30 });
+    assert.equal(await page.locator('#plate-title-input').inputValue(), 'Calibration 12 a-b', 'the input keeps its focus while typing');
     await page.keyboard.press('Enter');
-    await page.waitForFunction(() => window.__platesStore.getState().plates[0]?.name === 'Calibration', null, { timeout: 10000 });
-    assert.equal(await page.locator('#plate-name-0').innerText(), 'Calibration');
+    await page.waitForFunction(() => window.__platesStore.getState().plates[0]?.name === 'Calibration 12 a-b', null, { timeout: 10000 });
+    assert.equal(await page.locator('#plate-name-0').innerText(), 'Calibration 12 a-b');
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, `plates-titles-${browserName}.png`) });
     console.log(`[${browserName}] Plate numbers and titles verified`);
 

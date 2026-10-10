@@ -138,6 +138,8 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
   ) => {
     try {
       const engine = await getEngine();
+      // The engine creates its first plate when the plates are first listed; renaming that one needs it to exist.
+      await engine.call('listPlates', {});
       const payload: any = { plateIndex: index, config };
       if (name !== undefined) payload.name = name;
       if (locked !== undefined) payload.locked = locked;
