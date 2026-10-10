@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import { listPresets, loadVendors } from '../engine/orcaEngine';
+import type { PresetItem } from '../engine/types';
 import { createPrinterApi } from './api';
 import { usePrinterConnectionStore } from './connectionStore';
 import type { GatewayStatus } from './gatewayUrl';
@@ -51,7 +53,10 @@ const inputStyle: React.CSSProperties = {
 /** Add, edit and test physical printers, like desktop's "Physical Printer" dialog. */
 export const PrinterConnectionDialog: React.FC = () => {
   const { dialogOpen, editingId, printers, savePrinter, deletePrinter, closeDialog } = usePrinterConnectionStore();
-  const presets = useAppStore((s) => s.printers);
+  const vendors = useAppStore((s) => s.vendors);
+  const appPrinters = useAppStore((s) => s.printers);
+  const [brand, setBrand] = useState('');
+  const [brandPresets, setBrandPresets] = useState<PresetItem[]>([]);
   const selectedPreset = useAppStore((s) => s.selectedPrinter);
   const selectedVendor = useAppStore((s) => s.selectedVendor);
   const [draft, setDraft] = useState<PhysicalPrinter>(blank);
@@ -66,9 +71,23 @@ export const PrinterConnectionDialog: React.FC = () => {
     const initial = existing ?? { ...blank(), preset: selectedPreset || undefined, vendor: selectedVendor || undefined };
     setDraft(initial);
     setBaseline(JSON.stringify(initial));
+    setBrand(initial.vendor || selectedVendor);
     setResult(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogOpen, editingId]);
+
+  // The printer presets of the chosen brand, loaded on demand.
+  useEffect(() => {
+    if (!dialogOpen || !brand) return;
+    let cancelled = false;
+    void (async () => {
+      if (brand === selectedVendor) return setBrandPresets(appPrinters);
+      await loadVendors([brand]);
+      const all = await listPresets('printer', { compatibleOnly: false });
+      if (!cancelled) setBrandPresets(all.filter((p) => p.vendor === brand));
+    })();
+    return () => { cancelled = true; };
+  }, [dialogOpen, brand, selectedVendor, appPrinters]);
 
   const localBase = draft.use_gateway || draft.host_type === 'bambu' || draft.host_type === 'prusaconnect' ? draft.local_gateway : undefined;
   useEffect(() => {
@@ -181,10 +200,16 @@ export const PrinterConnectionDialog: React.FC = () => {
             <input id="pc-name" style={inputStyle} value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="My Voron" />
           </Field>
           <Field label="Printer preset" hint="The slicer's printer profile this machine uses.">
-            <select id="pc-preset" style={inputStyle} value={draft.preset ?? ''} onChange={(e) => setDraft({ ...draft, preset: e.target.value || undefined, vendor: e.target.value ? selectedVendor || undefined : undefined })}>
-              <option value="">(none)</option>
-              {presets.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
-            </select>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <select id="pc-brand" aria-label="Brand" style={{ ...inputStyle, flex: '0 0 38%' }} value={brand} onChange={(e) => setBrand(e.target.value)}>
+                {vendors.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
+              </select>
+              <select id="pc-preset" style={{ ...inputStyle, flex: 1, minWidth: 0 }} value={draft.preset ?? ''} onChange={(e) => setDraft({ ...draft, preset: e.target.value || undefined, vendor: e.target.value ? brand || undefined : undefined })}>
+                <option value="">(none)</option>
+                {draft.preset && !brandPresets.some((p) => p.name === draft.preset) && <option value={draft.preset}>{draft.preset}</option>}
+                {brandPresets.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+              </select>
+            </div>
           </Field>
           <Field label="Host type">
             <select id="pc-host-type" style={inputStyle} value={draft.host_type} onChange={(e) => {

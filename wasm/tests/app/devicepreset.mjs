@@ -36,6 +36,17 @@ async function runSuite(browserType, name) {
     await page.waitForFunction((p) => window.__appStore.getState().selectedPrinter === p, VORON, { timeout: 60000 });
     assert.equal(await page.evaluate(() => window.__appStore.getState().selectedVendor), 'Voron');
 
+    log('the printer dialog lets you pick any brand and lists its printers');
+    await page.evaluate(() => window.__printerStore.getState().openDialog(null));
+    await page.waitForSelector('#pc-brand');
+    await page.selectOption('#pc-brand', 'Creality');
+    await page.waitForFunction(() => [...document.querySelectorAll('#pc-preset option')].some((o) => o.value.startsWith('Creality')), null, { timeout: 60000 });
+    const options = await page.$$eval('#pc-preset option', (os) => os.map((o) => o.value).filter((n) => n.startsWith('Creality')));
+    assert.ok(options.length > 5, 'Creality printers listed');
+    await page.selectOption('#pc-preset', options[0]);
+    await page.keyboard.press('Escape');
+    await page.click('[data-testid=confirm-ok]');
+
     log('the choice is remembered after a refresh');
     await page.reload();
     await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
