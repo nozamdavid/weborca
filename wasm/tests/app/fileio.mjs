@@ -232,6 +232,7 @@ G1 X100 Y100 E1.0 F1800\
     log('Drag-and-drop of model file verified');
 
     log('10. Shortcuts (Ctrl+I triggers file chooser)...');
+    await page.waitForTimeout(1500); // the import still records history and auto-arranges after the object appears
     const [fileChooser] = await Promise.all([
       page.waitForEvent('filechooser'),
       page.keyboard.press('Control+i')

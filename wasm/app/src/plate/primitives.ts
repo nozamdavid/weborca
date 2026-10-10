@@ -114,7 +114,7 @@ export function primitiveObj(shape: PlatePrimitive, side: number): string {
     `o ${PRIMITIVE_LABELS[shape]}`,
     ...vertices.map((v) => `v ${v.map((n) => n.toFixed(5)).join(' ')}`),
     ...faces.map((f) => `f ${f.map((i) => i + 1).join(' ')}`)
-  ].join('\n');
+  ].join('\n') + '\n'; // the engine's OBJ reader drops a last line without a newline
 }
 
 export function primitiveFile(shape: PlatePrimitive, side: number): File {

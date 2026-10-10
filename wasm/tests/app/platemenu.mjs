@@ -52,6 +52,9 @@ async function runSuite(browserType, name) {
     await page.mouse.up({ button: 'right' });
     assert.equal(await page.locator('#plate-context-menu').count(), 0);
 
+    log('the empty plate shows no drop prompt');
+    assert.equal(await page.locator('#empty-plate-prompt').count(), 0);
+
     log('every primitive becomes an object standing on the plate');
     let count = 0;
     for (const shape of ['cube', 'cylinder', 'sphere', 'cone', 'disc', 'torus']) {
@@ -67,6 +70,14 @@ async function runSuite(browserType, name) {
     await addVia('#plate-menu-handy', '#plate-menu-handy-OrcaCube_v2', ++count, 'Orca Cube');
     assert.equal((await objects()).at(-1).name, 'Orca Cube');
     await addVia('#plate-menu-handy', '#plate-menu-handy-3DBenchy', ++count, '3DBenchy');
+
+    // Standing on the plate: the lowest point of each object is at Z=0, and every triangle of a cube made it through
+    const grounded = await page.evaluate(() => [...window.__plateScene.getObjectMeshes().values()].map((m) => {
+      m.geometry.computeBoundingBox();
+      return [m.userData.name, Math.round((m.geometry.boundingBox.min.z * m.scale.z + m.position.z) * 1000) / 1000];
+    }));
+    assert.ok(grounded.every(([, minZ]) => Math.abs(minZ) < 0.01), `every object stands on the plate: ${JSON.stringify(grounded)}`);
+    assert.equal(await page.evaluate(() => [...window.__plateScene.getObjectMeshes().values()][0].geometry.index.count / 3), 12, 'a cube keeps all 12 triangles');
 
     log('Show Labels toggles the labels');
     const before = await page.evaluate(() => window.__prefsStore.getState().display.showLabels);

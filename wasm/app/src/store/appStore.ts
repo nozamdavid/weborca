@@ -913,6 +913,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   importModelFile: async (file: File, options?: StepImportOptions) => {
     if (!file) return;
+    const knownObjectIds = new Set((await import('../plate/plateStore')).usePlateStore.getState().objects.map((o) => o.id));
     set({
       isModelLoading: true,
       engineError: null,
@@ -938,6 +939,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       try {
         const { usePlateStore } = await import('../plate/plateStore');
+        // The engine centres a loaded mesh on its origin, which leaves half of it under the plate: stand every new object on it.
+        const engine = await getEngine();
+        await usePlateStore.getState().refreshObjects();
+        for (const obj of usePlateStore.getState().objects) {
+          if (knownObjectIds.has(obj.id)) continue;
+          for (const inst of obj.instances) await engine.call('setInstanceTransform', { objectId: obj.id, instanceId: inst.id, offset: inst.offset });
+        }
         await usePlateStore.getState().refreshObjects();
       } catch (_) {}
 

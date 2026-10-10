@@ -835,29 +835,6 @@ export const PlateView: React.FC = () => {
         </div>
       )}
 
-      {/* Empty Plate Prompt if no objects loaded */}
-      {objects.length === 0 && !isLoading && (
-        <div
-          id="empty-plate-prompt"
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            textAlign: 'center',
-            color: '#94a3b8',
-            pointerEvents: 'none',
-            zIndex: 5
-          }}
-        >
-          <div style={{ fontSize: '2.5rem', marginBottom: 8 }}>📦</div>
-          <p style={{ margin: '0 0 4px', fontSize: '1rem', fontWeight: 500, color: '#e2e8f0' }}>
-            Drag & drop 3D model here
-          </p>
-          <span style={{ fontSize: '0.8rem' }}>Supports .stl, .obj, .3mf, .amf</span>
-        </div>
-      )}
-
       {/* Loading overlay */}
       {isLoading && (
         <div

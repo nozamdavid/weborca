@@ -363,29 +363,6 @@
   color: #a1a1aa;
 }
 
-.empty-plate-prompt {
-  position: absolute;
-  bottom: 32px;
-  background: rgba(39, 39, 42, 0.9);
-  border: 1px solid #52525b;
-  border-radius: 8px;
-  padding: 12px 24px;
-  text-align: center;
-  pointer-events: none;
-}
-
-.empty-plate-prompt p {
-  font-size: 14px;
-  font-weight: 500;
-  color: #f4f4f5;
-  margin-bottom: 4px;
-}
-
-.empty-plate-prompt .file-types {
-  font-size: 11px;
-  color: #a1a1aa;
-}
-
 .model-info-card {
   position: absolute;
   bottom: 24px;
