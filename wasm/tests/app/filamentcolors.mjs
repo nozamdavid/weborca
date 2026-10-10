@@ -62,6 +62,17 @@ async function runSuite(browserType, name) {
       const a = [...window.__plateScene.geometries.values()][0].attributes.color.array;
       return Math.abs(a[0] - want[0]) < 0.01 && Math.abs(a[2] - want[2]) < 0.01;
     }, [await slotColour(1)], { timeout: 20000 });
+    log('changing a slot filament preset keeps its colour');
+    const other = await page.evaluate(() => {
+      const st = window.__appStore.getState();
+      return st.filaments.map((f) => f.name).find((n) => n !== st.selectedFilaments[0] && n !== st.selectedFilaments[1]);
+    });
+    for (const slot of [1, 0]) {
+      await page.evaluate(([n, i]) => window.__appStore.getState().chooseFilament(n, i), [other, slot]);
+      await page.waitForFunction(([n, i]) => window.__appStore.getState().selectedFilaments[i] === n, [other, slot]);
+      const colours = await page.evaluate(() => window.__appStore.getState().currentConfig['filament_colour']);
+      assert.equal(colours, '#009688;#1e88e5', `slot ${slot} colour kept`);
+    }
     log('all checks passed');
   } finally {
     await browser.close();

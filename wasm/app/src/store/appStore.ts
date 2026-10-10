@@ -569,6 +569,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     } else {
       currentList.push(filament);
     }
+    const prevColours = (get().currentConfig['filament_colour'] || '').split(';').map((c) => c.trim());
+    const prevCount = selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments.length : 1;
     const firstFilament = currentList[0];
     set({
       selectedFilament: firstFilament,
@@ -597,6 +599,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
 
         const baselineConfig = await getConfig();
+
+        // A slot keeps its colour when only its filament preset changes
+        const baseColours = (baselineConfig['filament_colour'] || '').split(';').map((c) => c.trim());
+        const keptColours = currentList.map((_, i) => (i < prevCount && prevColours[i]) || baseColours[i] || '');
+        if (keptColours.every(Boolean)) {
+          set((state) => ({ filamentOverrides: { ...state.filamentOverrides, filament_colour: keptColours.join(';') } }));
+        }
 
         // Re-apply process, printer and filament overrides
         const { processOverrides, printerOverrides, filamentOverrides } = get();
