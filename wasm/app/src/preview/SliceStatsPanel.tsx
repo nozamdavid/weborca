@@ -73,6 +73,13 @@ function parseFilamentStats(
   });
 }
 
+/** The filament cost the slicer writes into the G-code footer (`; total filament cost = 1.23`), from the filament's cost per kg. */
+export function parseFilamentCost(gcodeBytes: Uint8Array | undefined): number {
+  if (!gcodeBytes || gcodeBytes.length === 0) return 0;
+  const tail = new TextDecoder('utf-8', { fatal: false }).decode(gcodeBytes.subarray(Math.max(0, gcodeBytes.length - 65536)));
+  return parseFloat(tail.match(/;\s*total filament cost\s*=\s*([0-9.]+)/)?.[1] ?? '') || 0;
+}
+
 export const SliceStatsPanel: React.FC = () => {
   const stats = usePreviewStore((s) => s.stats);
   const showStatsPanel = usePreviewStore((s) => s.showStatsPanel);
@@ -90,6 +97,8 @@ export const SliceStatsPanel: React.FC = () => {
   const filamentStats = useMemo(() => {
     return parseFilamentStats(sliceResult?.gcode, selectedFilaments, currentConfig);
   }, [sliceResult?.gcode, selectedFilaments, currentConfig]);
+
+  const filamentCost = useMemo(() => parseFilamentCost(sliceResult?.gcode), [sliceResult?.gcode]);
 
   if (!stats) return null;
 
@@ -223,6 +232,13 @@ export const SliceStatsPanel: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {filamentCost > 0 && (
+            <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255, 255, 255, 0.06)', marginBottom: 10 }}>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Filament Cost</div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f59e0b' }} id="stat-filament-cost">{filamentCost.toFixed(2)}</div>
+            </div>
+          )}
 
           {/* Multi-filament Breakdown */}
           {filamentStats.length > 1 && (

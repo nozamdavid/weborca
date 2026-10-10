@@ -124,6 +124,8 @@ async function runBrowserSuite(browserType, browserName) {
       await page.click('#tab-prepare');
     }
 
+    await page.evaluate(() => window.__appStore.getState().applyOptionChange('filament_cost', '25', 'filament'));
+
     // 3. Import 20mm_cube.obj and Slice
     console.log(`[${browserName}] Step 3: Importing 20mm_cube.obj and slicing...`);
     await page.setInputFiles('#model-file', CUBE_MODEL_PATH);
@@ -150,6 +152,11 @@ async function runBrowserSuite(browserType, browserName) {
       throw new Error(`Expected 100 layers, got ${stats.layers}`);
     }
     results.push({ name: 'Voron Cube Slicing & Auto-Switch to Preview', pass: true });
+
+    await page.waitForSelector('[data-testid="slice-stats-panel"] #stat-filament-cost', { timeout: 10000 });
+    const costText = await page.$eval('#stat-filament-cost', (el) => el.textContent?.trim());
+    if (!(parseFloat(costText) > 0)) throw new Error(`Filament cost not shown: "${costText}"`);
+    console.log(`[${browserName}] Filament cost displayed: ${costText}`);
 
     // Verify Slicing Statistics panel filament length
     const filamentLengthText = await page.$eval('[data-testid=\"slice-stats-panel\"] #stat-filament-mm', (el) => el.textContent?.trim());
