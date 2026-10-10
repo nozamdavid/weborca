@@ -75,6 +75,8 @@ export class PlateScene {
   private overlayMeshes: Map<string, THREE.Mesh> = new Map();
   private geometries: Map<number, THREE.BufferGeometry> = new Map();
   private meshVolumes: Map<number, MeshVolumePartition[]> = new Map();
+  /** Colour of each part: the filament it is assigned to. Parts without one use the fallback blue. */
+  private volumeColors: Map<number, Map<number, string>> = new Map();
 
   private selectedObjectId: number | null = null;
   /** `objectId_instanceId` of the other selected instances; they follow the primary while it is dragged. */
@@ -302,15 +304,17 @@ export class PlateScene {
     // 8. Materials
     // Matte and flat-shaded like desktop: no reflections, and every facet keeps its own brightness so edges read.
     this.defaultMaterial = new THREE.MeshLambertMaterial({
-      color: 0x3b82f6,
+      color: 0xffffff,
+      vertexColors: true,
       flatShading: true,
       wireframe: this.showWireframe
     });
 
     this.selectedMaterial = new THREE.MeshLambertMaterial({
-      color: 0x10b981,
-      emissive: 0x064e3b,
-      emissiveIntensity: 0.35,
+      color: 0xffffff,
+      vertexColors: true,
+      emissive: 0x10b981,
+      emissiveIntensity: 0.3,
       flatShading: true,
       wireframe: this.showWireframe
     });
@@ -790,6 +794,34 @@ export class PlateScene {
     }
   }
 
+  /** Sets the colour of each part of each object (`volumeId` to a CSS colour) and repaints the meshes. */
+  public setVolumeColors(colors: Map<number, Map<number, string>>): void {
+    this.volumeColors = colors;
+    for (const objectId of this.geometries.keys()) this.applyVolumeColors(objectId);
+  }
+
+  private applyVolumeColors(objectId: number): void {
+    const geo = this.geometries.get(objectId);
+    const index = geo?.index;
+    const position = geo?.attributes.position;
+    if (!geo || !index || !position) return;
+    const fallback = new THREE.Color(0x3b82f6);
+    const colors = new Float32Array(position.count * 3);
+    for (let v = 0; v < position.count; v++) fallback.toArray(colors, v * 3);
+    const parts = this.meshVolumes.get(objectId) ?? [];
+    const byVolume = this.volumeColors.get(objectId);
+    const color = new THREE.Color();
+    for (const part of parts) {
+      const css = byVolume?.get(part.volumeId);
+      if (!css) continue;
+      color.set(css);
+      for (let f = part.firstFacet; f < part.firstFacet + part.facetCount; f++) {
+        for (let k = 0; k < 3; k++) color.toArray(colors, index.getX(f * 3 + k) * 3);
+      }
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  }
+
   public updateBedConfig(bedConfig: BedConfig): void {
     this.bedConfig = bedConfig;
     this.buildBed();
@@ -874,6 +906,8 @@ export class PlateScene {
           }
         } catch (_) {}
       }
+
+      this.applyVolumeColors(obj.id);
 
       for (const inst of obj.instances) {
         const key = `${obj.id}_${inst.id}`;

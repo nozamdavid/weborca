@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
 import { useAppStore } from '../store/appStore';
+import { useObjectListStore } from '../objectlist/objectListStore';
 import { PlateContextMenu } from './PlateContextMenu';
 import { PlateRenameDialog } from './PlateRenameDialog';
 import { isDefaultPlateName } from '../plates/plateName';
@@ -208,6 +209,23 @@ export const PlateView: React.FC = () => {
       sceneRef.current.updateBedConfig(bedConfig);
     }
   }, [bedConfig]);
+
+  // Each part takes the colour of the filament it is assigned to (extruder 0 means the first filament).
+  const objectTree = useObjectListStore((s) => s.objects);
+  const filamentColours = useAppStore((s) => s.currentConfig['filament_colour']);
+  useEffect(() => {
+    const palette = (filamentColours || '').split(';').map((c) => c.trim().slice(0, 7));
+    const colors = new Map<number, Map<number, string>>();
+    for (const obj of objectTree) {
+      const parts = new Map<number, string>();
+      for (const vol of obj.volumes) {
+        const colour = palette[Math.max(1, vol.extruder) - 1];
+        if (colour) parts.set(vol.id, colour);
+      }
+      colors.set(obj.id, parts);
+    }
+    sceneRef.current?.setVolumeColors(colors);
+  }, [objectTree, filamentColours, objects]);
 
   const measureActive = usePlateStore((s) => s.measureActive);
   useEffect(() => { sceneRef.current?.setMeasureActive(measureActive); }, [measureActive]);
