@@ -117,10 +117,10 @@ export const SliceStatsPanel: React.FC = () => {
       data-testid="slice-stats-panel"
       style={{
         position: 'absolute',
-        top: 16,
+        bottom: 70,
         right: 90,
         width: 290,
-        maxHeight: 'calc(100% - 100px)',
+        maxHeight: 'calc(100% - 280px)',
         background: 'rgba(24, 24, 27, 0.90)',
         backdropFilter: 'blur(10px)',
         border: '1px solid rgba(255, 255, 255, 0.12)',

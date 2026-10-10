@@ -114,7 +114,6 @@ function parseGcode(bytes: Uint8Array | undefined): ParsedGcode {
 export const GCodeWindow: React.FC = () => {
   const showGcodeWindow = usePreviewStore((s) => s.showGcodeWindow);
   const toggleGcodeWindow = usePreviewStore((s) => s.toggleGcodeWindowAction);
-  const showStatsPanel = usePreviewStore((s) => s.showStatsPanel);
   const maxLayer = usePreviewStore((s) => s.maxLayer);
   const minMove = usePreviewStore((s) => s.minMove);
   const maxMove = usePreviewStore((s) => s.maxMove);
@@ -181,7 +180,7 @@ export const GCodeWindow: React.FC = () => {
       style={{
         position: 'absolute',
         top: 16,
-        right: showStatsPanel ? 390 : 90,
+        right: 90,
         width: 320,
         maxHeight: isCollapsed ? 'auto' : 'calc(100% - 100px)',
         background: 'rgba(24, 24, 27, 0.92)',

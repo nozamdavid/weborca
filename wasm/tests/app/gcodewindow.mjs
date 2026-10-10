@@ -132,6 +132,18 @@ async function runBrowserSuite(browserType, browserName) {
     console.log(`[${browserName}] Preview loaded with ${stats.layers} layers`);
     results.push({ name: 'Model Slice & Auto-Switch to Preview', pass: true });
 
+    // Stats panel sits in the lower right, clear of the view buttons and the cube.
+    await page.waitForSelector('.slice-stats-panel', { timeout: 15000 });
+    const layout = await page.evaluate(() => {
+      const r = (sel) => { const e = document.querySelector(sel); return e ? e.getBoundingClientRect() : null; };
+      return { panel: r('.slice-stats-panel'), cube: r('#view-cube'), buttons: r('.view-buttons'), vh: window.innerHeight };
+    });
+    const hit = (a, b) => b && !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom);
+    if (layout.panel.bottom < layout.vh * 0.75 || layout.panel.top < 150 || hit(layout.panel, layout.cube) || hit(layout.panel, layout.buttons)) {
+      throw new Error('Stats panel not in lower right: ' + JSON.stringify(layout));
+    }
+    results.push({ name: 'Stats Panel Bottom Right', pass: true });
+
     // 5. Verify G-code Window Toggle Button on Toolbar
     console.log(`[${browserName}] Step 5: Checking G-code window toolbar toggle button...`);
     const toggleBtn = page.locator('#btn-toggle-gcode-window');
