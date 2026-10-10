@@ -15,6 +15,7 @@ import { getEngine } from '../engine/orcaEngine';
 import { useHistoryStore } from '../history';
 import { TextPanel, useTextStore } from '../text';
 import { CutPanel, useCutStore } from '../cut';
+import { NumericTransform } from './NumericTransform';
 import { RepairBadge, useRepairStore } from '../repair';
 import { useEditOpsStore, FlattenPanel, BrimEarsPanel } from '../editops';
 import { CanvasToolbar, ViewButtons } from '../shell/CanvasToolbar';
@@ -810,21 +811,7 @@ export const PlateView: React.FC = () => {
           </div>
           {selectedInstance && (
             <>
-              <div id="selected-instance-pos" style={{ marginBottom: 4 }}>
-                <span style={{ color: '#94a3b8' }}>Position: </span>
-                <span>
-                  X:{selectedInstance.offset[0].toFixed(1)} Y:{selectedInstance.offset[1].toFixed(1)} Z:
-                  {selectedInstance.offset[2].toFixed(1)}
-                </span>
-              </div>
-              <div id="selected-instance-scale" style={{ marginBottom: 4 }}>
-                <span style={{ color: '#94a3b8' }}>Scale: </span>
-                <span>
-                  {(selectedInstance.scale[0] * 100).toFixed(0)}% ×{' '}
-                  {(selectedInstance.scale[1] * 100).toFixed(0)}% ×{' '}
-                  {(selectedInstance.scale[2] * 100).toFixed(0)}%
-                </span>
-              </div>
+              <NumericTransform object={selectedObject} instance={selectedInstance} />
             </>
           )}
 
