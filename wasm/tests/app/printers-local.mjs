@@ -94,6 +94,19 @@ async function runSuite(browserType, name, mock, gateway) {
     assert.equal(headers['cross-origin-resource-policy'], 'cross-origin');
     assert.ok(mock.httpRequests.some((r) => r.url.startsWith('/ui/')), 'the base path of the UI address was used');
 
+    log('the printer UI can be folded away, the status cards fill the width, and the UI is not reloaded');
+    const frameCount = frameResponses.length;
+    await page.click('#device-webui-toggle');
+    await page.waitForFunction(() => document.getElementById('device-body')?.classList.contains('ui-collapsed'));
+    assert.equal(await page.locator('#device-webui-frame').isVisible(), false);
+    assert.equal(await page.locator('#device-webui-frame').count(), 1, 'the frame stays mounted');
+    const statusWidth = await page.locator('#device-status').evaluate((el) => el.getBoundingClientRect().width);
+    assert.ok(statusWidth > 600, `status column widened (${statusWidth}px)`);
+    assert.equal(await page.evaluate(() => localStorage.getItem('orca.device.webUiCollapsed')), '1', 'the choice is remembered');
+    await page.click('#device-webui-toggle');
+    await page.waitForSelector('#device-webui-frame', { state: 'visible' });
+    assert.ok(frameResponses.length >= frameCount);
+
     log('all checks passed');
   } finally {
     await browser.close();

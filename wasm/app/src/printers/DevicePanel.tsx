@@ -174,10 +174,17 @@ const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ 
   );
 };
 
+const UI_COLLAPSED_KEY = 'orca.device.webUiCollapsed';
+
 /** The Device tab: a native status dashboard on the left and the printer's own web UI on the right. */
 export const DevicePanel: React.FC<{ active: boolean }> = ({ active }) => {
   const { printers, selectedPrinterId, status, error, liveState, selectPrinter, openDialog, setDeviceTabActive } = usePrinterConnectionStore();
   const printer = useMemo(() => printers.find((p) => p.id === selectedPrinterId), [printers, selectedPrinterId]);
+  const [uiCollapsed, setUiCollapsedState] = useState(() => localStorage.getItem(UI_COLLAPSED_KEY) === '1');
+  const setUiCollapsed = (collapsed: boolean) => {
+    setUiCollapsedState(collapsed);
+    localStorage.setItem(UI_COLLAPSED_KEY, collapsed ? '1' : '0');
+  };
 
   useEffect(() => {
     setDeviceTabActive(active);
@@ -209,9 +216,18 @@ export const DevicePanel: React.FC<{ active: boolean }> = ({ active }) => {
         <button className="btn btn-secondary" id="device-add-another" onClick={() => openDialog(null)}>Add printer</button>
       </div>
       {printer && (
-        <div className="device-body">
+        <div className={`device-body${uiCollapsed ? ' ui-collapsed' : ''}`} id="device-body">
           <StatusColumn state={liveState} active={active} />
-          <WebUiColumn printer={printer} active={active} />
+          <div className="device-ui-side">
+            <button
+              id="device-webui-toggle" className="device-ui-toggle" aria-expanded={!uiCollapsed}
+              title={uiCollapsed ? 'Show the printer web UI' : 'Hide the printer web UI'} onClick={() => setUiCollapsed(!uiCollapsed)}
+            >
+              {uiCollapsed ? '◂ Web UI' : 'Hide web UI ▸'}
+            </button>
+            {/* Stays mounted while hidden so the printer's UI keeps its session and does not reload. */}
+            <div className="device-ui-hold"><WebUiColumn printer={printer} active={active && !uiCollapsed} /></div>
+          </div>
         </div>
       )}
     </div>

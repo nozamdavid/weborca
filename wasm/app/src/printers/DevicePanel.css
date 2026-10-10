@@ -136,3 +136,26 @@
   color: var(--dev-muted);
 }
 .device-error { color: #ef9a9a; font-size: 12px; }
+
+/* The printer's own UI sits in a side column that can be folded away, leaving the status cards the full width. */
+.device-ui-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.device-ui-hold { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.device-ui-toggle {
+  align-self: flex-end;
+  background: var(--dev-card);
+  color: inherit;
+  border: 1px solid var(--dev-border);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.device-body.ui-collapsed .device-ui-side { flex: 0 0 auto; }
+.device-body.ui-collapsed .device-ui-hold { display: none; }
+.device-body.ui-collapsed .device-status-col {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  align-content: start;
+  align-items: start;
+}
