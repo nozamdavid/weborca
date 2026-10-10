@@ -66,6 +66,31 @@ const PresetRow: React.FC<{
   );
 };
 
+/** The process switches desktop keeps next to the preset: support, brim, prime tower and ironing. */
+const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({ disabled, multiFilament }) => {
+  const currentConfig = useAppStore((s) => s.currentConfig);
+  const applyOptionChange = useAppStore((s) => s.applyOptionChange);
+  const toggles: { id: string; label: string; checked: boolean; off?: string; apply: [string, string, string]; disabled?: boolean; title?: string }[] = [
+    { id: 'support', label: 'Support', checked: currentConfig.enable_support === '1', apply: ['enable_support', '1', '0'] },
+    { id: 'brim', label: 'Brim', checked: !!currentConfig.brim_type && currentConfig.brim_type !== 'no_brim', apply: ['brim_type', 'auto_brim', 'no_brim'] },
+    { id: 'prime-tower', label: 'Prime tower', checked: currentConfig.enable_prime_tower === '1', apply: ['enable_prime_tower', '1', '0'], disabled: !multiFilament, title: multiFilament ? undefined : 'Needs more than one filament' },
+    { id: 'ironing', label: 'Ironing', checked: !!currentConfig.ironing_type && currentConfig.ironing_type !== 'no ironing', apply: ['ironing_type', 'top', 'no ironing'] }
+  ];
+  return (
+    <div id="quick-toggles" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', padding: '4px 12px 8px', fontSize: 12 }}>
+      {toggles.map((t) => (
+        <label key={t.id} title={t.title} style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: disabled || t.disabled ? 0.5 : 1 }}>
+          <input
+            id={`quick-${t.id}`} type="checkbox" checked={t.checked} disabled={disabled || t.disabled}
+            onChange={(e) => void applyOptionChange(t.apply[0], e.target.checked ? t.apply[1] : t.apply[2], 'print')}
+          />
+          {t.label}
+        </label>
+      ))}
+    </div>
+  );
+};
+
 export const PrepareSidebar: React.FC = () => {
   const {
     vendors, selectedVendor, chooseVendor, printers, selectedPrinter, choosePrinter,
@@ -330,6 +355,8 @@ export const PrepareSidebar: React.FC = () => {
           <PresetRow kind="process" disabled={isBusy} selectDisabled={isBusy || !selectedPrinter || processes.length === 0} placeholder="Select process..." system={processes} user={user('process')}
             value={current('process', selectedProcess)} onSystem={chooseProcess} canEdit={false} canSave={!!selectedProcess} />
         </Section>
+
+        <QuickToggles disabled={isBusy || !selectedProcess} multiFilament={activeFilaments.length > 1} />
 
         <Section title="Objects" badge={modelObjects?.length ? String(modelObjects.length) : undefined} className="sb-objects">
           <div className="objects-wrap"><ObjectListPanel /></div>
