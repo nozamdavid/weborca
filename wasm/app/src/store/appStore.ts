@@ -10,6 +10,7 @@ import {
   getEngine,
   loadVendors,
   listPresets,
+  getCompatiblePresets,
   selectPresets,
   getConfig,
   getConfigDef,
@@ -405,8 +406,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ selectedPrinter: printer, engineError: null });
 
     try {
-      const allProcesses = await listPresets('process', { compatibleOnly: false });
-      const allFilaments = await listPresets('filament', { compatibleOnly: false });
+      // Defaults come from what is compatible with this printer: the engine keeps every brand loaded so far.
+      const everyProcess = await listPresets('process', { compatibleOnly: false });
+      const everyFilament = await listPresets('filament', { compatibleOnly: false });
+      const compatible = await getCompatiblePresets({ printer });
+      const onlyCompatible = <T extends { name: string }>(all: T[], names: string[]) => {
+        const kept = all.filter((p) => names.includes(p.name));
+        return kept.length > 0 ? kept : all;
+      };
+      const allProcesses = onlyCompatible(everyProcess, compatible.compatibleProcesses);
+      const allFilaments = onlyCompatible(everyFilament, compatible.compatibleFilaments);
 
       let defaultProc = '';
       if (printer.includes('Voron')) {
@@ -420,7 +429,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (found) defaultProc = found.name;
       }
       if (!defaultProc) {
-        defaultProc = allProcesses[0]?.name || '';
+        defaultProc = allProcesses.find((p) => /^0\.20mm Standard/.test(p.name))?.name || allProcesses[0]?.name || '';
       }
 
       let defaultFilament = '';

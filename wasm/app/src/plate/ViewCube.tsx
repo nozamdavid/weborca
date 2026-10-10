@@ -50,7 +50,7 @@ export const ViewCube: React.FC<{ getCameraQuaternion: () => THREE.Quaternion | 
   }, [getCameraQuaternion]);
 
   return (
-    <div id="view-cube" style={{ position: 'absolute', top: 16, right: 16, width: HALF * 2 + 20, height: HALF * 2 + 20, perspective: 220, zIndex: 18 }}>
+    <div id="view-cube" style={{ position: 'absolute', top: 56, right: 16, width: HALF * 2 + 20, height: HALF * 2 + 20, perspective: 220, zIndex: 18 }}>
       <div style={{ position: 'absolute', left: '50%', top: '50%', width: 0, height: 0, transformStyle: 'preserve-3d' }}>
         {FACES.map((face, i) => (
           <div

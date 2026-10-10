@@ -204,6 +204,7 @@ export const WizardDialog: React.FC = () => {
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem('orca.wizard', JSON.stringify(wizardData));
       }
+      useWizardStore.getState().setAddedPrinters(selectedPrinters);
 
       const firstPrinter = selectedPrinters[0];
       if (firstPrinter) {
@@ -274,11 +275,11 @@ export const WizardDialog: React.FC = () => {
         {step === 1 && (
           <div className="wizard-body" id="wizard-step-1">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={{ fontSize: 13, fontWeight: 600 }}>Select Printer Vendor</label>
+              <label style={{ fontSize: 13, fontWeight: 600 }}>Select Printer Brand</label>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <select
                   id="wizard-vendor-select"
-                  aria-label="Printer Vendor"
+                  aria-label="Printer Brand"
                   value={selectedVendor}
                   onChange={(e) => setSelectedVendor(e.target.value)}
                   style={{ minWidth: 160, padding: '6px 10px', background: '#27272a', color: '#fff', border: '1px solid #444', borderRadius: 4 }}
@@ -289,7 +290,7 @@ export const WizardDialog: React.FC = () => {
                     </option>
                   ))}
                 </select>
-                <div className="wizard-vendor-tabs">
+                {vendors.length <= 8 && <div className="wizard-vendor-tabs">
                   {vendors.map((v) => (
                     <button
                       key={v.name}
@@ -301,7 +302,7 @@ export const WizardDialog: React.FC = () => {
                       {v.name}
                     </button>
                   ))}
-                </div>
+                </div>}
               </div>
             </div>
 
@@ -362,7 +363,7 @@ export const WizardDialog: React.FC = () => {
                 type="search"
                 className="wizard-search-box"
                 style={{ maxWidth: 360 }}
-                placeholder="Search filaments (name, vendor, material)..."
+                placeholder="Search filaments (name, brand, material)..."
                 value={filamentSearch}
                 onChange={(e) => setFilamentSearch(e.target.value)}
               />

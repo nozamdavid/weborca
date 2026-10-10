@@ -1,3 +1,4 @@
+import { useWizardStore } from '../wizard';
 import React, { useState } from 'react';
 import { ModifiedSettingsDialog } from '../settings/ModifiedSettingsDialog';
 import { modifiedSettings } from '../settings/modifiedSettings';
@@ -195,6 +196,15 @@ export const PrepareSidebar: React.FC = () => {
   const user = (kind: PresetKind) => userPresets.filter((p) => p.kind === kind);
   const current = (kind: PresetKind, system: string) => (activeUserPreset[kind] ? `user:${activeUserPreset[kind]}` : system);
 
+  // Printers added in the configuration wizard are the ones offered for their brand; with none added, every printer of the brand is.
+  const addedPrinters = useWizardStore((s) => s.addedPrinters);
+  const added = printers.filter((p) => addedPrinters.includes(p.name) || p.name === selectedPrinter);
+  const offeredPrinters = added.some((p) => addedPrinters.includes(p.name)) ? added : printers;
+  const addPrinters = () => {
+    useWizardStore.getState().setSelectedVendor(selectedVendor);
+    useWizardStore.getState().setOpen(true);
+  };
+
   const connectButton = (
     <button id="printer-connection-btn" className="icon-btn" title={printerCount ? 'Printer connection' : 'Connect a printer'} aria-label="Connect printer" onClick={() => usePrinterConnectionStore.getState().openDialog(null)}>
       <PlugIcon />{printerStatus !== 'none' && <span className="status-dot" data-status={printerStatus} />}
@@ -205,13 +215,14 @@ export const PrepareSidebar: React.FC = () => {
     <aside className="sidebar" aria-label="Print settings">
       <div className="sidebar-scroll">
         <Section title="Printer">
-          <label className="field-label" htmlFor="vendor-select">Vendor</label>
+          <label className="field-label" htmlFor="vendor-select">Brand</label>
           <select id="vendor-select" value={selectedVendor} disabled={isBusy || vendors.length === 0} onChange={(e) => chooseVendor(e.target.value)}>
-            <option value="">Select vendor...</option>
+            <option value="">Select brand...</option>
             {vendors.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
           </select>
-          <PresetRow kind="printer" disabled={isBusy} selectDisabled={isBusy || printers.length === 0} placeholder="Select printer..." system={printers} user={user('printer')}
+          <PresetRow kind="printer" disabled={isBusy} selectDisabled={isBusy || printers.length === 0} placeholder="Select printer..." system={offeredPrinters} user={user('printer')}
             value={current('printer', selectedPrinter)} onSystem={choosePrinter} extra={connectButton} canEdit={!!selectedPrinter} canSave={!!selectedPrinter} />
+          <button className="btn btn-secondary" id="add-printers-btn" style={{ alignSelf: 'flex-start', padding: '2px 10px' }} disabled={isBusy || !selectedVendor} onClick={addPrinters}>Add printers and nozzles...</button>
         </Section>
 
         <Section title="Filament" headerExtra={filamentHeaderActions}>

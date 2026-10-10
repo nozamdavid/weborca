@@ -1,6 +1,6 @@
 import { ComparePresetsDialog } from './settings/ComparePresetsDialog';
 import { WizardDialog } from './wizard';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import './App.css';
 import { FlowRateModal } from './calibration/FlowRateModal';
 import { OtherCalibrationsDialogs } from './calibration/OtherCalibrationsDialogs';
@@ -28,6 +28,13 @@ import { EditOpsDialogs } from './editops';
 import { PreferencesDialog, usePrefsStore } from './prefs';
 import type { TabId } from './shell/TopBar';
 
+const TAB_IDS: TabId[] = ['prepare', 'preview', 'device', 'calibration'];
+
+function tabFromPath(): TabId {
+  const name = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  return TAB_IDS.find((id) => id === name) ?? 'prepare';
+}
+
 export const App: React.FC = () => {
   const isIsolated = useAppStore((state) => state.isIsolated);
   const initApp = useAppStore((state) => state.initApp);
@@ -48,7 +55,17 @@ export const App: React.FC = () => {
     return () => query.removeEventListener('change', apply);
   }, [themePref]);
 
-  const [activeTab, setActiveTab] = useState<TabId>('prepare');
+  const [activeTab, setActiveTabState] = useState<TabId>(tabFromPath);
+  // The tab is part of the address (/prepare, /preview, ...), so a reload or a shared link opens the same screen.
+  const setActiveTab = useCallback((tab: TabId) => {
+    setActiveTabState(tab);
+    if (tabFromPath() !== tab) window.history.pushState(null, '', `/${tab}`);
+  }, []);
+  useEffect(() => {
+    const onPop = () => setActiveTabState(tabFromPath());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   // The 3D view resizes itself on window resize, so nudge it when the sidebar is shown or hidden.
   useEffect(() => {
