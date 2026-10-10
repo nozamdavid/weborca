@@ -66,6 +66,7 @@ async function runSuite(browserType, name) {
     log('a handy model is added');
     await addVia('#plate-menu-handy', '#plate-menu-handy-OrcaCube_v2', ++count, 'Orca Cube');
     assert.equal((await objects()).at(-1).name, 'Orca Cube');
+    await addVia('#plate-menu-handy', '#plate-menu-handy-3DBenchy', ++count, '3DBenchy');
 
     log('Show Labels toggles the labels');
     const before = await page.evaluate(() => window.__prefsStore.getState().display.showLabels);
@@ -78,6 +79,12 @@ async function runSuite(browserType, name) {
     await page.hover('#plate-menu-primitive');
     await page.click('#plate-menu-text');
     await page.waitForFunction(() => window.__textStore.getState().isOpen && window.__textStore.getState().volumeType === 'new_object');
+
+    await page.click('#view-iso');
+    await page.evaluate(() => window.__plateStore.getState().selectObject?.(null));
+    await page.evaluate(() => { const s = window.__plateScene; s.camera.position.set(60, -60, 60); s.orbitControls.target.set(130, 110, 0); s.orbitControls.update(); });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: `wasm/build/tests-app/platemenu-${name}.png` });
 
     log('all checks passed');
   } finally {

@@ -692,13 +692,17 @@ export const PlateView: React.FC = () => {
     ]
   ];
 
-  // The active plate's number and title are printed on the bed.
-  const activePlate = usePlatesStore((s) => s.plates[s.activePlateIndex]);
+  // Every plate is drawn beside the others, with its number and title.
+  const plates = usePlatesStore((s) => s.plates);
   const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
-  const plateTitle = activePlate?.name && activePlate.name !== `Plate ${activePlateIndex + 1}` ? activePlate.name : '';
   useEffect(() => {
-    sceneRef.current?.setPlateLabel(activePlateIndex + 1, plateTitle);
-  }, [activePlateIndex, plateTitle, meshRevision]);
+    sceneRef.current?.setPlates(plates.map((p) => ({ index: p.index, name: p.name, origin: p.origin })), activePlateIndex);
+  }, [plates, activePlateIndex, meshRevision]);
+  const previousPlate = useRef(activePlateIndex);
+  useEffect(() => {
+    if (previousPlate.current !== activePlateIndex) sceneRef.current?.focusPlate(activePlateIndex);
+    previousPlate.current = activePlateIndex;
+  }, [activePlateIndex]);
 
   // A right-click on the empty plate opens its menu. Dragging with the right button pans, so the menu opens on release
   // when the pointer barely moved (browsers fire `contextmenu` on press on Linux and macOS, on release on Windows).

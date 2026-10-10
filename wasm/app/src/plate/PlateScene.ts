@@ -49,7 +49,10 @@ export class PlateScene {
   private buildVolumeHelper: THREE.LineSegments | null = null;
   private labelsGroup: THREE.Group;
   public plateLabelGroup = new THREE.Group();
-  private plateLabel: { number: number; title: string } = { number: 1, title: '' };
+  /** Every plate lies beside the others; the first is the main bed (buildBed), the rest are drawn plainly here. */
+  public extraBedsGroup = new THREE.Group();
+  private plates: { index: number; name: string; origin: [number, number, number] }[] = [{ index: 0, name: '', origin: [0, 0, 0] }];
+  private activePlateIndex = 0;
   private labelSprites: Map<string, THREE.Sprite> = new Map();
 
   private flattenClusters: Array<{ normal: [number, number, number]; center: [number, number, number]; area: number; outline: Array<[number, number, number]> }> = [];
@@ -82,8 +85,8 @@ export class PlateScene {
   private animationFrameId: number | null = null;
 
   // Materials
-  private defaultMaterial: THREE.MeshStandardMaterial;
-  private selectedMaterial: THREE.MeshStandardMaterial;
+  private defaultMaterial: THREE.MeshLambertMaterial;
+  private selectedMaterial: THREE.MeshLambertMaterial;
 
   // Scene view & camera preferences
   public showGrid = true;
@@ -230,14 +233,14 @@ export class PlateScene {
     });
 
     // 6. Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
     this.scene.add(ambientLight);
 
-    const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.7);
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 2.6);
     dirLight1.position.set(cx + 150, cy - 250, 350);
     this.scene.add(dirLight1);
 
-    const dirLight2 = new THREE.DirectionalLight(0xa5c4d4, 0.35);
+    const dirLight2 = new THREE.DirectionalLight(0xa5c4d4, 0.9);
     dirLight2.position.set(cx - 200, cy + 200, 200);
     this.scene.add(dirLight2);
 
@@ -255,22 +258,22 @@ export class PlateScene {
     this.scene.add(this.brimEarsGroup);
     this.scene.add(this.labelsGroup);
     this.scene.add(this.plateLabelGroup);
-    this.rebuildPlateLabel();
+    this.scene.add(this.extraBedsGroup);
+    this.rebuildPlates();
 
     // 8. Materials
-    this.defaultMaterial = new THREE.MeshStandardMaterial({
+    // Matte and flat-shaded like desktop: no reflections, and every facet keeps its own brightness so edges read.
+    this.defaultMaterial = new THREE.MeshLambertMaterial({
       color: 0x3b82f6,
-      roughness: 0.35,
-      metalness: 0.1,
+      flatShading: true,
       wireframe: this.showWireframe
     });
 
-    this.selectedMaterial = new THREE.MeshStandardMaterial({
+    this.selectedMaterial = new THREE.MeshLambertMaterial({
       color: 0x10b981,
       emissive: 0x064e3b,
       emissiveIntensity: 0.35,
-      roughness: 0.3,
-      metalness: 0.15,
+      flatShading: true,
       wireframe: this.showWireframe
     });
 
@@ -441,51 +444,97 @@ export class PlateScene {
     return this.showAxes;
   }
 
-  /** The number of the plate (printed large in its front-left corner, like desktop) and its custom title, if any. */
-  public setPlateLabel(number: number, title: string): void {
-    this.plateLabel = { number, title };
-    this.rebuildPlateLabel();
+  /** All plates with their origin: each gets a bed, its number (printed large in the front-left corner, like desktop) and its custom title. */
+  public setPlates(plates: { index: number; name: string; origin: [number, number, number] }[], activeIndex: number): void {
+    this.plates = plates.length > 0 ? plates : this.plates;
+    this.activePlateIndex = activeIndex;
+    this.rebuildPlates();
   }
 
-  private rebuildPlateLabel(): void {
-    for (const child of [...this.plateLabelGroup.children] as THREE.Mesh[]) {
-      this.plateLabelGroup.remove(child);
-      child.geometry.dispose();
-      const material = child.material as THREE.MeshBasicMaterial;
-      material.map?.dispose();
-      material.dispose();
+  /** Moves the view to the given plate, keeping the viewing direction and distance. */
+  public focusPlate(index: number): void {
+    const plate = this.plates.find((p) => p.index === index);
+    if (!plate) return;
+    const [cx, cy] = this.bedConfig.center;
+    const target = new THREE.Vector3(plate.origin[0] + cx, plate.origin[1] + cy, this.orbitControls.target.z);
+    const delta = target.clone().sub(this.orbitControls.target);
+    this.camera.position.add(delta);
+    this.perspectiveCamera.position.add(delta);
+    this.orthographicCamera.position.add(delta);
+    this.orbitControls.target.copy(target);
+    this.orbitControls.update();
+  }
+
+  private disposeChildren(group: THREE.Group): void {
+    for (const child of [...group.children] as THREE.Mesh[]) {
+      group.remove(child);
+      child.geometry?.dispose();
+      const material = child.material as THREE.Material | THREE.Material[] | undefined;
+      for (const m of Array.isArray(material) ? material : material ? [material] : []) {
+        if (m !== this.bedFloorMaterial) {
+          (m as THREE.MeshBasicMaterial).map?.dispose();
+          m.dispose();
+        }
+      }
     }
-    const { width, depth, center } = this.bedConfig;
+  }
+
+  private rebuildPlates(): void {
+    this.disposeChildren(this.plateLabelGroup);
+    this.disposeChildren(this.extraBedsGroup);
+    const { width, depth, center, points } = this.bedConfig;
     const [cx, cy] = center;
-    const plane = (text: string, font: string, height: number, color: string, align: CanvasTextAlign, x: number, y: number) => {
+    const size = Math.min(width, depth);
+    const margin = size * 0.03;
+
+    const text = (value: string, font: string, height: number, color: string, align: 'left' | 'center', x: number, y: number) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d')!;
       ctx.font = font;
-      const textWidth = Math.ceil(ctx.measureText(text).width) + 16;
-      canvas.width = textWidth;
+      canvas.width = Math.ceil(ctx.measureText(value).width) + 16;
       canvas.height = Math.round(parseInt(font.match(/(\d+)px/)![1], 10) * 1.4);
       ctx.font = font;
       ctx.fillStyle = color;
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'center';
-      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-      const texture = new THREE.CanvasTexture(canvas);
+      ctx.fillText(value, canvas.width / 2, canvas.height / 2);
+      const planeWidth = height * (canvas.width / canvas.height);
       const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(height * (canvas.width / canvas.height), height),
-        new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+        new THREE.PlaneGeometry(planeWidth, height),
+        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false, side: THREE.DoubleSide })
       );
-      const halfW = (height * (canvas.width / canvas.height)) / 2;
-      mesh.position.set(align === 'left' ? x + halfW : align === 'right' ? x - halfW : x, y, 0.05);
+      mesh.position.set(align === 'left' ? x + planeWidth / 2 : x, y, 0.05);
       mesh.name = 'plate-label';
       return mesh;
     };
-    const size = Math.min(width, depth);
-    const margin = size * 0.03;
-    const number = plane(String(this.plateLabel.number), 'bold 96px sans-serif', size * 0.12, 'rgba(255,255,255,0.35)', 'left', cx - width / 2 + margin, cy - depth / 2 + margin + size * 0.06);
-    this.plateLabelGroup.add(number);
-    if (this.plateLabel.title) {
-      const title = this.plateLabel.title.length > 40 ? `${this.plateLabel.title.slice(0, 38)}...` : this.plateLabel.title;
-      this.plateLabelGroup.add(plane(title, 'bold 48px sans-serif', size * 0.05, 'rgba(255,255,255,0.45)', 'center', cx, cy - depth / 2 + margin + size * 0.025));
+
+    for (const plate of this.plates) {
+      const [ox, oy, oz] = plate.origin;
+      const active = plate.index === this.activePlateIndex;
+      const number = text(String(plate.index + 1), 'bold 96px sans-serif', size * 0.12, active ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)', 'left', ox + cx - width / 2 + margin, oy + cy - depth / 2 + margin + size * 0.06);
+      number.position.z = oz + 0.05;
+      this.plateLabelGroup.add(number);
+      const title = plate.name && plate.name !== `Plate ${plate.index + 1}` ? plate.name : '';
+      if (title) {
+        const shown = title.length > 40 ? `${title.slice(0, 38)}...` : title;
+        const label = text(shown, 'bold 48px sans-serif', size * 0.09, active ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.65)', 'center', ox + cx, oy + cy - depth / 2 - size * 0.07);
+        label.position.z = oz + 0.05;
+        this.plateLabelGroup.add(label);
+      }
+
+      if (plate.index === 0) continue; // the main bed has its own, richer drawing
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), this.bedFloorMaterial ?? new THREE.MeshBasicMaterial({ color: 0x24242b, side: THREE.DoubleSide }));
+      floor.position.set(ox + cx, oy + cy, oz - 0.1);
+      this.extraBedsGroup.add(floor);
+      const gridSize = Math.max(width, depth);
+      const grid = new THREE.GridHelper(gridSize, Math.round(gridSize / 10), 0x475569, 0x334155);
+      grid.rotation.x = Math.PI / 2;
+      grid.position.set(ox + cx, oy + cy, oz);
+      this.extraBedsGroup.add(grid);
+      const outline: THREE.Vector3[] = (points.length >= 3 ? points : [[cx - width / 2, cy - depth / 2], [cx + width / 2, cy - depth / 2], [cx + width / 2, cy + depth / 2], [cx - width / 2, cy + depth / 2]])
+        .map(([x, y]) => new THREE.Vector3(ox + x, oy + y, oz + 0.2));
+      outline.push(outline[0].clone());
+      this.extraBedsGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(outline), new THREE.LineBasicMaterial({ color: active ? 0x38bdf8 : 0x475569 })));
     }
   }
 
@@ -571,10 +620,21 @@ export class PlateScene {
     usePrefsStore.getState().setDisplayPref('cameraType', next);
   }
 
+  /** Centre and longest side of the area all plates cover together; one plate gives the bed itself. */
+  private plateLayout(): { cx: number; cy: number; span: number } {
+    const { width, depth, center } = this.bedConfig;
+    let [minX, minY, maxX, maxY] = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const { origin } of this.plates) {
+      minX = Math.min(minX, origin[0] + center[0] - width / 2);
+      maxX = Math.max(maxX, origin[0] + center[0] + width / 2);
+      minY = Math.min(minY, origin[1] + center[1] - depth / 2);
+      maxY = Math.max(maxY, origin[1] + center[1] + depth / 2);
+    }
+    return { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, span: Math.max(maxX - minX, maxY - minY) };
+  }
+
   public zoomToBed(): void {
-    const cx = this.bedConfig.center[0];
-    const cy = this.bedConfig.center[1];
-    const span = Math.max(this.bedConfig.width, this.bedConfig.depth);
+    const { cx, cy, span } = this.plateLayout();
     this.orbitControls.target.set(cx, cy, 0);
     this.camera.position.set(cx, cy - span * 1.5, span * 1.2);
     this.orbitControls.update();
@@ -618,8 +678,15 @@ export class PlateScene {
       activeKeys.add(key);
       let sprite = this.labelSprites.get(key);
       const name = mesh.userData?.name || 'Object';
+      if (sprite && sprite.userData.name !== name) {
+        this.labelsGroup.remove(sprite);
+        sprite.material.map?.dispose();
+        sprite.material.dispose();
+        sprite = undefined;
+      }
       if (!sprite) {
         sprite = this.createLabelSprite(name);
+        sprite.userData.name = name;
         this.labelsGroup.add(sprite);
         this.labelSprites.set(key, sprite);
       }
@@ -641,7 +708,7 @@ export class PlateScene {
   public updateBedConfig(bedConfig: BedConfig): void {
     this.bedConfig = bedConfig;
     this.buildBed();
-    this.rebuildPlateLabel();
+    this.rebuildPlates();
     this.orbitControls.target.set(bedConfig.center[0], bedConfig.center[1], 0);
   }
 
@@ -1364,9 +1431,7 @@ export class PlateScene {
       return;
     }
 
-    const cx = this.bedConfig.center[0];
-    const cy = this.bedConfig.center[1];
-    const span = Math.max(this.bedConfig.width, this.bedConfig.depth);
+    const { cx, cy, span } = this.plateLayout();
     this.orbitControls.target.set(cx, cy, 0);
 
     const d = span * 1.8;
