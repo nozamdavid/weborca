@@ -15,7 +15,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ['Ctrl+Y / Ctrl+Shift+Z', 'Redo'],
   ['Ctrl+A', 'Select all objects'],
   ['Shift/Ctrl+click', 'Add an object to the selection'],
-  ['Ctrl+C / Ctrl+V', 'Copy and paste (adds another instance)'],
+  ['Ctrl+C / Ctrl+V', 'Copy and paste (a new object beside the original)'],
   ['Ctrl+K', 'Clone the selection'],
   ['Ctrl+D', 'Delete all objects'],
   ['Esc', 'Deselect'],

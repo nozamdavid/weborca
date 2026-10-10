@@ -3,6 +3,8 @@ export interface PlateInstance {
   offset: [number, number, number];
   rotation: [number, number, number];
   scale: [number, number, number];
+  /** -1 on an axis the instance is mirrored along, with the rotation and scale above. */
+  mirror?: [number, number, number];
 }
 
 export interface PlateObject {

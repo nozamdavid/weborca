@@ -30,6 +30,7 @@ const NumberBox: React.FC<{ id: string; value: number; digits: number; disabled?
 /** Position, rotation, scale and size of the selected instance as editable numbers, like desktop's object manipulation panel. */
 export const NumericTransform: React.FC<{ object: PlateObject; instance: PlateInstance }> = ({ object, instance }) => {
   const apply = usePlateStore((s) => s.setInstanceTransform);
+  const mirrorSelected = usePlateStore((s) => s.mirrorSelected);
   const [lock, setLock] = useState(true);
   const set = (t: Parameters<typeof apply>[2]) => void apply(object.id, instance.id, t);
 
@@ -58,6 +59,12 @@ export const NumericTransform: React.FC<{ object: PlateObject; instance: PlateIn
       )))}
       {row('Size', 'mm', AXES.map((a, i) => (
         <NumberBox key={a} id={`nt-size-${a.toLowerCase()}`} value={object.size[i]} digits={2} onCommit={(v) => v > 0 && object.size[i] > 0 && set({ scale: scaleTo(i, v / object.size[i]) })} />
+      )))}
+      {row('Mirror', '', AXES.map((a, i) => (
+        <button key={a} id={`nt-mirror-${a.toLowerCase()}`} type="button" title={`Mirror along ${a}`} onClick={() => void mirrorSelected(i as 0 | 1 | 2)}
+          style={{ width: 62, background: 'rgba(255,255,255,0.06)', color: 'inherit', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 4, padding: '2px 4px', fontSize: '0.8rem', cursor: 'pointer' }}>
+          {a}
+        </button>
       )))}
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: '#94a3b8' }}>
         <input id="nt-lock" type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} /> Keep proportions

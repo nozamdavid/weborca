@@ -246,14 +246,14 @@ export class PlateScene {
             objectId: m.userData.objectId as number, instanceId: m.userData.instanceId as number,
             offset: [m.position.x, m.position.y, m.position.z] as [number, number, number],
             rotation: [m.rotation.x, m.rotation.y, m.rotation.z] as [number, number, number],
-            scale: [m.scale.x, m.scale.y, m.scale.z] as [number, number, number]
+            scale: [Math.abs(m.scale.x), Math.abs(m.scale.y), Math.abs(m.scale.z)] as [number, number, number]
           });
           this.callbacks.onTransformMany([entry(target), ...[...drag.extras.keys()].map(entry)]);
         } else if (target && target.userData) {
           const { objectId, instanceId } = target.userData;
           const pos: [number, number, number] = [target.position.x, target.position.y, target.position.z];
           const rot: [number, number, number] = [target.rotation.x, target.rotation.y, target.rotation.z];
-          const sc: [number, number, number] = [target.scale.x, target.scale.y, target.scale.z];
+          const sc: [number, number, number] = [Math.abs(target.scale.x), Math.abs(target.scale.y), Math.abs(target.scale.z)];
           this.callbacks.onTransformChange(objectId, instanceId, {
             offset: pos,
             rotation: rot,
@@ -892,7 +892,8 @@ export class PlateScene {
         // Apply instance transforms from Engine
         mesh.position.set(inst.offset[0], inst.offset[1], inst.offset[2]);
         mesh.rotation.set(inst.rotation[0], inst.rotation[1], inst.rotation[2]);
-        mesh.scale.set(inst.scale[0], inst.scale[1], inst.scale[2]);
+        const mirror = inst.mirror ?? [1, 1, 1];
+        mesh.scale.set(inst.scale[0] * mirror[0], inst.scale[1] * mirror[1], inst.scale[2] * mirror[2]);
 
         if (isPrimary && !this.isPaintingActive) {
           this.transformControls.attach(mesh);

@@ -132,6 +132,23 @@ Updates the transformation of a specific instance on an object, then automatical
 
 ---
 
+### `mirrorInstance`
+Reflects an instance along one of the object's own axes, then drops it onto the bed. Calling it again with the same axis restores the instance.
+
+- **Arguments**: `{ "objectId": 1, "instanceId": 2, "axis": 0 }` (`axis`: 0 = X, 1 = Y, 2 = Z).
+- **Result**: `{}`
+- `listObjects` reports `mirror: [mx, my, mz]` (each ±1) per instance next to `rotation` and `scale` (always positive). A mirrored matrix has several equal decompositions, so `mirror` only means something together with the `rotation` reported with it: a viewer applies `rotation * (scale * mirror)`. `setInstanceTransform` keeps the instance's mirror when it changes the scale.
+
+---
+
+### `cloneObject`
+Copies an object, with its volumes, settings, painting and instances, as an independent new object at the same position.
+
+- **Arguments**: `{ "objectId": 1 }`
+- **Result**: `{ "objectId": 7, "id": 7 }`
+
+---
+
 ### `deleteObject`
 Removes an object and all of its volumes and instances from the model.
 

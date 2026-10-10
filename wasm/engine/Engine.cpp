@@ -221,6 +221,8 @@ private:
     json op_setInstanceTransform(const json& args);
     json op_deleteObject(const json& args);
     json op_duplicateInstance(const json& args);
+    json op_mirrorInstance(const json& args);
+    json op_cloneObject(const json& args);
     json op_openProject(const json& args);
     json op_saveProject(const json& args);
     json op_getObjectTree(const json& args);
@@ -455,6 +457,10 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_deleteObject(args);
         } else if (op == "duplicateInstance") {
             result_data = op_duplicateInstance(args);
+        } else if (op == "mirrorInstance") {
+            result_data = op_mirrorInstance(args);
+        } else if (op == "cloneObject") {
+            result_data = op_cloneObject(args);
         } else if (op == "arrange") {
             result_data = op_arrange(args);
         } else if (op == "openProject") {
@@ -1349,8 +1355,10 @@ json Engine::Impl::op_listObjects(const json& /*args*/) {
             Slic3r::Vec3d offset = inst->get_offset();
             Slic3r::Vec3d rotation = inst->get_rotation();
             Slic3r::Vec3d scale = inst->get_scaling_factor();
+            Slic3r::Vec3d mirror = inst->get_mirror();
             instances_arr.push_back({
                 {"id", inst->id().id},
+                {"mirror", {mirror.x(), mirror.y(), mirror.z()}},
                 {"offset", {offset.x(), offset.y(), offset.z()}},
                 {"rotation", {rotation.x(), rotation.y(), rotation.z()}},
                 {"scale", {scale.x(), scale.y(), scale.z()}}
@@ -1499,6 +1507,8 @@ json Engine::Impl::op_setInstanceTransform(const json& args) {
         throw Slic3r::RuntimeError("Instance not found: " + std::to_string(instance_id));
     }
 
+    // Setting the scale rebuilds the matrix from the rotation and positive factors, which would undo a mirror.
+    const Slic3r::Vec3d mirror = inst->get_mirror();
     if (args.contains("offset") && !args["offset"].is_null()) {
         inst->set_offset(parse_vec3d(args["offset"]));
     }
@@ -1513,6 +1523,7 @@ json Engine::Impl::op_setInstanceTransform(const json& args) {
         } else {
             inst->set_scaling_factor(parse_vec3d(s));
         }
+        inst->set_mirror(mirror);
     }
 
     // Drop to bed
@@ -1588,6 +1599,57 @@ json Engine::Impl::op_duplicateInstance(const json& args) {
         {"instanceId", new_inst->id().id},
         {"id", new_inst->id().id}
     };
+}
+
+json Engine::Impl::op_mirrorInstance(const json& args) {
+    if (!args.contains("objectId") || !args.contains("instanceId") || !args.contains("axis"))
+        throw Slic3r::RuntimeError("mirrorInstance requires objectId, instanceId and axis (0, 1 or 2)");
+    const size_t object_id = args["objectId"].get<size_t>();
+    const size_t instance_id = args["instanceId"].get<size_t>();
+    const int axis = args["axis"].get<int>();
+    if (axis < 0 || axis > 2)
+        throw Slic3r::RuntimeError("mirrorInstance axis must be 0, 1 or 2");
+
+    Slic3r::ModelObject* obj = nullptr;
+    for (auto* o : m_model.objects)
+        if (o && o->id().id == object_id) { obj = o; break; }
+    if (!obj)
+        throw Slic3r::RuntimeError("Object not found: " + std::to_string(object_id));
+    Slic3r::ModelInstance* inst = nullptr;
+    for (auto* i : obj->instances)
+        if (i && i->id().id == instance_id) { inst = i; break; }
+    if (!inst)
+        throw Slic3r::RuntimeError("Instance not found: " + std::to_string(instance_id));
+
+    // Mirror in the object's own axes by composing with a reflection, so a second call restores the instance. (A mirrored
+    // matrix has several equal decompositions into rotation, scale and signs, so the signs alone cannot be toggled.)
+    Slic3r::Vec3d flip(1., 1., 1.);
+    flip(axis) = -1.;
+    Slic3r::Transform3d matrix = inst->get_matrix() * Eigen::Scaling(flip);
+    inst->set_transformation(Slic3r::Geometry::Transformation(matrix));
+
+    obj->invalidate_bounding_box();
+    Slic3r::BoundingBoxf3 bb = obj->instance_bounding_box(*inst);
+    if (bb.defined) {
+        inst->set_offset(Slic3r::Z, inst->get_offset(Slic3r::Z) - bb.min.z());
+        obj->invalidate_bounding_box();
+    }
+    return json::object();
+}
+
+json Engine::Impl::op_cloneObject(const json& args) {
+    if (!args.contains("objectId"))
+        throw Slic3r::RuntimeError("cloneObject requires objectId");
+    const size_t object_id = args["objectId"].get<size_t>();
+    Slic3r::ModelObject* source = nullptr;
+    for (auto* o : m_model.objects)
+        if (o && o->id().id == object_id) { source = o; break; }
+    if (!source)
+        throw Slic3r::RuntimeError("Object not found: " + std::to_string(object_id));
+
+    // A full copy: volumes, settings, painting and every instance, as an independent object.
+    Slic3r::ModelObject* copy = m_model.add_object(*source);
+    return json{{"objectId", copy->id().id}, {"id", copy->id().id}};
 }
 
 json Engine::Impl::op_arrange(const json& args) {

@@ -32,6 +32,8 @@ export function parseMeshBuffer(bytes: Uint8Array): MeshBufferData {
   return { vertexCount, triangleCount, positions, indices };
 }
 
+const PASTE_OFFSET_MM = 20;
+
 export interface InstanceRef {
   objectId: number;
   instanceId: number;
@@ -74,6 +76,7 @@ export interface PlateStoreState {
   selectAll: () => void;
   copySelected: () => void;
   pasteClipboard: () => Promise<void>;
+  mirrorSelected: (axis: 0 | 1 | 2) => Promise<void>;
   deleteAll: () => Promise<void>;
   deleteObjects: (objectIds: number[]) => Promise<void>;
   duplicateRefs: (refs: InstanceRef[]) => Promise<void>;
@@ -247,7 +250,39 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   pasteClipboard: async () => {
     const { clipboard } = get();
     if (clipboard.length === 0) return;
-    await get().duplicateRefs(clipboard);
+    // Each copied object comes back as an independent object, set a little aside from the original.
+    const engine = await getEngine();
+    const sources = [...new Set(clipboard.map((r) => r.objectId))];
+    const created: number[] = [];
+    for (const objectId of sources) {
+      const res = (await engine.call('cloneObject', { objectId })) as { objectId: number };
+      created.push(res.objectId);
+    }
+    const objects = await get().refreshObjects();
+    for (const id of created) {
+      for (const inst of objects.find((o) => o.id === id)?.instances ?? []) {
+        await engine.call('setInstanceTransform', { objectId: id, instanceId: inst.id, offset: [inst.offset[0] + PASTE_OFFSET_MM, inst.offset[1] + PASTE_OFFSET_MM, inst.offset[2]] });
+      }
+    }
+    const after = await get().refreshObjects();
+    const [first, ...rest] = created.flatMap((id) => after.find((o) => o.id === id)?.instances.map((i) => ({ objectId: id, instanceId: i.id })) ?? []);
+    if (first) set({ selectedObjectId: first.objectId, selectedInstanceId: first.instanceId, extraSelection: rest });
+    try {
+      await useHistoryStore.getState().commitTransaction(created.length > 1 ? 'Paste objects' : 'Paste object');
+    } catch (_) {}
+  },
+
+  mirrorSelected: async (axis) => {
+    const { selectedObjectId, selectedInstanceId, extraSelection } = get();
+    if (selectedObjectId === null || selectedInstanceId === null) return;
+    const engine = await getEngine();
+    for (const { objectId, instanceId } of [{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection]) {
+      await engine.call('mirrorInstance', { objectId, instanceId, axis });
+    }
+    await get().refreshObjects();
+    try {
+      await useHistoryStore.getState().commitTransaction(`Mirror ${'XYZ'[axis]}`);
+    } catch (_) {}
   },
 
   deleteAll: async () => {

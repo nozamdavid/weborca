@@ -73,11 +73,12 @@ async function runSuite(browserType, name) {
     await page.keyboard.press('Control+k');
     await page.waitForFunction(() => window.__plateStore.getState().objects.reduce((n, o) => n + o.instances.length, 0) === 4, null, { timeout: 30000 });
 
-    log('copy and paste add one more instance of each copied object');
+    log('copy and paste make an independent object of each copied one');
     await page.keyboard.press('Control+c');
     assert.equal((await state()).clipboard, 2);
     await page.keyboard.press('Control+v');
-    await page.waitForFunction(() => window.__plateStore.getState().objects.reduce((n, o) => n + o.instances.length, 0) === 6, null, { timeout: 30000 });
+    await page.waitForFunction(() => window.__plateStore.getState().objects.length === 4, null, { timeout: 30000 });
+    assert.equal(await page.evaluate(() => window.__plateStore.getState().extraSelection.length >= 1), true, 'the pasted objects are selected');
 
     log('Delete removes every selected object, Ctrl+D the rest');
     await page.keyboard.press('Control+a');

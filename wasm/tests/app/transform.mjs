@@ -55,6 +55,13 @@ async function runSuite(browserType, name) {
     const flat = await instance();
     assert.ok(Math.abs(flat.scale[0] - doubled.scale[0]) < 1e-6, 'x is untouched');
 
+    log('mirroring flips the instance and keeps it on the bed');
+    await page.click('#nt-mirror-x');
+    await page.waitForFunction(() => { const i = window.__plateStore.getState().objects[0].instances[0]; return i.mirror && i.mirror[0] * i.mirror[1] * i.mirror[2] === -1; });
+    assert.ok(await page.evaluate(() => [...window.__plateScene.objectMeshes.values()][0].scale.toArray().filter((v) => v < 0).length % 2 === 1), 'the 3D mesh is mirrored');
+    await page.click('#nt-mirror-x');
+    await page.waitForFunction(() => { const i = window.__plateStore.getState().objects[0].instances[0]; return i.mirror && i.mirror[0] * i.mirror[1] * i.mirror[2] === 1; });
+
     log('an invalid entry is ignored');
     await type('nt-scale-x', 'abc');
     assert.equal(await page.inputValue('#nt-scale-x'), '200');
