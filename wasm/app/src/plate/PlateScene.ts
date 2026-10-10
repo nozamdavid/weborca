@@ -12,7 +12,11 @@ import { usePrefsStore } from '../prefs/prefsStore';
 import type { CameraView } from '../shell/cameraBridge';
 
 export interface PlateSceneCallbacks {
-  onSelect: (objectId: number | null, instanceId: number | null) => void;
+  onSelect: (objectId: number | null, instanceId: number | null, additive?: boolean) => void;
+  /** The whole selection moved together: absolute transforms of the primary and every other selected instance. */
+  onTransformMany?: (
+    entries: { objectId: number; instanceId: number; offset: [number, number, number]; rotation: [number, number, number]; scale: [number, number, number] }[]
+  ) => void;
   onTransformChange: (
     objectId: number,
     instanceId: number,
@@ -67,6 +71,9 @@ export class PlateScene {
   private meshVolumes: Map<number, MeshVolumePartition[]> = new Map();
 
   private selectedObjectId: number | null = null;
+  /** `objectId_instanceId` of the other selected instances; they follow the primary while it is dragged. */
+  private extraKeys = new Set<string>();
+  private dragStart: { primary: THREE.Vector3; extras: Map<THREE.Mesh, THREE.Vector3> } | null = null;
   private selectedInstanceId: number | null = null;
   private gizmoMode: GizmoMode = 'translate';
   private bedConfig: BedConfig;
@@ -215,11 +222,34 @@ export class PlateScene {
     this.transformControls.setMode(this.gizmoMode);
     this.scene.add(this.transformControls.getHelper());
 
+    this.transformControls.addEventListener('objectChange', () => {
+      const target = this.transformControls.object;
+      if (!target || !this.dragStart) return;
+      const delta = target.position.clone().sub(this.dragStart.primary);
+      for (const [mesh, origin] of this.dragStart.extras) mesh.position.copy(origin).add(delta);
+    });
+
     this.transformControls.addEventListener('dragging-changed', (event) => {
       this.orbitControls.enabled = !event.value;
+      if (event.value) {
+        const target = this.transformControls.object;
+        const extras = new Map<THREE.Mesh, THREE.Vector3>();
+        if (target) for (const mesh of this.objectMeshes.values()) if (this.extraKeys.has(`${mesh.userData.objectId}_${mesh.userData.instanceId}`)) extras.set(mesh, mesh.position.clone());
+        this.dragStart = target ? { primary: target.position.clone(), extras } : null;
+      }
       if (!event.value) {
         const target = this.transformControls.object;
-        if (target && target.userData) {
+        const drag = this.dragStart;
+        this.dragStart = null;
+        if (target && drag && drag.extras.size > 0 && this.callbacks.onTransformMany) {
+          const entry = (m: THREE.Object3D) => ({
+            objectId: m.userData.objectId as number, instanceId: m.userData.instanceId as number,
+            offset: [m.position.x, m.position.y, m.position.z] as [number, number, number],
+            rotation: [m.rotation.x, m.rotation.y, m.rotation.z] as [number, number, number],
+            scale: [m.scale.x, m.scale.y, m.scale.z] as [number, number, number]
+          });
+          this.callbacks.onTransformMany([entry(target), ...[...drag.extras.keys()].map(entry)]);
+        } else if (target && target.userData) {
           const { objectId, instanceId } = target.userData;
           const pos: [number, number, number] = [target.position.x, target.position.y, target.position.z];
           const rot: [number, number, number] = [target.rotation.x, target.rotation.y, target.rotation.z];
@@ -843,7 +873,8 @@ export class PlateScene {
         activeKeys.add(key);
 
         let mesh = this.objectMeshes.get(key);
-        const isSelected = this.selectedObjectId === obj.id && this.selectedInstanceId === inst.id;
+        const isPrimary = this.selectedObjectId === obj.id && this.selectedInstanceId === inst.id;
+        const isSelected = isPrimary || this.extraKeys.has(key);
 
         if (!mesh) {
           mesh = new THREE.Mesh(geo, isSelected ? this.selectedMaterial : this.defaultMaterial);
@@ -863,7 +894,7 @@ export class PlateScene {
         mesh.rotation.set(inst.rotation[0], inst.rotation[1], inst.rotation[2]);
         mesh.scale.set(inst.scale[0], inst.scale[1], inst.scale[2]);
 
-        if (isSelected && !this.isPaintingActive) {
+        if (isPrimary && !this.isPaintingActive) {
           this.transformControls.attach(mesh);
         }
       }
@@ -893,9 +924,10 @@ export class PlateScene {
     this.updateLabels();
   }
 
-  public setSelection(objectId: number | null, instanceId: number | null): void {
+  public setSelection(objectId: number | null, instanceId: number | null, extras: { objectId: number; instanceId: number }[] = []): void {
     this.selectedObjectId = objectId;
     this.selectedInstanceId = instanceId;
+    this.extraKeys = new Set(extras.map((e) => `${e.objectId}_${e.instanceId}`));
 
     let selectedMesh: THREE.Mesh | null = null;
     for (const mesh of this.objectMeshes.values()) {
@@ -905,13 +937,14 @@ export class PlateScene {
         mesh.userData.objectId === objectId &&
         mesh.userData.instanceId === instanceId;
 
-      mesh.material = isSelected ? this.selectedMaterial : this.defaultMaterial;
+      mesh.material = isSelected || this.extraKeys.has(`${mesh.userData.objectId}_${mesh.userData.instanceId}`) ? this.selectedMaterial : this.defaultMaterial;
       if (isSelected) {
         selectedMesh = mesh;
       }
     }
 
-    if (selectedMesh && !this.isPaintingActive) {
+    // The other selected instances only follow a move, so rotating or scaling is for a single selection.
+    if (selectedMesh && !this.isPaintingActive && (this.extraKeys.size === 0 || this.gizmoMode === 'translate')) {
       this.transformControls.attach(selectedMesh);
     } else {
       this.transformControls.detach();
@@ -921,6 +954,11 @@ export class PlateScene {
   public setGizmoMode(mode: GizmoMode): void {
     this.gizmoMode = mode;
     this.transformControls.setMode(mode);
+    if (this.extraKeys.size > 0) {
+      const selected = this.getSelectedMesh();
+      if (mode === 'translate' && selected && !this.isPaintingActive) this.transformControls.attach(selected);
+      else this.transformControls.detach();
+    }
   }
 
   public setPaintingActive(active: boolean, volumeId?: number | null): void {
@@ -1395,9 +1433,9 @@ export class PlateScene {
       if (intersects.length > 0 && typeof intersects[0].faceIndex === 'number') {
         const hit = intersects[0].object as THREE.Mesh;
         if (hit.userData) {
-          this.callbacks.onSelect(hit.userData.objectId, hit.userData.instanceId);
+          this.callbacks.onSelect(hit.userData.objectId, hit.userData.instanceId, e.shiftKey || e.ctrlKey || e.metaKey);
         }
-      } else {
+      } else if (!(e.shiftKey || e.ctrlKey || e.metaKey)) {
         this.callbacks.onSelect(null, null);
       }
     }

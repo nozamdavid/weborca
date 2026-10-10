@@ -150,6 +150,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
   const undo = useHistoryStore((s) => s.undo);
   const redo = useHistoryStore((s) => s.redo);
   const hasSelection = usePlateStore((s) => s.selectedObjectId != null);
+  const hasClipboard = usePlateStore((s) => s.clipboard.length > 0);
 
   // Preferences & View Store
   const prefsDisplay = usePrefsStore((s) => s.display);
@@ -335,6 +336,13 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
       [
         { label: 'Undo', keys: 'Ctrl+Z', disabled: !canUndo || isBusy, onClick: () => undo() },
         { label: 'Redo', keys: 'Ctrl+Y', disabled: !canRedo || isBusy, onClick: () => redo() },
+        'sep',
+        { label: 'Select all', keys: 'Ctrl+A', disabled: isBusy || !hasObjects, onClick: () => usePlateStore.getState().selectAll() },
+        { label: 'Deselect all', keys: 'Esc', disabled: !hasSelection, onClick: () => usePlateStore.getState().selectObject(null) },
+        { label: 'Copy', keys: 'Ctrl+C', disabled: isBusy || !hasSelection, onClick: () => usePlateStore.getState().copySelected() },
+        { label: 'Paste', keys: 'Ctrl+V', disabled: isBusy || !hasClipboard, onClick: () => void usePlateStore.getState().pasteClipboard() },
+        { label: 'Clone', keys: 'Ctrl+K', disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().duplicateSelected() },
+        { label: 'Delete all', keys: 'Ctrl+D', disabled: isBusy || !hasObjects, onClick: () => void usePlateStore.getState().deleteAll() },
         'sep',
         { label: 'Auto-orient', keys: 'A', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().autoOrient() },
         { label: 'Place on face', keys: 'F', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().startFlatten() },

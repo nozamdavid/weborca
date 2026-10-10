@@ -32,10 +32,24 @@ export function parseMeshBuffer(bytes: Uint8Array): MeshBufferData {
   return { vertexCount, triangleCount, positions, indices };
 }
 
+export interface InstanceRef {
+  objectId: number;
+  instanceId: number;
+}
+type InstanceTransform = {
+  offset?: [number, number, number];
+  rotation?: [number, number, number];
+  scale?: [number, number, number];
+};
+
 export interface PlateStoreState {
   objects: PlateObject[];
   selectedObjectId: number | null;
   selectedInstanceId: number | null;
+  /** Further selected instances besides the primary one (Shift/Ctrl-click, Select all). */
+  extraSelection: InstanceRef[];
+  /** Copied instances; pasting adds another instance of each. */
+  clipboard: InstanceRef[];
   gizmoMode: GizmoMode;
   bedConfig: BedConfig;
   isLoading: boolean;
@@ -56,6 +70,14 @@ export interface PlateStoreState {
       scale?: [number, number, number];
     }
   ) => Promise<void>;
+  toggleSelect: (objectId: number, instanceId: number) => void;
+  selectAll: () => void;
+  copySelected: () => void;
+  pasteClipboard: () => Promise<void>;
+  deleteAll: () => Promise<void>;
+  deleteObjects: (objectIds: number[]) => Promise<void>;
+  duplicateRefs: (refs: InstanceRef[]) => Promise<void>;
+  setInstanceTransforms: (entries: ({ objectId: number; instanceId: number } & InstanceTransform)[]) => Promise<void>;
   moveSelection: (delta: [number, number, number]) => Promise<void>;
   rotateSelection: (euler: [number, number, number]) => Promise<void>;
   scaleSelection: (scale: [number, number, number]) => Promise<void>;
@@ -70,6 +92,8 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   objects: [],
   selectedObjectId: null,
   selectedInstanceId: null,
+  extraSelection: [],
+  clipboard: [],
   gizmoMode: 'translate',
   bedConfig: {
     points: [
@@ -154,6 +178,8 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
       if (selectedObjectId !== null && !objs.some((o) => o.id === selectedObjectId)) {
         set({ selectedObjectId: null, selectedInstanceId: null });
       }
+      const exists = (r: InstanceRef) => objs.some((o) => o.id === r.objectId && o.instances.some((i) => i.id === r.instanceId));
+      set((st) => ({ extraSelection: st.extraSelection.filter(exists), clipboard: st.clipboard.filter(exists) }));
 
       // Sync with appStore
       useAppStore.setState({
@@ -175,19 +201,69 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
 
   selectObject: (objectId: number | null, instanceId?: number | null) => {
     if (objectId === null) {
-      set({ selectedObjectId: null, selectedInstanceId: null });
+      set({ selectedObjectId: null, selectedInstanceId: null, extraSelection: [] });
       return;
     }
 
     const { objects } = get();
     const obj = objects.find((o) => o.id === objectId);
     if (!obj) {
-      set({ selectedObjectId: null, selectedInstanceId: null });
+      set({ selectedObjectId: null, selectedInstanceId: null, extraSelection: [] });
       return;
     }
 
     const instId = instanceId ?? obj.instances[0]?.id ?? null;
-    set({ selectedObjectId: objectId, selectedInstanceId: instId });
+    set({ selectedObjectId: objectId, selectedInstanceId: instId, extraSelection: [] });
+  },
+
+  toggleSelect: (objectId, instanceId) => {
+    const { selectedObjectId, selectedInstanceId, extraSelection } = get();
+    const same = (r: InstanceRef) => r.objectId === objectId && r.instanceId === instanceId;
+    if (selectedObjectId === null || selectedInstanceId === null) {
+      set({ selectedObjectId: objectId, selectedInstanceId: instanceId, extraSelection: [] });
+    } else if (selectedObjectId === objectId && selectedInstanceId === instanceId) {
+      // Unselecting the primary hands the role to the next one.
+      const [next, ...rest] = extraSelection;
+      set({ selectedObjectId: next?.objectId ?? null, selectedInstanceId: next?.instanceId ?? null, extraSelection: rest });
+    } else if (extraSelection.some(same)) {
+      set({ extraSelection: extraSelection.filter((r) => !same(r)) });
+    } else {
+      set({ extraSelection: [...extraSelection, { objectId, instanceId }] });
+    }
+  },
+
+  selectAll: () => {
+    const refs = get().objects.flatMap((o) => o.instances.map((i) => ({ objectId: o.id, instanceId: i.id })));
+    const [first, ...rest] = refs;
+    set({ selectedObjectId: first?.objectId ?? null, selectedInstanceId: first?.instanceId ?? null, extraSelection: rest });
+  },
+
+  copySelected: () => {
+    const { selectedObjectId, selectedInstanceId, extraSelection } = get();
+    if (selectedObjectId === null || selectedInstanceId === null) return;
+    set({ clipboard: [{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection] });
+  },
+
+  pasteClipboard: async () => {
+    const { clipboard } = get();
+    if (clipboard.length === 0) return;
+    await get().duplicateRefs(clipboard);
+  },
+
+  deleteAll: async () => {
+    await get().deleteObjects(get().objects.map((o) => o.id));
+  },
+
+  setInstanceTransforms: async (entries) => {
+    if (entries.length === 0) return;
+    const engine = await getEngine();
+    for (const { objectId, instanceId, ...transform } of entries) {
+      await engine.call('setInstanceTransform', { objectId, instanceId, ...transform });
+    }
+    await get().refreshObjects();
+    try {
+      await useHistoryStore.getState().commitTransaction('Transform objects');
+    } catch (_) {}
   },
 
   setGizmoMode: (mode: GizmoMode) => {
@@ -242,19 +318,14 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   },
 
   moveSelection: async (delta: [number, number, number]) => {
-    const { objects, selectedObjectId, selectedInstanceId } = get();
+    const { objects, selectedObjectId, selectedInstanceId, extraSelection } = get();
     if (selectedObjectId === null || selectedInstanceId === null) return;
-    const obj = objects.find((o) => o.id === selectedObjectId);
-    const inst = obj?.instances.find((i) => i.id === selectedInstanceId);
-    if (!inst) return;
-
-    const newOffset: [number, number, number] = [
-      inst.offset[0] + delta[0],
-      inst.offset[1] + delta[1],
-      inst.offset[2] + delta[2]
-    ];
-
-    await get().setInstanceTransform(selectedObjectId, selectedInstanceId, { offset: newOffset });
+    const refs = [{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection];
+    const entries = refs.flatMap((r) => {
+      const inst = objects.find((o) => o.id === r.objectId)?.instances.find((i) => i.id === r.instanceId);
+      return inst ? [{ ...r, offset: [inst.offset[0] + delta[0], inst.offset[1] + delta[1], inst.offset[2] + delta[2]] as [number, number, number] }] : [];
+    });
+    await get().setInstanceTransforms(entries);
   },
 
   rotateSelection: async (euler: [number, number, number]) => {
@@ -270,9 +341,9 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   },
 
   deleteSelected: async () => {
-    const { selectedObjectId } = get();
+    const { selectedObjectId, extraSelection } = get();
     if (selectedObjectId === null) return;
-    await get().deleteObject(selectedObjectId);
+    await get().deleteObjects([selectedObjectId, ...extraSelection.map((r) => r.objectId)]);
   },
 
   deleteObject: async (objectId: number) => {
@@ -294,17 +365,35 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   },
 
   duplicateSelected: async () => {
-    const { selectedObjectId, selectedInstanceId } = get();
+    const { selectedObjectId, selectedInstanceId, extraSelection } = get();
     if (selectedObjectId === null || selectedInstanceId === null) return;
+    await get().duplicateRefs([{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection]);
+  },
+
+  duplicateRefs: async (refs) => {
     const engine = await getEngine();
-    if (typeof (engine as any).duplicateInstance === 'function') {
-      await (engine as any).duplicateInstance(selectedObjectId, selectedInstanceId);
-    } else {
-      await engine.call('duplicateInstance', { objectId: selectedObjectId, instanceId: selectedInstanceId });
+    for (const { objectId, instanceId } of refs) {
+      await engine.call('duplicateInstance', { objectId, instanceId });
     }
     await get().refreshObjects();
     try {
-      await useHistoryStore.getState().commitTransaction('Duplicate instance');
+      await useHistoryStore.getState().commitTransaction(refs.length > 1 ? 'Duplicate instances' : 'Duplicate instance');
+    } catch (_) {}
+  },
+
+  deleteObjects: async (objectIds) => {
+    const ids = [...new Set(objectIds)];
+    if (ids.length === 0) return;
+    const engine = await getEngine();
+    const { meshCache } = get();
+    for (const objectId of ids) {
+      await engine.call('deleteObject', { objectId });
+      meshCache.delete(objectId);
+    }
+    set({ meshCache: new Map(meshCache) });
+    await get().refreshObjects();
+    try {
+      await useHistoryStore.getState().commitTransaction(ids.length > 1 ? 'Delete objects' : 'Delete object');
     } catch (_) {}
   },
 

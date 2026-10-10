@@ -52,6 +52,7 @@ export const PlateView: React.FC = () => {
 
   const refreshObjects = usePlateStore((s) => s.refreshObjects);
   const selectObject = usePlateStore((s) => s.selectObject);
+  const extraSelection = usePlateStore((s) => s.extraSelection);
   const setGizmoMode = usePlateStore((s) => s.setGizmoMode);
   const setInstanceTransform = usePlateStore((s) => s.setInstanceTransform);
   const deleteSelected = usePlateStore((s) => s.deleteSelected);
@@ -119,8 +120,12 @@ export const PlateView: React.FC = () => {
     if (!containerRef.current) return;
 
     const scene = new PlateScene(containerRef.current, bedConfig, {
-      onSelect: (objId, instId) => {
-        selectObject(objId, instId);
+      onSelect: (objId, instId, additive) => {
+        if (additive && objId !== null && instId !== null) usePlateStore.getState().toggleSelect(objId, instId);
+        else selectObject(objId, instId);
+      },
+      onTransformMany: (entries) => {
+        void usePlateStore.getState().setInstanceTransforms(entries);
       },
       onTransformChange: (objId, instId, trafo) => {
         setInstanceTransform(objId, instId, trafo);
@@ -226,7 +231,7 @@ export const PlateView: React.FC = () => {
   // Update selection in scene and stores
   useEffect(() => {
     if (sceneRef.current) {
-      sceneRef.current.setSelection(selectedObjectId, selectedInstanceId);
+      sceneRef.current.setSelection(selectedObjectId, selectedInstanceId, extraSelection);
       const paintState = usePaintToolsStore.getState();
       if (paintState.isActive) {
         if (!selectedObjectId || selectedObjectId !== paintState.selectedObjectId) {
@@ -247,7 +252,7 @@ export const PlateView: React.FC = () => {
     if (!useRepairStore.getState().isRepairing) {
       void useRepairStore.getState().selectObject(selectedObjectId);
     }
-  }, [selectedObjectId, selectedInstanceId]);
+  }, [selectedObjectId, selectedInstanceId, extraSelection]);
 
   useEffect(() => {
     const layers = useLayersStore.getState();
@@ -378,6 +383,11 @@ export const PlateView: React.FC = () => {
           useCutStore.getState().closeCut();
           return;
         }
+        const target = e.target as HTMLElement | null;
+        if (!target?.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]') && !isTextActive && !isLayersActive && !isCutting && !isRepairing && !isOperatingEdit) {
+          selectObject(null, null);
+          return;
+        }
       }
 
       // Ignore if typing in an input / textarea / select or contenteditable
@@ -412,9 +422,27 @@ export const PlateView: React.FC = () => {
         }
         if (e.key === 'a' || e.key === 'A') {
           e.preventDefault();
-          if (objects.length > 0) {
-            selectObject(objects[0].id, objects[0].instances[0]?.id);
-          }
+          usePlateStore.getState().selectAll();
+          return;
+        }
+        if ((e.key === 'c' || e.key === 'C') && !e.shiftKey && !isPaintingActive && !isOperatingEdit) {
+          e.preventDefault();
+          usePlateStore.getState().copySelected();
+          return;
+        }
+        if ((e.key === 'v' || e.key === 'V') && !isPaintingActive && !isOperatingEdit) {
+          e.preventDefault();
+          void usePlateStore.getState().pasteClipboard();
+          return;
+        }
+        if ((e.key === 'k' || e.key === 'K') && !isPaintingActive && !isOperatingEdit) {
+          e.preventDefault();
+          void usePlateStore.getState().duplicateSelected();
+          return;
+        }
+        if ((e.key === 'd' || e.key === 'D') && !isPaintingActive && !isOperatingEdit) {
+          e.preventDefault();
+          void usePlateStore.getState().deleteAll();
           return;
         }
       }
@@ -800,7 +828,7 @@ export const PlateView: React.FC = () => {
             <strong id="selected-object-name" style={{ fontSize: '0.95rem', color: '#60a5fa' }}>
               {selectedObject.name}
             </strong>
-            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>ID: {selectedObject.id}</span>
+            <span id="selection-count" style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{extraSelection.length > 0 ? `+${extraSelection.length} more selected` : `ID: ${selectedObject.id}`}</span>
           </div>
           <div id="selected-object-size" style={{ marginBottom: 4 }}>
             <span style={{ color: '#94a3b8' }}>Size: </span>
@@ -809,7 +837,7 @@ export const PlateView: React.FC = () => {
               {selectedObject.size[2].toFixed(1)} mm
             </span>
           </div>
-          {selectedInstance && (
+          {selectedInstance && extraSelection.length === 0 && (
             <>
               <NumericTransform object={selectedObject} instance={selectedInstance} />
             </>
