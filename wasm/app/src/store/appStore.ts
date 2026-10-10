@@ -865,6 +865,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
 
+      void import('../shell/autosave').then((m) => m.clearAutosave());
       showToast(`Saved project: ${outName}`, 'success');
       try {
         await storeRecentFile(outName, bytes, 'project');

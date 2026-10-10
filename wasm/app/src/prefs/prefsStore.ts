@@ -8,6 +8,8 @@ export interface GeneralPreferences {
   rememberRecentFiles: boolean;
   autoArrangeOnImport: boolean;
   autoSliceAfterChange: boolean;
+  /** Back the project up every minute so a closed tab can be recovered. */
+  autosave: boolean;
 }
 
 export interface CameraPreferences {
@@ -42,7 +44,8 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
     units: 'metric',
     rememberRecentFiles: true,
     autoArrangeOnImport: false,
-    autoSliceAfterChange: false
+    autoSliceAfterChange: false,
+    autosave: true
   },
   camera: {
     invertMouseWheelZoom: false,

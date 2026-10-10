@@ -149,6 +149,17 @@ export const PreferencesDialog: React.FC = () => {
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
+                    id="pref-autosave"
+                    aria-label="Back up the project automatically"
+                    checked={general.autosave}
+                    onChange={(e) => setGeneralPref('autosave', e.target.checked)}
+                  />
+                  <span>Back up the project automatically (restore after a crash or closed tab)</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
                     id="pref-auto-arrange-on-import"
                     aria-label="Auto-arrange on import"
                     checked={general.autoArrangeOnImport}

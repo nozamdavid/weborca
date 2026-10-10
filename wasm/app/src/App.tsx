@@ -19,6 +19,7 @@ import { CalibrationPage } from './shell/CalibrationPage';
 import { HelpDialogs } from './shell/HelpDialogs';
 import { PrepareSidebar } from './shell/PrepareSidebar';
 import { TopBar } from './shell/TopBar';
+import { RecoveryDialog } from './shell/RecoveryDialog';
 import { ToastContainer } from './shell/Toast';
 import { showToast } from './shell/toastStore';
 import { EditOpsDialogs } from './editops';
@@ -109,6 +110,7 @@ export const App: React.FC = () => {
       <ErrorBanner />
       <TopBar activeTab={activeTab} setActiveTab={setActiveTab} />
       <StepImportModal />
+      <RecoveryDialog />
 
       <main className="workspace orca-workspace" aria-busy={isModelLoading}>
         <div className="tab-page prepare-page" hidden={activeTab !== 'prepare'}>
