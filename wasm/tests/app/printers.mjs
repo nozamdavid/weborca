@@ -133,6 +133,15 @@ async function runSuite(browserType, name, mock) {
       return { length: bytes.length, sha256: [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('') };
     });
 
+    // A finished slice on a connected printer replaces the Slice button with Send to printer.
+    assert.equal(await page.locator('#slice-btn').count(), 0);
+    assert.equal(await text('#send-to-printer-btn'), 'Send to printer');
+    assert.match(await page.locator('#send-to-printer-btn').getAttribute('class'), /btn-slice/);
+    await page.evaluate(() => window.__printerStore.setState({ status: 'error' }));
+    await page.waitForSelector('#slice-btn', { state: 'attached' });
+    await page.evaluate(() => window.__printerStore.setState({ status: 'online' }));
+    await page.waitForSelector('#slice-btn', { state: 'detached' });
+
     await page.click('#tab-preview');
     await page.getByRole('button', { name: /Send to Printer/ }).click();
     await page.waitForSelector('#send-to-printer-dialog');

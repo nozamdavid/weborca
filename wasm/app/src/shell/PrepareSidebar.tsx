@@ -119,6 +119,8 @@ export const PrepareSidebar: React.FC = () => {
 
   const isBusy = isSlicing || isModelLoading || isRestoring;
   const activeFilaments = selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments : (selectedFilament ? [selectedFilament] : []);
+  // A finished slice with the selected printer connected is sent rather than sliced again.
+  const readyToSend = !!sliceResult?.gcode && !isBusy && printerStatus === 'online';
   const canSlice = isEngineReady && !isBusy && !!modelFile && !!selectedPrinter && !!selectedProcess && (activeFilaments.length > 0);
 
   const extrudersCount = Math.max(1, (currentConfig['nozzle_diameter'] || '').split(',').length);
@@ -389,12 +391,16 @@ export const PrepareSidebar: React.FC = () => {
       </div>
 
       <div className="sidebar-footer">
-        <button id="slice-btn" className="btn-slice" disabled={!canSlice} onClick={() => startSlice()}>{isSlicing ? 'Slicing...' : 'Slice plate'}</button>
+        {readyToSend ? (
+          <button id="send-to-printer-btn" className="btn-slice" onClick={openSendDialog}>Send to printer</button>
+        ) : (
+          <button id="slice-btn" className="btn-slice" disabled={!canSlice} onClick={() => startSlice()}>{isSlicing ? 'Slicing...' : 'Slice plate'}</button>
+        )}
         <button id="cancel-btn" className="btn-danger-wide" hidden={!isSlicing} disabled={!isSlicing} onClick={() => cancelSlice()}>Cancel</button>
         {sliceResult?.gcode && !isSlicing && (
           <div className="footer-row">
             <button id="export-gcode-btn" className="btn-secondary-wide" onClick={exportGcode}>Export G-code</button>
-            <button id="send-to-printer-btn" className="btn-secondary-wide" onClick={openSendDialog}>Send to printer</button>
+            {!readyToSend && <button id="send-to-printer-btn" className="btn-secondary-wide" onClick={openSendDialog}>Send to printer</button>}
           </div>
         )}
       </div>
