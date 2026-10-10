@@ -80,6 +80,11 @@ export function parseFilamentCost(gcodeBytes: Uint8Array | undefined): number {
   return parseFloat(tail.match(/;\s*total filament cost\s*=\s*([0-9.]+)/)?.[1] ?? '') || 0;
 }
 
+/** Millimetres up to 999, metres beyond, each with at most 2 decimals. */
+export function formatFilamentLength(mm: number): string {
+  return mm > 999 ? `${Number((mm / 1000).toFixed(2))} m` : `${Number(mm.toFixed(2))} mm`;
+}
+
 export const SliceStatsPanel: React.FC = () => {
   const stats = usePreviewStore((s) => s.stats);
   const showStatsPanel = usePreviewStore((s) => s.showStatsPanel);
@@ -107,7 +112,7 @@ export const SliceStatsPanel: React.FC = () => {
     : 'print.gcode';
 
   const timeFormatted = formatPrintTime(stats.timeS);
-  const filamentM = stats.filamentMm > 0 ? (stats.filamentMm / 1000).toFixed(2) + ' m' : '-';
+  const filamentM = stats.filamentMm > 0 ? formatFilamentLength(stats.filamentMm) : '-';
   const filamentG = stats.filamentG > 0 ? stats.filamentG.toFixed(2) + ' g' : '-';
 
   return (
@@ -298,7 +303,7 @@ export const SliceStatsPanel: React.FC = () => {
                       </span>
                     </div>
                     <div style={{ display: 'flex', gap: 6, color: '#f59e0b', fontWeight: 500, flexShrink: 0, fontSize: '0.7rem' }}>
-                      <span>{(item.mm / 1000).toFixed(2)} m</span>
+                      <span>{formatFilamentLength(item.mm)}</span>
                       <span style={{ color: '#a1a1aa' }}>({item.g.toFixed(2)} g)</span>
                     </div>
                   </div>

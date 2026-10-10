@@ -161,10 +161,10 @@ async function runBrowserSuite(browserType, browserName) {
     // Verify Slicing Statistics panel filament length
     const filamentLengthText = await page.$eval('[data-testid=\"slice-stats-panel\"] #stat-filament-mm', (el) => el.textContent?.trim());
     console.log(`[${browserName}] Filament length displayed: \"${filamentLengthText}\"`);
-    if (!filamentLengthText || filamentLengthText === '0.00 m' || filamentLengthText === '-') {
+    if (!filamentLengthText || filamentLengthText === '0 m' || filamentLengthText === '0 mm' || filamentLengthText === '-') {
       throw new Error(`Filament length displayed invalid: \"${filamentLengthText}\"`);
     }
-    const expectedMeters = (stats.filamentMm / 1000).toFixed(2) + ' m';
+    const expectedMeters = stats.filamentMm > 999 ? `${Number((stats.filamentMm / 1000).toFixed(2))} m` : `${Number(stats.filamentMm.toFixed(2))} mm`;
     if (filamentLengthText !== expectedMeters) {
       throw new Error(`Filament length displayed \"${filamentLengthText}\" does not match expected \"${expectedMeters}\"`);
     }
