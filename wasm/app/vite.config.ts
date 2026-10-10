@@ -1,3 +1,4 @@
+import { printerGatewayPlugin } from './printerGateway';
 /**
  * vite.config.ts - OrcaSlicer Web App Configuration
  *
@@ -240,7 +241,7 @@ function orcaAssetsPlugin() {
 }
 
 export default defineConfig({
-  plugins: [react(), orcaAssetsPlugin()],
+  plugins: [react(), orcaAssetsPlugin(), printerGatewayPlugin()],
   server: {
     fs: {
       allow: [repoRoot]
