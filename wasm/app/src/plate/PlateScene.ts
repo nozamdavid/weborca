@@ -522,7 +522,7 @@ export class PlateScene {
       const ctx = canvas.getContext('2d')!;
       ctx.font = font;
       const textWidth = Math.ceil(ctx.measureText(value).width);
-      const pencilWidth = pencil ? Math.round(px * 1.3) : 0;
+      const pencilWidth = pencil ? Math.round(px * 1.4) : 0;
       canvas.width = textWidth + pencilWidth + 16;
       canvas.height = Math.round(px * 1.4);
       ctx.font = font;
@@ -532,20 +532,16 @@ export class PlateScene {
       ctx.textAlign = 'left';
       ctx.fillText(value, 8, canvas.height / 2);
       if (pencil) {
-        // A pencil lying at 45 degrees: body, tip and an eraser band.
-        const [length, thickness] = [px * 1.0, px * 0.32];
+        // The "edit" icon (a square with a pen), drawn from its 24x24 SVG paths.
+        const iconSize = px * 0.95;
         ctx.save();
-        ctx.translate(8 + textWidth + px * 0.2 + length * 0.5, canvas.height / 2);
-        ctx.rotate(-Math.PI / 4);
-        ctx.beginPath();
-        ctx.moveTo(-length / 2, -thickness / 2);
-        ctx.lineTo(length / 2 - thickness, -thickness / 2);
-        ctx.lineTo(length / 2, 0);
-        ctx.lineTo(length / 2 - thickness, thickness / 2);
-        ctx.lineTo(-length / 2, thickness / 2);
-        ctx.closePath();
-        ctx.fill();
-        ctx.clearRect(-length / 2 + thickness * 0.9, -thickness / 2 - 1, thickness * 0.25, thickness + 2);
+        ctx.translate(8 + textWidth + px * 0.3, (canvas.height - iconSize) / 2);
+        ctx.scale(iconSize / 24, iconSize / 24);
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.stroke(new Path2D('M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7'));
+        ctx.stroke(new Path2D('M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z'));
         ctx.restore();
       }
       const planeWidth = height * (canvas.width / canvas.height);
