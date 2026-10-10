@@ -3,6 +3,7 @@ import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
 import { useAppStore } from '../store/appStore';
 import { PlateContextMenu } from './PlateContextMenu';
+import { plateTitle } from '../plates/plateName';
 import { usePlatesStore } from '../plates/platesStore';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
 import { usePaintToolsStore, PaintToolsPanel, StrokeCollector } from '../paint-tools';
@@ -96,6 +97,7 @@ export const PlateView: React.FC = () => {
   const currentConfig = useAppStore((s) => s.currentConfig);
 
   const [isDragOver, setIsDragOver] = useState(false);
+  const [renamingPlate, setRenamingPlate] = useState<{ index: number; x: number; y: number; value: string } | null>(null);
   const [plateMenu, setPlateMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Initialize Bed Config on Mount
@@ -715,8 +717,14 @@ export const PlateView: React.FC = () => {
     const onDown = (e: PointerEvent) => { down = { x: e.clientX, y: e.clientY, button: e.button }; };
     const onUp = (e: PointerEvent) => {
       if (e.button === 0 && down?.button === 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4 && container.contains(e.target as Node)) {
-        // A click on a plate (off the objects) makes it the active plate.
+        // A click on a plate's title renames it; on the plate itself (off the objects) it makes that plate active.
         const scene = sceneRef.current;
+        const title = scene?.titleAt(e.clientX, e.clientY);
+        if (title) {
+          const current = usePlatesStore.getState().plates.find((p) => p.index === title.index)?.name ?? '';
+          setRenamingPlate({ ...title, value: plateTitle(current) === plateTitle('') ? '' : current });
+          return;
+        }
         const picked = scene && !usePaintToolsStore.getState().isActive && !scene.isObjectAt(e.clientX, e.clientY) ? scene.plateAt(e.clientX, e.clientY) : null;
         if (picked !== null && picked !== usePlatesStore.getState().activePlateIndex) {
           pickedInView.current = true;
@@ -892,6 +900,26 @@ export const PlateView: React.FC = () => {
 
       {/* Plate Selector Bar */}
       <PlateSelectorBar />
+      {renamingPlate && (
+        <input
+          id="plate-title-input"
+          autoFocus
+          placeholder="Untitled plate"
+          value={renamingPlate.value}
+          onChange={(e) => setRenamingPlate({ ...renamingPlate, value: e.target.value })}
+          onBlur={() => setRenamingPlate(null)}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Escape') setRenamingPlate(null);
+            if (e.key === 'Enter') {
+              const { index, value } = renamingPlate;
+              setRenamingPlate(null);
+              void usePlatesStore.getState().setPlateConfig(index, {}, value.trim());
+            }
+          }}
+          style={{ position: 'fixed', left: renamingPlate.x, top: renamingPlate.y - 14, zIndex: 50, width: 160, background: '#27272a', color: '#ff7a45', border: '1px solid #ff7a45', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}
+        />
+      )}
       {plateMenu && <PlateContextMenu x={plateMenu.x} y={plateMenu.y} onClose={() => setPlateMenu(null)} />}
 
       {/* Slicing Results & Statistics */}

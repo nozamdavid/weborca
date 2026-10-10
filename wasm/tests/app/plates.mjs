@@ -196,6 +196,22 @@ async function runBrowserSuite(browserType, browserName) {
       await page.waitForFunction((i) => window.__platesStore.getState().activePlateIndex === i, to, { timeout: 5000 });
       assert.deepEqual(await page.evaluate(() => window.__plateScene.camera.position.toArray().map(Math.round)), cameraBefore, 'the camera stays put');
     }
+    // Clicking a plate's title in the 3D view renames it
+    await page.click('#view-top');
+    const titleAt = await page.evaluate(() => {
+      const scene = window.__plateScene;
+      const mesh = scene.plateLabelGroup.children.find((c) => c.name === 'plate-title' && c.userData.plateIndex === 0);
+      const rect = scene.renderer.domElement.getBoundingClientRect();
+      const v = mesh.position.clone().project(scene.camera);
+      return [rect.left + ((v.x + 1) / 2) * rect.width, rect.top + ((1 - v.y) / 2) * rect.height];
+    });
+    await page.mouse.click(titleAt[0], titleAt[1]);
+    await page.waitForSelector('#plate-title-input');
+    await page.fill('#plate-title-input', 'Calibration');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => window.__platesStore.getState().plates[0]?.name === 'Calibration', null, { timeout: 10000 });
+    assert.equal(await page.locator('#plate-name-0').innerText(), 'Calibration');
+    await page.screenshot({ path: path.join(SCREENSHOT_DIR, `plates-titles-${browserName}.png`) });
     console.log(`[${browserName}] Plate numbers and titles verified`);
 
     // Take screenshot of multi-plate setup

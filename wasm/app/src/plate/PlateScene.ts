@@ -470,6 +470,17 @@ export class PlateScene {
     return new THREE.Vector3(origin[0] + this.bedConfig.center[0], origin[1] + this.bedConfig.center[1], origin[2]);
   }
 
+  /** The plate whose title lies under the given client position (to start renaming it), or null. */
+  public titleAt(clientX: number, clientY: number): { index: number; x: number; y: number } | null {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1), this.camera);
+    const hit = raycaster.intersectObjects(this.plateLabelGroup.children.filter((c) => c.name === 'plate-title'), false)[0];
+    if (!hit) return null;
+    const corner = new THREE.Vector3(hit.object.position.x - (hit.object as THREE.Mesh<THREE.PlaneGeometry>).geometry.parameters.width / 2, hit.object.position.y, hit.object.position.z).project(this.camera);
+    return { index: hit.object.userData.plateIndex, x: rect.left + ((corner.x + 1) / 2) * rect.width, y: rect.top + ((1 - corner.y) / 2) * rect.height };
+  }
+
   public focusPlate(index: number): void {
     const plate = this.plates.find((p) => p.index === index);
     if (!plate) return;
@@ -503,42 +514,58 @@ export class PlateScene {
     const { width, depth, center, points } = this.bedConfig;
     const [cx, cy] = center;
     const size = Math.min(width, depth);
-    const margin = size * 0.03;
 
-    const text = (value: string, font: string, height: number, color: string, align: 'left' | 'center', x: number, y: number) => {
+    // Flat text lying on the ground plane; `pencil` adds the small edit mark desktop shows after a plate's title.
+    const text = (value: string, font: string, height: number, color: string, align: 'left' | 'right', x: number, y: number, pencil = false) => {
+      const px = parseInt(font.match(/(\d+)px/)![1], 10);
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d')!;
       ctx.font = font;
-      canvas.width = Math.ceil(ctx.measureText(value).width) + 16;
-      canvas.height = Math.round(parseInt(font.match(/(\d+)px/)![1], 10) * 1.4);
+      const textWidth = Math.ceil(ctx.measureText(value).width);
+      const pencilWidth = pencil ? Math.round(px * 0.9) : 0;
+      canvas.width = textWidth + pencilWidth + 16;
+      canvas.height = Math.round(px * 1.4);
       ctx.font = font;
       ctx.fillStyle = color;
+      ctx.strokeStyle = color;
       ctx.textBaseline = 'middle';
-      ctx.textAlign = 'center';
-      ctx.fillText(value, canvas.width / 2, canvas.height / 2);
+      ctx.textAlign = 'left';
+      ctx.fillText(value, 8, canvas.height / 2);
+      if (pencil) {
+        const [x0, y0, len] = [8 + textWidth + px * 0.25, canvas.height / 2 + px * 0.3, px * 0.55];
+        ctx.lineWidth = px * 0.12;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x0 + len, y0 - len);
+        ctx.moveTo(x0 + len * 0.25, y0 + len * 0.1);
+        ctx.lineTo(x0 + len * 1.1, y0 - len * 0.75);
+        ctx.stroke();
+      }
       const planeWidth = height * (canvas.width / canvas.height);
       const mesh = new THREE.Mesh(
         new THREE.PlaneGeometry(planeWidth, height),
         new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false, side: THREE.DoubleSide })
       );
-      mesh.position.set(align === 'left' ? x + planeWidth / 2 : x, y, 0.05);
+      mesh.position.set(align === 'left' ? x + planeWidth / 2 : x - planeWidth / 2, y, 0.05);
       mesh.name = 'plate-label';
       return mesh;
     };
 
+    const orange = (active: boolean) => (active ? '#ff7a45' : 'rgba(255, 122, 69, 0.6)');
     for (const plate of this.plates) {
       const [ox, oy, oz] = plate.origin;
       const active = plate.index === this.activePlateIndex;
-      const number = text(String(plate.index + 1), 'bold 96px sans-serif', size * 0.12, active ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.3)', 'left', ox + cx - width / 2 + margin, oy + cy - depth / 2 + margin + size * 0.06);
+      // Like desktop: the two-digit number below the bed's front-right corner, the title above its back-left corner.
+      const number = text(String(plate.index + 1).padStart(2, '0'), 'bold 96px sans-serif', size * 0.1, orange(active), 'right', ox + cx + width / 2, oy + cy - depth / 2 - size * 0.07);
       number.position.z = oz + 0.05;
       this.plateLabelGroup.add(number);
       const title = plateTitle(plate.name);
-      {
-        const shown = title.length > 40 ? `${title.slice(0, 38)}...` : title;
-        const label = text(shown, 'bold 48px sans-serif', size * 0.09, active ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.65)', 'center', ox + cx, oy + cy - depth / 2 - size * 0.07);
-        label.position.z = oz + 0.05;
-        this.plateLabelGroup.add(label);
-      }
+      const shown = title.length > 40 ? `${title.slice(0, 38)}...` : title;
+      const label = text(shown, 'bold 64px sans-serif', size * 0.075, orange(active), 'left', ox + cx - width / 2, oy + cy + depth / 2 + size * 0.06, true);
+      label.name = 'plate-title';
+      label.userData.plateIndex = plate.index;
+      label.position.z = oz + 0.05;
+      this.plateLabelGroup.add(label);
 
       if (plate.index === 0) continue; // the main bed has its own, richer drawing
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), this.bedFloorMaterial ?? new THREE.MeshBasicMaterial({ color: 0x24242b, side: THREE.DoubleSide }));
