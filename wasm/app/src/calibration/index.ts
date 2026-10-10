@@ -10,3 +10,5 @@ export * from './FlowRateModal';
 export * from './OtherCalibrationsDialogs';
 export * from './OtherCalibrationsMenu';
 export * from './otherCalibrationStore';
+export * from './InputShapingDialogs';
+export * from './inputShapingStore';

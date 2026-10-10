@@ -1,4 +1,6 @@
+import { InputShapingDialogs } from './InputShapingDialogs';
 import { useState, useEffect } from 'react';
+import { CalibrationDialogWrapper as DialogWrapper } from './CalibrationDialogWrapper';
 import { useOtherCalibrationStore } from './otherCalibrationStore';
 import { runOtherCalibration } from './calibrationUtils';
 
@@ -9,27 +11,6 @@ const speedTestDrc = '/resources/calib/volumetric_speed/SpeedTestStructure.drc';
 const retractionDrc = '/resources/calib/retraction/retraction_tower.drc';
 const paTestDrc = '/resources/calib/pressure_advance/pressure_advance_test.drc';
 const paTowerDrc = '/resources/calib/pressure_advance/tower_with_seam.drc';
-
-const DialogWrapper = ({ title, onClose, onOk, children, error, isLoading }: any) => (
-  <div className="modal-overlay" style={{ zIndex: 1000 }}>
-    <div className="modal-content" style={{ maxWidth: '450px' }}>
-      <div className="modal-header">
-        <h2>{title}</h2>
-        <button className="close-btn" onClick={onClose} disabled={isLoading}>×</button>
-      </div>
-      <div className="modal-body">
-        {children}
-        {error && <div className="error-message" style={{ color: 'red', marginTop: '10px' }}>{error}</div>}
-      </div>
-      <div className="modal-footer">
-        <button className="btn btn-secondary" onClick={onClose} disabled={isLoading}>Cancel</button>
-        <button className="btn btn-primary" onClick={onOk} disabled={isLoading}>
-          {isLoading ? 'Loading...' : 'OK'}
-        </button>
-      </div>
-    </div>
-  </div>
-);
 
 function PACalibrationDialog({ onClose, initialMode }: { onClose: () => void, initialMode: 'line' | 'pattern' | 'tower' }) {
   const [mode, setMode] = useState(initialMode);
@@ -286,7 +267,7 @@ function GenericCalibrationDialog({
   );
 }
 
-export function OtherCalibrationsDialogs() {
+function OtherCalibrationsDialogsInner() {
   const { activeCalibration, closeDialog } = useOtherCalibrationStore();
 
   if (!activeCalibration) return null;
@@ -343,4 +324,14 @@ export function OtherCalibrationsDialogs() {
     default:
       return null;
   }
+}
+
+
+export function OtherCalibrationsDialogs() {
+  return (
+    <>
+      <OtherCalibrationsDialogsInner />
+      <InputShapingDialogs />
+    </>
+  );
 }
