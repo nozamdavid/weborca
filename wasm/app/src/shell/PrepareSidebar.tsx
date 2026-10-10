@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { FlushVolumesDialog } from '../flush/FlushVolumesDialog';
 import { useHistoryStore } from '../history';
 import { ObjectListPanel } from '../objectlist/ObjectListPanel';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
@@ -68,6 +69,7 @@ const PresetRow: React.FC<{
 
 /** The process switches desktop keeps next to the preset: support, brim, prime tower and ironing. */
 const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({ disabled, multiFilament }) => {
+  const [flushOpen, setFlushOpen] = useState(false);
   const currentConfig = useAppStore((s) => s.currentConfig);
   const applyOptionChange = useAppStore((s) => s.applyOptionChange);
   const toggles: { id: string; label: string; checked: boolean; off?: string; apply: [string, string, string]; disabled?: boolean; title?: string }[] = [
@@ -87,6 +89,8 @@ const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({
           {t.label}
         </label>
       ))}
+      {multiFilament && <button id="flush-open" className="btn btn-secondary" style={{ padding: '1px 8px', fontSize: 12 }} disabled={disabled} onClick={() => setFlushOpen(true)}>Flushing volumes...</button>}
+      {flushOpen && <FlushVolumesDialog onClose={() => setFlushOpen(false)} />}
     </div>
   );
 };
