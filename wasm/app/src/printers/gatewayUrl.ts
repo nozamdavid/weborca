@@ -1,4 +1,4 @@
-import type { PhysicalPrinter } from './types';
+import type { HostType, PhysicalPrinter } from './types';
 
 export interface GatewayStatus {
   enabled: boolean;
@@ -140,4 +140,33 @@ export async function sendWithProgress(
     xhr.onerror = () => reject(new Error('The upload failed: the printer or the gateway could not be reached.'));
     xhr.send(body);
   });
+}
+
+export interface DiscoveredPrinter {
+  host_type: HostType;
+  host: string;
+  name?: string;
+  serial?: string;
+  detail?: string;
+}
+
+/** Asks the gateway on this computer to scan its networks; calls `onFound` for each printer as it is found. */
+export async function discoverPrinters(localBase: string, onFound: (printer: DiscoveredPrinter) => void, signal: AbortSignal): Promise<void> {
+  const res = await fetch(`${trimBase(localBase)}/_gw/discover`, { signal });
+  if (!res.ok || !res.body) throw new Error(res.status === 404 ? 'This gateway is too old to discover printers. Download the latest one.' : `The gateway refused the search (${res.status}).`);
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    buffer += value;
+    let newline: number;
+    while ((newline = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (!line) continue;
+      const message = JSON.parse(line);
+      if (message.host_type) onFound(message as DiscoveredPrinter);
+    }
+  }
 }

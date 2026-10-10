@@ -77,6 +77,17 @@ address. The browser asks once to allow access to the local network (Chrome's Lo
   Only the app's origin (or the UI itself) may load that host.
 - Everything else (private-address policy, read-only filters, DNS pinning) is the server gateway's code.
 
+## Discovering printers
+
+With the gateway program running on your computer, **Discover printers in this network** in the Add printer
+dialog lists what it finds; **Add** fills the form (type, address, Bambu serial number) and you enter the key
+or access code. The gateway scans the /24 of each private network interface (nothing else) with plain GET
+requests, so it also works in read-only mode: Moonraker `/server/info`, then `/api/version` for PrusaLink
+(`PrusaLink` text or a Digest challenge) and OctoPrint (`OctoPrint` text, or its login page when the key is
+required), on ports 7125, 80 and 5000. Bambu Lab printers are found by an SSDP search on UDP 1990. There is no mDNS:
+the scan reaches the same printers. The app server's own gateway cannot discover anything, since it is not on your
+network. The SSDP part has only been tested against a mock.
+
 ## Printing from the app
 
 After slicing, **Send to printer** (Preview) uploads the G-code. "Upload and print" needs a second click to
@@ -113,6 +124,7 @@ status mapping follow the community-documented MQTT messages and are tested agai
   redirects, websockets, read-only mode.
 - `wasm/tests/app/printers-local.mjs`: Chromium and Firefox with the app served without a gateway and the
   local gateway in front of a mock Moonraker (status, live updates, camera, framed UI).
+- `wasm/tests/node/discover.test.mjs`: the probes, the SSDP search and the `/_gw/discover` stream.
 - `wasm/tests/node/printer-gateway.test.mjs`: address policy, read-only filters, streaming, websocket
   relay, Digest, the MQTT bridge.
 - `wasm/tests/node/printer-drivers.test.mjs`: the app's drivers against mock Moonraker, OctoPrint,

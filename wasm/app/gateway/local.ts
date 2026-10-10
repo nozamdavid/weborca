@@ -9,6 +9,7 @@
  *
  *   GET  /_gw/status                       { enabled, kind: 'local', mode, readOnly }
  *   POST /_gw/ui-session {url}             { label, url }  where the printer's web UI is served
+ *   GET  /_gw/discover                     newline-delimited JSON, one printer per line, then {"done":true}
  *
  * and serves each registered printer web UI at the root of its own origin, `http://<label>.localhost:<port>/`
  * (browsers resolve `*.localhost` to the loopback), so Mainsail, Fluidd and the like need no path rewriting.
@@ -20,6 +21,8 @@
 import { randomBytes } from 'node:crypto';
 import * as http from 'node:http';
 import type { Duplex } from 'node:stream';
+import { discoverPrinters } from './discover.ts';
+import type { DiscoverOptions } from './discover.ts';
 import { createGateway } from '../printerGateway.ts';
 import type { GatewayOptions } from '../printerGateway.ts';
 import { GatewayError, cloudHosts, configFromEnv, resolveTarget } from './policy.ts';
@@ -29,6 +32,8 @@ export interface LocalGatewayOptions extends GatewayOptions {
   allowedOrigins: string[];
   /** TCP port; 0 picks a free one. */
   port?: number;
+  /** Overrides what discovery scans (tests). */
+  discover?: DiscoverOptions;
 }
 
 interface UiSession {
@@ -147,6 +152,13 @@ export async function startLocalGateway(options: LocalGatewayOptions) {
     if (url === '/_gw/status') {
       res.setHeader('content-type', 'application/json');
       return res.end(JSON.stringify({ ...gateway.status(), kind: 'local' }));
+    }
+    if (url === '/_gw/discover' && req.method === 'GET') {
+      const abort = new AbortController();
+      res.on('close', () => abort.abort());
+      res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
+      await discoverPrinters({ ...options.discover, signal: abort.signal }, (printer) => res.write(`${JSON.stringify(printer)}\n`));
+      return res.end('{"done":true}\n');
     }
     if (url === '/_gw/ui-session' && req.method === 'POST') {
       let body = '';

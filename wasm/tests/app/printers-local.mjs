@@ -47,6 +47,13 @@ async function runSuite(browserType, name, mock, gateway) {
     await page.check('#pc-local-gateway');
     await page.fill('#pc-local-gateway-url', `http://127.0.0.1:${gateway.port}`);
     await page.waitForFunction(() => /Gateway on: private networks only/.test(document.getElementById('pc-gateway-status')?.textContent ?? ''));
+    log('discovery lists the printer found by the gateway and fills the form from it');
+    await page.fill('#pc-host', '');
+    await page.click('#pc-discover-btn');
+    await page.waitForSelector('.pc-discovered');
+    assert.match(await text('.pc-discovered'), new RegExp(`Moonraker.*127\\.0\\.0\\.1:${mock.port}`));
+    await page.click('.pc-discovered button');
+    assert.equal(await page.inputValue('#pc-host'), `127.0.0.1:${mock.port}`);
     await page.click('#pc-test');
     await page.waitForSelector('#pc-test-result');
     assert.equal(await text('#pc-test-result'), '✓ Moonraker v0.9.0-mock on mockhost, Klipper ready');
@@ -95,7 +102,7 @@ async function runSuite(browserType, name, mock, gateway) {
 
 await startServer(PORT, 'printers-local');
 const mock = await startMockMoonraker();
-const gateway = await startLocalGateway({ allowedOrigins: [BASE_URL], port: 0 });
+const gateway = await startLocalGateway({ allowedOrigins: [BASE_URL], port: 0, discover: { hosts: ['127.0.0.1'], ports: [mock.port], ssdp: false } });
 try {
   await runSuite(chromium, 'chromium', mock, gateway);
   await runSuite(firefox, 'firefox', mock, gateway);

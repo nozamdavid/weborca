@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { createPrinterApi } from './api';
 import { usePrinterConnectionStore } from './connectionStore';
 import type { GatewayStatus } from './gatewayUrl';
-import { DEFAULT_LOCAL_GATEWAY, fetchGatewayStatus, parseHost } from './gatewayUrl';
+import type { DiscoveredPrinter } from './gatewayUrl';
+import { DEFAULT_LOCAL_GATEWAY, discoverPrinters, fetchGatewayStatus, parseHost } from './gatewayUrl';
 import type { HostType, PhysicalPrinter } from './types';
 import { HOST_TYPE_LABELS } from './types';
 
@@ -71,7 +72,37 @@ export const PrinterConnectionDialog: React.FC = () => {
     fetchGatewayStatus(localBase).then((s) => setGateway(s ?? null));
   }, [dialogOpen, localBase]);
 
+  const [found, setFound] = useState<DiscoveredPrinter[]>([]);
+  const [scan, setScan] = useState<{ running: boolean; error?: string; done?: boolean }>({ running: false });
+  const scanAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => scanAbort.current?.abort(), []);
+  useEffect(() => {
+    scanAbort.current?.abort();
+    setFound([]);
+    setScan({ running: false });
+  }, [dialogOpen, editingId]);
+
   if (!dialogOpen) return null;
+
+  const discover = () => {
+    scanAbort.current?.abort();
+    const abort = new AbortController();
+    scanAbort.current = abort;
+    setFound([]);
+    setScan({ running: true });
+    discoverPrinters(draft.local_gateway || DEFAULT_LOCAL_GATEWAY, (p) => setFound((list) => [...list, p]), abort.signal).then(
+      () => !abort.signal.aborted && setScan({ running: false, done: true }),
+      (e) => !abort.signal.aborted && setScan({ running: false, error: e instanceof TypeError ? 'The gateway on this computer did not answer. Start it, then try again.' : String(e instanceof Error ? e.message : e) })
+    );
+  };
+  const useFound = (p: DiscoveredPrinter) => {
+    setDraft((d) => ({
+      ...d, host_type: p.host_type, print_host: p.host, use_gateway: true, local_gateway: d.local_gateway || DEFAULT_LOCAL_GATEWAY,
+      name: d.name.trim() ? d.name : p.name || `${HOST_TYPE_LABELS[p.host_type]} ${p.host.replace(/:\d+$/, '')}`,
+      serial: p.serial ?? d.serial
+    }));
+    setResult(null);
+  };
 
   const set = <K extends keyof PhysicalPrinter>(key: K, value: PhysicalPrinter[K]) => {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -120,6 +151,26 @@ export const PrinterConnectionDialog: React.FC = () => {
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
           <h3 style={{ margin: 0 }}>{printers.some((p) => p.id === draft.id) ? 'Edit printer' : 'Add a printer'}</h3>
+
+          {!printers.some((p) => p.id === draft.id) && (
+            <div id="pc-discover" style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button className="btn btn-secondary" id="pc-discover-btn" onClick={discover} disabled={scan.running}>{scan.running ? 'Searching...' : 'Discover printers in this network'}</button>
+                <span style={{ color: 'var(--text-muted, #a0a0a0)', fontSize: 11 }}>Needs the gateway program running on this computer.</span>
+              </div>
+              {scan.error && <span id="pc-discover-error" style={{ color: 'var(--danger, #e05d5d)' }}>{scan.error}</span>}
+              {scan.done && found.length === 0 && <span id="pc-discover-none">No printers found.</span>}
+              {found.map((p) => {
+                const added = printers.some((x) => x.host_type === p.host_type && x.print_host.replace(/^https?:\/\//, '') === p.host);
+                return (
+                  <div key={`${p.host_type}/${p.host}`} className="pc-discovered" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>{p.name ?? HOST_TYPE_LABELS[p.host_type]} <span style={{ color: 'var(--text-muted, #a0a0a0)' }}>{p.host}{p.detail ? ` · ${p.detail}` : ''}</span></span>
+                    {added ? <span style={{ color: 'var(--text-muted, #a0a0a0)' }}>Already added</span> : <button className="btn btn-secondary" onClick={() => useFound(p)}>Add</button>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <Field label="Name">
             <input id="pc-name" style={inputStyle} value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="My Voron" />
