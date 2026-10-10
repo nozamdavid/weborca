@@ -15,6 +15,7 @@ import { ViewTypeLegend } from './ViewTypeLegend';
 import { SliceStatsPanel } from './SliceStatsPanel';
 import { CustomGcodeDialog } from './CustomGcodeDialog';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
+import { GCodeWindow } from './GCodeWindow';
 
 export const PreviewView: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -32,6 +33,8 @@ export const PreviewView: React.FC = () => {
   const loadGcodeBytes = usePreviewStore((s) => s.loadGcodeBytes);
   const layersCount = usePreviewStore((s) => s.layersCount);
   const resetCamera = usePreviewStore((s) => s.resetCameraAction);
+  const showGcodeWindow = usePreviewStore((s) => s.showGcodeWindow);
+  const toggleGcodeWindow = usePreviewStore((s) => s.toggleGcodeWindowAction);
 
   const [isLoadingModule, setIsLoadingModule] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
@@ -141,6 +144,20 @@ export const PreviewView: React.FC = () => {
     if (containerRef.current) observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, [updateCanvasSize]);
+
+  // Keyboard shortcut: 'C' toggles G-code window matching desktop OrcaSlicer
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'c' || e.key === 'C') {
+        if (layersCount > 0) {
+          toggleGcodeWindow();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [layersCount, toggleGcodeWindow]);
 
   // 4. Mouse and pointer camera navigation (matching Prepare 3D view and desktop GLCanvas3D)
   useEffect(() => {
@@ -281,6 +298,29 @@ export const PreviewView: React.FC = () => {
         >
           <span>🎯</span> Reset Camera
         </button>
+        <button
+          type="button"
+          id="btn-toggle-gcode-window"
+          data-testid="btn-toggle-gcode-window"
+          onClick={toggleGcodeWindow}
+          disabled={layersCount === 0}
+          title={showGcodeWindow ? 'Hide G-code Window (C)' : 'Show G-code Window (C)'}
+          style={{
+            background: showGcodeWindow ? 'rgba(234, 88, 12, 0.35)' : 'transparent',
+            border: showGcodeWindow ? '1px solid rgba(234, 88, 12, 0.6)' : 'none',
+            color: layersCount === 0 ? '#71717a' : '#e4e4e7',
+            padding: '4px 8px',
+            fontSize: '0.8rem',
+            cursor: layersCount === 0 ? 'not-allowed' : 'pointer',
+            borderRadius: 4,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            opacity: layersCount === 0 ? 0.6 : 1
+          }}
+        >
+          <span>📄</span> G-code
+        </button>
       </div>
 
       {/* Outdated Slice Result Banner (prompting re-slice after layer events change) */}
@@ -406,6 +446,7 @@ export const PreviewView: React.FC = () => {
           <MoveSlider />
           <PlateSelectorBar style={{ bottom: 68 }} />
           <LayerSlider />
+          <GCodeWindow />
         </>
       )}
 

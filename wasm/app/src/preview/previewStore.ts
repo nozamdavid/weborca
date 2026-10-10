@@ -21,6 +21,7 @@ export interface PreviewStoreState {
   viewType: PreviewViewType;
   legend: LegendData;
   showStatsPanel: boolean;
+  showGcodeWindow: boolean;
 
   setInitialized: (val: boolean) => void;
   loadGcodeBytes: (data: Uint8Array | ArrayBuffer | string, name?: string) => Promise<PreviewStatistics>;
@@ -32,6 +33,8 @@ export interface PreviewStoreState {
   resetLayersAction: () => void;
   resetCameraAction: () => void;
   toggleStatsPanelAction: () => void;
+  toggleGcodeWindowAction: () => void;
+  setShowGcodeWindowAction: (val: boolean) => void;
 }
 
 export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
@@ -48,6 +51,7 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
   viewType: 'FeatureType',
   legend: { viewType: 'FeatureType', title: 'Line Type', type: 'features', items: [], options: [] },
   showStatsPanel: true,
+  showGcodeWindow: false,
 
   setInitialized: (val: boolean) => set({ isInitialized: val }),
 
@@ -151,5 +155,15 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
 
   toggleStatsPanelAction: () => {
     set((state) => ({ showStatsPanel: !state.showStatsPanel }));
+  },
+
+  toggleGcodeWindowAction: () => {
+    set((state) => ({ showGcodeWindow: !state.showGcodeWindow }));
+  },
+
+  setShowGcodeWindowAction: (val: boolean) => {
+    set({ showGcodeWindow: val });
   }
 }));
+
+(window as any).__previewStore = usePreviewStore;
