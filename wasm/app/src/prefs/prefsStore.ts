@@ -27,6 +27,7 @@ export interface DisplayPreferences {
   showLabels: boolean;
   showBuildVolume: boolean;
   showWireframe: boolean;
+  showNavigator: boolean;
   cameraType: 'perspective' | 'orthographic';
   showSidebar: boolean;
   theme: 'dark' | 'light';
@@ -61,6 +62,7 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
     showLabels: false,
     showBuildVolume: true,
     showWireframe: false,
+    showNavigator: true,
     cameraType: 'perspective',
     showSidebar: true,
     theme: 'dark'

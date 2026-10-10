@@ -16,6 +16,8 @@ import { useHistoryStore } from '../history';
 import { TextPanel, useTextStore } from '../text';
 import { CutPanel, useCutStore } from '../cut';
 import { NumericTransform } from './NumericTransform';
+import { ViewCube } from './ViewCube';
+import { usePrefsStore } from '../prefs/prefsStore';
 import { RepairBadge, useRepairStore } from '../repair';
 import { useEditOpsStore, FlattenPanel, BrimEarsPanel } from '../editops';
 import { CanvasToolbar, ViewButtons } from '../shell/CanvasToolbar';
@@ -41,6 +43,9 @@ function formatPrintTime(seconds: number): string {
 export const PlateView: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PlateScene | null>(null);
+
+  const showNavigator = usePrefsStore((s) => s.display.showNavigator);
+  const getCameraQuaternion = useCallback(() => sceneRef.current?.getCameraQuaternion(), []);
 
   // Plate Store
   const objects = usePlateStore((s) => s.objects);
@@ -787,6 +792,8 @@ export const PlateView: React.FC = () => {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {showNavigator && <ViewCube getCameraQuaternion={getCameraQuaternion} />}
+
       {/* 3D WebGL Canvas Container */}
       <div
         id="plate-canvas-container"

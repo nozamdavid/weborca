@@ -1488,6 +1488,10 @@ export class PlateScene {
     this.renderer.render(this.scene, this.camera);
   };
 
+  public getCameraQuaternion(): THREE.Quaternion {
+    return this.camera.quaternion;
+  }
+
   public setCameraView(view: CameraView): void {
     if (view === 'BED') {
       this.zoomToBed();

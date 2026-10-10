@@ -418,6 +418,11 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           onClick: toggleShowGrid
         },
         {
+          label: '3D navigator',
+          checked: prefsDisplay.showNavigator,
+          onClick: () => usePrefsStore.getState().setDisplayPref('showNavigator', !prefsDisplay.showNavigator)
+        },
+        {
           label: 'Axes',
           checked: prefsDisplay.showAxes,
           onClick: toggleShowAxes
