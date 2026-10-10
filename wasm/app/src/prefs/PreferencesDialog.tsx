@@ -149,6 +149,17 @@ export const PreferencesDialog: React.FC = () => {
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
+                    id="pref-use-project-name-for-export"
+                    aria-label="Use the project name for exported files"
+                    checked={general.useProjectNameForExport}
+                    onChange={(e) => setGeneralPref('useProjectNameForExport', e.target.checked)}
+                  />
+                  <span>Use the project name for exported files</span>
+                </label>
+
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
                     id="pref-autosave"
                     aria-label="Back up the project automatically"
                     checked={general.autosave}

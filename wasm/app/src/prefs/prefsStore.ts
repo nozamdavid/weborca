@@ -10,6 +10,8 @@ export interface GeneralPreferences {
   autoSliceAfterChange: boolean;
   /** Back the project up every minute so a closed tab can be recovered. */
   autosave: boolean;
+  /** Use the project name for exported files instead of the preset format. */
+  useProjectNameForExport: boolean;
 }
 
 export interface CameraPreferences {
@@ -46,7 +48,8 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
     rememberRecentFiles: true,
     autoArrangeOnImport: false,
     autoSliceAfterChange: false,
-    autosave: true
+    autosave: true,
+    useProjectNameForExport: false
   },
   camera: {
     invertMouseWheelZoom: false,
