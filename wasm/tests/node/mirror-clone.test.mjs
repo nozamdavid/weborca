@@ -45,7 +45,7 @@ f 3 6 4
 
 const usedFilament = (gcode) => parseFloat(new TextDecoder().decode(gcode).match(/filament used \[mm\]\s*=\s*([0-9.]+)/)?.[1] ?? '0');
 
-describe('Orca WASM engine: mirror and clone', () => {
+describe('Orca WASM engine: mirror, clone and arrange', () => {
   let core;
   before(async () => {
     fs.mkdirSync(scratchDir, { recursive: true });
@@ -151,5 +151,19 @@ describe('Orca WASM engine: mirror and clone', () => {
     const moved = (await core.call('listObjects', {})).find((o) => o.id === source.id);
     assert.deepEqual(moved.instances[0].offset, source.instances[0].offset, 'the original did not move');
     await assert.rejects(core.call('cloneObject', { objectId: 999999 }), /not found/i);
+  });
+
+  test('arrange honours the requested spacing', async () => {
+    const gap = async (spacing) => {
+      await core.call('arrange', { useBed: true, spacing, allowRotations: false });
+      const [a, b] = await core.call('listObjects', {});
+      const dx = Math.abs(a.instances[0].offset[0] - b.instances[0].offset[0]);
+      const dy = Math.abs(a.instances[0].offset[1] - b.instances[0].offset[1]);
+      return Math.max(dx - a.size[0], dy - a.size[1]);
+    };
+    const tight = await gap(1);
+    const wide = await gap(40);
+    assert.ok(wide > tight + 20, `a 40 mm spacing leaves a larger gap (${wide}) than 1 mm (${tight})`);
+    assert.ok(wide >= 39, `the gap is at least the requested spacing (${wide})`);
   });
 });

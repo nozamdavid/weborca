@@ -16,6 +16,7 @@ import { useHistoryStore } from '../history';
 import { TextPanel, useTextStore } from '../text';
 import { CutPanel, useCutStore } from '../cut';
 import { NumericTransform } from './NumericTransform';
+import { ArrangeDialog } from './ArrangeDialog';
 import { ViewCube } from './ViewCube';
 import { usePrefsStore } from '../prefs/prefsStore';
 import { RepairBadge, useRepairStore } from '../repair';
@@ -792,6 +793,7 @@ export const PlateView: React.FC = () => {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      <ArrangeDialog />
       {showNavigator && <ViewCube getCameraQuaternion={getCameraQuaternion} />}
 
       {/* 3D WebGL Canvas Container */}

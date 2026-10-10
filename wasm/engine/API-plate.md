@@ -195,9 +195,12 @@ Arranges objects on the bed.
   or
   ```json
   {
-    "useBed": true
+    "useBed": true,
+    "spacing": 6.0,
+    "allowRotations": false
   }
   ```
+  `spacing` (mm between objects) replaces the distance derived from the print settings, and `allowRotations` lets objects turn about Z; both apply with `useBed`.
 - **Behavior**:
   - Default (`useBed: false` or omitted): Centers objects around the bed center point and arranges them using an infinite bed, preserving exact slicing parity with baseline `slice_driver`.
   - `useBed: true`: Arranges objects within the actual bed polygon defined by the printer's `printable_area` setting, using desktop OrcaSlicer's arrange spacing (`min_object_distance`).

@@ -1680,7 +1680,10 @@ json Engine::Impl::op_arrange(const json& args) {
 
     Slic3r::ModelInstancePtrs instances;
     auto input = Slic3r::get_arrange_polys(m_model, instances);
-    Slic3r::ArrangeParams params{Slic3r::scaled(Slic3r::min_object_distance(config))};
+    // Optional spacing (mm) between objects, replacing the one derived from the print settings.
+    const double spacing_mm = args.contains("spacing") && args["spacing"].is_number() ? std::max(0.0, args["spacing"].get<double>()) : -1.0;
+    Slic3r::ArrangeParams params{Slic3r::scaled(spacing_mm >= 0.0 ? spacing_mm : Slic3r::min_object_distance(config))};
+    params.allow_rotations = args.value("allowRotations", false);
     Slic3r::arrangement::update_selected_items_inflation(input, &config, params);
 
     if (use_bed) {

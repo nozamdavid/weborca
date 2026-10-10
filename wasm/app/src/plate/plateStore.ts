@@ -34,6 +34,21 @@ export function parseMeshBuffer(bytes: Uint8Array): MeshBufferData {
 
 const PASTE_OFFSET_MM = 20;
 
+/** Arrange options; an empty spacing uses the distance from the print settings. */
+export interface ArrangeSettings {
+  spacing: number | null;
+  allowRotations: boolean;
+}
+const ARRANGE_KEY = 'orca.arrange';
+function loadArrangeSettings(): ArrangeSettings {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ARRANGE_KEY) ?? '{}');
+    return { spacing: typeof parsed.spacing === 'number' ? parsed.spacing : null, allowRotations: parsed.allowRotations === true };
+  } catch {
+    return { spacing: null, allowRotations: false };
+  }
+}
+
 export interface InstanceRef {
   objectId: number;
   instanceId: number;
@@ -88,6 +103,10 @@ export interface PlateStoreState {
   deleteObject: (objectId: number) => Promise<void>;
   duplicateSelected: () => Promise<void>;
   arrange: (useBed?: boolean) => Promise<void>;
+  arrangeSettings: ArrangeSettings;
+  setArrangeSettings: (settings: Partial<ArrangeSettings>) => void;
+  arrangeDialogOpen: boolean;
+  setArrangeDialogOpen: (open: boolean) => void;
   importFile: (file: File, options?: StepImportOptions) => Promise<void>;
 }
 
@@ -97,6 +116,14 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   selectedInstanceId: null,
   extraSelection: [],
   clipboard: [],
+  arrangeSettings: loadArrangeSettings(),
+  arrangeDialogOpen: false,
+  setArrangeDialogOpen: (open) => set({ arrangeDialogOpen: open }),
+  setArrangeSettings: (settings) => {
+    const next = { ...get().arrangeSettings, ...settings };
+    set({ arrangeSettings: next });
+    try { localStorage.setItem(ARRANGE_KEY, JSON.stringify(next)); } catch (_) {}
+  },
   gizmoMode: 'translate',
   bedConfig: {
     points: [
@@ -436,10 +463,12 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     set({ isLoading: true });
     try {
       const engine = await getEngine();
+      const { spacing, allowRotations } = get().arrangeSettings;
+      const args = { useBed, ...(spacing !== null ? { spacing } : {}), allowRotations };
       if (typeof (engine as any).arrange === 'function') {
-        await (engine as any).arrange({ useBed });
+        await (engine as any).arrange(args);
       } else {
-        await engine.call('arrange', { useBed });
+        await engine.call('arrange', args);
       }
       await get().refreshObjects();
       try {

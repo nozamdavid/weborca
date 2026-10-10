@@ -361,6 +361,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         'sep',
         { label: 'Auto-orient', keys: 'A', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().autoOrient() },
         { label: 'Place on face', keys: 'F', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().startFlatten() },
+        { label: 'Arrange options...', disabled: isBusy, onClick: () => usePlateStore.getState().setArrangeDialogOpen(true) },
         { label: 'Arrange', disabled: isBusy, onClick: () => void usePlateStore.getState().arrange(true) },
         {
           label: 'Delete',
