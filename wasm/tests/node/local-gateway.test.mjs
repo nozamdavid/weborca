@@ -77,7 +77,7 @@ describe('local gateway', () => {
 
     const ok = await request(gateway.port, '/_gw/status', { headers: asApp() });
     assert.equal(ok.status, 200);
-    assert.deepEqual(JSON.parse(ok.body), { enabled: true, mode: 'private', readOnly: false, kind: 'local' });
+    assert.deepEqual(JSON.parse(ok.body), { enabled: true, mode: 'private', readOnly: false, cloud: [], kind: 'local' });
     assert.equal(ok.headers['access-control-allow-origin'], APP);
     assert.equal(ok.headers['cross-origin-resource-policy'], 'cross-origin', 'the cross-origin isolated app may load it');
   });

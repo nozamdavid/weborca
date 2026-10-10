@@ -12,10 +12,25 @@ export interface GatewayConfig {
   proxy?: string;
   /** Only allow requests that cannot change anything on the printer. */
   readOnly?: boolean;
+  /** Comma list of cloud services (keys of CLOUD_SERVICES) whose https hosts may be reached in addition to `proxy`. */
+  cloud?: string;
+}
+
+/** Cloud printer services the gateway can be told to reach, with the only hosts each one may use. */
+export const CLOUD_SERVICES: Record<string, string[]> = {
+  'prusa-connect': ['connect.prusa3d.com']
+};
+
+export function cloudHosts(config: GatewayConfig): Set<string> {
+  const hosts = new Set<string>();
+  for (const id of (config.cloud ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)) {
+    for (const host of CLOUD_SERVICES[id] ?? []) hosts.add(host);
+  }
+  return hosts;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
-  return { proxy: env.ORCA_PRINTER_PROXY?.trim() || undefined, readOnly: env.ORCA_PRINTER_PROXY_READONLY === '1' };
+  return { proxy: env.ORCA_PRINTER_PROXY?.trim() || undefined, readOnly: env.ORCA_PRINTER_PROXY_READONLY === '1', cloud: env.ORCA_PRINTER_CLOUD?.trim() || undefined };
 }
 
 export class GatewayError extends Error {
@@ -72,7 +87,8 @@ export async function resolveTarget(
   config: GatewayConfig,
   resolver: Resolver = systemResolver
 ): Promise<Target> {
-  if (!config.proxy) throw new GatewayError(403, GATEWAY_OFF_MESSAGE);
+  const cloud = cloudHosts(config);
+  if (!config.proxy && cloud.size === 0) throw new GatewayError(403, GATEWAY_OFF_MESSAGE);
 
   let url: URL;
   try {
@@ -98,7 +114,12 @@ export async function resolveTarget(
     if (addresses.length === 0) throw new GatewayError(502, `Cannot resolve ${host}`);
   }
 
-  if (config.proxy === 'private') {
+  // A listed cloud service is reached by name over https only, so a credential never travels in the clear.
+  if (!isIP(host) && cloud.has(host.toLowerCase())) {
+    if (port !== 443) throw new GatewayError(403, `Target not allowed: ${host} may only be reached over https.`);
+  } else if (!config.proxy) {
+    throw new GatewayError(403, `Target not allowed: ${host} is not an enabled cloud service.`);
+  } else if (config.proxy === 'private') {
     if (!addresses.every(isPrivateAddress)) {
       throw new GatewayError(403, `Target not allowed: ${host} is not on a private network.`);
     }

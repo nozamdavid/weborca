@@ -22,7 +22,7 @@ import * as http from 'node:http';
 import type { Duplex } from 'node:stream';
 import { createGateway } from '../printerGateway.ts';
 import type { GatewayOptions } from '../printerGateway.ts';
-import { GatewayError, configFromEnv, resolveTarget } from './policy.ts';
+import { GatewayError, cloudHosts, configFromEnv, resolveTarget } from './policy.ts';
 
 export interface LocalGatewayOptions extends GatewayOptions {
   /** Origins of the app that may use the gateway, e.g. `https://slicer.example.com`. */
@@ -71,7 +71,7 @@ export async function startLocalGateway(options: LocalGatewayOptions) {
   if (allowed.size === 0) throw new Error('At least one allowed origin is required (--allow-origin https://your-app).');
   const env = configFromEnv();
   // Unlike the app server's gateway this one is on by default: starting it is the user's decision.
-  const gatewayOptions: GatewayOptions = { ...options, proxy: options.proxy ?? env.proxy ?? 'private', readOnly: options.readOnly ?? env.readOnly };
+  const gatewayOptions: GatewayOptions = { ...options, proxy: options.proxy ?? env.proxy ?? 'private', readOnly: options.readOnly ?? env.readOnly, cloud: options.cloud ?? env.cloud };
   const config = gatewayOptions;
   const gateway = createGateway(gatewayOptions);
   const sessions = new Map<string, UiSession>();
@@ -163,6 +163,7 @@ export async function startLocalGateway(options: LocalGatewayOptions) {
       }
       if (target.protocol !== 'http:' && target.protocol !== 'https:') throw new GatewayError(400, 'Unsupported address.');
       const scheme = target.protocol === 'https:' ? 'https' : 'http';
+      if (cloudHosts({ ...config, ...gatewayOptions }).has(target.hostname.toLowerCase())) throw new GatewayError(403, 'Cloud services cannot be framed; open them in a new tab.');
       // Refuses addresses outside the allowed network up front, with a readable reason.
       await resolveTarget(target.host, scheme === 'https' ? 443 : 80, { ...config, ...gatewayOptions }, options.resolver);
       sweep();
@@ -240,6 +241,8 @@ Usage: orca-gateway --allow-origin <app origin> [options]
   --port <n>               Port to listen on (default 5199), loopback only.
   --proxy <private|list>   Printers it may reach: "private" (default) is private/loopback/tailnet
                            addresses, or a comma list of hosts.
+  --cloud <services>       Cloud services it may also reach (comma list): prusa-connect.
+                           Also read from ORCA_PRINTER_CLOUD.
   --readonly               Refuse everything that could change a printer.
   --help                   Show this help.
 `;
@@ -248,6 +251,7 @@ export async function main(argv: string[]) {
   const origins = (process.env.ORCA_GATEWAY_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   let port = 5199;
   let proxy: string | undefined;
+  let cloud = process.env.ORCA_PRINTER_CLOUD?.trim() || undefined;
   let readOnly = process.env.ORCA_PRINTER_PROXY_READONLY === '1';
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -255,6 +259,7 @@ export async function main(argv: string[]) {
     else if (arg === '--allow-origin') origins.push(argv[++i] ?? '');
     else if (arg === '--port') port = parseInt(argv[++i] ?? '', 10);
     else if (arg === '--proxy') proxy = argv[++i];
+    else if (arg === '--cloud') cloud = argv[++i];
     else if (arg === '--readonly') readOnly = true;
     else {
       console.error(`Unknown argument: ${arg}\n\n${HELP}`);
@@ -267,10 +272,10 @@ export async function main(argv: string[]) {
     process.exitCode = 2;
     return;
   }
-  const gateway = await startLocalGateway({ allowedOrigins: origins, port, proxy, readOnly });
+  const gateway = await startLocalGateway({ allowedOrigins: origins, port, proxy, readOnly, cloud });
   console.log(`Local gateway listening on ${gateway.origin}`);
   console.log(`  allowed origins: ${origins.join(', ')}`);
-  console.log(`  printers: ${proxy ?? 'private networks'}${readOnly ? ', read-only' : ''}`);
+  console.log(`  printers: ${proxy ?? 'private networks'}${cloud ? `, cloud: ${cloud}` : ''}${readOnly ? ', read-only' : ''}`);
   console.log('In the app, add a printer, choose "Gateway on this computer" and enter this address.');
 }
 

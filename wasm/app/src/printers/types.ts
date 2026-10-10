@@ -1,8 +1,9 @@
-export type HostType = 'moonraker' | 'octoprint' | 'prusalink' | 'bambu';
+export type HostType = 'moonraker' | 'octoprint' | 'prusalink' | 'prusaconnect' | 'bambu';
 
 export const HOST_TYPE_LABELS: Record<HostType, string> = {
   moonraker: 'Klipper (Moonraker)',
   prusalink: 'PrusaLink',
+  prusaconnect: 'Prusa Connect (cloud)',
   octoprint: 'OctoPrint',
   bambu: 'Bambu Lab (LAN mode)'
 };

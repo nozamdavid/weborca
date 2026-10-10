@@ -130,3 +130,64 @@ export class PrusaLinkApi implements PrinterApi {
     );
   }
 }
+
+export const PRUSA_CONNECT_HOST = 'https://connect.prusa3d.com';
+const CONNECT_RECHECK_MS = 60_000;
+
+/**
+ * Prusa Connect, reached through the gateway like desktop reaches it (the same PrusaLink-style upload API with the printer's API
+ * key). Connect shows no live state to a slicer, so the Device tab only confirms that it answers.
+ */
+export class PrusaConnectApi implements PrinterApi {
+  constructor(private printer: PhysicalPrinter) {}
+
+  private async version(): Promise<{ text: string; putUpload: boolean }> {
+    const version = await getJson(this.printer, '/api/version');
+    const text = String(version.text ?? '');
+    if (!version.api || !/^(PrusaLink|OctoPrint)/.test(text)) throw new Error(`Mismatched type of print host: ${text || 'unknown'}`);
+    return { text, putUpload: version.capabilities?.['upload-by-put'] === true };
+  }
+
+  async test(): Promise<string> {
+    return `Connection to Prusa Connect is working (${(await this.version()).text}).`;
+  }
+
+  connect(onState: (state: PrinterState) => void, onError: (error: Error) => void): () => void {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = async () => {
+      try {
+        await this.version();
+        if (!stopped) onState({ state: 'ready', message: 'Prusa Connect does not report live status to slicers. Upload and print from here; follow the print in Prusa Connect.', heaters: [], fans: [], software: 'Prusa Connect' });
+      } catch (error) {
+        if (!stopped) onError(error instanceof Error ? error : new Error(String(error)));
+      }
+      if (!stopped) timer = setTimeout(check, CONNECT_RECHECK_MS);
+    };
+    void check();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }
+
+  async upload({ filename, gcode, print, onProgress }: UploadOptions): Promise<void> {
+    const { putUpload } = await this.version();
+    const headers = authHeaders(this.printer);
+    if (putUpload) {
+      await sendWithProgress(
+        'PUT',
+        httpUrl(this.printer, `/api/v1/files/local/${encodeURIComponent(filename)}`),
+        { ...headers, 'Content-Type': 'text/x.gcode', Overwrite: '?1', ...(print ? { 'Print-After-Upload': '?1' } : {}) },
+        new Blob([gcode as BlobPart]),
+        onProgress
+      );
+      return;
+    }
+    const form = new FormData();
+    form.append('path', '');
+    if (print) form.append('to_print', 'True');
+    form.append('file', new Blob([gcode as BlobPart]), filename);
+    await sendWithProgress('POST', httpUrl(this.printer, '/api/files/local'), headers, form, onProgress);
+  }
+}

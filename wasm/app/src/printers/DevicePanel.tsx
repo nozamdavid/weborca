@@ -113,6 +113,7 @@ const StatusColumn: React.FC<{ state: PrinterState | null; active: boolean }> = 
 
 const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ printer, active }) => {
   const url = webUiUrl(printer);
+  const cloud = printer.host_type === 'prusaconnect';
   // Load the UI the first time the tab shows, then keep it alive so switching tabs does not reload it.
   const [visited, setVisited] = useState(false);
   useEffect(() => {
@@ -130,6 +131,16 @@ const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ 
     return () => { cancelled = true; };
   }, [local, url, visited, printer.local_gateway]); // eslint-disable-line react-hooks/exhaustive-deps
   const mixed = !local && !!url && window.location.protocol === 'https:' && url.startsWith('http:');
+  if (cloud && url) {
+    return (
+      <div className="device-ui-col" id="device-webui">
+        <div className="device-notice" id="device-webui-blocked">
+          Prusa Connect cannot be shown inside this page.{' '}
+          <a href={url} target="_blank" rel="noreferrer" id="device-webui-open">Open Prusa Connect in a new tab</a>
+        </div>
+      </div>
+    );
+  }
   if (!url) {
     return (
       <div className="device-ui-col">

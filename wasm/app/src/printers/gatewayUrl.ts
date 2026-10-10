@@ -2,7 +2,8 @@ import type { PhysicalPrinter } from './types';
 
 export interface GatewayStatus {
   enabled: boolean;
-  mode: 'off' | 'private' | 'list';
+  mode: 'off' | 'private' | 'list' | 'cloud';
+  cloud?: string[];
   readOnly: boolean;
   message?: string;
 }

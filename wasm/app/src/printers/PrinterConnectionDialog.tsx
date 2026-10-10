@@ -11,6 +11,7 @@ const HOST_PLACEHOLDER: Record<HostType, string> = {
   moonraker: '192.168.0.10 or http://printer.local',
   prusalink: '192.168.0.20',
   octoprint: 'http://octopi.local',
+  prusaconnect: 'https://connect.prusa3d.com',
   bambu: '192.168.0.30'
 };
 
@@ -29,6 +30,7 @@ function validate(p: PhysicalPrinter): string | undefined {
     if (!p.serial?.trim()) return 'Enter the printer\'s serial number (Settings > Device on the printer).';
     if (!p.printhost_apikey?.trim()) return 'Enter the access code shown on the printer\'s LAN settings.';
   }
+  if (p.host_type === 'prusaconnect' && !p.printhost_apikey?.trim()) return 'Enter the API key from your printer\'s page in Prusa Connect.';
   return undefined;
 }
 
@@ -62,7 +64,7 @@ export const PrinterConnectionDialog: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogOpen, editingId]);
 
-  const localBase = draft.use_gateway || draft.host_type === 'bambu' ? draft.local_gateway : undefined;
+  const localBase = draft.use_gateway || draft.host_type === 'bambu' || draft.host_type === 'prusaconnect' ? draft.local_gateway : undefined;
   useEffect(() => {
     if (!dialogOpen) return;
     setGateway(undefined);
@@ -78,6 +80,7 @@ export const PrinterConnectionDialog: React.FC = () => {
   const error = validate(draft);
   const isBambu = draft.host_type === 'bambu';
   const isPrusaLink = draft.host_type === 'prusalink';
+  const isCloud = draft.host_type === 'prusaconnect';
 
   const test = async () => {
     setTesting(true);
@@ -99,7 +102,8 @@ export const PrinterConnectionDialog: React.FC = () => {
   const gatewayNote = gateway === undefined ? 'Checking the gateway...'
     : gateway === null ? (localBase ? 'The gateway on this computer did not answer.' : 'This server has no printer gateway.')
     : !gateway.enabled ? gateway.message ?? 'The printer gateway is off.'
-    : `Gateway on: ${gateway.mode === 'private' ? 'private networks only' : 'listed hosts only'}${gateway.readOnly ? ', read-only' : ''}.`;
+    : isCloud && !gateway.cloud?.includes('prusa-connect') ? 'This gateway does not allow Prusa Connect. Start it with --cloud prusa-connect (or ORCA_PRINTER_CLOUD=prusa-connect).'
+    : `Gateway on: ${gateway.mode === 'private' ? 'private networks only' : gateway.mode === 'cloud' ? 'cloud services only' : 'listed hosts only'}${gateway.readOnly ? ', read-only' : ''}.`;
 
   return (
     <div className="modal-backdrop" id="printer-connection-dialog" role="dialog" aria-label="Printer connection">
@@ -127,14 +131,18 @@ export const PrinterConnectionDialog: React.FC = () => {
             </select>
           </Field>
           <Field label="Host type">
-            <select id="pc-host-type" style={inputStyle} value={draft.host_type} onChange={(e) => set('host_type', e.target.value as HostType)}>
+            <select id="pc-host-type" style={inputStyle} value={draft.host_type} onChange={(e) => {
+              const type = e.target.value as HostType;
+              setDraft((d) => ({ ...d, host_type: type, ...(type === 'prusaconnect' ? { use_gateway: true, print_host: d.print_host || HOST_PLACEHOLDER.prusaconnect } : {}) }));
+              setResult(null);
+            }}>
               {(Object.keys(HOST_TYPE_LABELS) as HostType[]).map((t) => <option key={t} value={t}>{HOST_TYPE_LABELS[t]}</option>)}
             </select>
           </Field>
           <Field label="Hostname, IP or URL" hint={isBambu ? 'The printer\'s IP address (LAN mode must be on).' : 'Where the printer\'s API answers. Moonraker is usually the same address as Fluidd/Mainsail.'}>
             <input id="pc-host" style={inputStyle} value={draft.print_host} onChange={(e) => set('print_host', e.target.value)} placeholder={HOST_PLACEHOLDER[draft.host_type]} />
           </Field>
-          {!isBambu && (
+          {!isBambu && !isCloud && (
             <Field label="Device UI" hint="Address of the printer's web UI, shown in the Device tab. Leave empty to use the host.">
               <input id="pc-webui" style={inputStyle} value={draft.print_host_webui ?? ''} onChange={(e) => set('print_host_webui', e.target.value)} placeholder="http://192.168.0.10" />
             </Field>
@@ -160,13 +168,13 @@ export const PrinterConnectionDialog: React.FC = () => {
           )}
 
           <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12 }}>
-            <input id="pc-gateway" type="checkbox" checked={draft.use_gateway || isBambu} disabled={isBambu} onChange={(e) => set('use_gateway', e.target.checked)} />
+            <input id="pc-gateway" type="checkbox" checked={draft.use_gateway || isBambu || isCloud} disabled={isBambu || isCloud} onChange={(e) => set('use_gateway', e.target.checked)} />
             <span>
               Connect through this app's server (gateway)
               <br /><span id="pc-gateway-status" style={{ color: 'var(--text-muted, #a0a0a0)', fontSize: 11 }}>{gatewayNote}</span>
             </span>
           </label>
-          {(draft.use_gateway || isBambu) && (
+          {(draft.use_gateway || isBambu || isCloud) && (
             <>
               <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 }}>
                 <input id="pc-local-gateway" type="checkbox" checked={draft.local_gateway !== undefined} onChange={(e) => set('local_gateway', e.target.checked ? DEFAULT_LOCAL_GATEWAY : undefined)} />

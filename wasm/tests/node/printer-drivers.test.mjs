@@ -4,6 +4,7 @@
  * Browser globals the drivers use (window, relative fetch URLs) are shimmed to point at the gateway.
  */
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import net from 'node:net';
 import { after, before, describe, test } from 'node:test';
 import { Aedes } from 'aedes';
@@ -191,6 +192,57 @@ describe('printer drivers', () => {
     test('a wrong API key is reported', async () => {
       useGateway(gateway);
       await assert.rejects(createPrinterApi(printerOf('octoprint', mock.port, { printhost_apikey: 'nope' })).test(), /403/);
+    });
+  });
+
+  describe('Prusa Connect', () => {
+    const start = (putUpload) => new Promise((resolve) => {
+      const mock = { requests: [] };
+      const server = http.createServer((req, res) => {
+        const chunks = [];
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', () => {
+          mock.requests.push({ method: req.method, url: req.url, key: req.headers['x-api-key'], headers: req.headers, body: Buffer.concat(chunks) });
+          if (req.headers['x-api-key'] !== 'KEY') { res.writeHead(401); return res.end(); }
+          if (req.url === '/api/version') {
+            res.writeHead(200, { 'content-type': 'application/json' });
+            return res.end(JSON.stringify({ api: '0.1', text: 'PrusaLink 0.7', capabilities: { 'upload-by-put': putUpload } }));
+          }
+          res.writeHead(201, { 'content-type': 'application/json' });
+          res.end('{}');
+        });
+      });
+      server.listen(0, '127.0.0.1', () => { mock.port = server.address().port; mock.close = () => { server.closeAllConnections(); server.close(); }; resolve(mock); });
+    });
+
+    test('test() and upload by PUT when the service supports it', async () => {
+      const mock = await start(true);
+      try {
+        useGateway(gateway);
+        const api = createPrinterApi(printerOf('prusaconnect', mock.port, { printhost_apikey: 'KEY' }));
+        assert.match(await api.test(), /Prusa Connect is working \(PrusaLink 0\.7\)/);
+        await api.upload({ filename: 'a b.gcode', gcode: new Uint8Array([1, 2, 3]), print: true });
+        const put = mock.requests.at(-1);
+        assert.deepEqual([put.method, put.url, put.headers['print-after-upload'], put.headers['content-type']], ['PUT', '/api/v1/files/local/a%20b.gcode', '?1', 'text/x.gcode']);
+        assert.deepEqual([...put.body], [1, 2, 3]);
+        await api.upload({ filename: 'b.gcode', gcode: new Uint8Array([4]), print: false });
+        assert.equal(mock.requests.at(-1).headers['print-after-upload'], undefined);
+      } finally { mock.close(); }
+    });
+
+    test('upload by multipart POST otherwise, and a wrong key is reported', async () => {
+      const mock = await start(false);
+      try {
+        useGateway(gateway);
+        const api = createPrinterApi(printerOf('prusaconnect', mock.port, { printhost_apikey: 'KEY' }));
+        await api.upload({ filename: 'c.gcode', gcode: new Uint8Array([7, 8]), print: true });
+        const post = mock.requests.at(-1);
+        assert.deepEqual([post.method, post.url], ['POST', '/api/files/local']);
+        const text = post.body.toString('latin1');
+        assert.match(text, /name="to_print"\r\n\r\nTrue/);
+        assert.match(text, /filename="c\.gcode"/);
+        await assert.rejects(createPrinterApi(printerOf('prusaconnect', mock.port, { printhost_apikey: 'nope' })).test(), /401/);
+      } finally { mock.close(); }
     });
   });
 

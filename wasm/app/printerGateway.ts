@@ -23,7 +23,7 @@ import type { MqttClient } from 'mqtt';
 import type { Plugin, PreviewServer, ViteDevServer } from 'vite';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
-  GATEWAY_OFF_MESSAGE, GatewayError, bambuRequestAllowedInReadOnly, checkRpcFrame, configFromEnv,
+  CLOUD_SERVICES, GATEWAY_OFF_MESSAGE, GatewayError, bambuRequestAllowedInReadOnly, checkRpcFrame, cloudHosts, configFromEnv,
   digestAuthorization, httpAllowedInReadOnly, parseDigestChallenge, resolveTarget
 } from './gateway/policy.ts';
 import type { DigestChallenge, GatewayConfig, Resolver, Target } from './gateway/policy.ts';
@@ -359,10 +359,11 @@ export function createGateway(options: GatewayOptions = {}) {
   function status() {
     const config = { ...configFromEnv(), ...options };
     return {
-      enabled: !!config.proxy,
-      mode: config.proxy === 'private' ? 'private' : config.proxy ? 'list' : 'off',
+      enabled: !!config.proxy || cloudHosts(config).size > 0,
+      mode: config.proxy === 'private' ? 'private' : config.proxy ? 'list' : cloudHosts(config).size > 0 ? 'cloud' : 'off',
       readOnly: !!config.readOnly,
-      message: config.proxy ? undefined : GATEWAY_OFF_MESSAGE
+      cloud: (config.cloud ?? '').split(',').map((s) => s.trim()).filter((id) => id in CLOUD_SERVICES),
+      message: config.proxy || cloudHosts(config).size > 0 ? undefined : GATEWAY_OFF_MESSAGE
     };
   }
 

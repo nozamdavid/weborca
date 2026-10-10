@@ -47,6 +47,14 @@ describe('policy', () => {
     assert.equal((await resolveTarget('printer.lan', 80, list, dns)).address, '192.168.0.5');
     assert.equal((await resolveTarget('10.0.0.9', 80, list, dns)).host, '10.0.0.9');
     await rejects(resolveTarget('10.0.0.10', 80, list, dns), 403);
+
+    const cloud = { cloud: 'prusa-connect' };
+    const cdns = async (host) => (host === '192.168.0.5' ? [host] : ['93.184.216.34']);
+    assert.equal((await resolveTarget('connect.prusa3d.com', 443, cloud, cdns)).address, '93.184.216.34');
+    await rejects(resolveTarget('connect.prusa3d.com', 80, cloud, cdns), 403); // https only
+    await rejects(resolveTarget('example.com', 443, cloud, cdns), 403); // not an enabled service
+    await rejects(resolveTarget('192.168.0.5', 80, cloud, cdns), 403); // cloud alone does not open the LAN
+    assert.equal((await resolveTarget('192.168.0.5', 80, { ...cloud, proxy: 'private' }, dns)).host, '192.168.0.5');
   });
 
   test('read-only HTTP', () => {

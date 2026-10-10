@@ -83,6 +83,23 @@ After slicing, **Send to printer** (Preview) uploads the G-code. "Upload and pri
 confirm, because it starts a real machine. Moonraker uses `POST /server/files/upload`, PrusaLink
 `PUT /api/v1/files/<storage>/<name>` with `Print-After-Upload`, OctoPrint `POST /api/files/local`.
 
+## Prusa Connect (cloud)
+
+Prusa Connect is reached the way desktop OrcaSlicer reaches it: the PrusaLink-style upload API on
+`https://connect.prusa3d.com` with the API key from the printer's page in Connect. The browser cannot call it
+directly, so the gateway needs a cloud allowance, separate from the LAN modes:
+
+```bash
+ORCA_PRINTER_CLOUD=prusa-connect npx vite preview          # server gateway
+node orca-gateway.mjs --allow-origin <app origin> --cloud prusa-connect   # gateway on your computer
+```
+
+The allowance names a service, not a host: only that service's hostname, only over https, and it does not
+open the LAN (combine with `ORCA_PRINTER_PROXY` for that). The upload is a `PUT` when `/api/version` reports
+`upload-by-put`, otherwise a multipart `POST`, as on desktop. Connect shows no live state to slicers, so the
+Device tab only confirms the service answers and offers a link to open Connect. Read-only mode refuses uploads.
+**Only tested against a mock; it has not been tried against the real service.**
+
 ## Bambu Lab
 
 LAN mode must be on; the dialog needs the printer's IP, serial number and access code. The bridge and the
