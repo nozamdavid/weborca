@@ -170,8 +170,9 @@ export const PreviewView: React.FC = () => {
       lastY = e.clientY;
 
       if (dragButton === 0 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        // Orbit: Left drag without Shift
-        previewModule.orbit(dx, dy);
+        // Orbit: Left drag without Shift. The module's yaw runs opposite to the Prepare view and desktop
+        // (dragging right turns the model to the right), so the horizontal delta is negated.
+        previewModule.orbit(-dx, dy);
       } else {
         // Pan: Right drag, Middle drag, or Shift + Left drag
         previewModule.pan(dx, dy);

@@ -37,6 +37,7 @@ export class PlateScene {
   private transformControls: TransformControls;
 
   private bedGroup: THREE.Group;
+  private bedFloorMaterial: THREE.MeshBasicMaterial | null = null;
   private objectsGroup: THREE.Group;
 
   private objectMeshes: Map<string, THREE.Mesh> = new Map();
@@ -193,10 +194,14 @@ export class PlateScene {
 
     // 1. Bed subtle floor plate
     const floorGeo = new THREE.PlaneGeometry(width, depth);
+    // Becomes see-through when the camera is below the bed (see animate), so parts stay visible from underneath.
     const floorMat = new THREE.MeshBasicMaterial({
       color: 0x27272a,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      transparent: true,
+      depthWrite: false
     });
+    this.bedFloorMaterial = floorMat;
     const floorMesh = new THREE.Mesh(floorGeo, floorMat);
     floorMesh.position.set(cx, cy, -0.1);
     this.bedGroup.add(floorMesh);
@@ -846,6 +851,7 @@ export class PlateScene {
     this.animationFrameId = requestAnimationFrame(this.animate);
 
     this.orbitControls.update();
+    if (this.bedFloorMaterial) this.bedFloorMaterial.opacity = this.camera.position.z < 0 ? 0.25 : 1;
     this.renderer.render(this.scene, this.camera);
   };
 

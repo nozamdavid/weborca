@@ -157,9 +157,10 @@ static const char* BED_FS =
     "#version 300 es\n"
     "precision mediump float;\n"
     "in vec4 v_color;\n"
+    "uniform float u_alpha;\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
-    "    fragColor = v_color;\n"
+    "    fragColor = vec4(v_color.rgb, v_color.a * u_alpha);\n"
     "}\n";
 
 } // namespace
@@ -213,6 +214,7 @@ public:
         glDeleteShader(fs);
 
         m_u_mvp = glGetUniformLocation(m_program, "u_mvp");
+        m_u_alpha = glGetUniformLocation(m_program, "u_alpha");
 
         glGenVertexArrays(1, &m_vao);
         glGenBuffers(1, &m_vbo);
@@ -267,11 +269,13 @@ public:
         }
     }
 
-    void render(const libvgcode::Mat4x4& mvp) {
+    // alpha < 1 draws the bed see-through (used when the camera is below it).
+    void render(const libvgcode::Mat4x4& mvp, float alpha = 1.0f) {
         if (!m_initialized || m_program == 0) return;
 
         glUseProgram(m_program);
         glUniformMatrix4fv(m_u_mvp, 1, GL_FALSE, mvp.data());
+        glUniform1f(m_u_alpha, alpha);
         glBindVertexArray(m_vao);
 
         if (m_floor_count > 0) {
@@ -382,6 +386,7 @@ private:
     std::vector<std::pair<float, float>> m_polygon;
     GLuint m_program;
     GLint m_u_mvp;
+    GLint m_u_alpha = -1;
     GLuint m_vao;
     GLuint m_vbo;
     GLsizei m_floor_count;
@@ -948,9 +953,21 @@ private:
         glDepthFunc(GL_LEQUAL);
 
         libvgcode::Mat4x4 mvp = multiply_mat4(proj, view);
-        m_bed.render(mvp);
-
-        m_viewer.render(view, proj);
+        // Camera position along Z (column-major view = [R|t], eye = -R^T t). Seen from below, the bed is
+        // drawn after the toolpaths and blended over them, so parts stay visible through it.
+        const float eye_z = -(view[8] * view[12] + view[9] * view[13] + view[10] * view[14]);
+        if (eye_z < 0.0f) {
+            m_viewer.render(view, proj);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            m_bed.render(mvp, 0.25f);
+            glDepthMask(GL_TRUE);
+            glDisable(GL_BLEND);
+        } else {
+            m_bed.render(mvp);
+            m_viewer.render(view, proj);
+        }
     }
 
     libvgcode::Viewer m_viewer;
