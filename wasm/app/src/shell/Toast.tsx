@@ -1,14 +1,16 @@
 import React from 'react';
 import { useToastStore, type ToastItem } from './toastStore';
+import { useTranslation } from "../i18n";
 
 export const ToastContainer: React.FC = () => {
+    const { t } = useTranslation();
   const toasts = useToastStore((s) => s.toasts);
   const removeToast = useToastStore((s) => s.removeToast);
 
   if (toasts.length === 0) return null;
 
   return (
-    <div className="toast-container" id="toast-container" role="region" aria-label="Notifications">
+    <div className="toast-container" id="toast-container" role="region" aria-label={t("Notifications")}>
       {toasts.map((toast: ToastItem) => (
         <div
           key={toast.id}

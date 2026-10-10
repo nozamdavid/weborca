@@ -35,6 +35,49 @@ async function runSuite(browserType, name) {
     }
     await page.setViewportSize({ width: 1280, height: 720 });
 
+
+    log('horizontal/vertical toolbar pref defaults vertical');
+    const toolbar = page.locator('.canvas-toolbar');
+    assert.equal(await toolbar.getAttribute('aria-orientation'), 'vertical');
+    await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('toolbarOrientation', 'horizontal'));
+    assert.equal(await toolbar.getAttribute('aria-orientation'), 'horizontal');
+
+    
+    log('resizing via drag <=30% and preference persistence');
+    await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('sidebarWidth', 250));
+    await page.waitForTimeout(200); 
+    const sidebar = page.locator('aside.sidebar');
+    const resizer = page.locator('.sidebar-resizer');
+    let bbox = await resizer.boundingBox();
+    // Drag to 500 (should cap at 30% of 1280 = 384)
+    await page.mouse.move(bbox.x + bbox.width / 2, bbox.y + bbox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(500, bbox.y + bbox.height / 2, { steps: 5 });
+    await page.mouse.up();
+    let wStr = await sidebar.evaluate(el => el.style.width);
+    let wNum = parseFloat(wStr);
+    assert.equal(Math.round(wNum), 384, 'sidebar width is capped at 30% of window (384 for 1280)');
+
+    // Drag to 100 (should cap at min 220)
+    bbox = await resizer.boundingBox();
+    await page.mouse.move(bbox.x + bbox.width / 2, bbox.y + bbox.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(100, bbox.y + bbox.height / 2, { steps: 5 });
+    await page.mouse.up();
+    wStr = await sidebar.evaluate(el => el.style.width);
+    wNum = parseFloat(wStr);
+    assert.equal(Math.round(wNum), 220, 'sidebar width is floored at 220');
+
+    // check persistence
+    const prefW = await page.evaluate(() => window.__prefsStore.getState().display.sidebarWidth);
+    assert.equal(Math.round(prefW), 220, 'sidebar width is persisted to pref');
+    // Reload page to ensure preference persistence
+    await page.reload();
+    await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
+    const prefAfterW = await page.evaluate(() => window.__prefsStore.getState().display.sidebarWidth);
+    assert.equal(Math.round(prefAfterW), 220, 'sidebar width pref persists after reload');
+
+
     log('the tabs switch screens');
     for (const tab of ['preview', 'device', 'calibration', 'prepare']) {
       await page.click(`#tab-${tab}`);

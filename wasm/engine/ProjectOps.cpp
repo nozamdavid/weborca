@@ -1,12 +1,17 @@
 #include "ProjectOps.hpp"
+#include "PlateOps.hpp"
 
 #include "libslic3r/Format/bbs_3mf.hpp"
+#include "libslic3r/Config.hpp"
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/Utils.hpp"
 
 #include <boost/filesystem.hpp>
+#include <algorithm>
+#include <string>
+#include <vector>
 
 namespace OrcaEngine {
 
@@ -302,7 +307,30 @@ nlohmann::json op_saveProject(
     if (bundle) {
         cfg = bundle->full_config_secure();
         cfg.apply(options_override);
+        // Desktop imports only keys listed as differing from the base preset.
+        // Web overrides live outside edited presets, so include them in that
+        // standard metadata as well as in the serialized configuration.
+        const size_t filament_count = bundle->filament_presets.size();
+        auto* different = cfg.option<Slic3r::ConfigOptionStrings>("different_settings_to_system", true);
+        different->values.resize(filament_count + 2);
+        const auto append_overrides = [&](size_t index, const std::vector<std::string>& allowed) {
+            std::vector<std::string> keys;
+            Slic3r::unescape_strings_cstyle(different->values[index], keys);
+            for (const auto& key : options_override.keys()) {
+                if (std::find(allowed.begin(), allowed.end(), key) != allowed.end() &&
+                    std::find(keys.begin(), keys.end(), key) == keys.end()) keys.push_back(key);
+            }
+            different->values[index] = Slic3r::escape_strings_cstyle(keys);
+        };
+        append_overrides(0, Slic3r::Preset::print_options());
+        append_overrides(filament_count + 1, Slic3r::Preset::printer_options());
+        for (size_t slot = 0; slot < filament_count; ++slot)
+            append_overrides(slot + 1, Slic3r::Preset::filament_options());
     }
+
+    // Object indices can change after deletion, reordering or replacing a
+    // model. Rebuild the saved plate membership from the current instances.
+    if (bundle) assignInstancesToPlates(model, store_plates, cfg);
 
     Slic3r::StoreParams store_params;
     store_params.path = path;

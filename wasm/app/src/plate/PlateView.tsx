@@ -22,6 +22,7 @@ import { MeasurePanel } from './MeasurePanel';
 import { ExplodePanel } from './ExplodePanel';
 import { ViewCube } from './ViewCube';
 import { usePrefsStore } from '../prefs/prefsStore';
+import { resolveBedAssets } from './bedAssets';
 import { RepairBadge, useRepairStore } from '../repair';
 import { useEditOpsStore, FlattenPanel, BrimEarsPanel } from '../editops';
 import { CanvasToolbar, ViewButtons } from '../shell/CanvasToolbar';
@@ -29,6 +30,7 @@ import type { CanvasTool } from '../shell/CanvasToolbar';
 import { registerCameraHandler, setCameraView } from '../shell/cameraBridge';
 import type { CameraView } from '../shell/cameraBridge';
 import { RedoIcon, UndoIcon } from '../shell/glyphs';
+import { useTranslation } from "../i18n";
 
 function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
@@ -45,6 +47,7 @@ function formatPrintTime(seconds: number): string {
 }
 
 export const PlateView: React.FC = () => {
+    const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PlateScene | null>(null);
 
@@ -107,6 +110,7 @@ export const PlateView: React.FC = () => {
   const modelFile = useAppStore((s) => s.modelFile);
 
   const currentConfig = useAppStore((s) => s.currentConfig);
+  const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [renamingPlate, setRenamingPlate] = useState<{ index: number; x: number; y: number; value: string } | null>(null);
@@ -122,7 +126,7 @@ export const PlateView: React.FC = () => {
     if (currentConfig) {
       initBedConfig();
     }
-  }, [currentConfig, initBedConfig]);
+  }, [currentConfig.printable_area, currentConfig.printable_height, initBedConfig]);
 
   // Initialize Three.js Scene
   useEffect(() => {
@@ -209,6 +213,28 @@ export const PlateView: React.FC = () => {
       sceneRef.current.updateBedConfig(bedConfig);
     }
   }, [bedConfig]);
+
+  const vendor = useAppStore((s) => s.selectedVendor);
+  const printer = useAppStore((s) => s.selectedPrinter);
+  const userPrinters = useAppStore((s) => s.userPresets);
+  useEffect(() => {
+    let cancelled = false;
+    const systemPrinter = userPrinters.find((p) => p.kind === 'printer' && p.name === printer)?.inherits || printer;
+    void resolveBedAssets(vendor, systemPrinter, { model: currentConfig.bed_custom_model || undefined, texture: currentConfig.bed_custom_texture || undefined })
+      .then((assets) => { if (!cancelled) return sceneRef.current?.setBedAssets(assets); })
+      .catch((error) => console.warn('[Bed assets]', error));
+    return () => { cancelled = true; };
+  }, [vendor, printer, userPrinters, bedConfig, currentConfig.bed_custom_model, currentConfig.bed_custom_texture]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getEngine().then((engine) => engine.call('getWipeTowerPreview', { plateIndex: activePlateIndex }))
+      .then((tower: any) => {
+        const origin = usePlatesStore.getState().plates.find((p) => p.index === activePlateIndex)?.origin ?? [0, 0, 0];
+        if (!cancelled) sceneRef.current?.setWipeTowerPreview(tower, origin as [number, number, number]);
+      }).catch(() => { if (!cancelled) sceneRef.current?.setWipeTowerPreview({ enabled: false }); });
+    return () => { cancelled = true; };
+  }, [currentConfig, activePlateIndex, objects]);
 
   // Each part takes the colour of the filament it is assigned to (extruder 0 means the first filament).
   const objectTree = useObjectListStore((s) => s.objects);
@@ -608,11 +634,11 @@ export const PlateView: React.FC = () => {
   const toolGroups: CanvasTool[][] = [
     [
       {
-        id: 'tool-undo-btn', testId: 'tool-undo-btn', label: 'Undo', shortcut: 'Ctrl+Z', icon: <UndoIcon />,
+        id: 'tool-undo-btn', testId: 'tool-undo-btn', label: t("Undo"), shortcut: 'Ctrl+Z', icon: <UndoIcon />,
         disabled: !canUndo || isRestoring || isSlicing || isCutting || isRepairing || isOperatingEdit, data: { 'can-undo': canUndo, 'is-restoring': isRestoring }, onClick: () => undo()
       },
       {
-        id: 'tool-redo-btn', testId: 'tool-redo-btn', label: 'Redo', shortcut: 'Ctrl+Shift+Z', icon: <RedoIcon />,
+        id: 'tool-redo-btn', testId: 'tool-redo-btn', label: t("Redo"), shortcut: 'Ctrl+Shift+Z', icon: <RedoIcon />,
         disabled: !canRedo || isRestoring || isSlicing || isCutting || isRepairing || isOperatingEdit, data: { 'can-redo': canRedo, 'is-restoring': isRestoring }, onClick: () => redo()
       }
     ],
@@ -629,7 +655,7 @@ export const PlateView: React.FC = () => {
       {
         id: 'tool-orient-btn',
         testId: 'tool-orient-btn',
-        label: 'Auto-orient',
+        label: t("Auto-orient"),
         shortcut: 'A',
         icon: 'toolbar_orient',
         disabled: !selectedObject || busy || isOperatingEdit,
@@ -640,7 +666,7 @@ export const PlateView: React.FC = () => {
       {
         id: 'tool-flatten-btn',
         testId: 'tool-flatten-btn',
-        label: 'Place on face',
+        label: t("Place on face"),
         shortcut: 'F',
         icon: 'toolbar_flatten',
         active: activeEditTool === 'flatten',
@@ -661,7 +687,7 @@ export const PlateView: React.FC = () => {
       {
         id: 'tool-measure-btn',
         testId: 'tool-measure-btn',
-        label: 'Measure',
+        label: t("Measure"),
         shortcut: 'U',
         icon: 'toolbar_measure',
         active: measureActive,
@@ -678,7 +704,7 @@ export const PlateView: React.FC = () => {
       {
         id: 'tool-explode-btn',
         testId: 'tool-explode-btn',
-        label: 'Explode view',
+        label: t("Explode view"),
         icon: (
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="4" y1="12" x2="9" y2="12" />
@@ -701,7 +727,7 @@ export const PlateView: React.FC = () => {
       }
     ],
     [
-      { id: 'tool-cut-btn', testId: 'tool-cut-btn', label: 'Cut', shortcut: 'C', icon: 'toolbar_cut', active: isCutActive, disabled: !selectedObject || busy || isCutting || isRepairing || isOperatingEdit,
+      { id: 'tool-cut-btn', testId: 'tool-cut-btn', label: t("Cut"), shortcut: 'C', icon: 'toolbar_cut', active: isCutActive, disabled: !selectedObject || busy || isCutting || isRepairing || isOperatingEdit,
         onClick: () => {
           const cutStore = useCutStore.getState();
           if (cutStore.isCutActive) {
@@ -718,7 +744,7 @@ export const PlateView: React.FC = () => {
             cutStore.openCut(selectedObjectId, 0, height, height / 2);
           }
         } },
-      { id: 'tool-meshboolean-btn', testId: 'tool-meshboolean-btn', label: 'Mesh boolean', icon: 'toolbar_meshboolean', active: activeEditDialog === 'boolean', disabled: objects.length < 2 || busy || isOperatingEdit,
+      { id: 'tool-meshboolean-btn', testId: 'tool-meshboolean-btn', label: t("Mesh boolean"), icon: 'toolbar_meshboolean', active: activeEditDialog === 'boolean', disabled: objects.length < 2 || busy || isOperatingEdit,
         onClick: () => {
           stopPainting();
           useLayersStore.getState().stopEditing();
@@ -730,7 +756,7 @@ export const PlateView: React.FC = () => {
           }
           useEditOpsStore.getState().openBooleanDialog();
         } },
-      { id: 'tool-brimears-btn', testId: 'tool-brimears-btn', label: 'Brim ears', icon: 'toolbar_brimears', active: activeEditTool === 'brimears', disabled: !selectedObject || busy || isOperatingEdit,
+      { id: 'tool-brimears-btn', testId: 'tool-brimears-btn', label: t("Brim ears"), icon: 'toolbar_brimears', active: activeEditTool === 'brimears', disabled: !selectedObject || busy || isOperatingEdit,
         onClick: () => {
           const editOps = useEditOpsStore.getState();
           if (editOps.activeTool === 'brimears') {
@@ -743,7 +769,7 @@ export const PlateView: React.FC = () => {
             void editOps.startBrimEars(selectedObjectId);
           }
         } },
-      { id: 'tool-text-btn', testId: 'tool-text-btn', label: 'Text', icon: 'toolbar_text', active: isTextActive, disabled: busy || isOperatingEdit,
+      { id: 'tool-text-btn', testId: 'tool-text-btn', label: t("Text"), icon: 'toolbar_text', active: isTextActive, disabled: busy || isOperatingEdit,
         onClick: () => {
           const textStore = useTextStore.getState();
           if (textStore.isOpen) {
@@ -759,7 +785,7 @@ export const PlateView: React.FC = () => {
             textStore.openForAdd(selectedObjectId);
           }
         } },
-      { id: 'tool-svg-btn', testId: 'tool-svg-btn', label: 'Add SVG', icon: 'toolbar_svg', active: activeEditDialog === 'svg', disabled: busy || isOperatingEdit,
+      { id: 'tool-svg-btn', testId: 'tool-svg-btn', label: t("Add SVG"), icon: 'toolbar_svg', active: activeEditDialog === 'svg', disabled: busy || isOperatingEdit,
         onClick: () => {
           stopPainting();
           useLayersStore.getState().stopEditing();
@@ -771,7 +797,7 @@ export const PlateView: React.FC = () => {
           }
           useEditOpsStore.getState().openSvgDialog();
         } },
-      { id: 'tool-varlayer-btn', label: 'Variable layer height', icon: 'toolbar_variable_layer_height', active: isLayersActive, disabled: !selectedObject || busy || isOperatingEdit,
+      { id: 'tool-varlayer-btn', label: t("Variable layer height"), icon: 'toolbar_variable_layer_height', active: isLayersActive, disabled: !selectedObject || busy || isOperatingEdit,
         onClick: () => {
           stopPainting();
           void useTextStore.getState().close();
@@ -785,7 +811,7 @@ export const PlateView: React.FC = () => {
         } }
     ],
     [
-      { id: 'tool-paint-btn', label: 'Support painting', shortcut: 'P', icon: 'toolbar_support', active: isPaintingActive && paintLayer === 'support', disabled: !selectedObject || busy || isOperatingEdit, onClick: handleTogglePainting },
+      { id: 'tool-paint-btn', label: t("Support painting"), shortcut: 'P', icon: 'toolbar_support', active: isPaintingActive && paintLayer === 'support', disabled: !selectedObject || busy || isOperatingEdit, onClick: handleTogglePainting },
       ...([['seam', 'toolbar_seam', 'Seam painting'], ['color', 'mmu_segmentation', 'Color painting'], ['fuzzy', 'toolbar_fuzzy_skin_paint', 'Fuzzy skin painting']] as const).map(([layer, icon, label]): CanvasTool => ({
         id: `tool-${layer}-paint-btn`, label, icon, active: isPaintingActive && paintLayer === layer, disabled: !selectedObject || busy || isOperatingEdit,
         onClick: () => {
@@ -803,14 +829,13 @@ export const PlateView: React.FC = () => {
       }))
     ],
     [
-      { id: 'tool-arrange-btn', label: 'Arrange', shortcut: 'A', icon: 'toolbar_arrange', disabled: busy || isOperatingEdit, onClick: () => arrange(true) },
-      { id: 'tool-delete-btn', label: 'Delete', shortcut: 'Del', icon: 'delete', danger: true, disabled: !selectedObject || busy || isOperatingEdit, onClick: () => deleteSelected() }
+      { id: 'tool-arrange-btn', label: t("Arrange"), shortcut: 'A', icon: 'toolbar_arrange', disabled: busy || isOperatingEdit, onClick: () => arrange(true) },
+      { id: 'tool-delete-btn', label: t("Delete"), shortcut: 'Del', icon: 'delete', danger: true, disabled: !selectedObject || busy || isOperatingEdit, onClick: () => deleteSelected() }
     ]
   ];
 
   // Every plate is drawn beside the others, with its number and title.
   const plates = usePlatesStore((s) => s.plates);
-  const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
   useEffect(() => {
     sceneRef.current?.setPlates(plates.map((p) => ({ index: p.index, name: p.name, origin: p.origin })), activePlateIndex);
   }, [plates, activePlateIndex, meshRevision]);
@@ -906,7 +931,7 @@ export const PlateView: React.FC = () => {
             border: '1px solid rgba(255, 255, 255, 0.12)',
             borderRadius: 10,
             padding: '12px 16px',
-            color: '#e4e4e7',
+            color: 'var(--text-color)',
             minWidth: 260,
             fontSize: '0.85rem',
             boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
@@ -920,11 +945,10 @@ export const PlateView: React.FC = () => {
             <span id="selection-count" style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{extraSelection.length > 0 ? `+${extraSelection.length} more selected` : `ID: ${selectedObject.id}`}</span>
           </div>
           <div id="selected-object-size" style={{ marginBottom: 4 }}>
-            <span style={{ color: '#94a3b8' }}>Size: </span>
+            <span style={{ color: '#94a3b8' }}>{t("Size:")}</span>
             <span>
               {selectedObject.size[0].toFixed(1)} × {selectedObject.size[1].toFixed(1)} ×{' '}
-              {selectedObject.size[2].toFixed(1)} mm
-            </span>
+              {selectedObject.size[2].toFixed(1)} {t("mm")}</span>
           </div>
           {selectedInstance && extraSelection.length === 0 && (
             <>
@@ -934,7 +958,7 @@ export const PlateView: React.FC = () => {
 
           {/* Mesh Health and Repair Badge */}
           <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>Mesh Health:</span>
+            <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{t("Mesh Health:")}</span>
             <RepairBadge />
           </div>
         </div>
@@ -960,7 +984,7 @@ export const PlateView: React.FC = () => {
           }}
         >
           <div className="spinner" style={{ width: 14, height: 14 }} />
-          <span>Processing model...</span>
+          <span>{t("Processing model...")}</span>
         </div>
       )}
 
@@ -1000,32 +1024,32 @@ export const PlateView: React.FC = () => {
       {sliceResult && !isSlicing && (
         <div className="stats-section" id="stats-section">
           <div className="stats-header">
-            <h3>Slicing Results</h3>
+            <h3>{t("Slicing Results")}</h3>
             <span className="stats-status" id="status-text">
               {sliceStatusText}
             </span>
           </div>
           <div className="stats-grid">
             <div className="stat-card">
-              <span className="stat-label">Total Layers</span>
+              <span className="stat-label">{t("Total Layers")}</span>
               <span className="stat-value" id="stat-layers">
                 {sliceResult.layers}
               </span>
             </div>
             <div className="stat-card">
-              <span className="stat-label">Estimated Time</span>
+              <span className="stat-label">{t("Estimated Time")}</span>
               <span className="stat-value" id="stat-time">
                 {formatPrintTime(sliceResult.printTimeS)}
               </span>
             </div>
             <div className="stat-card">
-              <span className="stat-label">Filament Length</span>
+              <span className="stat-label">{t("Filament Length")}</span>
               <span className="stat-value" id="stat-filament-mm">
                 {sliceResult.filamentMm ? `${sliceResult.filamentMm.toFixed(1)} mm` : '-'}
               </span>
             </div>
             <div className="stat-card">
-              <span className="stat-label">Filament Weight</span>
+              <span className="stat-label">{t("Filament Weight")}</span>
               <span className="stat-value" id="stat-filament-g">
                 {sliceResult.filamentG ? `${sliceResult.filamentG.toFixed(2)} g` : '-'}
               </span>
@@ -1040,8 +1064,7 @@ export const PlateView: React.FC = () => {
                 download={downloadFileName}
                 className="btn btn-download"
               >
-                ⬇️ Download G-code
-              </a>
+                {t("⬇️ Download G-code")}</a>
             </div>
           )}
         </div>

@@ -6,8 +6,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { usePreviewStore } from './previewStore';
 import './PreviewControls.css';
+import { useTranslation } from "../i18n";
 
 export const MoveSlider: React.FC = () => {
+    const { t } = useTranslation();
   const minMove = usePreviewStore((s) => s.minMove);
   const maxMove = usePreviewStore((s) => s.maxMove);
   const currentMove = usePreviewStore((s) => s.currentMove);
@@ -140,22 +142,22 @@ export const MoveSlider: React.FC = () => {
         id="move-info"
         style={{
           fontSize: '0.75rem',
-          color: '#e4e4e7',
+          color: 'var(--text-color)',
           minWidth: 110,
           whiteSpace: 'nowrap'
         }}
       >
-        <span>Move: </span>
+        <span>{t("Move:")}</span>
         <span style={{ color: '#38bdf8', fontWeight: 600 }} id="move-current-val">
           {currentRelative.toLocaleString()}
         </span>
-        <span style={{ color: '#71717a' }}> / {rangeSpan.toLocaleString()}</span>
+        <span style={{ color: 'var(--text-dim)' }}> / {rangeSpan.toLocaleString()}</span>
       </div>
 
       {/* Slider Input */}
       <input
         type="range"
-        aria-label="Move in top layer"
+        aria-label={t("Move in top layer")}
         id="move-slider"
         data-testid="move-slider"
         min={minMove}

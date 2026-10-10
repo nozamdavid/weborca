@@ -1,4 +1,6 @@
 import { useWizardStore } from '../wizard';
+import { usePrefsStore } from '../prefs';
+import { FilamentSyncButton } from '../printers/FilamentSyncDialog';
 import React, { useState } from 'react';
 import { ModifiedSettingsDialog } from '../settings/ModifiedSettingsDialog';
 import { modifiedSettings } from '../settings/modifiedSettings';
@@ -11,8 +13,10 @@ import { useAppStore } from '../store/appStore';
 import type { PresetKind } from '../presets/types';
 import { exportGcode } from './exportGcode';
 import { EditIcon, GearIcon, PlugIcon, SaveIcon, TrashIcon } from './glyphs';
+import { useTranslation } from "../i18n";
 
 const Section: React.FC<{ title: string; badge?: string; children: React.ReactNode; defaultOpen?: boolean; className?: string; headerExtra?: React.ReactNode }> = ({ title, badge, children, defaultOpen = true, className = '', headerExtra }) => {
+    const { t } = useTranslation();
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section className={`sb-section ${open ? '' : 'closed'} ${className}`}>
@@ -41,6 +45,7 @@ const PresetRow: React.FC<{
   canEdit: boolean;
   canSave: boolean;
 }> = ({ kind, disabled, selectDisabled, placeholder, system, user, value, onSystem, extra, canEdit, canSave }) => {
+    const { t } = useTranslation();
   const { selectUserPreset, openDialog, openSavePresetDialog, openManagePresetsDialog, deleteUserPresetAction, activeUserPreset } = useAppStore();
   const activeUser = activeUserPreset[kind];
   return (
@@ -54,17 +59,17 @@ const PresetRow: React.FC<{
         onChange={(e) => (e.target.value.startsWith('user:') ? selectUserPreset(kind, e.target.value.substring(5)) : onSystem(e.target.value))}
       >
         <option value="">{placeholder}</option>
-        {system.length > 0 && <optgroup label="System presets">{system.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}</optgroup>}
-        {user.length > 0 && <optgroup label="User presets">{user.map((u) => <option key={u.name} value={`user:${u.name}`}>{u.name}</option>)}</optgroup>}
+        {system.length > 0 && <optgroup label={t("System presets")}>{system.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}</optgroup>}
+        {user.length > 0 && <optgroup label={t("User presets")}>{user.map((u) => <option key={u.name} value={`user:${u.name}`}>{u.name}</option>)}</optgroup>}
       </select>
       {extra}
       {kind !== 'process' && (
         <button className="icon-btn" data-testid={`edit-${kind}-btn`} title={`Edit ${kind} preset`} aria-label={`Edit ${kind} preset`} disabled={!canEdit || disabled} onClick={() => openDialog(kind)}><EditIcon /></button>
       )}
-      <button className="icon-btn" data-testid={`save-${kind}-btn`} title="Save as a user preset" aria-label={`Save ${kind} preset`} disabled={!canSave || disabled} onClick={() => openSavePresetDialog(kind)}><SaveIcon /></button>
-      <button className="icon-btn" data-testid={`manage-${kind}-btn`} title="Manage presets, import and export" aria-label={`Manage ${kind} presets`} disabled={disabled} onClick={() => openManagePresetsDialog(kind)}><GearIcon /></button>
+      <button className="icon-btn" data-testid={`save-${kind}-btn`} title={t("Save as a user preset")} aria-label={`Save ${kind} preset`} disabled={!canSave || disabled} onClick={() => openSavePresetDialog(kind)}><SaveIcon /></button>
+      <button className="icon-btn" data-testid={`manage-${kind}-btn`} title={t("Manage presets, import and export")} aria-label={`Manage ${kind} presets`} disabled={disabled} onClick={() => openManagePresetsDialog(kind)}><GearIcon /></button>
       {activeUser && (
-        <button className="icon-btn" data-testid={`delete-${kind}-preset-btn`} title="Delete this user preset" aria-label={`Delete ${kind} preset`} disabled={disabled} onClick={() => deleteUserPresetAction(kind, activeUser)}><TrashIcon /></button>
+        <button className="icon-btn" data-testid={`delete-${kind}-preset-btn`} title={t("Delete this user preset")} aria-label={`Delete ${kind} preset`} disabled={disabled} onClick={() => deleteUserPresetAction(kind, activeUser)}><TrashIcon /></button>
       )}
     </div>
   );
@@ -72,6 +77,7 @@ const PresetRow: React.FC<{
 
 /** The process switches desktop keeps next to the preset: support, brim, prime tower and ironing. */
 const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({ disabled, multiFilament }) => {
+    const { t } = useTranslation();
   const [flushOpen, setFlushOpen] = useState(false);
   const [modifiedOpen, setModifiedOpen] = useState(false);
   const layout = useAppStore((s) => s.layout);
@@ -80,10 +86,10 @@ const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({
   const applyOptionChange = useAppStore((s) => s.applyOptionChange);
   const changedCount = modifiedSettings(layout, currentConfig, presetConfig).length;
   const toggles: { id: string; label: string; checked: boolean; off?: string; apply: [string, string, string]; disabled?: boolean; title?: string }[] = [
-    { id: 'support', label: 'Support', checked: currentConfig.enable_support === '1', apply: ['enable_support', '1', '0'] },
-    { id: 'brim', label: 'Brim', checked: !!currentConfig.brim_type && currentConfig.brim_type !== 'no_brim', apply: ['brim_type', 'auto_brim', 'no_brim'] },
-    { id: 'prime-tower', label: 'Prime tower', checked: currentConfig.enable_prime_tower === '1', apply: ['enable_prime_tower', '1', '0'], disabled: !multiFilament, title: multiFilament ? undefined : 'Needs more than one filament' },
-    { id: 'ironing', label: 'Ironing', checked: !!currentConfig.ironing_type && currentConfig.ironing_type !== 'no ironing', apply: ['ironing_type', 'top', 'no ironing'] }
+    { id: 'support', label: t("Support"), checked: currentConfig.enable_support === '1', apply: ['enable_support', '1', '0'] },
+    { id: 'brim', label: t("Brim"), checked: !!currentConfig.brim_type && currentConfig.brim_type !== 'no_brim', apply: ['brim_type', 'auto_brim', 'no_brim'] },
+    { id: 'prime-tower', label: t("Prime tower"), checked: currentConfig.enable_prime_tower === '1', apply: ['enable_prime_tower', '1', '0'], disabled: !multiFilament, title: multiFilament ? undefined : 'Needs more than one filament' },
+    { id: 'ironing', label: t("Ironing"), checked: !!currentConfig.ironing_type && currentConfig.ironing_type !== 'no ironing', apply: ['ironing_type', 'top', 'no ironing'] }
   ];
   return (
     <div id="quick-toggles" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', padding: '4px 12px 8px', fontSize: 12 }}>
@@ -96,15 +102,21 @@ const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({
           {t.label}
         </label>
       ))}
-      {changedCount > 0 && <button id="modified-open" className="btn btn-secondary" style={{ padding: '1px 8px', fontSize: 12 }} onClick={() => setModifiedOpen(true)}>{changedCount} modified...</button>}
+      {changedCount > 0 && <button id="modified-open" className="btn btn-secondary" style={{ padding: '1px 8px', fontSize: 12 }} onClick={() => setModifiedOpen(true)}>{changedCount} {t("modified...")}</button>}
       {modifiedOpen && <ModifiedSettingsDialog onClose={() => setModifiedOpen(false)} />}
-      {multiFilament && <button id="flush-open" className="btn btn-secondary" style={{ padding: '1px 8px', fontSize: 12 }} disabled={disabled} onClick={() => setFlushOpen(true)}>Flushing volumes...</button>}
+      {multiFilament && <button id="flush-open" className="btn btn-secondary" style={{ padding: '1px 8px', fontSize: 12 }} disabled={disabled} onClick={() => setFlushOpen(true)}>{t("Flushing volumes...")}</button>}
       {flushOpen && <FlushVolumesDialog onClose={() => setFlushOpen(false)} />}
     </div>
   );
 };
 
 export const PrepareSidebar: React.FC = () => {
+    const { t } = useTranslation();
+  const sidebarWidth = usePrefsStore((s) => s.display.sidebarWidth);
+  const setWidth = (width: number) => {
+    usePrefsStore.getState().setDisplayPref('sidebarWidth', width);
+    window.dispatchEvent(new Event('resize'));
+  };
   const {
     vendors, selectedVendor, chooseVendor, printers, selectedPrinter, choosePrinter,
     processes, selectedProcess, chooseProcess, filaments, selectedFilament, selectedFilaments, chooseFilament,
@@ -120,7 +132,7 @@ export const PrepareSidebar: React.FC = () => {
   const printerCount = devices.length;
   const openSendDialog = usePrinterConnectionStore((s) => s.openSendDialog);
 
-  const isBusy = isSlicing || isModelLoading || isRestoring;
+  const isBusy = !isEngineReady || isSlicing || isModelLoading || isRestoring;
   const activeFilaments = selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments : (selectedFilament ? [selectedFilament] : []);
   // A finished slice with the selected printer connected is sent rather than sliced again.
   const readyToSend = !!sliceResult?.gcode && !isBusy && printerStatus === 'online';
@@ -151,8 +163,8 @@ export const PrepareSidebar: React.FC = () => {
         id="add-filament-btn"
         data-testid="add-filament-btn"
         className="icon-btn btn-add-filament"
-        title="Add filament"
-        aria-label="Add filament"
+        title={t("Add filament")}
+        aria-label={t("Add filament")}
         disabled={isBusy || activeFilaments.length >= maxFilaments}
         onClick={(e) => {
           e.stopPropagation();
@@ -176,8 +188,8 @@ export const PrepareSidebar: React.FC = () => {
         id="remove-filament-btn"
         data-testid="remove-filament-btn"
         className="icon-btn btn-remove-filament"
-        title="Remove filament"
-        aria-label="Remove filament"
+        title={t("Remove filament")}
+        aria-label={t("Remove filament")}
         disabled={isBusy || activeFilaments.length <= 1}
         onClick={(e) => {
           e.stopPropagation();
@@ -203,6 +215,8 @@ export const PrepareSidebar: React.FC = () => {
 
   // Printers added in the configuration wizard are the ones offered for their brand; with none added, every printer of the brand is.
   const addedPrinters = useWizardStore((s) => s.addedPrinters);
+  const addedFilaments = useWizardStore((s) => s.addedFilaments);
+  const offeredFilaments = addedFilaments.length ? filaments.filter((p) => addedFilaments.includes(p.name) || activeFilaments.includes(p.name)) : filaments;
   const added = printers.filter((p) => addedPrinters.includes(p.name) || p.name === selectedPrinter);
   const offeredPrinters = added.some((p) => addedPrinters.includes(p.name)) ? added : printers;
   const addPrinters = () => {
@@ -211,34 +225,52 @@ export const PrepareSidebar: React.FC = () => {
   };
 
   const connectButton = (
-    <button id="printer-connection-btn" className="icon-btn" title={printerCount ? 'Printer connection' : 'Connect a printer'} aria-label="Connect printer" onClick={() => usePrinterConnectionStore.getState().openDialog(null)}>
+    <button id="printer-connection-btn" className="icon-btn" title={printerCount ? 'Printer connection' : 'Connect a printer'} aria-label={t("Connect printer")} onClick={() => usePrinterConnectionStore.getState().openDialog(null)}>
       <PlugIcon />{printerStatus !== 'none' && <span className="status-dot" data-status={printerStatus} />}
     </button>
   );
 
   return (
-    <aside className="sidebar" aria-label="Print settings">
+    <aside className="sidebar" aria-label={t("Print settings")} style={{ width: sidebarWidth }}>
+      <div className="sidebar-resizer" role="separator" aria-label={t("Resize settings sidebar")} aria-orientation="vertical"
+        tabIndex={0} aria-valuenow={sidebarWidth}
+        onKeyDown={(e) => {
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          e.preventDefault();
+          const available = e.currentTarget.parentElement?.parentElement?.clientWidth ?? window.innerWidth;
+          setWidth(Math.max(Math.min(220, available * 0.3), Math.min(available * 0.3, sidebarWidth + (e.key === 'ArrowRight' ? 10 : -10))));
+        }}
+        onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); }}
+        onPointerMove={(e) => {
+          if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+          const container = e.currentTarget.parentElement?.parentElement;
+          if (!container) return;
+          const bounds = container.getBoundingClientRect();
+          setWidth(Math.max(Math.min(220, bounds.width * 0.3), Math.min(bounds.width * 0.3, e.clientX - bounds.left)));
+        }}
+        onPointerUp={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }} />
       <div className="sidebar-scroll">
-        <Section title="Printer">
+        <Section title={t("Printer")}>
           {devices.length > 0 && (
             <>
-              <label className="field-label" htmlFor="device-select">Device</label>
+              <label className="field-label" htmlFor="device-select">{t("Device")}</label>
               <select id="device-select" value={selectedDeviceId ?? ''} disabled={isBusy} onChange={(e) => selectDevice(e.target.value)}>
                 {devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </>
           )}
-          <label className="field-label" htmlFor="vendor-select">Brand</label>
+          <label className="field-label" htmlFor="vendor-select">{t("Brand")}</label>
           <select id="vendor-select" value={selectedVendor} disabled={isBusy || vendors.length === 0} onChange={(e) => chooseVendor(e.target.value)}>
-            <option value="">Select brand...</option>
+            <option value="">{t("Select brand...")}</option>
             {vendors.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
           </select>
-          <PresetRow kind="printer" disabled={isBusy} selectDisabled={isBusy || printers.length === 0} placeholder="Select printer..." system={offeredPrinters} user={user('printer')}
+          <PresetRow kind="printer" disabled={isBusy} selectDisabled={isBusy || printers.length === 0} placeholder={t("Select printer...")} system={offeredPrinters} user={user('printer')}
             value={current('printer', selectedPrinter)} onSystem={choosePrinter} extra={connectButton} canEdit={!!selectedPrinter} canSave={!!selectedPrinter} />
-          <button className="btn btn-secondary" id="add-printers-btn" style={{ alignSelf: 'flex-start', padding: '2px 10px' }} disabled={isBusy || !selectedVendor} onClick={addPrinters}>Add printers and nozzles...</button>
+          <button className="btn btn-secondary" id="add-printers-btn" style={{ alignSelf: 'flex-start', padding: '2px 10px' }} disabled={isBusy || !selectedVendor} onClick={addPrinters}>{t("Add printers and nozzles...")}</button>
         </Section>
 
-        <Section title="Filament" headerExtra={filamentHeaderActions}>
+        <Section title={t("Filament")} headerExtra={filamentHeaderActions}>
+          <FilamentSyncButton />
           <div className="filament-slots-list" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {activeFilaments.map((filamentName, idx) => {
               const slotNumber = idx + 1;
@@ -253,7 +285,7 @@ export const PrepareSidebar: React.FC = () => {
                     style={{
                       fontSize: '0.75rem',
                       fontWeight: 600,
-                      color: '#a1a1aa',
+                      color: 'var(--text-muted)',
                       minWidth: 12,
                       textAlign: 'center'
                     }}
@@ -314,10 +346,10 @@ export const PrepareSidebar: React.FC = () => {
                       }
                     }}
                   >
-                    <option value="">Select filament...</option>
+                    <option value="">{t("Select filament...")}</option>
                     {filaments.length > 0 && (
-                      <optgroup label="System presets">
-                        {filaments.map((p) => (
+                      <optgroup label={t("System presets")}>
+                        {offeredFilaments.map((p) => (
                           <option key={p.name} value={p.name}>
                             {p.name}
                           </option>
@@ -325,7 +357,7 @@ export const PrepareSidebar: React.FC = () => {
                       </optgroup>
                     )}
                     {user('filament').length > 0 && (
-                      <optgroup label="User presets">
+                      <optgroup label={t("User presets")}>
                         {user('filament').map((u) => (
                           <option key={u.name} value={`user:${u.name}`}>
                             {u.name}
@@ -339,8 +371,8 @@ export const PrepareSidebar: React.FC = () => {
                     className="icon-btn"
                     id={idx === 0 ? 'edit-filament-btn' : `edit-filament-btn-${slotNumber}`}
                     data-testid={idx === 0 ? 'edit-filament-btn' : `edit-filament-btn-${slotNumber}`}
-                    title="Edit filament preset"
-                    aria-label="Edit filament preset"
+                    title={t("Edit filament preset")}
+                    aria-label={t("Edit filament preset")}
                     disabled={!filamentName || isBusy}
                     onClick={() => openDialog('filament')}
                   >
@@ -350,8 +382,8 @@ export const PrepareSidebar: React.FC = () => {
                     className="icon-btn"
                     id={idx === 0 ? 'save-filament-btn' : `save-filament-btn-${slotNumber}`}
                     data-testid={idx === 0 ? 'save-filament-btn' : `save-filament-btn-${slotNumber}`}
-                    title="Save as a user preset"
-                    aria-label="Save filament preset"
+                    title={t("Save as a user preset")}
+                    aria-label={t("Save filament preset")}
                     disabled={!filamentName || isBusy}
                     onClick={() => openSavePresetDialog('filament')}
                   >
@@ -361,8 +393,8 @@ export const PrepareSidebar: React.FC = () => {
                     className="icon-btn"
                     id={idx === 0 ? 'manage-filament-btn' : `manage-filament-btn-${slotNumber}`}
                     data-testid={idx === 0 ? 'manage-filament-btn' : `manage-filament-btn-${slotNumber}`}
-                    title="Manage presets, import and export"
-                    aria-label="Manage filament presets"
+                    title={t("Manage presets, import and export")}
+                    aria-label={t("Manage filament presets")}
                     disabled={isBusy}
                     onClick={() => openManagePresetsDialog('filament')}
                   >
@@ -373,8 +405,8 @@ export const PrepareSidebar: React.FC = () => {
                       className="icon-btn"
                       id="delete-filament-preset-btn"
                       data-testid="delete-filament-preset-btn"
-                      title="Delete this user preset"
-                      aria-label="Delete filament preset"
+                      title={t("Delete this user preset")}
+                      aria-label={t("Delete filament preset")}
                       disabled={isBusy}
                       onClick={() => deleteUserPresetAction('filament', activeUser)}
                     >
@@ -387,14 +419,14 @@ export const PrepareSidebar: React.FC = () => {
           </div>
         </Section>
 
-        <Section title="Process">
-          <PresetRow kind="process" disabled={isBusy} selectDisabled={isBusy || !selectedPrinter || processes.length === 0} placeholder="Select process..." system={processes} user={user('process')}
+        <Section title={t("Process")}>
+          <PresetRow kind="process" disabled={isBusy} selectDisabled={isBusy || !selectedPrinter || processes.length === 0} placeholder={t("Select process...")} system={processes} user={user('process')}
             value={current('process', selectedProcess)} onSystem={chooseProcess} canEdit={false} canSave={!!selectedProcess} />
         </Section>
 
         <QuickToggles disabled={isBusy || !selectedProcess} multiFilament={activeFilaments.length > 1} />
 
-        <Section title="Objects" badge={modelObjects?.length ? String(modelObjects.length) : undefined} className="sb-objects">
+        <Section title={t("Objects")} badge={modelObjects?.length ? String(modelObjects.length) : undefined} className="sb-objects">
           <div className="objects-wrap"><ObjectListPanel /></div>
         </Section>
 
@@ -403,15 +435,15 @@ export const PrepareSidebar: React.FC = () => {
 
       <div className="sidebar-footer">
         {readyToSend ? (
-          <button id="send-to-printer-btn" className="btn-slice" onClick={openSendDialog}>Send to printer</button>
+          <button id="send-to-printer-btn" className="btn-slice" onClick={openSendDialog}>{t("Send to printer")}</button>
         ) : (
           <button id="slice-btn" className="btn-slice" disabled={!canSlice} onClick={() => startSlice()}>{isSlicing ? 'Slicing...' : 'Slice plate'}</button>
         )}
-        <button id="cancel-btn" className="btn-danger-wide" hidden={!isSlicing} disabled={!isSlicing} onClick={() => cancelSlice()}>Cancel</button>
+        <button id="cancel-btn" className="btn-danger-wide" hidden={!isSlicing} disabled={!isSlicing} onClick={() => cancelSlice()}>{t("Cancel")}</button>
         {sliceResult?.gcode && !isSlicing && (
           <div className="footer-row">
-            <button id="export-gcode-btn" className="btn-secondary-wide" onClick={exportGcode}>Export G-code</button>
-            {!readyToSend && <button id="send-to-printer-btn" className="btn-secondary-wide" onClick={openSendDialog}>Send to printer</button>}
+            <button id="export-gcode-btn" className="btn-secondary-wide" onClick={exportGcode}>{t("Export G-code")}</button>
+            {!readyToSend && <button id="send-to-printer-btn" className="btn-secondary-wide" onClick={openSendDialog}>{t("Send to printer")}</button>}
           </div>
         )}
       </div>

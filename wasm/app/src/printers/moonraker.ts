@@ -1,5 +1,5 @@
 import { authHeaders, describeFetchFailure, httpUrl, parseHost, sendWithProgress, wsUrl } from './gatewayUrl';
-import type { Fan, Heater, PhysicalPrinter, PrinterApi, PrinterFile, PrinterRunState, PrinterState, UploadOptions, Webcam } from './types';
+import type { PrinterFilament, Fan, Heater, PhysicalPrinter, PrinterApi, PrinterFile, PrinterRunState, PrinterState, UploadOptions, Webcam } from './types';
 
 type Status = Record<string, Record<string, any>>;
 
@@ -7,7 +7,7 @@ const RPC_TIMEOUT_MS = 10_000;
 const RECONNECT_MS = [1000, 3000, 8000, 15000];
 
 /** Objects worth subscribing to: everything that feeds the dashboard. */
-const SUBSCRIBED = /^(webhooks|print_stats|virtual_sdcard|display_status|toolhead|gcode_move|idle_timeout|toolchanger|fan|heater_bed|extruder\d*|heater_generic .+|temperature_sensor .*chamber.*|temperature_fan .+|fan_generic .+|heater_fan .+|controller_fan .+)$/i;
+const SUBSCRIBED = /^(mmu|webhooks|print_stats|virtual_sdcard|display_status|toolhead|gcode_move|idle_timeout|toolchanger|fan|heater_bed|extruder\d*|heater_generic .+|temperature_sensor .*chamber.*|temperature_fan .+|fan_generic .+|heater_fan .+|controller_fan .+)$/i;
 
 const isChamberName = (name: string) => /chamber/i.test(name);
 const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -29,6 +29,19 @@ function mapState(status: Status): { state: PrinterRunState; message?: string } 
     case 'error': return { state: 'error', message: message || 'The print failed' };
     default: return { state: 'ready', message };
   }
+}
+
+/** Happy Hare publishes its loaded gate material/color map as Klipper object status. */
+export function deriveHappyHareFilaments(mmu: Record<string, any> | undefined): PrinterFilament[] {
+  if (!mmu || !Array.isArray(mmu.gate_material)) return [];
+  const tools = Array.isArray(mmu.ttg_map) ? mmu.ttg_map : mmu.gate_material.map((_: unknown, i: number) => i);
+  return tools.flatMap((gate: number, tool: number): PrinterFilament[] => {
+    const material = mmu.gate_material[gate];
+    if (typeof material !== 'string' || !material.trim() || mmu.gate_status?.[gate] === 0) return [];
+    const hex = String(mmu.gate_color?.[gate] || '').replace(/^#/, '');
+    return [{ id: `mmu:tool:${tool}:gate:${gate}`, label: `T${tool} / Gate ${gate + 1}`, material,
+      color: /^[0-9a-f]{6}$/i.test(hex) ? `#${hex}` : undefined }];
+  });
 }
 
 /** Builds the dashboard state from the merged Klipper object model. */
@@ -81,7 +94,8 @@ export function deriveMoonrakerState(status: Status, extra: { webcams?: Webcam[]
       ? `T${status.toolchanger.tool_number}` : status.toolhead?.extruder && extruders.length > 1 ? status.toolhead.extruder : undefined,
     software: extra.software,
     webcams: extra.webcams,
-    files: extra.files
+    files: extra.files,
+    filaments: deriveHappyHareFilaments(status.mmu)
   };
 }
 

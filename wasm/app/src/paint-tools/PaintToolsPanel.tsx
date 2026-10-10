@@ -13,8 +13,10 @@ import {
 } from './paintToolsStore';
 import type { PaintLayer, PaintTool } from './types';
 import { usePlateStore } from '../plate/plateStore';
+import { useTranslation } from "../i18n";
 
 export const PaintToolsPanel: React.FC = () => {
+    const { t } = useTranslation();
   const isActive = usePaintToolsStore((s) => s.isActive);
   const layer = usePaintToolsStore((s) => s.layer);
   const setLayer = usePaintToolsStore((s) => s.setLayer);
@@ -79,19 +81,19 @@ export const PaintToolsPanel: React.FC = () => {
   }
 
   const layers: Array<{ id: PaintLayer; label: string }> = [
-    { id: 'support', label: 'Support' },
-    { id: 'seam', label: 'Seam' },
-    { id: 'color', label: 'Color' },
-    { id: 'fuzzy', label: 'Fuzzy' }
+    { id: 'support', label: t("Support") },
+    { id: 'seam', label: t("Seam") },
+    { id: 'color', label: t("Color") },
+    { id: 'fuzzy', label: t("Fuzzy") }
   ];
 
   // Tool choices based on desktop gizmos
   const tools: Array<{ id: PaintTool; label: string; icon: string }> = [
-    { id: 'circle', label: 'Circle', icon: '⭕' },
-    { id: 'sphere', label: 'Sphere', icon: '🌐' },
-    { id: 'smart_fill', label: 'Smart fill', icon: '🪣' },
-    { id: 'bucket', label: 'Bucket', icon: '🎨' },
-    { id: 'triangle', label: 'Triangle', icon: '🔺' }
+    { id: 'circle', label: t("Circle"), icon: '⭕' },
+    { id: 'sphere', label: t("Sphere"), icon: '🌐' },
+    { id: 'smart_fill', label: t("Smart fill"), icon: '🪣' },
+    { id: 'bucket', label: t("Bucket"), icon: '🎨' },
+    { id: 'triangle', label: t("Triangle"), icon: '🔺' }
   ];
 
   return (
@@ -107,7 +109,7 @@ export const PaintToolsPanel: React.FC = () => {
         border: '1px solid rgba(255, 255, 255, 0.15)',
         borderRadius: 10,
         padding: '12px 16px',
-        color: '#f4f4f5',
+        color: 'var(--text-color)',
         width: 270,
         maxHeight: 'calc(100vh - 136px)',
         overflowY: 'auto',
@@ -119,10 +121,9 @@ export const PaintToolsPanel: React.FC = () => {
       {/* Panel Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: '1.1rem' }}>🖌️</span>
+          <span style={{ fontSize: '1.1rem' }}>{t("🖌️")}</span>
           <strong id="paint-tools-title" style={{ fontSize: '0.95rem', color: '#38bdf8' }}>
-            Painting Tools
-          </strong>
+            {t("Painting Tools")}</strong>
         </div>
         <button
           type="button"
@@ -130,12 +131,12 @@ export const PaintToolsPanel: React.FC = () => {
           style={{
             background: 'transparent',
             border: 'none',
-            color: '#a1a1aa',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
             fontSize: '1rem',
             padding: '2px 6px'
           }}
-          title="Close painting tools"
+          title={t("Close painting tools")}
         >
           ✕
         </button>
@@ -159,9 +160,8 @@ export const PaintToolsPanel: React.FC = () => {
 
       {volumes.length > 1 && (
         <label style={{ display: 'block', marginBottom: 10, fontSize: '0.75rem' }}>
-          Volume
-          <select id="paint-volume-select" value={selectedVolumeId ?? ''} onChange={(event) => setSelectedVolume(Number(event.target.value))}
-            style={{ display: 'block', width: '100%', marginTop: 4, background: '#27272a', color: '#fff' }}>
+          {t("Volume")}<select id="paint-volume-select" value={selectedVolumeId ?? ''} onChange={(event) => setSelectedVolume(Number(event.target.value))}
+            style={{ display: 'block', width: '100%', marginTop: 4, background: 'var(--panel-bg)', color: '#fff' }}>
             {volumes.map((volume) => <option key={volume.volumeId} value={volume.volumeId}>{`Volume ${volume.volumeId}`}</option>)}
           </select>
         </label>
@@ -169,10 +169,10 @@ export const PaintToolsPanel: React.FC = () => {
 
       {/* Layer Tabs: Support / Seam / Color / Fuzzy */}
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 4 }}>Layer</div>
+        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 4 }}>{t("Layer")}</div>
         <div
           role="group"
-          aria-label="Painting Layer"
+          aria-label={t("Painting Layer")}
           style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}
         >
           {layers.map((l) => (
@@ -185,9 +185,9 @@ export const PaintToolsPanel: React.FC = () => {
               disabled={isLoading}
               style={{
                 padding: '4px 2px',
-                background: layer === l.id ? '#0284c7' : '#27272a',
+                background: layer === l.id ? '#0284c7' : 'var(--panel-bg)',
                 color: '#fff',
-                border: layer === l.id ? '1px solid #38bdf8' : '1px solid #3f3f46',
+                border: layer === l.id ? '1px solid #38bdf8' : '1px solid var(--control-bg)',
                 borderRadius: 6,
                 cursor: isLoading ? 'not-allowed' : 'pointer',
                 fontSize: '0.72rem',
@@ -203,9 +203,9 @@ export const PaintToolsPanel: React.FC = () => {
 
       {/* Filament Palette (Color layer only) */}
       {layer === 'color' && (
-        <div style={{ marginBottom: 10, background: '#18181b', padding: '8px', borderRadius: 8 }}>
+        <div style={{ marginBottom: 10, background: 'var(--canvas-bg)', padding: '8px', borderRadius: 8 }}>
           <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 6 }}>
-            Filament Palette <span style={{ color: '#64748b' }}>(Keys 1..9)</span>
+            {t("Filament Palette")}<span style={{ color: '#64748b' }}>{t("(Keys 1..9)")}</span>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {filamentColors.map((col, idx) => {
@@ -224,7 +224,7 @@ export const PaintToolsPanel: React.FC = () => {
                     height: 28,
                     borderRadius: '50%',
                     background: col,
-                    border: isSelected ? '3px solid #38bdf8' : '2px solid #52525b',
+                    border: isSelected ? '3px solid #38bdf8' : '2px solid var(--border-color)',
                     boxShadow: isSelected ? '0 0 8px #38bdf8' : 'none',
                     cursor: 'pointer',
                     color: '#fff',
@@ -247,10 +247,10 @@ export const PaintToolsPanel: React.FC = () => {
 
       {/* Tool Choices (Circle, Sphere, Smart fill, Bucket fill, Triangle) */}
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 4 }}>Tool</div>
+        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 4 }}>{t("Tool")}</div>
         <div
           role="group"
-          aria-label="Painting Tool"
+          aria-label={t("Painting Tool")}
           style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}
         >
           {tools.map((t) => (
@@ -264,9 +264,9 @@ export const PaintToolsPanel: React.FC = () => {
               title={t.label}
               style={{
                 padding: '6px 2px',
-                background: tool === t.id ? 'rgba(56, 189, 248, 0.25)' : '#27272a',
-                color: tool === t.id ? '#38bdf8' : '#e4e4e7',
-                border: tool === t.id ? '1px solid #38bdf8' : '1px solid #3f3f46',
+                background: tool === t.id ? 'rgba(56, 189, 248, 0.25)' : 'var(--panel-bg)',
+                color: tool === t.id ? '#38bdf8' : 'var(--text-color)',
+                border: tool === t.id ? '1px solid #38bdf8' : '1px solid var(--control-bg)',
                 borderRadius: 6,
                 cursor: isLoading ? 'not-allowed' : 'pointer',
                 fontSize: '0.7rem',
@@ -287,8 +287,8 @@ export const PaintToolsPanel: React.FC = () => {
       {(tool === 'circle' || tool === 'sphere') && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: 2 }}>
-            <span>Brush Size <span style={{ color: '#64748b' }}>(Alt+wheel)</span></span>
-            <span id="cursor-radius-value" style={{ color: '#e4e4e7' }}>{cursorRadius.toFixed(2)} mm</span>
+            <span>{t("Brush Size")}<span style={{ color: '#64748b' }}>{t("(Alt+wheel)")}</span></span>
+            <span id="cursor-radius-value" style={{ color: 'var(--text-color)' }}>{cursorRadius.toFixed(2)} {t("mm")}</span>
           </div>
           <input
             type="range"
@@ -307,8 +307,8 @@ export const PaintToolsPanel: React.FC = () => {
       {(tool === 'smart_fill' || tool === 'bucket') && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: 2 }}>
-            <span>Smart Fill Angle</span>
-            <span id="smart-fill-angle-value" style={{ color: '#e4e4e7' }}>{smartFillAngle}°</span>
+            <span>{t("Smart Fill Angle")}</span>
+            <span id="smart-fill-angle-value" style={{ color: 'var(--text-color)' }}>{smartFillAngle}°</span>
           </div>
           <input
             type="range"
@@ -327,8 +327,8 @@ export const PaintToolsPanel: React.FC = () => {
       {layer === 'support' && (
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: 2 }}>
-            <span>Highlight Overhangs</span>
-            <span id="overhang-angle-value" style={{ color: '#e4e4e7' }}>{overhangAngle}°</span>
+            <span>{t("Highlight Overhangs")}</span>
+            <span id="overhang-angle-value" style={{ color: 'var(--text-color)' }}>{overhangAngle}°</span>
           </div>
           <input
             type="range"
@@ -349,7 +349,7 @@ export const PaintToolsPanel: React.FC = () => {
               onChange={(e) => setOverhangOnly(e.target.checked)}
               style={{ accentColor: '#38bdf8' }}
             />
-            <span>On highlighted overhangs only</span>
+            <span>{t("On highlighted overhangs only")}</span>
           </label>
         </div>
       )}
@@ -364,7 +364,7 @@ export const PaintToolsPanel: React.FC = () => {
             onChange={(e) => setTriangleSplitting(e.target.checked)}
             style={{ accentColor: '#38bdf8' }}
           />
-          <span>Triangle splitting (adaptive mesh subdivision)</span>
+          <span>{t("Triangle splitting (adaptive mesh subdivision)")}</span>
         </label>
       </div>
 
@@ -376,35 +376,35 @@ export const PaintToolsPanel: React.FC = () => {
           borderRadius: 6,
           padding: '6px 8px',
           fontSize: '0.7rem',
-          color: '#a1a1aa',
+          color: 'var(--text-muted)',
           marginBottom: 10,
           lineHeight: '1.4'
         }}
       >
         {layer === 'support' && (
           <>
-            <div><strong>Left button:</strong> Enforce support (Green)</div>
-            <div><strong>Right button:</strong> Block support (Red)</div>
-            <div><strong>Shift + Left:</strong> Erase</div>
+            <div><strong>{t("Left button:")}</strong> {t("Enforce support (Green)")}</div>
+            <div><strong>{t("Right button:")}</strong> {t("Block support (Red)")}</div>
+            <div><strong>{t("Shift + Left:")}</strong> {t("Erase")}</div>
           </>
         )}
         {layer === 'seam' && (
           <>
-            <div><strong>Left button:</strong> Enforce seam (Green)</div>
-            <div><strong>Right button:</strong> Block seam (Red)</div>
-            <div><strong>Shift + Left:</strong> Erase</div>
+            <div><strong>{t("Left button:")}</strong> {t("Enforce seam (Green)")}</div>
+            <div><strong>{t("Right button:")}</strong> {t("Block seam (Red)")}</div>
+            <div><strong>{t("Shift + Left:")}</strong> {t("Erase")}</div>
           </>
         )}
         {layer === 'color' && (
           <>
-            <div><strong>Left button:</strong> Paint Filament #{activeFilament}</div>
-            <div><strong>Right button / Shift:</strong> Erase</div>
+            <div><strong>{t("Left button:")}</strong> {t("Paint Filament #")}{activeFilament}</div>
+            <div><strong>{t("Right button / Shift:")}</strong> {t("Erase")}</div>
           </>
         )}
         {layer === 'fuzzy' && (
           <>
-            <div><strong>Left button:</strong> Paint Fuzzy Skin</div>
-            <div><strong>Right button / Shift:</strong> Erase</div>
+            <div><strong>{t("Left button:")}</strong> {t("Paint Fuzzy Skin")}</div>
+            <div><strong>{t("Right button / Shift:")}</strong> {t("Erase")}</div>
           </>
         )}
       </div>
@@ -428,8 +428,7 @@ export const PaintToolsPanel: React.FC = () => {
             fontWeight: 500
           }}
         >
-          Erase All
-        </button>
+          {t("Erase All")}</button>
         <button
           type="button"
           id="paint-done-btn"
@@ -446,8 +445,7 @@ export const PaintToolsPanel: React.FC = () => {
             fontWeight: 500
           }}
         >
-          Done
-        </button>
+          {t("Done")}</button>
       </div>
     </div>
   );

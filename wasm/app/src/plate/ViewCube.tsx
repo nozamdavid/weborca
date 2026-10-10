@@ -7,12 +7,12 @@ const HALF = 30;
 
 /** Each face: the world axes of its normal, its right and its up, and the camera view a click on it selects. */
 const FACES: { label: string; n: [number, number, number]; u: [number, number, number]; v: [number, number, number]; view: CameraView }[] = [
-  { label: 'Top', n: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0], view: 1 },
-  { label: 'Bottom', n: [0, 0, -1], u: [1, 0, 0], v: [0, -1, 0], view: 2 },
-  { label: 'Front', n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1], view: 3 },
-  { label: 'Rear', n: [0, 1, 0], u: [-1, 0, 0], v: [0, 0, 1], view: 4 },
-  { label: 'Left', n: [-1, 0, 0], u: [0, -1, 0], v: [0, 0, 1], view: 5 },
-  { label: 'Right', n: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1], view: 6 }
+  { label: "Top", n: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0], view: 1 },
+  { label: "Bottom", n: [0, 0, -1], u: [1, 0, 0], v: [0, -1, 0], view: 2 },
+  { label: "Front", n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1], view: 3 },
+  { label: "Rear", n: [0, 1, 0], u: [-1, 0, 0], v: [0, 0, 1], view: 4 },
+  { label: "Left", n: [-1, 0, 0], u: [0, -1, 0], v: [0, 0, 1], view: 5 },
+  { label: "Right", n: [1, 0, 0], u: [0, 1, 0], v: [0, 0, 1], view: 6 }
 ];
 
 /** CSS matrix placing a face of the cube, given the rotation that takes world vectors into the camera's frame. */
@@ -62,7 +62,7 @@ export const ViewCube: React.FC<{ getCameraQuaternion: () => THREE.Quaternion | 
             onClick={() => setCameraView(face.view)}
             style={{
               position: 'absolute', left: -HALF, top: -HALF, width: HALF * 2, height: HALF * 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(60, 66, 76, 0.92)', border: '1px solid rgba(255,255,255,0.35)', color: '#e4e4e7', fontSize: 11, fontWeight: 600,
+              background: 'rgba(60, 66, 76, 0.92)', border: '1px solid rgba(255,255,255,0.35)', color: 'var(--text-color)', fontSize: 11, fontWeight: 600,
               cursor: 'pointer', userSelect: 'none', backfaceVisibility: 'hidden'
             }}
           >

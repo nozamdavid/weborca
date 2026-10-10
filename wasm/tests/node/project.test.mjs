@@ -168,4 +168,19 @@ describe('Orca WASM Engine Project Operations Test Suite', () => {
     assert.equal(res.objects.length, 1, 'cube.obj must load 1 object');
     assert.equal(res.objects[0].name, 'cube.obj');
   });
+  test('global project overrides, notes and embedded bed artwork survive 3MF import', async () => {
+    await core.call('selectPresets', { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: ['Generic PLA @System'] });
+    const options = {
+      notes: 'Project notes survive refresh', wall_loops: '7',
+      bed_custom_texture: 'data:image/svg+xml;base64,PHN2Zy8+',
+      bed_custom_model: 'data:application/octet-stream;base64,dGVzdA=='
+    };
+    await core.call('setOptions', { options });
+    await core.call('saveProject', { path: '/out/overrides.3mf' });
+    await core.call('setOptions', { options: { notes: '', wall_loops: '3', bed_custom_texture: '', bed_custom_model: '' } });
+    await core.call('openProject', { path: '/out/overrides.3mf' });
+    const config = await core.call('getConfig', {});
+    for (const [key, value] of Object.entries(options)) assert.equal(config[key], value, key + ' must survive project import');
+  });
+
 });

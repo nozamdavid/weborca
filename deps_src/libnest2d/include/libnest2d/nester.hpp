@@ -72,8 +72,8 @@ class _Item {
 
     int binid_{BIN_ID_UNSET}, priority_{0};
     bool fixed_{false};
-
 public:
+    bool orientation_locked{false};
     int itemid_{ 0 };
     std::vector<int> extrude_ids;
     int filament_temp_type = -1; // -1 means unset. otherwise should be {0,1,2}

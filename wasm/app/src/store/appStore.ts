@@ -1,4 +1,5 @@
 import { usePrinterConnectionStore } from '../printers/connectionStore';
+import { systemProfiles } from '../presets/systemProfiles';
 import { showToast } from '../shell/toastStore';
 import { storeRecentFile } from '../shell/recentFiles';
 /**
@@ -351,9 +352,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         vendors,
         layout: layoutRes as SettingsLayout,
         configDefs,
-        userPresets,
-        isEngineReady: true,
-        isEngineInitializing: false
+        userPresets
       });
 
       try {
@@ -368,11 +367,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // The last used device decides the printer; otherwise the default vendor's.
       const device = selectedDevice();
-      const startVendor = device?.preset && device.vendor && vendors.some((v) => v.name === device.vendor) ? device.vendor : defaultVendor;
+      const deviceVendor = device ? await resolveDeviceVendor(device) : undefined;
+      const startVendor = device?.preset && deviceVendor && vendors.some((v) => v.name === deviceVendor) ? deviceVendor : defaultVendor;
       if (startVendor) {
         await get().chooseVendor(startVendor);
       }
-      if (device?.preset && device.vendor === startVendor) await get().choosePrinter(device.preset);
+      if (device?.preset && deviceVendor === startVendor) await get().choosePrinter(device.preset);
+      await restoreDeviceFilaments();
+      applyingDevice = false;
+      set({ isEngineReady: true, isEngineInitializing: false });
     } catch (err: any) {
       set({
         isEngineInitializing: false,
@@ -1481,19 +1484,82 @@ const selectedDevice = () => {
   return printers.find((p) => p.id === selectedPrinterId);
 };
 
-/** Selects the printer preset of the connected device, so the Prepare tab slices for the machine that will print. */
+let applyingDevice = true;
+
+/** Older saved devices did not record a brand. Resolve it without changing the engine. */
+async function resolveDeviceVendor(device: { id: string; preset?: string; vendor?: string }): Promise<string | undefined> {
+  if (device.vendor || !device.preset) return device.vendor;
+  const state = useAppStore.getState();
+  const candidates = [...state.vendors].sort((a, b) => {
+    const matches = (vendor: string) => device.preset!.toLowerCase().startsWith(vendor.toLowerCase()) ||
+      (vendor === 'BBL' && device.preset!.startsWith('Bambu'));
+    return Number(matches(b.name)) - Number(matches(a.name));
+  });
+  for (const vendor of candidates) {
+    const profiles = await systemProfiles(vendor.name, 'machine').catch(() => []);
+    if (!profiles.some((p) => p.name === device.preset)) continue;
+    const store = usePrinterConnectionStore.getState();
+    const saved = store.printers.find((p) => p.id === device.id);
+    if (saved) usePrinterConnectionStore.setState({ printers: store.printers.map((p) => p.id === device.id ? { ...p, vendor: vendor.name } : p) });
+    return vendor.name;
+  }
+  return undefined;
+}
+
+async function restoreDeviceFilaments() {
+  const device = selectedDevice();
+  if (!device?.filamentPresets?.length) return;
+  const app = useAppStore.getState();
+  const valid = device.filamentPresets.filter((name) => app.filaments.some((p) => p.name === name) ||
+    app.userPresets.some((p) => p.kind === 'filament' && p.name === name));
+  if (!valid.length) return;
+  // Use the normal preset path so all per-slot settings reach the engine, not just the dropdowns.
+  for (let i = 0; i < valid.length; i++) {
+    const user = useAppStore.getState().userPresets.find((p) => p.kind === 'filament' && p.name === valid[i]);
+    if (user) await useAppStore.getState().selectUserPreset('filament', valid[i], i);
+    else await useAppStore.getState().chooseFilament(valid[i], i);
+  }
+  while (useAppStore.getState().selectedFilaments.length > valid.length) await useAppStore.getState().removeFilamentSlot();
+  for (let i = 0; i < valid.length; i++) {
+    if (device.filamentColors?.[i]) await useAppStore.getState().setSlotColor(i, device.filamentColors[i]);
+  }
+}
+
+/** Selects the connected device's printer and filament setup. */
 async function applyDevicePreset() {
   const device = selectedDevice();
   const state = useAppStore.getState();
-  if (!state.isEngineReady || !device?.preset || state.selectedPrinter === device.preset) return;
-  if (device.vendor && device.vendor !== state.selectedVendor) await state.chooseVendor(device.vendor);
-  else if (!state.printers.some((p) => p.name === device.preset)) return;
-  await useAppStore.getState().choosePrinter(device.preset);
+  if (!state.isEngineReady || !device?.preset) return;
+  applyingDevice = true;
+  useAppStore.setState({ isEngineReady: false, isEngineInitializing: true });
+  try {
+    const vendor = await resolveDeviceVendor(device);
+    if (state.selectedPrinter !== device.preset) {
+      if (vendor && vendor !== state.selectedVendor) await state.chooseVendor(vendor);
+      else if (!state.printers.some((p) => p.name === device.preset)) return;
+      await useAppStore.getState().choosePrinter(device.preset);
+    }
+    await restoreDeviceFilaments();
+  } finally {
+    applyingDevice = false;
+    useAppStore.setState({ isEngineReady: true, isEngineInitializing: false });
+  }
 }
 
 let lastDeviceId = usePrinterConnectionStore.getState().selectedPrinterId;
+let deviceSwitch = Promise.resolve();
 usePrinterConnectionStore.subscribe((s) => {
   if (s.selectedPrinterId === lastDeviceId) return;
   lastDeviceId = s.selectedPrinterId;
-  void applyDevicePreset();
+  deviceSwitch = deviceSwitch.then(applyDevicePreset).catch((err) => {
+    useAppStore.setState({ engineError: String(err) });
+  });
+});
+
+useAppStore.subscribe((state, previous) => {
+  if (applyingDevice || !state.isEngineReady || state.isModelLoading || state.engineError) return;
+  const device = selectedDevice();
+  if (!device || device.preset !== state.selectedPrinter) return;
+  if (state.selectedFilaments === previous.selectedFilaments && state.currentConfig.filament_colour === previous.currentConfig.filament_colour) return;
+  usePrinterConnectionStore.getState().saveFilaments(device.id, [...state.selectedFilaments], (state.currentConfig.filament_colour || '').split(';'));
 });

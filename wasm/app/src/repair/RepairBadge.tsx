@@ -7,8 +7,10 @@
 import React from 'react';
 import { useRepairStore } from './repairStore';
 import { useCutStore } from '../cut';
+import { useTranslation } from "../i18n";
 
 export const RepairBadge: React.FC = () => {
+    const { t } = useTranslation();
   const selectedObjectId = useRepairStore((s) => s.selectedObjectId);
   const health = useRepairStore((s) => s.health);
   const isChecking = useRepairStore((s) => s.isChecking);
@@ -39,7 +41,7 @@ export const RepairBadge: React.FC = () => {
           color: '#9ca3af'
         }}
       >
-        <span>Checking mesh health...</span>
+        <span>{t("Checking mesh health...")}</span>
       </div>
     );
   }
@@ -63,8 +65,7 @@ export const RepairBadge: React.FC = () => {
           cursor: 'pointer'
         }}
       >
-        Check Mesh
-      </button>
+        {t("Check Mesh")}</button>
     );
   }
 
@@ -75,7 +76,7 @@ export const RepairBadge: React.FC = () => {
       <div
         id="repair-badge-manifold"
         data-testid="repair-badge-manifold"
-        title="Mesh boundary check passed (0 open edges, 0 degenerate facets; does not guarantee zero internal self-intersections)"
+        title={t("Mesh boundary check passed (0 open edges, 0 degenerate facets; does not guarantee zero internal self-intersections)")}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -90,7 +91,7 @@ export const RepairBadge: React.FC = () => {
         }}
       >
         <span>✓</span>
-        <span>Watertight</span>
+        <span>{t("Watertight")}</span>
       </div>
     );
   }
@@ -115,8 +116,8 @@ export const RepairBadge: React.FC = () => {
         color: '#fde68a'
       }}
     >
-      <span title="Mesh contains topological defects (non-manifold boundary or degenerate facets)">
-        ⚠️ {issueText}
+      <span title={t("Mesh contains topological defects (non-manifold boundary or degenerate facets)")}>
+        {t("⚠️")}{issueText}
       </span>
       <button
         id="repair-object-btn"
@@ -141,15 +142,14 @@ export const RepairBadge: React.FC = () => {
         <span
           id="repair-badge-repaired"
           data-testid="repair-badge-repaired"
-          title="Mesh repaired: geometry cleaned and volume IDs updated"
+          title={t("Mesh repaired: geometry cleaned and volume IDs updated")}
           style={{
             color: '#86efac',
             fontSize: '11px',
             marginLeft: '4px'
           }}
         >
-          (Repaired)
-        </span>
+          {t("(Repaired)")}</span>
       )}
       {error && (
         <span
@@ -162,8 +162,7 @@ export const RepairBadge: React.FC = () => {
             marginLeft: '4px'
           }}
         >
-          (failed)
-        </span>
+          {t("(failed)")}</span>
       )}
     </div>
   );

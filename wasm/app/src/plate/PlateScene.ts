@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
+import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { plateTitle } from '../plates/plateName';
 import type { PlateObject, BedConfig, GizmoMode, MeshBufferData, MeshVolumePartition } from './types';
 import type { SupportPaintingData } from '../painting/types';
@@ -49,6 +50,10 @@ export class PlateScene {
   private transformControls: TransformControls;
 
   private bedGroup: THREE.Group;
+  private towerPreview: THREE.Mesh | null = null;
+  private bedAssetRevision = 0;
+  private customBedModel: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null = null;
+  private bedTexture: THREE.Texture | null = null;
   private objectsGroup: THREE.Group;
   private bedGridHelper: THREE.GridHelper | null = null;
   private axesHelper: THREE.AxesHelper | null = null;
@@ -466,6 +471,58 @@ export class PlateScene {
     this.bedGroup.add(boxLines);
   }
 
+  public setWipeTowerPreview(tower: { enabled: boolean; width?: number; depth?: number; height?: number; x?: number; y?: number; rotation?: number }, origin: [number, number, number] = [0, 0, 0]): void {
+    if (this.towerPreview) {
+      this.scene.remove(this.towerPreview);
+      this.towerPreview.geometry.dispose();
+      (this.towerPreview.material as THREE.Material).dispose();
+      this.towerPreview = null;
+    }
+    if (!tower.enabled || !tower.width || !tower.depth || !tower.height) return;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(tower.width, tower.depth, tower.height),
+      new THREE.MeshBasicMaterial({ color: 0x009688, transparent: true, opacity: 0.35, depthWrite: false }));
+    const rotation = (tower.rotation || 0) * Math.PI / 180;
+    const localCenter = new THREE.Vector3(tower.width / 2, tower.depth / 2, tower.height / 2).applyAxisAngle(new THREE.Vector3(0, 0, 1), rotation);
+    mesh.position.set(origin[0] + (tower.x || 0) + localCenter.x, origin[1] + (tower.y || 0) + localCenter.y, origin[2] + localCenter.z);
+    mesh.rotation.z = rotation;
+    mesh.name = 'prime-tower-preview';
+    this.towerPreview = mesh;
+    this.scene.add(mesh);
+  }
+
+  /** Decorative bed assets are kept outside object picking and never enter the slicing model. */
+  public async setBedAssets(assets: { model?: string; texture?: string }): Promise<void> {
+    const revision = ++this.bedAssetRevision;
+    delete this.scene.userData.lightTheme;
+    if (this.customBedModel) {
+      this.scene.remove(this.customBedModel);
+      this.customBedModel.geometry.dispose();
+      this.customBedModel.material.dispose();
+      this.customBedModel = null;
+    }
+    this.bedTexture?.dispose();
+    this.bedTexture = null;
+    if (this.bedFloorMaterial) { this.bedFloorMaterial.map = null; this.bedFloorMaterial.needsUpdate = true; }
+    const tasks: Promise<void>[] = [];
+    if (assets.texture) tasks.push(new THREE.TextureLoader().loadAsync(assets.texture).then((texture) => {
+      if (revision !== this.bedAssetRevision || this.isDestroyed) { texture.dispose(); return; }
+      texture.colorSpace = THREE.SRGBColorSpace;
+      this.bedTexture = texture;
+      if (this.bedFloorMaterial) { this.bedFloorMaterial.map = texture; this.bedFloorMaterial.color.setHex(0xffffff); this.bedFloorMaterial.needsUpdate = true; }
+    }));
+    if (assets.model) tasks.push(new STLLoader().loadAsync(assets.model).then((geometry) => {
+      if (revision !== this.bedAssetRevision || this.isDestroyed) { geometry.dispose(); return; }
+      geometry.computeBoundingBox();
+      const bounds = geometry.boundingBox!;
+      const center = bounds.getCenter(new THREE.Vector3());
+      const model = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x777c84, side: THREE.DoubleSide, transparent: true, depthWrite: false }));
+      model.position.set(this.bedConfig.center[0] - center.x, this.bedConfig.center[1] - center.y, -bounds.max.z - 0.15);
+      this.customBedModel = model;
+      this.scene.add(model);
+    }));
+    for (const result of await Promise.allSettled(tasks)) if (result.status === 'rejected') console.warn('[Bed assets]', result.reason);
+  }
+
   public setShowGrid(visible: boolean): void {
     this.showGrid = visible;
     if (this.bedGridHelper) {
@@ -825,6 +882,7 @@ export class PlateScene {
   public updateBedConfig(bedConfig: BedConfig): void {
     this.bedConfig = bedConfig;
     this.buildBed();
+    delete this.scene.userData.lightTheme;
     this.rebuildPlates();
     this.orbitControls.target.set(bedConfig.center[0], bedConfig.center[1], 0);
   }
@@ -834,6 +892,10 @@ export class PlateScene {
 
     for (const obj of objects) {
       let geo = this.geometries.get(obj.id);
+      if (geo?.userData.explodeOriginal) {
+        (geo.getAttribute('position') as THREE.BufferAttribute).copyArray(geo.userData.explodeOriginal);
+        delete geo.userData.explodeOriginal;
+      }
       if (!geo) {
         try {
           const meshData = await this.callbacks.getMesh(obj.id);
@@ -1112,7 +1174,7 @@ export class PlateScene {
     this.flattenClusters = [];
   }
 
-  /** Explode view: a purely visual radial spread of the objects; the instances' real transforms are untouched. */
+  /** Explode view spreads objects and their individual parts without changing engine transforms. */
   public setExplodeActive(active: boolean): void {
     if (this.explodeActive === active) return;
     this.explodeActive = active;
@@ -1141,6 +1203,41 @@ export class PlateScene {
   }
 
   private applyExplode(factor: number): void {
+    // Mesh partitions identify each part's facets in the merged geometry. Translate their vertices in the
+    // display buffer only; restore the original buffer before refreshing meshes or leaving the tool.
+    for (const [objectId, geometry] of this.geometries) {
+      const position = geometry.getAttribute('position') as THREE.BufferAttribute;
+      const original = geometry.userData.explodeOriginal as Float32Array | undefined;
+      if (original) position.copyArray(original);
+      const partitions = this.meshVolumes.get(objectId) ?? [];
+      if (factor > 0 && partitions.length > 1 && geometry.index) {
+        const base = original ?? (position.array as Float32Array).slice();
+        geometry.userData.explodeOriginal = base;
+        const parts = partitions.map((partition) => {
+          const vertices = new Set<number>();
+          const bounds = new THREE.Box3();
+          const point = new THREE.Vector3();
+          for (let facet = partition.firstFacet; facet < partition.firstFacet + partition.facetCount; facet++) {
+            for (let corner = 0; corner < 3; corner++) {
+              const vertex = geometry.index!.getX(facet * 3 + corner);
+              vertices.add(vertex);
+              bounds.expandByPoint(point.fromArray(base, vertex * 3));
+            }
+          }
+          return { vertices, center: bounds.getCenter(new THREE.Vector3()) };
+        });
+        const center = parts.reduce((sum, part) => sum.add(part.center), new THREE.Vector3()).divideScalar(parts.length);
+        parts.forEach((part, i) => {
+          const direction = part.center.clone().sub(center);
+          if (direction.lengthSq() < 1e-8) direction.set(Math.cos(i * 2 * Math.PI / parts.length), Math.sin(i * 2 * Math.PI / parts.length), 0);
+          const offset = direction.normalize().multiplyScalar(40 * factor / 100);
+          for (const vertex of part.vertices) position.setXYZ(vertex, base[vertex * 3] + offset.x, base[vertex * 3 + 1] + offset.y, base[vertex * 3 + 2] + offset.z);
+        });
+      } else if (factor <= 0) delete geometry.userData.explodeOriginal;
+      position.needsUpdate = true;
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+    }
     const meshes = Array.from(this.objectMeshes.values());
     if (meshes.length === 0) return;
 
@@ -1664,8 +1761,15 @@ export class PlateScene {
     this.animationFrameId = requestAnimationFrame(this.animate);
 
     this.orbitControls.update();
+    const light = document.documentElement.dataset.theme === 'light';
+    if (this.scene.userData.lightTheme !== light) {
+      this.scene.userData.lightTheme = light;
+      (this.scene.background as THREE.Color).setHex(light ? 0xe7e9ec : 0x1e1e24);
+      this.bedFloorMaterial?.color.setHex(this.bedTexture ? 0xffffff : light ? 0xd4d8dd : 0x27272a);
+    }
     // See-through when the camera is below the bed, so parts stay visible from underneath.
     if (this.bedFloorMaterial) this.bedFloorMaterial.opacity = this.camera.position.z < 0 ? 0.25 : 1;
+    if (this.customBedModel) this.customBedModel.material.opacity = this.camera.position.z < 0 ? 0.25 : 1;
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -1733,6 +1837,11 @@ export class PlateScene {
   }
 
   public destroy(): void {
+    this.setWipeTowerPreview({ enabled: false });
+    this.bedAssetRevision++;
+    this.bedTexture?.dispose();
+    this.customBedModel?.geometry.dispose();
+    this.customBedModel?.material.dispose();
     this.isDestroyed = true;
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);

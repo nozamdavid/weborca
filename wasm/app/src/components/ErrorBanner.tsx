@@ -1,7 +1,9 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
+import { useTranslation } from "../i18n";
 
 export const ErrorBanner: React.FC = () => {
+    const { t } = useTranslation();
   const engineError = useAppStore((state) => state.engineError);
   const setEngineError = useAppStore((state) => state.setEngineError);
 
@@ -25,7 +27,7 @@ export const ErrorBanner: React.FC = () => {
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ fontSize: '18px' }}>⚠️</span>
+        <span style={{ fontSize: '18px' }}>{t("⚠️")}</span>
         <span id="error-message">{engineError}</span>
       </div>
       <button
@@ -41,8 +43,7 @@ export const ErrorBanner: React.FC = () => {
           fontSize: '12px'
         }}
       >
-        Dismiss
-      </button>
+        {t("Dismiss")}</button>
     </div>
   );
 };

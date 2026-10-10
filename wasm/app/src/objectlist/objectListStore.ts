@@ -1,8 +1,19 @@
 import { create } from 'zustand';
 import { getEngine } from '../engine/orcaEngine';
 import { usePlateStore } from '../plate/plateStore';
+import { useAppStore } from '../store/appStore';
 import { useHistoryStore } from '../history';
 import type { ObjectTreeNode, AddVolumeParams } from './types';
+
+
+async function refreshVolumeGeometry(objectId: number) {
+  const plate = usePlateStore.getState();
+  const cache = new Map(plate.meshCache);
+  cache.delete(objectId);
+  usePlateStore.setState({ meshCache: cache });
+  await plate.refreshObjects();
+  useAppStore.getState().invalidateSlicePreview();
+}
 
 export interface ObjectListState {
   objects: ObjectTreeNode[];
@@ -18,6 +29,7 @@ export interface ObjectListState {
   deleteVolume: (objectId: number, volumeId: number) => Promise<void>;
   deleteObject: (objectId: number) => Promise<void>;
   renameObject: (objectId: number, name: string) => Promise<void>;
+  moveVolume: (objectId: number, volumeId: number, toIndex: number) => Promise<void>;
   moveObject: (objectId: number, toIndex: number) => Promise<void>;
   renameVolume: (objectId: number, volumeId: number, name: string) => Promise<void>;
   setObjectConfig: (
@@ -100,6 +112,7 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
         res = await engine.call('addVolume', params);
       }
       const volumeId = res.volumeId || res.id;
+      await refreshVolumeGeometry(params.objectId);
       await get().refreshTree();
       // Select newly added volume
       set({ selectedObjectId: params.objectId, selectedVolumeId: volumeId });
@@ -122,6 +135,7 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
       } else {
         await engine.call('deleteVolume', { objectId, volumeId });
       }
+      await refreshVolumeGeometry(objectId);
       if (get().selectedVolumeId === volumeId) {
         set({ selectedVolumeId: null });
       }
@@ -150,6 +164,15 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
     }
   },
 
+  moveVolume: async (objectId: number, volumeId: number, toIndex: number) => {
+    const engine = await getEngine();
+    await engine.call("moveVolume", { objectId, volumeId, toIndex });
+    await refreshVolumeGeometry(objectId);
+    await get().refreshTree();
+    try {
+      await useHistoryStore.getState().commitTransaction("Reorder volume");
+    } catch (_) {}
+  },
   moveObject: async (objectId: number, toIndex: number) => {
     const engine = await getEngine();
     await engine.call('moveObject', { objectId, toIndex });

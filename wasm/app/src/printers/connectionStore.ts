@@ -29,6 +29,7 @@ interface PrinterConnectionState {
   savePrinter: (printer: PhysicalPrinter) => void;
   deletePrinter: (id: string) => void;
   selectPrinter: (id: string) => void;
+  saveFilaments: (id: string, presets: string[], colors: string[]) => void;
 }
 
 export const usePrinterConnectionStore = create<PrinterConnectionState>()(
@@ -59,7 +60,10 @@ export const usePrinterConnectionStore = create<PrinterConnectionState>()(
           const printers = s.printers.filter((p) => p.id !== id);
           return { printers, selectedPrinterId: s.selectedPrinterId === id ? printers[0]?.id ?? null : s.selectedPrinterId };
         }),
-      selectPrinter: (selectedPrinterId) => set({ selectedPrinterId })
+      selectPrinter: (selectedPrinterId) => set({ selectedPrinterId }),
+      saveFilaments: (id, filamentPresets, filamentColors) => set((s) => ({
+        printers: s.printers.map((p) => p.id === id ? { ...p, filamentPresets, filamentColors } : p)
+      }))
     }),
     {
       name: 'orca-printers',

@@ -180,10 +180,12 @@ async function runSuite(browserType, name, mock) {
 }
 
 const mock = await startMockMoonraker();
+const ffMock = await startMockFlashforge();
 await startServer(PORT, 'printers');
 try {
   await runSuite(chromium, 'chromium', mock);
   await runSuite(firefox, 'firefox', mock);
+  await runFlashforgeSuite(chromium, 'chromium', ffMock);
   console.log('All printer tests passed on Chromium and Firefox.');
 } catch (err) {
   console.error('Printer tests FAILED:', err);
@@ -191,4 +193,62 @@ try {
 } finally {
   await stopServer(PORT);
   await mock.close();
+  await ffMock.close();
 }
+
+import { startMockFlashforge } from '../node/lib/mockPrinters.mjs';
+
+async function runFlashforgeSuite(browserType, name, mock) {
+  const browser = await browserType.launch();
+  const page = await browser.newPage({ viewport: { width: 1400, height: 850 } });
+  const log = (msg) => console.log(`[${name} Flashforge] ${msg}`);
+  const text = (selector) => page.locator(selector).innerText();
+
+  try {
+    await page.goto(BASE_URL);
+    await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
+    await page.click('#tab-device');
+    await page.click('#device-add-printer');
+    await page.waitForSelector('#printer-connection-dialog');
+
+    log('configure flashforge');
+    await page.fill('#pc-name', 'Mock Flashforge');
+    await page.selectOption('#pc-host-type', 'flashforge');
+    await page.fill('#pc-host', `127.0.0.1:${mock.port}`);
+    await page.fill('#pc-apikey', 'CODE');
+    await page.fill('#pc-serial', 'FF123');
+
+    await page.click('#pc-test');
+    await page.waitForSelector('#pc-test-result');
+    if (await text('#pc-test-result') !== '✓ Flashforge printer connected') {
+       const res = await text('#pc-test-result');
+       throw new Error(`Test connection failed: ${res}`);
+    }
+    
+    await page.click('#pc-save');
+    await page.waitForSelector('#printer-connection-dialog', { state: 'detached' });
+
+    log('device tab connected');
+    await page.waitForSelector('#device-connection-dot[data-status="online"]');
+    
+    await page.waitForFunction(() => document.getElementById('device-state')?.textContent === 'unknown');
+    log('test passed');
+
+    // Test rejection
+    await page.click('#tab-device');
+    await page.click('#device-edit-printer');
+    await page.fill('#pc-apikey', 'WRONG');
+    await page.click('#pc-test');
+    await page.waitForFunction(() => document.getElementById('pc-test-result')?.dataset.ok === 'false');
+    const testRes = await text('#pc-test-result');
+    if (!testRes.includes('Invalid credentials')) throw new Error('Did not reject invalid credentials: ' + testRes);
+    await page.click('#pc-cancel');
+    
+    await page.click('#device-edit-printer');
+    await page.click('#pc-delete');
+  } finally {
+    await browser.close();
+  }
+}
+
+// Will run this at the bottom.

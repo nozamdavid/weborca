@@ -89,7 +89,12 @@ for (const vendor of vendorList) {
   const subFiles = walkFiles(vendorSubdir);
   for (const file of subFiles) {
     const relPath = path.relative(profilesDir, file).replace(/\\/g, '/');
-    bundle.files[relPath] = fs.readFileSync(file, 'utf8');
+    if (file.endsWith('.json')) bundle.files[relPath] = fs.readFileSync(file, 'utf8');
+    else if (/\.(stl|svg|png|jpg|jpeg)$/i.test(file) && !file.endsWith('_cover.png')) {
+      const assetPath = path.join(profilesOutDir, 'assets', relPath);
+      fs.mkdirSync(path.dirname(assetPath), { recursive: true });
+      fs.copyFileSync(file, assetPath);
+    }
   }
 
   // Printer pictures shown when adding a printer: profiles/covers/<vendor>/<model>_cover.png

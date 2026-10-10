@@ -3,8 +3,10 @@ import { isDefaultPlateName, plateTitle } from './plateName';
 import { PlateSettingsPopover } from './PlateSettingsPopover';
 import { usePlatesStore } from './platesStore';
 import { useAppStore } from '../store/appStore';
+import { useTranslation } from "../i18n";
 
 export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ style }) => {
+    const { t } = useTranslation();
   const plates = usePlatesStore((s) => s.plates);
   const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
   const setActivePlate = usePlatesStore((s) => s.setActivePlate);
@@ -62,7 +64,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
               data-testid={`plate-tab-${plate.index}`}
               onClick={() => setActivePlate(plate.index)}
               onDoubleClick={() => setRenaming({ index: plate.index, value: isDefaultPlateName(plate.name, plate.index) ? '' : plate.name })}
-              title="Double-click to rename"
+              title={t("Double-click to rename")}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -125,8 +127,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
                     lineHeight: 1
                   }}
                 >
-                  &times;
-                </button>
+                  {t("&times;")}</button>
               )}
             </div>
           );
@@ -139,7 +140,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
         id="add-plate-btn"
         data-testid="add-plate-btn"
         onClick={() => addPlate()}
-        title="Add new plate"
+        title={t("Add new plate")}
         style={{
           background: 'rgba(255, 255, 255, 0.08)',
           border: '1px dashed rgba(255, 255, 255, 0.25)',
@@ -153,18 +154,16 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
           transition: 'background 0.15s ease'
         }}
       >
-        + Add Plate
-      </button>
+        {t("+ Add Plate")}</button>
 
       {/* Settings of the active plate */}
       <div style={{ position: 'relative' }}>
         <button
           type="button" id="plate-settings-btn" data-testid="plate-settings-btn" aria-expanded={settingsOpen}
-          onClick={() => setSettingsOpen(!settingsOpen)} title="Settings of this plate"
+          onClick={() => setSettingsOpen(!settingsOpen)} title={t("Settings of this plate")}
           style={{ background: settingsOpen ? '#009688' : 'rgba(255, 255, 255, 0.08)', border: '1px solid rgba(255, 255, 255, 0.25)', color: '#fff', borderRadius: 4, padding: '4px 10px', fontSize: '0.85rem', cursor: 'pointer' }}
         >
-          Plate settings
-        </button>
+          {t("Plate settings")}</button>
         {settingsOpen && plates.find((p) => p.index === activePlateIndex) && <PlateSettingsPopover plate={plates.find((p) => p.index === activePlateIndex)!} />}
       </div>
 
@@ -210,8 +209,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
             cursor: isSlicing ? 'not-allowed' : 'pointer'
           }}
         >
-          &#9660;
-        </button>
+          {t("&#9660;")}</button>
 
         {sliceMenuOpen && (
           <div
@@ -222,7 +220,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
               bottom: '100%',
               right: 0,
               marginBottom: 6,
-              background: '#27272a',
+              background: 'var(--panel-bg)',
               borderRadius: 6,
               border: '1px solid rgba(255, 255, 255, 0.15)',
               boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
@@ -251,7 +249,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
                 cursor: 'pointer'
               }}
             >
-              Slice Plate {activePlateIndex + 1}
+              {t("Slice Plate")}{activePlateIndex + 1}
             </button>
             <button
               type="button"
@@ -272,8 +270,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
                 cursor: 'pointer'
               }}
             >
-              Slice All Plates
-            </button>
+              {t("Slice All Plates")}</button>
           </div>
         )}
       </div>

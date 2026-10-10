@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { ModalBackdrop } from '../components/ModalBackdrop';
+import { useTranslation } from "../i18n";
 
 export const SavePresetDialog: React.FC = () => {
+    const { t } = useTranslation();
   const {
     savePresetDialogTarget,
     closeSavePresetDialog,
@@ -62,7 +64,7 @@ export const SavePresetDialog: React.FC = () => {
       <div className="modal-box preset-modal" style={{ minWidth: 380 }}>
         <form onSubmit={handleSubmit}>
           <div className="modal-header">
-            <div className="modal-title">Save User {kind.toUpperCase()} Preset</div>
+            <div className="modal-title">{t("Save User")}{kind.toUpperCase()} {t("Preset")}</div>
             <button
               type="button"
               className="modal-close-btn"
@@ -75,7 +77,7 @@ export const SavePresetDialog: React.FC = () => {
 
           <div className="modal-body">
             <p className="preset-dialog-hint">
-              Based on: <strong>{baseName}</strong>
+              {t("Based on:")}<strong>{baseName}</strong>
             </p>
             {error && (
               <div
@@ -95,13 +97,13 @@ export const SavePresetDialog: React.FC = () => {
               </div>
             )}
             <div className="form-group">
-              <label htmlFor="preset-name-input">Preset Name:</label>
+              <label htmlFor="preset-name-input">{t("Preset Name:")}</label>
               <input
                 type="text"
                 id="preset-name-input"
                 data-testid="preset-name-input"
                 className="form-control"
-                placeholder="Enter preset name..."
+                placeholder={t("Enter preset name...")}
                 value={name}
                 autoFocus
                 onChange={(e) => {
@@ -118,16 +120,14 @@ export const SavePresetDialog: React.FC = () => {
               className="btn btn-secondary"
               onClick={handleClose}
             >
-              Cancel
-            </button>
+              {t("Cancel")}</button>
             <button
               type="submit"
               className="btn btn-primary"
               data-testid="save-preset-confirm-btn"
               disabled={!name.trim()}
             >
-              Save Preset
-            </button>
+              {t("Save Preset")}</button>
           </div>
         </form>
       </div>

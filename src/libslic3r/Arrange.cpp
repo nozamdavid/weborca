@@ -1019,6 +1019,7 @@ void _arrange(
     // polygon nesting, a convex hull needs to be calculated.
     if (params.allow_rotations) {
         for (auto &itm : shapes) {
+            if (itm.orientation_locked) continue;
             itm.rotation(min_area_boundingbox_rotation(itm.transformedShape()));
 
             // If the item is too big, try to find a rotation that makes it fit
@@ -1102,6 +1103,7 @@ static void process_arrangeable(const ArrangePolygon &arrpoly,
     item.itemId(arrpoly.itemid);
     item.extrude_ids = arrpoly.extrude_ids;
     item.height = arrpoly.height;
+    item.orientation_locked = arrpoly.orientation_locked;
     item.name = arrpoly.name;
     //BBS: add virtual object logic
     item.is_virt_object = arrpoly.is_virt_object;

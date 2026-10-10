@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
 import { TrashIcon } from './Icons';
+import { useTranslation } from "../i18n";
 
 interface ObjectSettingRowProps {
   optionKey: string;
@@ -15,6 +16,7 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
   onChange,
   onRemove
 }) => {
+    const { t } = useTranslation();
   const configDefs = useAppStore((state) => state.configDefs);
   const def = configDefs[optionKey];
 
@@ -53,7 +55,7 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
             className="setting-select"
             style={{ flex: 1, fontSize: '0.8rem' }}
           >
-            <option value="0">0: Default (Inherit)</option>
+            <option value="0">{t("0: Default (Inherit)")}</option>
             {Array.from({ length: count }, (_, i) => {
               const ext = i + 1;
               const name = selectedFilaments?.[i] || `Filament ${ext}`;
@@ -112,7 +114,7 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
           className={optType === 'int' || optType === 'float' ? 'setting-number' : 'setting-text'}
           style={{ flex: 1, minWidth: 60, fontSize: '0.8rem' }}
         />
-        {unit && <span className="setting-unit" style={{ fontSize: '0.75rem', color: '#a1a1aa' }}>{unit}</span>}
+        {unit && <span className="setting-unit" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{unit}</span>}
       </div>
     );
   };
@@ -138,7 +140,7 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
         style={{
           flex: '0 0 45%',
           fontSize: '0.8rem',
-          color: '#e4e4e7',
+          color: 'var(--text-color)',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap'
@@ -155,11 +157,11 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
           id={`override-remove-${optionKey}`}
           data-testid={`override-remove-${optionKey}`}
           onClick={onRemove}
-          title="Remove override"
+          title={t("Remove override")}
           style={{
             background: 'transparent',
             border: 'none',
-            color: '#a1a1aa',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
             padding: 2,
             display: 'flex',
@@ -168,7 +170,7 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
             borderRadius: 4
           }}
           onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = '#a1a1aa')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
         >
           <TrashIcon size={14} />
         </button>

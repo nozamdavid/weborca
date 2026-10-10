@@ -217,3 +217,47 @@ export async function startMockPrusaLink({ user = 'maker', password = 'secret' }
   mock.port = await listen(server);
   return mock;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Flashforge
+// ---------------------------------------------------------------------------------------------
+
+export async function startMockFlashforge({ serialNumber = 'FF123', checkCode = 'CODE' } = {}) {
+  const mock = { uploads: [], port: 0, close: () => { server.closeAllConnections(); return new Promise((r) => server.close(r)); } };
+  const server = http.createServer(async (req, res) => {
+    const body = await readBody(req);
+    const path = req.url.split('?')[0];
+
+    if (path === '/detail' && req.method === 'POST') {
+      const payload = JSON.parse(body.toString());
+      if (payload.serialNumber !== serialNumber || payload.checkCode !== checkCode) {
+        return json(res, 200, { err: 1, msg: 'Invalid credentials' });
+      }
+      return json(res, 200, {
+        code: 0,
+        detail: {
+          matlStationInfo: {
+            slotInfos: [
+              { slotId: 1, hasFilament: 1, materialName: "PLA", materialColor: "FF0000" },
+              { slotId: 2, hasFilament: 0 }
+            ]
+          }
+        }
+      });
+    }
+
+    if (path === '/uploadGcode' && req.method === 'POST') {
+      if (req.headers['serialnumber'] !== serialNumber || req.headers['checkcode'] !== checkCode) {
+        return json(res, 200, { err: 1, msg: 'Invalid credentials' });
+      }
+      const { fields, files } = parseMultipart(body, req.headers['content-type']);
+      mock.uploads.push({ printNow: req.headers['printnow'] === 'true', filename: files.gcodeFile?.filename, content: files.gcodeFile?.content });
+      return json(res, 200, { code: 0, msg: 'Upload success' });
+    }
+
+    res.writeHead(404);
+    res.end();
+  });
+  mock.port = await listen(server);
+  return mock;
+}

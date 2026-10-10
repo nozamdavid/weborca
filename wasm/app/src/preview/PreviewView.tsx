@@ -16,8 +16,10 @@ import { SliceStatsPanel } from './SliceStatsPanel';
 import { CustomGcodeDialog } from './CustomGcodeDialog';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
 import { GCodeWindow } from './GCodeWindow';
+import { useTranslation } from "../i18n";
 
 export const PreviewView: React.FC = () => {
+    const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -241,14 +243,14 @@ export const PreviewView: React.FC = () => {
         width: '100%',
         height: '100%',
         overflow: 'hidden',
-        background: '#1e1e24'
+        background: 'var(--canvas-bg)'
       }}
     >
       {/* WebGL2 Preview Canvas - supports both #canvas and #preview-canvas selectors */}
       <canvas
         id="canvas"
         data-testid="preview-canvas"
-        aria-label="G-code toolpaths"
+        aria-label={t("G-code toolpaths")}
         ref={canvasRef}
         style={{
           width: '100%',
@@ -282,11 +284,11 @@ export const PreviewView: React.FC = () => {
           type="button"
           id="btn-reset-camera"
           onClick={resetCamera}
-          title="Reset Camera View"
+          title={t("Reset Camera View")}
           style={{
             background: 'transparent',
             border: 'none',
-            color: '#e4e4e7',
+            color: 'var(--text-color)',
             padding: '4px 8px',
             fontSize: '0.8rem',
             cursor: 'pointer',
@@ -296,8 +298,7 @@ export const PreviewView: React.FC = () => {
             gap: 4
           }}
         >
-          <span>🎯</span> Reset Camera
-        </button>
+          <span>{t("🎯")}</span> {t("Reset Camera")}</button>
         <button
           type="button"
           id="btn-toggle-gcode-window"
@@ -308,7 +309,7 @@ export const PreviewView: React.FC = () => {
           style={{
             background: showGcodeWindow ? 'rgba(234, 88, 12, 0.35)' : 'transparent',
             border: showGcodeWindow ? '1px solid rgba(234, 88, 12, 0.6)' : 'none',
-            color: layersCount === 0 ? '#71717a' : '#e4e4e7',
+            color: layersCount === 0 ? 'var(--text-dim)' : 'var(--text-color)',
             padding: '4px 8px',
             fontSize: '0.8rem',
             cursor: layersCount === 0 ? 'not-allowed' : 'pointer',
@@ -319,8 +320,7 @@ export const PreviewView: React.FC = () => {
             opacity: layersCount === 0 ? 0.6 : 1
           }}
         >
-          <span>📄</span> G-code
-        </button>
+          <span>{t("📄")}</span> {t("G-code")}</button>
       </div>
 
       {/* Outdated Slice Result Banner (prompting re-slice after layer events change) */}
@@ -346,8 +346,7 @@ export const PreviewView: React.FC = () => {
           }}
         >
           <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
-            ⚠️ Slice result is outdated. Please re-slice.
-          </span>
+            {t("⚠️ Slice result is outdated. Please re-slice.")}</span>
           <button
             type="button"
             id="btn-reslice"
@@ -364,8 +363,7 @@ export const PreviewView: React.FC = () => {
               cursor: 'pointer'
             }}
           >
-            Re-slice
-          </button>
+            {t("Re-slice")}</button>
         </div>
       )}
 
@@ -389,7 +387,7 @@ export const PreviewView: React.FC = () => {
           }}
         >
           <div className="spinner" style={{ width: 18, height: 18 }} />
-          <span>Loading WebGL2 Preview Engine...</span>
+          <span>{t("Loading WebGL2 Preview Engine...")}</span>
         </div>
       )}
 
@@ -410,7 +408,7 @@ export const PreviewView: React.FC = () => {
             zIndex: 30
           }}
         >
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>Preview Initialization Error</div>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("Preview Initialization Error")}</div>
           <div style={{ fontSize: '0.85rem' }}>{initError}</div>
         </div>
       )}
@@ -430,11 +428,10 @@ export const PreviewView: React.FC = () => {
             zIndex: 10
           }}
         >
-          <div style={{ fontSize: '2.5rem', marginBottom: 8 }}>🧵</div>
+          <div style={{ fontSize: '2.5rem', marginBottom: 8 }}>{t("🧵")}</div>
           <p style={{ margin: '0 0 4px', fontSize: '1rem', fontWeight: 500, color: '#e2e8f0' }}>
-            No G-code toolpaths loaded
-          </p>
-          <span style={{ fontSize: '0.8rem' }}>Slice a model in Prepare screen to preview toolpaths</span>
+            {t("No G-code toolpaths loaded")}</p>
+          <span style={{ fontSize: '0.8rem' }}>{t("Slice a model in Prepare screen to preview toolpaths")}</span>
         </div>
       )}
 

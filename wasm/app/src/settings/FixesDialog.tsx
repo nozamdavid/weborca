@@ -1,8 +1,10 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
 import { ModalBackdrop } from '../components/ModalBackdrop';
+import { useTranslation } from "../i18n";
 
 export const FixesDialog: React.FC = () => {
+    const { t } = useTranslation();
   const { pendingFixes, pendingFixReason, applyFixes, closeFixesDialog } = useAppStore();
 
   if (!pendingFixes || pendingFixes.length === 0) return null;
@@ -11,7 +13,7 @@ export const FixesDialog: React.FC = () => {
     <ModalBackdrop onClose={() => applyFixes('no')} data-testid="fixes-dialog">
       <div className="modal-box fixes-modal">
         <div className="modal-header">
-          <div className="modal-title">⚙️ Setting Conflict / Recommendation</div>
+          <div className="modal-title">{t("⚙️ Setting Conflict / Recommendation")}</div>
           <button
             type="button"
             className="modal-close-btn"
@@ -28,7 +30,7 @@ export const FixesDialog: React.FC = () => {
           </p>
 
           <div className="proposed-fixes-list">
-            <h4>Proposed adjustments:</h4>
+            <h4>{t("Proposed adjustments:")}</h4>
             <ul>
               {pendingFixes
                 .filter((f) => !f.reason.includes('[No:'))
@@ -48,16 +50,14 @@ export const FixesDialog: React.FC = () => {
             data-testid="fix-no-btn"
             onClick={() => applyFixes('no')}
           >
-            No / Cancel
-          </button>
+            {t("No / Cancel")}</button>
           <button
             type="button"
             className="btn btn-primary"
             data-testid="fix-yes-btn"
             onClick={() => applyFixes('yes')}
           >
-            Yes / Apply
-          </button>
+            {t("Yes / Apply")}</button>
         </div>
       </div>
     </ModalBackdrop>

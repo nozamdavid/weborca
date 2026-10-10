@@ -1,6 +1,7 @@
 import React from 'react';
 import type { PlateInfo } from './types';
 import { usePlatesStore } from './platesStore';
+import { useTranslation } from "../i18n";
 
 /** The values the engine's enums take (see `curr_bed_type` and `print_sequence` in PrintConfig.cpp). */
 const BED_TYPES: [string, string][] = [
@@ -18,6 +19,7 @@ const select: React.CSSProperties = { background: 'rgba(255,255,255,0.08)', colo
 
 /** Per-plate overrides of the print settings: they apply when this plate is sliced. */
 export const PlateSettingsPopover: React.FC<{ plate: PlateInfo }> = ({ plate }) => {
+    const { t } = useTranslation();
   const setPlateConfig = usePlatesStore((s) => s.setPlateConfig);
   const set = (key: string, value: string) => void setPlateConfig(plate.index, { [key]: value });
   const bed = plate.config.curr_bed_type;
@@ -27,26 +29,26 @@ export const PlateSettingsPopover: React.FC<{ plate: PlateInfo }> = ({ plate }) 
       id="plate-settings-popover" role="dialog" aria-label={`Settings of plate ${plate.index + 1}`}
       style={{ position: 'absolute', bottom: 'calc(100% + 10px)', left: 0, minWidth: 280, background: 'rgba(24,24,27,0.96)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, padding: 12, fontSize: '0.85rem', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}
     >
-      <strong style={{ display: 'block', marginBottom: 8 }}>Plate {plate.index + 1} settings</strong>
+      <strong style={{ display: 'block', marginBottom: 8 }}>{t("Plate")}{plate.index + 1} {t("settings")}</strong>
       <label style={row}>
-        <span>Bed type</span>
+        <span>{t("Bed type")}</span>
         <select id="plate-bed-type" style={select} value={bed ?? ''} onChange={(e) => set('curr_bed_type', e.target.value)}>
-          {bed === undefined && <option value="">Printer setting</option>}
+          {bed === undefined && <option value="">{t("Printer setting")}</option>}
           {BED_TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
       <label style={row}>
-        <span>Print sequence</span>
+        <span>{t("Print sequence")}</span>
         <select id="plate-print-sequence" style={select} value={sequence ?? ''} onChange={(e) => set('print_sequence', e.target.value)}>
-          {sequence === undefined && <option value="">Process setting</option>}
+          {sequence === undefined && <option value="">{t("Process setting")}</option>}
           {SEQUENCES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
       </label>
       <label style={row}>
-        <span>Spiral vase</span>
+        <span>{t("Spiral vase")}</span>
         <input id="plate-spiral-mode" type="checkbox" checked={plate.config.spiral_mode === '1'} onChange={(e) => set('spiral_mode', e.target.checked ? '1' : '0')} />
       </label>
-      <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>These replace the printer and process settings when this plate is sliced.</span>
+      <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{t("These replace the printer and process settings when this plate is sliced.")}</span>
     </div>
   );
 };

@@ -8,8 +8,9 @@ export interface GeneralPreferences {
   rememberRecentFiles: boolean;
   autoArrangeOnImport: boolean;
   autoSliceAfterChange: boolean;
-  /** Back the project up every minute so a closed tab can be recovered. */
+  /** Back up the project so a closed tab can be recovered. */
   autosave: boolean;
+  autosaveIntervalSeconds: number;
   /** Use the project name for exported files instead of the preset format. */
   useProjectNameForExport: boolean;
 }
@@ -33,6 +34,8 @@ export interface DisplayPreferences {
   cameraType: 'perspective' | 'orthographic';
   showSidebar: boolean;
   theme: 'dark' | 'light' | 'system';
+  toolbarOrientation: 'vertical' | 'horizontal';
+  sidebarWidth: number;
 }
 
 export interface PreferencesData {
@@ -49,6 +52,7 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
     autoArrangeOnImport: false,
     autoSliceAfterChange: false,
     autosave: true,
+    autosaveIntervalSeconds: 60,
     useProjectNameForExport: false
   },
   camera: {
@@ -68,7 +72,9 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
     showNavigator: true,
     cameraType: 'perspective',
     showSidebar: true,
-    theme: 'dark'
+    theme: 'dark',
+    toolbarOrientation: 'vertical',
+    sidebarWidth: 360
   }
 };
 

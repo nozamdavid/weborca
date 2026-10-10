@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n";
 import React, { useCallback, useEffect, useRef } from 'react';
 import { create } from 'zustand';
 
@@ -28,7 +29,7 @@ export function confirmDialog(opts: { title: string; message: string; confirmLab
 }
 
 export const confirmDiscard = (what = 'changes'): Promise<boolean> =>
-  confirmDialog({ title: 'Discard unsaved changes?', message: `Your ${what} have not been saved and will be lost.` });
+  confirmDialog({ title: "Discard unsaved changes?", message: `Your ${what} have not been saved and will be lost.` });
 
 /**
  * Backdrop of a dialog. Clicking outside the dialog or pressing Escape asks to close it, and when `dirty` the user is
@@ -77,6 +78,7 @@ export const ModalBackdrop: React.FC<
 
 /** Renders the pending confirmation of confirmDialog(). Mount once. */
 export const ConfirmHost: React.FC = () => {
+  const { t } = useTranslation();
   const request = useConfirmStore((s) => s.request);
   if (!request) return null;
   const answer = (ok: boolean) => {
@@ -84,13 +86,13 @@ export const ConfirmHost: React.FC = () => {
     request.resolve(ok);
   };
   return (
-    <ModalBackdrop onClose={() => answer(false)} role="alertdialog" aria-label={request.title} data-testid="confirm-dialog" style={{ zIndex: 2000 }}>
+    <ModalBackdrop onClose={() => answer(false)} role="alertdialog" aria-label={t(request.title)} data-testid="confirm-dialog" style={{ zIndex: 2000 }}>
       <div className="modal-content" style={{ maxWidth: 400 }}>
-        <h3 style={{ margin: '0 0 10px' }}>{request.title}</h3>
+        <h3 style={{ margin: '0 0 10px' }}>{t(request.title)}</h3>
         <p style={{ margin: 0, color: 'var(--text-muted)' }}>{request.message}</p>
         <div className="modal-footer">
-          <button className="btn btn-secondary" data-testid="confirm-cancel" autoFocus onClick={() => answer(false)}>{request.cancelLabel}</button>
-          <button className="btn btn-primary" data-testid="confirm-ok" onClick={() => answer(true)}>{request.confirmLabel}</button>
+          <button className="btn btn-secondary" data-testid="confirm-cancel" autoFocus onClick={() => answer(false)}>{t(request.cancelLabel)}</button>
+          <button className="btn btn-primary" data-testid="confirm-ok" onClick={() => answer(true)}>{t(request.confirmLabel)}</button>
         </div>
       </div>
     </ModalBackdrop>

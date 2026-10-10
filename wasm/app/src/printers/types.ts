@@ -1,11 +1,12 @@
-export type HostType = 'moonraker' | 'octoprint' | 'prusalink' | 'prusaconnect' | 'bambu';
+export type HostType = 'moonraker' | 'octoprint' | 'prusalink' | 'prusaconnect' | 'bambu' | 'flashforge';
 
 export const HOST_TYPE_LABELS: Record<HostType, string> = {
   moonraker: 'Klipper (Moonraker)',
   prusalink: 'PrusaLink',
   prusaconnect: 'Prusa Connect (cloud)',
   octoprint: 'OctoPrint',
-  bambu: 'Bambu Lab (LAN mode)'
+  bambu: 'Bambu Lab (LAN mode)',
+  flashforge: 'Flashforge'
 };
 
 /** A printer preset plus how to reach the machine, like desktop's physical printer. */
@@ -16,6 +17,9 @@ export interface PhysicalPrinter {
   preset?: string;
   /** Brand of that preset, so it can be selected again after a refresh. */
   vendor?: string;
+  /** Prepare tab filament presets and colors, stored per physical device. */
+  filamentPresets?: string[];
+  filamentColors?: string[];
   host_type: HostType;
   /** Hostname, IP or URL of the API (`print_host`). */
   print_host: string;
@@ -34,7 +38,7 @@ export interface PhysicalPrinter {
   local_gateway?: string;
 }
 
-export type PrinterRunState = 'offline' | 'ready' | 'printing' | 'paused' | 'complete' | 'error';
+export type PrinterRunState = 'offline' | 'ready' | 'printing' | 'paused' | 'complete' | 'error' | 'unknown';
 
 export interface Heater {
   id: string;
@@ -64,6 +68,14 @@ export interface PrinterFile {
   modified?: number;
 }
 
+export interface PrinterFilament {
+  id: string;
+  label: string;
+  material: string;
+  color?: string;
+  presetId?: string;
+}
+
 export interface PrinterState {
   state: PrinterRunState;
   message?: string;
@@ -81,6 +93,8 @@ export interface PrinterState {
   position?: { x: number; y: number; z: number };
   /** The active tool/extruder on multi-tool machines. */
   activeTool?: string;
+  /** Loaded slots reported by the printer. Never inferred from heater count. */
+  filaments?: PrinterFilament[];
   software?: string;
   webcams?: Webcam[];
   files?: PrinterFile[];

@@ -1,14 +1,16 @@
 import React from 'react';
 import { usePrefsStore, type PrefsTabId } from './prefsStore';
 import { ModalBackdrop } from '../components/ModalBackdrop';
+import { useTranslation } from "../i18n";
 
 const TABS: Array<{ id: PrefsTabId; label: string }> = [
-  { id: 'general', label: 'General' },
-  { id: 'camera', label: 'Camera' },
-  { id: 'display', label: 'Display' }
+  { id: 'general', label: "General" },
+  { id: 'camera', label: "Camera" },
+  { id: 'display', label: "Display" }
 ];
 
 export const PreferencesDialog: React.FC = () => {
+    const { t } = useTranslation();
   const dialogOpen = usePrefsStore((s) => s.dialogOpen);
   const activeTab = usePrefsStore((s) => s.activeDialogTab);
   const setActiveTab = usePrefsStore((s) => s.setActiveDialogTab);
@@ -44,16 +46,14 @@ export const PreferencesDialog: React.FC = () => {
         {/* Header */}
         <div className="modal-header" style={{ marginBottom: 4 }}>
           <h2 id="preferences-dialog-title" style={{ margin: 0, fontSize: 16 }}>
-            Preferences
-          </h2>
+            {t("Preferences")}</h2>
           <button
             type="button"
             className="close-btn"
-            aria-label="Close Preferences"
+            aria-label={t("Close Preferences")}
             onClick={close}
           >
-            &times;
-          </button>
+            {t("&times;")}</button>
         </div>
 
         {/* Tab navigation */}
@@ -66,18 +66,18 @@ export const PreferencesDialog: React.FC = () => {
             paddingBottom: 4
           }}
         >
-          {TABS.map((t) => (
+          {TABS.map((tab) => (
             <button
-              key={t.id}
+              key={tab.id}
               role="tab"
-              id={`pref-tab-${t.id}`}
-              aria-selected={activeTab === t.id}
-              aria-controls={`pref-panel-${t.id}`}
-              className={`tab ${activeTab === t.id ? 'active' : ''}`}
+              id={`pref-tab-${tab.id}`}
+              aria-selected={activeTab === tab.id}
+              aria-controls={`pref-panel-${tab.id}`}
+              className={`tab ${activeTab === tab.id ? 'active' : ''}`}
               style={{ padding: '6px 16px', fontSize: 13 }}
-              onClick={() => setActiveTab(t.id)}
+              onClick={() => setActiveTab(tab.id)}
             >
-              {t.label}
+              {t(tab.label)}
             </button>
           ))}
         </div>
@@ -94,30 +94,34 @@ export const PreferencesDialog: React.FC = () => {
             >
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <label htmlFor="pref-language" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  Language
-                </label>
+                  {t("Language")}</label>
                 <select
                   id="pref-language"
-                  aria-label="Language"
+                  aria-label={t("Language")}
                   value={general.language}
                   onChange={(e) => setGeneralPref('language', e.target.value)}
                 >
-                  <option value="en">English</option>
+                  <option value="en">{t("English")}</option>
+                  <option value="es">{t("Español")}</option>
                 </select>
               </div>
 
+              <label htmlFor="pref-autosave-interval">{t("Autosave interval (seconds)")}</label>
+              <input id="pref-autosave-interval" type="number" min={5} max={3600} step={5}
+                disabled={!general.autosave} value={general.autosaveIntervalSeconds}
+                onChange={(e) => setGeneralPref('autosaveIntervalSeconds', Math.max(5, Math.min(3600, Number(e.target.value) || 60)))} />
+
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <label htmlFor="pref-units" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  Units
-                </label>
+                  {t("Units")}</label>
                 <select
                   id="pref-units"
-                  aria-label="Units"
+                  aria-label={t("Units")}
                   value={general.units}
                   onChange={(e) => setGeneralPref('units', e.target.value as 'metric' | 'imperial')}
                 >
-                  <option value="metric">Metric (mm, g)</option>
-                  <option value="imperial">Imperial (in, oz)</option>
+                  <option value="metric">{t("Metric (mm, g)")}</option>
+                  <option value="imperial">{t("Imperial (in, oz)")}</option>
                 </select>
               </div>
 
@@ -126,55 +130,55 @@ export const PreferencesDialog: React.FC = () => {
                   <input
                     type="checkbox"
                     id="pref-remember-recent-files"
-                    aria-label="Remember recent files"
+                    aria-label={t("Remember recent files")}
                     checked={general.rememberRecentFiles}
                     onChange={(e) => setGeneralPref('rememberRecentFiles', e.target.checked)}
                   />
-                  <span>Remember recent files</span>
+                  <span>{t("Remember recent files")}</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="pref-use-project-name-for-export"
-                    aria-label="Use the project name for exported files"
+                    aria-label={t("Use the project name for exported files")}
                     checked={general.useProjectNameForExport}
                     onChange={(e) => setGeneralPref('useProjectNameForExport', e.target.checked)}
                   />
-                  <span>Use the project name for exported files</span>
+                  <span>{t("Use the project name for exported files")}</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="pref-autosave"
-                    aria-label="Back up the project automatically"
+                    aria-label={t("Back up the project automatically")}
                     checked={general.autosave}
                     onChange={(e) => setGeneralPref('autosave', e.target.checked)}
                   />
-                  <span>Back up the project automatically (restore after a crash or closed tab)</span>
+                  <span>{t("Back up the project automatically (restore after a crash or closed tab)")}</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="pref-auto-arrange-on-import"
-                    aria-label="Auto-arrange on import"
+                    aria-label={t("Auto-arrange on import")}
                     checked={general.autoArrangeOnImport}
                     onChange={(e) => setGeneralPref('autoArrangeOnImport', e.target.checked)}
                   />
-                  <span>Auto-arrange on import</span>
+                  <span>{t("Auto-arrange on import")}</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="pref-auto-slice-after-change"
-                    aria-label="Auto-slice after change"
+                    aria-label={t("Auto-slice after change")}
                     checked={general.autoSliceAfterChange}
                     onChange={(e) => setGeneralPref('autoSliceAfterChange', e.target.checked)}
                   />
-                  <span>Auto-slice after change</span>
+                  <span>{t("Auto-slice after change")}</span>
                 </label>
               </div>
             </div>
@@ -193,45 +197,45 @@ export const PreferencesDialog: React.FC = () => {
                   <input
                     type="checkbox"
                     id="pref-invert-mouse-wheel-zoom"
-                    aria-label="Invert mouse wheel zoom"
+                    aria-label={t("Invert mouse wheel zoom")}
                     checked={camera.invertMouseWheelZoom}
                     onChange={(e) => setCameraPref('invertMouseWheelZoom', e.target.checked)}
                   />
-                  <span>Invert mouse wheel zoom</span>
+                  <span>{t("Invert mouse wheel zoom")}</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="pref-invert-orbit-horizontal"
-                    aria-label="Invert orbit horizontal"
+                    aria-label={t("Invert orbit horizontal")}
                     checked={camera.invertOrbitHorizontal}
                     onChange={(e) => setCameraPref('invertOrbitHorizontal', e.target.checked)}
                   />
-                  <span>Invert orbit horizontal</span>
+                  <span>{t("Invert orbit horizontal")}</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="pref-invert-orbit-vertical"
-                    aria-label="Invert orbit vertical"
+                    aria-label={t("Invert orbit vertical")}
                     checked={camera.invertOrbitVertical}
                     onChange={(e) => setCameraPref('invertOrbitVertical', e.target.checked)}
                   />
-                  <span>Invert orbit vertical</span>
+                  <span>{t("Invert orbit vertical")}</span>
                 </label>
               </div>
 
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
-                  <label htmlFor="pref-rotate-sensitivity">Rotate sensitivity</label>
+                  <label htmlFor="pref-rotate-sensitivity">{t("Rotate sensitivity")}</label>
                   <span>{camera.rotateSensitivity.toFixed(1)}x</span>
                 </div>
                 <input
                   type="range"
                   id="pref-rotate-sensitivity"
-                  aria-label="Rotate sensitivity"
+                  aria-label={t("Rotate sensitivity")}
                   min="0.2"
                   max="3.0"
                   step="0.1"
@@ -242,13 +246,13 @@ export const PreferencesDialog: React.FC = () => {
 
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
-                  <label htmlFor="pref-zoom-speed">Zoom speed</label>
+                  <label htmlFor="pref-zoom-speed">{t("Zoom speed")}</label>
                   <span>{camera.zoomSpeed.toFixed(1)}x</span>
                 </div>
                 <input
                   type="range"
                   id="pref-zoom-speed"
-                  aria-label="Zoom speed"
+                  aria-label={t("Zoom speed")}
                   min="0.2"
                   max="3.0"
                   step="0.1"
@@ -259,16 +263,15 @@ export const PreferencesDialog: React.FC = () => {
 
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <label htmlFor="pref-default-camera-type" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  Default camera type
-                </label>
+                  {t("Default camera type")}</label>
                 <select
                   id="pref-default-camera-type"
-                  aria-label="Default camera type"
+                  aria-label={t("Default camera type")}
                   value={camera.defaultCameraType}
                   onChange={(e) => setCameraPref('defaultCameraType', e.target.value as 'perspective' | 'orthographic')}
                 >
-                  <option value="perspective">Perspective</option>
-                  <option value="orthographic">Orthographic</option>
+                  <option value="perspective">{t("Perspective")}</option>
+                  <option value="orthographic">{t("Orthographic")}</option>
                 </select>
               </div>
             </div>
@@ -287,71 +290,76 @@ export const PreferencesDialog: React.FC = () => {
                   <input
                     type="checkbox"
                     id="pref-show-grid"
-                    aria-label="Bed grid"
+                    aria-label={t("Bed grid")}
                     checked={display.showGrid}
                     onChange={(e) => setDisplayPref('showGrid', e.target.checked)}
                   />
-                  <span>Bed grid</span>
+                  <span>{t("Bed grid")}</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="pref-show-axes"
-                    aria-label="Axes"
+                    aria-label={t("Axes")}
                     checked={display.showAxes}
                     onChange={(e) => setDisplayPref('showAxes', e.target.checked)}
                   />
-                  <span>Axes</span>
+                  <span>{t("Axes")}</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="pref-show-labels"
-                    aria-label="Object labels"
+                    aria-label={t("Object labels")}
                     checked={display.showLabels}
                     onChange={(e) => setDisplayPref('showLabels', e.target.checked)}
                   />
-                  <span>Object labels (names over objects)</span>
+                  <span>{t("Object labels (names over objects)")}</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="pref-show-build-volume"
-                    aria-label="Build volume wireframe"
+                    aria-label={t("Build volume wireframe")}
                     checked={display.showBuildVolume}
                     onChange={(e) => setDisplayPref('showBuildVolume', e.target.checked)}
                   />
-                  <span>Build volume wireframe</span>
+                  <span>{t("Build volume wireframe")}</span>
                 </label>
 
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
                     type="checkbox"
                     id="pref-show-wireframe"
-                    aria-label="Wireframe objects"
+                    aria-label={t("Wireframe objects")}
                     checked={display.showWireframe}
                     onChange={(e) => setDisplayPref('showWireframe', e.target.checked)}
                   />
-                  <span>Wireframe objects</span>
+                  <span>{t("Wireframe objects")}</span>
                 </label>
               </div>
 
+              <label htmlFor="pref-toolbar-orientation">{t("Tool bar orientation")}</label>
+              <select id="pref-toolbar-orientation" value={display.toolbarOrientation}
+                onChange={(e) => setDisplayPref('toolbarOrientation', e.target.value as 'vertical' | 'horizontal')}>
+                <option value="vertical">{t("Vertical")}</option>
+                <option value="horizontal">{t("Horizontal")}</option>
+              </select>
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
                 <label htmlFor="pref-theme" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  Theme
-                </label>
+                  {t("Theme")}</label>
                 <select
                   id="pref-theme"
-                  aria-label="Theme"
+                  aria-label={t("Theme")}
                   value={display.theme}
                   onChange={(e) => setDisplayPref('theme', e.target.value as 'dark' | 'light' | 'system')}
                 >
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                  <option value="system">Follow the system</option>
+                  <option value="dark">{t("Dark")}</option>
+                  <option value="light">{t("Light")}</option>
+                  <option value="system">{t("Follow the system")}</option>
                 </select>
               </div>
             </div>
@@ -367,16 +375,14 @@ export const PreferencesDialog: React.FC = () => {
             onClick={resetDefaults}
             style={{ marginRight: 'auto' }}
           >
-            Reset to Defaults
-          </button>
+            {t("Reset to Defaults")}</button>
           <button
             type="button"
             id="pref-close-btn"
             className="btn btn-primary"
             onClick={close}
           >
-            Close
-          </button>
+            {t("Close")}</button>
         </div>
       </div>
     </ModalBackdrop>

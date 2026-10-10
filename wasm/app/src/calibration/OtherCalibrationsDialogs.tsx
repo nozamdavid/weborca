@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { CalibrationDialogWrapper as DialogWrapper } from './CalibrationDialogWrapper';
 import { useOtherCalibrationStore } from './otherCalibrationStore';
 import { runOtherCalibration } from './calibrationUtils';
-
+import { useTranslation } from "../i18n";
 
 const vfaDrc = '/resources/calib/vfa/vfa.drc';
 const tempTowerDrc = '/resources/calib/temperature_tower/temperature_tower.drc';
@@ -13,6 +13,7 @@ const paTestDrc = '/resources/calib/pressure_advance/pressure_advance_test.drc';
 const paTowerDrc = '/resources/calib/pressure_advance/tower_with_seam.drc';
 
 function PACalibrationDialog({ onClose, initialMode }: { onClose: () => void, initialMode: 'line' | 'pattern' | 'tower' }) {
+    const { t } = useTranslation();
   const [mode, setMode] = useState(initialMode);
   const [extruder, setExtruder] = useState('dde');
   const [start, setStart] = useState(0);
@@ -86,39 +87,39 @@ function PACalibrationDialog({ onClose, initialMode }: { onClose: () => void, in
   };
 
   return (
-    <DialogWrapper title="PA Calibration" onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
+    <DialogWrapper title={t("PA Calibration")} onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
       <div className="field-row">
-        <label>Method: <select value={mode} onChange={(e) => setMode(e.target.value as any)}>
-          <option value="line">Line</option>
-          <option value="pattern">Pattern</option>
-          <option value="tower">Tower</option>
+        <label>{t("Method:")}<select value={mode} onChange={(e) => setMode(e.target.value as any)}>
+          <option value="line">{t("Line")}</option>
+          <option value="pattern">{t("Pattern")}</option>
+          <option value="tower">{t("Tower")}</option>
         </select></label>
       </div>
       <div className="field-row">
-        <label>Extruder Type: <select value={extruder} onChange={(e) => setExtruder(e.target.value)}>
-          <option value="dde">DDE</option>
-          <option value="bowden">Bowden</option>
+        <label>{t("Extruder Type:")}<select value={extruder} onChange={(e) => setExtruder(e.target.value)}>
+          <option value="dde">{t("DDE")}</option>
+          <option value="bowden">{t("Bowden")}</option>
         </select></label>
       </div>
       <div className="field-row">
-        <label>Start PA: <input aria-label="Start PA" type="number" step="0.001" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
+        <label>{t("Start PA:")}<input aria-label={t("Start PA")} type="number" step="0.001" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>End PA: <input aria-label="End PA" type="number" step="0.001" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
+        <label>{t("End PA:")}<input aria-label={t("End PA")} type="number" step="0.001" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>PA step: <input aria-label="PA step" type="number" step="0.001" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /></label>
+        <label>{t("PA step:")}<input aria-label={t("PA step")} type="number" step="0.001" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>Print numbers: <input type="checkbox" checked={printNumbers} disabled={mode === 'tower'} onChange={(e) => setPrintNumbers(e.target.checked)} /></label>
+        <label>{t("Print numbers:")}<input type="checkbox" checked={printNumbers} disabled={mode === 'tower'} onChange={(e) => setPrintNumbers(e.target.checked)} /></label>
       </div>
       {mode === 'pattern' && (
         <>
           <div className="field-row">
-            <label>Accelerations: <input aria-label="Accelerations" type="text" value={accelerations} onChange={(e) => setAccelerations(e.target.value)} /></label>
+            <label>{t("Accelerations:")}<input aria-label={t("Accelerations")} type="text" value={accelerations} onChange={(e) => setAccelerations(e.target.value)} /></label>
           </div>
           <div className="field-row">
-            <label>Speeds: <input aria-label="Speeds" type="text" value={speeds} onChange={(e) => setSpeeds(e.target.value)} /></label>
+            <label>{t("Speeds:")}<input aria-label={t("Speeds")} type="text" value={speeds} onChange={(e) => setSpeeds(e.target.value)} /></label>
           </div>
         </>
       )}
@@ -127,6 +128,7 @@ function PACalibrationDialog({ onClose, initialMode }: { onClose: () => void, in
 }
 
 function TempTowerDialog({ onClose }: { onClose: () => void }) {
+    const { t } = useTranslation();
   const [start, setStart] = useState(230);
   const [end, setEnd] = useState(190);
   const step = 5;
@@ -159,21 +161,22 @@ function TempTowerDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <DialogWrapper title="Temperature Tower" onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
+    <DialogWrapper title={t("Temperature Tower")} onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
       <div className="field-row">
-        <label>Start Temperature: <input aria-label="Start Temperature" type="number" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
+        <label>{t("Start Temperature:")}<input aria-label={t("Start Temperature")} type="number" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>End Temperature: <input aria-label="End Temperature" type="number" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
+        <label>{t("End Temperature:")}<input aria-label={t("End Temperature")} type="number" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>Step: <input aria-label="Step" type="number" value={step} disabled /></label>
+        <label>{t("Step:")}<input aria-label={t("Step")} type="number" value={step} disabled /></label>
       </div>
     </DialogWrapper>
   );
 }
 
 function VFADialog({ onClose }: { onClose: () => void }) {
+    const { t } = useTranslation();
   const [start, setStart] = useState(40);
   const [end, setEnd] = useState(200);
   const [step, setStep] = useState(10);
@@ -205,15 +208,15 @@ function VFADialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <DialogWrapper title="VFA" onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
+    <DialogWrapper title={t("VFA")} onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
       <div className="field-row">
-        <label>Start Speed: <input aria-label="Start Speed" type="number" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
+        <label>{t("Start Speed:")}<input aria-label={t("Start Speed")} type="number" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>End Speed: <input aria-label="End Speed" type="number" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
+        <label>{t("End Speed:")}<input aria-label={t("End Speed")} type="number" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>Step: <input aria-label="Step" type="number" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /></label>
+        <label>{t("Step:")}<input aria-label={t("Step")} type="number" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /></label>
       </div>
     </DialogWrapper>
   );
@@ -223,6 +226,7 @@ function GenericCalibrationDialog({
   title, mode, defaultStart, defaultEnd, defaultStep, 
   validate, drcFile, drcUrl, onClose 
 }: any) {
+    const { t } = useTranslation();
   const [start, setStart] = useState(defaultStart);
   const [end, setEnd] = useState(defaultEnd);
   const [step, setStep] = useState(defaultStep);
@@ -255,19 +259,20 @@ function GenericCalibrationDialog({
   return (
     <DialogWrapper title={title} onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
       <div className="field-row">
-        <label>Start: <input aria-label="Start" type="number" step="0.1" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
+        <label>{t("Start:")}<input aria-label={t("Start")} type="number" step="0.1" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>End: <input aria-label="End" type="number" step="0.1" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
+        <label>{t("End:")}<input aria-label={t("End")} type="number" step="0.1" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>Step: <input aria-label="Step" type="number" step="0.1" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /></label>
+        <label>{t("Step:")}<input aria-label={t("Step")} type="number" step="0.1" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /></label>
       </div>
     </DialogWrapper>
   );
 }
 
 function OtherCalibrationsDialogsInner() {
+    const { t } = useTranslation();
   const { activeCalibration, closeDialog } = useOtherCalibrationStore();
 
   if (!activeCalibration) return null;
@@ -284,7 +289,7 @@ function OtherCalibrationsDialogsInner() {
     case 'max_vol':
       return (
         <GenericCalibrationDialog
-          title="Max Volumetric Speed"
+          title={t("Max Volumetric Speed")}
           mode={7} // Calib_Vol_speed_Tower
           defaultStart={5}
           defaultEnd={20}
@@ -305,7 +310,7 @@ function OtherCalibrationsDialogsInner() {
     case 'retraction':
       return (
         <GenericCalibrationDialog
-          title="Retraction"
+          title={t("Retraction")}
           mode={9} // Calib_Retraction_tower
           defaultStart={0}
           defaultEnd={2}
@@ -328,6 +333,7 @@ function OtherCalibrationsDialogsInner() {
 
 
 export function OtherCalibrationsDialogs() {
+    const { t } = useTranslation();
   return (
     <>
       <OtherCalibrationsDialogsInner />

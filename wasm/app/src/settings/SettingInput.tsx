@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
 import type { ConfigOptionDef, FieldState } from '../engine/types';
+import { useTranslation } from "../i18n";
 
 interface SettingInputProps {
   optionKey: string;
@@ -17,6 +18,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
   fieldState,
   kind
 }) => {
+    const { t } = useTranslation();
   const { currentConfig, presetConfig, applyOptionChange, resetOption } = useAppStore();
 
   const rawVal = currentConfig[optionKey];
@@ -162,7 +164,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
 
   return (
     <div className={`setting-control-wrapper ${isModified ? 'is-modified' : ''}`}>
-      {isModified && <span className="modified-indicator" title="Modified from preset" />}
+      {isModified && <span className="modified-indicator" title={t("Modified from preset")} />}
       {renderControl()}
       {def?.sidetext && <span className="setting-unit">{def.sidetext}</span>}
       {isModified && (

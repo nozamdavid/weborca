@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore';
 import { CalibrationDialogWrapper } from './CalibrationDialogWrapper';
 import { runOtherCalibration } from './calibrationUtils';
 import { useInputShapingStore } from './inputShapingStore';
+import { useTranslation } from "../i18n";
 
 /**
  * The input shaping frequency, damping and cornering tests. Fields, defaults, ranges and messages follow
@@ -12,9 +13,9 @@ import { useInputShapingStore } from './inputShapingStore';
 const CALIB_MODE = { freq: 10, damp: 11, cornering: 12 } as const;
 
 const MODELS = [
-  { label: 'Ringing Tower', drc: 'ringing_tower.drc', url: '/resources/calib/input_shaping/ringing_tower.drc' },
-  { label: 'Fast Tower', drc: 'fast_tower_test.drc', url: '/resources/calib/input_shaping/fast_tower_test.drc' },
-  { label: 'SCV-V2', drc: 'SCV-V2.drc', url: '/resources/calib/cornering/SCV-V2.drc' }
+  { label: "Ringing Tower", drc: 'ringing_tower.drc', url: '/resources/calib/input_shaping/ringing_tower.drc' },
+  { label: "Fast Tower", drc: 'fast_tower_test.drc', url: '/resources/calib/input_shaping/fast_tower_test.drc' },
+  { label: "SCV-V2", drc: 'SCV-V2.drc', url: '/resources/calib/cornering/SCV-V2.drc' }
 ];
 
 /** Shaper types per firmware, as desktop's input_shaper_types_for_flavor (without "Disable"). */
@@ -64,6 +65,7 @@ const Field = ({ label, unit, value, onChange, disabled }: { label: string; unit
 const Note = ({ children }: { children: string }) => <p style={{ color: '#888', whiteSpace: 'pre-line', fontSize: 12 }}>{children}</p>;
 
 function FrequencyDialog({ onClose }: { onClose: () => void }) {
+    const { t } = useTranslation();
   const fw = useFirmware();
   const [model, setModel] = useState(0);
   const [type, setType] = useState(0);
@@ -101,30 +103,31 @@ function FrequencyDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <CalibrationDialogWrapper title="Input shaping Frequency test" onClose={onClose} onOk={run} error={error} isLoading={loading}>
-      <Radios label="Test model" options={MODELS.slice(0, 2).map((m) => m.label)} value={model} onChange={setModel} />
-      <Radios label="Input shaper type" options={fw.shaperTypes} value={type} onChange={setType} />
+    <CalibrationDialogWrapper title={t("Input shaping Frequency test")} onClose={onClose} onOk={run} error={error} isLoading={loading}>
+      <Radios label={t("Test model")} options={MODELS.slice(0, 2).map((m) => t(m.label))} value={model} onChange={setModel} />
+      <Radios label={t("Input shaper type")} options={fw.shaperTypes} value={type} onChange={setType} />
       <Note>{fw.note}</Note>
       {fw.reprap ? (
         <>
-          <Field label="Frequency start" unit="Hz" value={startX} onChange={setStartX} />
-          <Field label="Frequency end" unit="Hz" value={endX} onChange={setEndX} />
+          <Field label={t("Frequency start")} unit="Hz" value={startX} onChange={setStartX} />
+          <Field label={t("Frequency end")} unit="Hz" value={endX} onChange={setEndX} />
         </>
       ) : (
         <>
-          <Field label="X start" unit="Hz" value={startX} onChange={setStartX} />
-          <Field label="X end" unit="Hz" value={endX} onChange={setEndX} />
-          <Field label="Y start" unit="Hz" value={startY} onChange={setStartY} />
-          <Field label="Y end" unit="Hz" value={endY} onChange={setEndY} />
+          <Field label={t("X start")} unit="Hz" value={startX} onChange={setStartX} />
+          <Field label={t("X end")} unit="Hz" value={endX} onChange={setEndX} />
+          <Field label={t("Y start")} unit="Hz" value={startY} onChange={setStartY} />
+          <Field label={t("Y end")} unit="Hz" value={endY} onChange={setEndY} />
         </>
       )}
-      <Field label="Damp" value={damping} onChange={setDamping} />
+      <Field label={t("Damp")} value={damping} onChange={setDamping} />
       <Note>{'Recommended: Set Damp to 0.\nThis will use the printer\'s default or saved value.'}</Note>
     </CalibrationDialogWrapper>
   );
 }
 
 function DampingDialog({ onClose }: { onClose: () => void }) {
+    const { t } = useTranslation();
   const fw = useFirmware();
   const [model, setModel] = useState(0);
   const [type, setType] = useState(0);
@@ -161,26 +164,27 @@ function DampingDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <CalibrationDialogWrapper title="Input shaping Damp test" onClose={onClose} onOk={run} error={error} isLoading={loading}>
-      <Radios label="Test model" options={MODELS.slice(0, 2).map((m) => m.label)} value={model} onChange={setModel} />
-      <Radios label="Input shaper type" options={fw.shaperTypes} value={type} onChange={setType} />
+    <CalibrationDialogWrapper title={t("Input shaping Damp test")} onClose={onClose} onOk={run} error={error} isLoading={loading}>
+      <Radios label={t("Test model")} options={MODELS.slice(0, 2).map((m) => t(m.label))} value={model} onChange={setModel} />
+      <Radios label={t("Input shaper type")} options={fw.shaperTypes} value={type} onChange={setType} />
       <Note>{fw.note}</Note>
       {fw.reprap ? (
-        <Field label="Frequency" unit="Hz" value={freqX} onChange={setFreqX} />
+        <Field label={t("Frequency")} unit="Hz" value={freqX} onChange={setFreqX} />
       ) : (
         <>
-          <Field label="Frequency X" unit="Hz" value={freqX} onChange={setFreqX} />
-          <Field label="Frequency Y" unit="Hz" value={freqY} onChange={setFreqY} />
+          <Field label={t("Frequency X")} unit="Hz" value={freqX} onChange={setFreqX} />
+          <Field label={t("Frequency Y")} unit="Hz" value={freqY} onChange={setFreqY} />
         </>
       )}
-      <Field label="Damp start" value={dampStart} onChange={setDampStart} />
-      <Field label="Damp end" value={dampEnd} onChange={setDampEnd} />
-      <Note>Note: Use previously calculated frequencies.</Note>
+      <Field label={t("Damp start")} value={dampStart} onChange={setDampStart} />
+      <Field label={t("Damp end")} value={dampEnd} onChange={setDampEnd} />
+      <Note>{t("Note: Use previously calculated frequencies.")}</Note>
     </CalibrationDialogWrapper>
   );
 }
 
 function CorneringDialog({ onClose }: { onClose: () => void }) {
+    const { t } = useTranslation();
   const fw = useFirmware();
   const jd = fw.junctionDeviation;
   const [model, setModel] = useState(0);
@@ -210,11 +214,11 @@ function CorneringDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <CalibrationDialogWrapper title="Cornering test" onClose={onClose} onOk={run} error={error} isLoading={loading}>
-      <Radios label="Test model" options={MODELS.map((m) => m.label)} value={model} onChange={setModel} />
-      <Field label="Start" unit={jd ? 'mm' : 'mm/s'} value={start} onChange={setStart} />
-      <Field label="End" unit={jd ? 'mm' : 'mm/s'} value={end} onChange={setEnd} />
-      <Note>Note: Lower values = sharper corners but slower speeds.</Note>
+    <CalibrationDialogWrapper title={t("Cornering test")} onClose={onClose} onOk={run} error={error} isLoading={loading}>
+      <Radios label={t("Test model")} options={MODELS.map((m) => t(m.label))} value={model} onChange={setModel} />
+      <Field label={t("Start")} unit={jd ? 'mm' : 'mm/s'} value={start} onChange={setStart} />
+      <Field label={t("End")} unit={jd ? 'mm' : 'mm/s'} value={end} onChange={setEnd} />
+      <Note>{t("Note: Lower values = sharper corners but slower speeds.")}</Note>
       {Number(end) > warnAbove && <Note>{`NOTE: High values may cause Layer shift (>${warnAbove.toFixed(3)})`}</Note>}
       {fw.flavor === 'marlin2' && <Note>{jd
         ? 'Marlin 2 Junction Deviation detected:\nTo test Classic Jerk, set \'Maximum Junction Deviation\' in Motion ability to 0.'
@@ -225,6 +229,7 @@ function CorneringDialog({ onClose }: { onClose: () => void }) {
 }
 
 export function InputShapingDialogs() {
+    const { t } = useTranslation();
   const { isOpen, mode, closeDialog } = useInputShapingStore();
   if (!isOpen || !mode) return null;
   if (mode === 'freq') return <FrequencyDialog onClose={closeDialog} />;

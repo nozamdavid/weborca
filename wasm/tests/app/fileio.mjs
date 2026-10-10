@@ -100,7 +100,11 @@ async function runSuite(browserType, name) {
     assert.equal(stlTriangleCount, 12, 'STL header triangle count must equal 12');
     log(`STL export verified: ${stlBuffer.length} bytes, ${stlTriangleCount} triangles`);
 
+
+    log('Setting custom bed texture before saving...');
+    await page.evaluate(() => window.__appStore.getState().applyOptionChange('bed_custom_texture', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==', 'printer'));
     log('5. Save project (.3mf) and download archive...');
+
     await openFileMenu();
     const [projectDownload] = await Promise.all([
       page.waitForEvent('download'),
@@ -133,7 +137,22 @@ async function runSuite(browserType, name) {
       await page.setInputFiles('#project-file-input', tmpProjPath);
       await page.waitForFunction(() => window.__plateStore?.getState().objects.length >= 1, null, { timeout: 30000 });
       const restoredNames = await objectNames();
+
+
+      
+      
+      
+      
       assert.equal(restoredNames.length, 1, 'Project must restore 1 object');
+      // The parent already fixed the engine to load custom bed assets. Let's assert against currentConfig.
+      // We will wait until it's loaded as we don't know exactly when it applies.
+      await page.waitForFunction(() => window.__appStore.getState().currentConfig.bed_custom_texture !== undefined, null, { timeout: 15000 }).catch(() => {});
+      assert.equal(await page.evaluate(() => window.__appStore.getState().currentConfig.bed_custom_texture), 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==', 'Custom bed asset persisted in project');
+
+
+
+
+
       assert.match(restoredNames[0], /20mm_cube/, `Restored object name must match original: ${restoredNames[0]}`);
       log('Project round-trip verified successfully!');
     } finally {

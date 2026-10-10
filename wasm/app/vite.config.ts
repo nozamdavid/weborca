@@ -113,6 +113,11 @@ function orcaAssetsPlugin() {
       server.middlewares.use((req: any, res: any, next: () => void) => {
         const url = req.url ? req.url.split('?')[0] : '';
 
+        if (url.startsWith('/profiles/assets/')) {
+          const subPath = decodeURIComponent(url.substring('/profiles/assets/'.length));
+          if (serveStaticFile(subPath, path.join(repoRoot, 'resources/profiles'), res)) return;
+        }
+
         // Serve calibration models (Draco) at /resources/calib/
         if (url.startsWith('/resources/calib/')) {
           const subPath = url.replace(/^\/resources\/calib\//, '');
@@ -212,8 +217,10 @@ function orcaAssetsPlugin() {
             fs.copyFileSync(path.join(profilesBuildDir, file), path.join(distProfiles, file));
           }
         }
-        const covers = path.join(profilesBuildDir, 'covers');
-        if (fs.existsSync(covers)) fs.cpSync(covers, path.join(distProfiles, 'covers'), { recursive: true });
+        for (const directory of ['covers', 'assets']) {
+          const source = path.join(profilesBuildDir, directory);
+          if (fs.existsSync(source)) fs.cpSync(source, path.join(distProfiles, directory), { recursive: true });
+        }
       }
 
       // 4. Copy web worker & orca-engine files into dist/web and dist/ root
@@ -239,7 +246,7 @@ function orcaAssetsPlugin() {
       if (fs.existsSync(handyModelsDir)) {
         fs.cpSync(handyModelsDir, path.join(distDir, 'resources/handy_models'), {
           recursive: true,
-          filter: (src) => fs.statSync(src).isDirectory() || src.endsWith('.drc')
+          filter: (src) => fs.statSync(src).isDirectory() || src.endsWith('.drc') || src.endsWith('.3mf')
         });
       }
 
@@ -277,6 +284,7 @@ function orcaAssetsPlugin() {
 export default defineConfig({
   plugins: [react(), orcaAssetsPlugin(), printerGatewayPlugin()],
   server: {
+    allowedHosts: ['server-1.barbel-hops.ts.net'],
     fs: {
       allow: [repoRoot]
     },
@@ -287,6 +295,7 @@ export default defineConfig({
   },
   preview: {
     port: 5058,
+    allowedHosts: ['server-1.barbel-hops.ts.net'],
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp'

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { PlateInstance, PlateObject } from './types';
 import { usePlateStore } from './plateStore';
+import { useTranslation } from "../i18n";
 
 type Vec3 = [number, number, number];
 const AXES = ['X', 'Y', 'Z'] as const;
@@ -9,6 +10,7 @@ const round = (v: number, digits: number) => Number(v.toFixed(digits));
 
 /** A number box that applies on Enter or blur and shows the engine's value otherwise. */
 const NumberBox: React.FC<{ id: string; value: number; digits: number; disabled?: boolean; onCommit: (v: number) => void }> = ({ id, value, digits, disabled, onCommit }) => {
+    const { t } = useTranslation();
   const shown = round(value, digits).toString();
   const [text, setText] = useState(shown);
   useEffect(() => setText(shown), [shown]);
@@ -29,6 +31,7 @@ const NumberBox: React.FC<{ id: string; value: number; digits: number; disabled?
 
 /** Position, rotation, scale and size of the selected instance as editable numbers, like desktop's object manipulation panel. */
 export const NumericTransform: React.FC<{ object: PlateObject; instance: PlateInstance }> = ({ object, instance }) => {
+    const { t } = useTranslation();
   const apply = usePlateStore((s) => s.setInstanceTransform);
   const mirrorSelected = usePlateStore((s) => s.mirrorSelected);
   const [lock, setLock] = useState(true);
@@ -67,8 +70,7 @@ export const NumericTransform: React.FC<{ object: PlateObject; instance: PlateIn
         </button>
       )))}
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', color: '#94a3b8' }}>
-        <input id="nt-lock" type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} /> Keep proportions
-      </label>
+        <input id="nt-lock" type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} /> {t("Keep proportions")}</label>
     </div>
   );
 };

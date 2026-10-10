@@ -197,7 +197,30 @@ async function runBrowserSuite(browserType, browserName) {
     }, null, { timeout: 10000 });
     console.log(`[${browserName}] Modifier successfully deleted`);
 
-    // 7. Save screenshot
+
+    // 6a. Test Lock Orientation
+    console.log(`[${browserName}] Testing Lock Orientation...`);
+    await page.click(`#object-more-btn-${objId}`);
+    await page.waitForSelector('#menu-action-lock-orientation', { timeout: 5000 });
+    await page.locator('#menu-action-lock-orientation').scrollIntoViewIfNeeded();
+    await page.click('#menu-action-lock-orientation');
+
+    // 6b. Test Move Object
+    console.log(`[${browserName}] Testing Move Object...`);
+    await page.evaluate(async () => {
+        const store = window.__objectListStore.getState();
+        await store.moveObject(store.objects[0].id, 0); // Self-move should work
+    });
+
+    // 6c. Test Plate Arrange Scope
+    console.log(`[${browserName}] Testing Plate Arrange Scope...`);
+    await page.evaluate(async () => {
+        const pstore = window.__plateStore.getState();
+        pstore.setArrangeSettings({ plateScope: 'current' });
+        await pstore.arrange(true);
+    });
+
+// 7. Save screenshot
     const screenshotPath = path.join(SCREENSHOT_DIR, `objectlist-${browserName}.png`);
     await page.screenshot({ path: screenshotPath });
     console.log(`[${browserName}] Screenshot saved to ${screenshotPath}`);

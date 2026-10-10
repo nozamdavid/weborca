@@ -748,6 +748,7 @@ private:
             best_overfit = overfit(item.transformedShape(), bin_) + overlapWithVirtObject();
 
             for(auto rot : config_.rotations) {
+                if (item.orientation_locked && std::abs(rot) > 1e-6) continue;
                 item.translation(initial_tr);
                 item.rotation(initial_rot + rot);
                 setInitialPosition(item);
@@ -770,6 +771,7 @@ private:
             Pile merged_pile = merged_pile_;
 
             for(auto rot : config_.rotations) {
+                if (item.orientation_locked && std::abs(rot) > 1e-6) continue;
 
                 item.translation(initial_tr);
                 item.rotation(initial_rot + rot);

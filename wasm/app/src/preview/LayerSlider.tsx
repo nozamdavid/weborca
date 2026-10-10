@@ -15,8 +15,10 @@ import {
   getZForLayer
 } from './layerEventsStore';
 import './PreviewControls.css';
+import { useTranslation } from "../i18n";
 
 export const LayerSlider: React.FC = () => {
+    const { t } = useTranslation();
   const layersCount = usePreviewStore((s) => s.layersCount);
   const layersZs = usePreviewStore((s) => s.layersZs);
   const minLayer = usePreviewStore((s) => s.minLayer);
@@ -317,20 +319,19 @@ export const LayerSlider: React.FC = () => {
       {/* Top Layer & Z Height Indicator Badge */}
       <div
         id="layer-indicator-top"
-        title="Top visible layer"
+        title={t("Top visible layer")}
         style={{
           textAlign: 'center',
           marginBottom: 6,
           fontSize: '0.75rem',
-          color: '#e4e4e7'
+          color: 'var(--text-color)'
         }}
       >
         <div style={{ fontWeight: 600, color: '#38bdf8' }} id="layer-current-number">
           L{maxLayer + 1}
         </div>
         <div style={{ fontSize: '0.7rem', color: '#94a3b8' }} id="layer-current-z">
-          {currentZ}mm
-        </div>
+          {currentZ}{t("mm")}</div>
       </div>
 
       {/* Dual Handle Vertical Track Area */}
@@ -447,8 +448,7 @@ export const LayerSlider: React.FC = () => {
                   deleteEvent(activePlateIndex, evt.printZ);
                 }}
               >
-                &times;
-              </button>
+                {t("&times;")}</button>
 
               {/* Direct Edit button on hover if custom G-code */}
               {evt.type === 'custom' && (
@@ -483,7 +483,7 @@ export const LayerSlider: React.FC = () => {
           data-testid="layer-handle-max"
           role="slider"
           tabIndex={0}
-          aria-label="Top visible layer"
+          aria-label={t("Top visible layer")}
           aria-orientation="vertical"
           aria-valuemin={minLayer + 1}
           aria-valuemax={layersCount}
@@ -577,7 +577,7 @@ export const LayerSlider: React.FC = () => {
               position: 'absolute',
               right: 'calc(100% + 8px)',
               bottom: `calc(${topPercent}% - 24px)`,
-              background: '#27272a',
+              background: 'var(--panel-bg)',
               border: '1px solid rgba(255, 255, 255, 0.18)',
               borderRadius: 6,
               padding: '4px 0',
@@ -598,8 +598,7 @@ export const LayerSlider: React.FC = () => {
                     borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
                   }}
                 >
-                  Layer {maxLayer + 1} ({currentZ}mm)
-                </div>
+                  {t("Layer")}{maxLayer + 1} ({currentZ}{t("mm)")}</div>
                 <button
                   type="button"
                   id="btn-add-pause"
@@ -607,8 +606,7 @@ export const LayerSlider: React.FC = () => {
                   className="layer-event-menu-item"
                   onClick={handleAddPause}
                 >
-                  <span style={{ marginRight: 6 }}>⏸</span> Add pause
-                </button>
+                  <span style={{ marginRight: 6 }}>⏸</span> {t("Add pause")}</button>
                 <button
                   type="button"
                   id="btn-add-custom-gcode"
@@ -616,18 +614,16 @@ export const LayerSlider: React.FC = () => {
                   className="layer-event-menu-item"
                   onClick={handleOpenAddCustomGcode}
                 >
-                  <span style={{ marginRight: 6 }}>⚙</span> Add custom G-code
-                </button>
+                  <span style={{ marginRight: 6 }}>⚙</span> {t("Add custom G-code")}</button>
                 <button
                   type="button"
                   id="btn-add-color-change"
                   data-testid="btn-add-color-change"
                   className="layer-event-menu-item disabled"
                   disabled
-                  title="Color change is not supported yet"
+                  title={t("Color change is not supported yet")}
                 >
-                  <span style={{ marginRight: 6 }}>🎨</span> Change filament
-                </button>
+                  <span style={{ marginRight: 6 }}>{t("🎨")}</span> {t("Change filament")}</button>
               </>
             ) : (
               <>
@@ -639,7 +635,7 @@ export const LayerSlider: React.FC = () => {
                     borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
                   }}
                 >
-                  Layer {maxLayer + 1}: {currentEvent.type === 'pause' ? 'Pause' : 'Custom G-code'}
+                  {t("Layer")}{maxLayer + 1}: {currentEvent.type === 'pause' ? 'Pause' : 'Custom G-code'}
                 </div>
                 {currentEvent.type === 'custom' && (
                   <button
@@ -649,8 +645,7 @@ export const LayerSlider: React.FC = () => {
                     className="layer-event-menu-item"
                     onClick={handleOpenEditCustomGcode}
                   >
-                    <span style={{ marginRight: 6 }}>✎</span> Edit custom G-code
-                  </button>
+                    <span style={{ marginRight: 6 }}>✎</span> {t("Edit custom G-code")}</button>
                 )}
                 <button
                   type="button"
@@ -659,7 +654,7 @@ export const LayerSlider: React.FC = () => {
                   className="layer-event-menu-item delete"
                   onClick={handleDeleteCurrentEvent}
                 >
-                  <span style={{ marginRight: 6 }}>🗑</span>{' '}
+                  <span style={{ marginRight: 6 }}>{t("🗑")}</span>{' '}
                   {currentEvent.type === 'pause' ? 'Delete pause' : 'Delete custom G-code'}
                 </button>
               </>
@@ -673,7 +668,7 @@ export const LayerSlider: React.FC = () => {
           data-testid="layer-handle-min"
           role="slider"
           tabIndex={0}
-          aria-label="Bottom visible layer"
+          aria-label={t("Bottom visible layer")}
           aria-orientation="vertical"
           aria-valuemin={1}
           aria-valuemax={maxLayer + 1}
@@ -711,7 +706,7 @@ export const LayerSlider: React.FC = () => {
           type="range"
           id="layer-slider-max"
           data-testid="layer-slider-max"
-          aria-label="Top visible layer"
+          aria-label={t("Top visible layer")}
           min={0}
           max={maxPossible}
           value={maxLayer}
@@ -728,7 +723,7 @@ export const LayerSlider: React.FC = () => {
           type="range"
           id="layer-slider-min"
           data-testid="layer-slider-min"
-          aria-label="Bottom visible layer"
+          aria-label={t("Bottom visible layer")}
           min={0}
           max={maxPossible}
           value={minLayer}
@@ -746,16 +741,16 @@ export const LayerSlider: React.FC = () => {
       {/* Bottom Layer Indicator Badge */}
       <div
         id="layer-indicator-bottom"
-        title="Bottom visible layer"
+        title={t("Bottom visible layer")}
         style={{
           textAlign: 'center',
           marginTop: 6,
           fontSize: '0.7rem',
-          color: '#a1a1aa'
+          color: 'var(--text-muted)'
         }}
       >
         <div style={{ fontWeight: 500, color: '#f59e0b' }}>L{minLayer + 1}</div>
-        <div>{minZ}mm</div>
+        <div>{minZ}{t("mm")}</div>
       </div>
 
       {/* Reset Layers Button */}
@@ -763,13 +758,13 @@ export const LayerSlider: React.FC = () => {
         type="button"
         id="btn-reset-layers"
         onClick={resetLayers}
-        title="Reset layer range (All layers)"
+        title={t("Reset layer range (All layers)")}
         style={{
           marginTop: 8,
           background: 'rgba(255, 255, 255, 0.08)',
           border: '1px solid rgba(255, 255, 255, 0.12)',
           borderRadius: 4,
-          color: '#e4e4e7',
+          color: 'var(--text-color)',
           padding: '3px 8px',
           fontSize: '0.7rem',
           cursor: 'pointer',
@@ -777,8 +772,7 @@ export const LayerSlider: React.FC = () => {
           textAlign: 'center'
         }}
       >
-        All
-      </button>
+        {t("All")}</button>
 
       {/* Total layers count label */}
       <div
@@ -786,7 +780,7 @@ export const LayerSlider: React.FC = () => {
         style={{
           marginTop: 4,
           fontSize: '0.65rem',
-          color: '#71717a',
+          color: 'var(--text-dim)',
           textAlign: 'center'
         }}
       >

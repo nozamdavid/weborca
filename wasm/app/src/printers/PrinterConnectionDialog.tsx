@@ -16,7 +16,8 @@ const HOST_PLACEHOLDER: Record<HostType, string> = {
   prusalink: '192.168.0.20',
   octoprint: 'http://octopi.local',
   prusaconnect: 'https://connect.prusa3d.com',
-  bambu: '192.168.0.30'
+  bambu: '192.168.0.30',
+  flashforge: '192.168.0.40'
 };
 
 const blank = (): PhysicalPrinter => ({ id: crypto.randomUUID(), name: '', host_type: 'moonraker', print_host: '', use_gateway: true });
@@ -134,6 +135,7 @@ export const PrinterConnectionDialog: React.FC = () => {
   };
   const error = validate(draft);
   const isBambu = draft.host_type === 'bambu';
+  const isFlashforge = draft.host_type === 'flashforge';
   const isPrusaLink = draft.host_type === 'prusalink';
   const isCloud = draft.host_type === 'prusaconnect';
 
@@ -223,13 +225,13 @@ export const PrinterConnectionDialog: React.FC = () => {
           <Field label="Hostname, IP or URL" hint={isBambu ? 'The printer\'s IP address (LAN mode must be on).' : 'Where the printer\'s API answers. Moonraker is usually the same address as Fluidd/Mainsail.'}>
             <input id="pc-host" style={inputStyle} value={draft.print_host} onChange={(e) => set('print_host', e.target.value)} placeholder={HOST_PLACEHOLDER[draft.host_type]} />
           </Field>
-          {!isBambu && !isCloud && (
+          {!isBambu && !isFlashforge && !isCloud && (
             <Field label="Device UI" hint="Address of the printer's web UI, shown in the Device tab. Leave empty to use the host.">
               <input id="pc-webui" style={inputStyle} value={draft.print_host_webui ?? ''} onChange={(e) => set('print_host_webui', e.target.value)} placeholder="http://192.168.0.10" />
             </Field>
           )}
 
-          {isBambu ? (
+          {(isBambu || isFlashforge) ? (
             <>
               <Field label="Serial number"><input id="pc-serial" style={inputStyle} value={draft.serial ?? ''} onChange={(e) => set('serial', e.target.value)} /></Field>
               <Field label="Access code"><input id="pc-apikey" style={inputStyle} type="password" value={draft.printhost_apikey ?? ''} onChange={(e) => set('printhost_apikey', e.target.value)} /></Field>
@@ -249,13 +251,13 @@ export const PrinterConnectionDialog: React.FC = () => {
           )}
 
           <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12 }}>
-            <input id="pc-gateway" type="checkbox" checked={draft.use_gateway || isBambu || isCloud} disabled={isBambu || isCloud} onChange={(e) => set('use_gateway', e.target.checked)} />
+            <input id="pc-gateway" type="checkbox" checked={draft.use_gateway || isBambu || isFlashforge || isCloud} disabled={isBambu || isFlashforge || isCloud} onChange={(e) => set('use_gateway', e.target.checked)} />
             <span>
               Connect through this app's server (gateway)
               <br /><span id="pc-gateway-status" style={{ color: 'var(--text-muted, #a0a0a0)', fontSize: 11 }}>{gatewayNote}</span>
             </span>
           </label>
-          {(draft.use_gateway || isBambu || isCloud) && (
+          {(draft.use_gateway || isBambu || isFlashforge || isCloud) && (
             <>
               <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12 }}>
                 <input id="pc-local-gateway" type="checkbox" checked={draft.local_gateway !== undefined} onChange={(e) => set('local_gateway', e.target.checked ? DEFAULT_LOCAL_GATEWAY : undefined)} />

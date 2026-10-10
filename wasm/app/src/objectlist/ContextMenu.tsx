@@ -1,3 +1,4 @@
+import { useObjectListStore } from "./objectListStore";
 import React, { useState, useEffect, useRef } from 'react';
 import type { PrimitiveShape, VolumeType } from './types';
 import { usePaintToolsStore } from '../paint-tools';
@@ -8,6 +9,7 @@ import { useCutStore } from '../cut';
 import { useRepairStore } from '../repair';
 import { useEditOpsStore } from '../editops';
 import { useAppStore } from '../store/appStore';
+import { useTranslation } from "../i18n";
 
 export interface ContextMenuProps {
   x: number;
@@ -37,6 +39,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onDelete,
   onSetExtruder
 }) => {
+    const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   const selectedFilaments = useAppStore((s) => s.selectedFilaments);
@@ -70,18 +73,21 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   }, [onClose]);
 
   const shapes: { label: string; shape: PrimitiveShape }[] = [
-    { label: 'Cube', shape: 'cube' },
-    { label: 'Cylinder', shape: 'cylinder' },
-    { label: 'Sphere', shape: 'sphere' },
-    { label: 'Cone', shape: 'cone' }
+    { label: t("Cube"), shape: 'cube' },
+    { label: t("Cylinder"), shape: 'cylinder' },
+    { label: t("Sphere"), shape: 'sphere' },
+    { label: t("Cone"), shape: 'cone' },
+    { label: t("Disc"), shape: 'disc' },
+    { label: t("Torus"), shape: 'torus' },
+    { label: t("Slab"), shape: 'slab' }
   ];
 
   const addVolumeCategories: { label: string; type: VolumeType }[] = [
-    { label: 'Add Part', type: 'part' },
-    { label: 'Add Negative Part', type: 'negative' },
-    { label: 'Add Modifier', type: 'modifier' },
-    { label: 'Add Support Blocker', type: 'support_blocker' },
-    { label: 'Add Support Enforcer', type: 'support_enforcer' }
+    { label: t("Add Part"), type: 'part' },
+    { label: t("Add Negative Part"), type: 'negative' },
+    { label: t("Add Modifier"), type: 'modifier' },
+    { label: t("Add Support Blocker"), type: 'support_blocker' },
+    { label: t("Add Support Enforcer"), type: 'support_enforcer' }
   ];
 
   const renderExtruderMenuItem = () => {
@@ -101,8 +107,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           background: activeSubmenu === 'extruder' ? 'rgba(255, 255, 255, 0.08)' : 'transparent'
         }}
       >
-        <span>Change Filament</span>
-        <span style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>▶</span>
+        <span>{t("Change Filament")}</span>
+        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▶</span>
 
         {activeSubmenu === 'extruder' && (
           <div
@@ -112,8 +118,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               position: 'absolute',
               left: '100%',
               top: 0,
-              background: '#27272a',
-              border: '1px solid #3f3f46',
+              background: 'var(--panel-bg)',
+              border: '1px solid var(--control-bg)',
               borderRadius: 6,
               boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
               minWidth: 140,
@@ -140,8 +146,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 e.currentTarget.style.background = 'transparent';
               }}
             >
-              Default (Inherit)
-            </div>
+              {t("Default (Inherit)")}</div>
             {slotItems.map((slot) => (
               <div
                 key={slot.ext}
@@ -175,7 +180,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                     flexShrink: 0
                   }}
                 />
-                <span>Filament {slot.ext}</span>
+                <span>{t("Filament")}{slot.ext}</span>
               </div>
             ))}
           </div>
@@ -192,18 +197,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       style={{
         position: 'fixed',
         left: Math.min(x, window.innerWidth - 220),
-        top: Math.max(10, Math.min(y, window.innerHeight - 420)),
-        maxHeight: 'calc(100vh - 40px)',
+        top: Math.max(10, Math.min(y, window.innerHeight - 550)),
+        maxHeight: window.innerHeight - Math.max(10, Math.min(y, window.innerHeight - 550)) - 10,
         overflowY: 'auto',
         zIndex: 9999,
-        background: '#27272a',
-        border: '1px solid #3f3f46',
+        background: 'var(--panel-bg)',
+        border: '1px solid var(--control-bg)',
         borderRadius: 6,
         boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
         minWidth: 180,
         padding: '4px 0',
         fontSize: '0.82rem',
-        color: '#e4e4e7',
+        color: 'var(--text-color)',
         userSelect: 'none'
       }}
     >
@@ -226,7 +231,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               }}
             >
               <span>{cat.label}</span>
-              <span style={{ fontSize: '0.7rem', color: '#a1a1aa' }}>▶</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▶</span>
 
               {activeSubmenu === cat.type && (
                 <div
@@ -236,8 +241,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                     position: 'absolute',
                     left: '100%',
                     top: 0,
-                    background: '#27272a',
-                    border: '1px solid #3f3f46',
+                    background: 'var(--panel-bg)',
+                    border: '1px solid var(--control-bg)',
                     borderRadius: 6,
                     boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                     minWidth: 120,
@@ -273,11 +278,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             </div>
           ))}
 
-          <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
+          <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
           {renderExtruderMenuItem()}
 
-          <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
+          <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
           <div
             id="menu-action-cut"
@@ -302,8 +307,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            ✂️ Cut
-          </div>
+            {t("✂️ Cut")}</div>
 
           <div
             id="menu-action-repair"
@@ -328,8 +332,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            🔧 Repair Non-Manifold
-          </div>
+            {t("🔧 Repair Non-Manifold")}</div>
 
           <div
             id="menu-action-split-objects"
@@ -346,8 +349,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            Split to Objects
-          </div>
+            {t("Split to Objects")}</div>
 
           <div
             id="menu-action-split-parts"
@@ -364,8 +366,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            Split to Parts
-          </div>
+            {t("Split to Parts")}</div>
 
           <div
             id="menu-action-simplify"
@@ -382,10 +383,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            Simplify...
-          </div>
+            {t("Simplify...")}</div>
 
-          <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
+          <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
           <div
             id="menu-action-add-text"
@@ -402,10 +402,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            🔤 Add 3D Text
-          </div>
+            {t("🔤 Add 3D Text")}</div>
 
-          <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
+          <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
           {(['support', 'seam', 'color', 'fuzzy'] as const).map((layer) => (
             <div key={layer} id={`menu-action-paint-${layer}`}
@@ -423,7 +422,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             </div>
           ))}
 
-          <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
+          <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
           <div
             id="menu-action-rename"
@@ -440,9 +439,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            Rename
-          </div>
+            {t("Rename")}</div>
 
+          <div id="menu-action-move-up" data-testid="menu-action-move-up" onClick={() => { const objs = useObjectListStore.getState().objects; const idx = objs.findIndex(o => o.id === objectId); if (idx > 0) useObjectListStore.getState().moveObject(objectId, idx - 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Up")}</div>
+          <div id="menu-action-move-down" data-testid="menu-action-move-down" onClick={() => { const objs = useObjectListStore.getState().objects; const idx = objs.findIndex(o => o.id === objectId); if (idx >= 0 && idx < objs.length - 1) useObjectListStore.getState().moveObject(objectId, idx + 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Down")}</div>
+          <div id="menu-action-lock-orientation" data-testid="menu-action-lock-orientation" onClick={() => { const plate = usePlateStore.getState(); const instId = (plate.selectedObjectId === objectId ? plate.selectedInstanceId : null) ?? plate.objects.find(o => o.id === objectId)?.instances[0]?.id; if (instId !== undefined) { plate.toggleOrientationLock(instId); } onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{(() => { const plate = usePlateStore.getState(); const instId = (plate.selectedObjectId === objectId ? plate.selectedInstanceId : null) ?? plate.objects.find(o => o.id === objectId)?.instances[0]?.id; return instId && plate.isOrientationLocked(instId) ? t("Unlock Orientation") : t("Lock Orientation"); })()}</div>
           <div
             id="menu-action-delete"
             data-testid="menu-action-delete"
@@ -458,8 +459,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            Delete
-          </div>
+            {t("Delete")}</div>
         </>
       ) : (
         <>
@@ -479,8 +479,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 e.currentTarget.style.background = 'transparent';
               }}
             >
-              🔤 Edit 3D Text
-            </div>
+              {t("🔤 Edit 3D Text")}</div>
           )}
 
           <div
@@ -498,8 +497,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            Split to Parts
-          </div>
+            {t("Split to Parts")}</div>
 
           <div
             id="menu-action-simplify"
@@ -516,8 +514,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            Simplify...
-          </div>
+            {t("Simplify...")}</div>
 
           {renderExtruderMenuItem()}
 
@@ -536,9 +533,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            Rename
-          </div>
+            {t("Rename")}</div>
 
+          <div id="menu-action-move-up-vol" data-testid="menu-action-move-up-vol" onClick={() => { const objs = useObjectListStore.getState().objects; const obj = objs.find(o => o.id === objectId); const idx = obj?.volumes?.findIndex(v => v.id === volumeId); if (idx !== undefined && idx > 0) useObjectListStore.getState().moveVolume(objectId, volumeId!, idx - 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Up")}</div>
+          <div id="menu-action-move-down-vol" data-testid="menu-action-move-down-vol" onClick={() => { const objs = useObjectListStore.getState().objects; const obj = objs.find(o => o.id === objectId); const idx = obj?.volumes?.findIndex(v => v.id === volumeId); if (idx !== undefined && obj?.volumes && idx < obj.volumes.length - 1) useObjectListStore.getState().moveVolume(objectId, volumeId!, idx + 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Down")}</div>
           <div
             id="menu-action-delete-volume"
             data-testid="menu-action-delete-volume"
@@ -554,8 +552,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            Delete
-          </div>
+            {t("Delete")}</div>
         </>
       )}
     </div>

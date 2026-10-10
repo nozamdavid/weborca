@@ -1,3 +1,4 @@
+#include <unordered_set>
 #include "Engine.hpp"
 #include "ConfigRules.hpp"
 #include "ProjectOps.hpp"
@@ -31,6 +32,7 @@
 #include "libslic3r/Thread.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/GCode/GCodeProcessor.hpp"
+#include "libslic3r/GCode/WipeTowerEstimate.hpp"
 
 #include <tbb/task_arena.h>
 
@@ -209,6 +211,7 @@ private:
     json op_getCompatiblePresets(const json& args);
     json op_selectPresets(const json& args);
     json op_getConfig(const json& args);
+    json op_getWipeTowerPreview(const json& args);
     json op_getPresetConfig(const json& args);
     json op_getConfigDef(const json& args);
     json op_evaluateRules(const json& args);
@@ -222,6 +225,7 @@ private:
     json op_setInstanceTransform(const json& args);
     json op_deleteObject(const json& args);
     json op_moveObject(const json& args);
+    json op_moveVolume(const json& args);
     json op_duplicateInstance(const json& args);
     json op_mirrorInstance(const json& args);
     json op_cloneObject(const json& args);
@@ -435,6 +439,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_getCompatiblePresets(args);
         } else if (op == "selectPresets") {
             result_data = op_selectPresets(args);
+        } else if (op == "getWipeTowerPreview") {
+            result_data = op_getWipeTowerPreview(args);
         } else if (op == "getConfig") {
             result_data = op_getConfig(args);
         } else if (op == "getPresetConfig") {
@@ -477,6 +483,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_getObjectTree(args);
         } else if (op == "addVolume") {
             result_data = op_addVolume(args);
+        } else if (op == "moveVolume") {
+            result_data = op_moveVolume(args);
         } else if (op == "deleteVolume") {
             result_data = op_deleteVolume(args);
         } else if (op == "renameObject") {
@@ -549,7 +557,7 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_resetLayerHeights(args);
         } else if (op == "getObjectLayers") {
             result_data = op_getObjectLayers(args);
-        
+
         } else if (op == "autoOrient") { result_data = op_autoOrient(args);
         } else if (op == "getPlanarFacets") { result_data = op_getPlanarFacets(args);
         } else if (op == "placeOnFace") { result_data = op_placeOnFace(args);
@@ -946,6 +954,28 @@ json Engine::Impl::op_selectPresets(const json& args) {
         {"process", m_selected_process},
         {"filaments", m_selected_filaments}
     };
+}
+
+json Engine::Impl::op_getWipeTowerPreview(const json& args) {
+    if (!m_bundle) return {{"enabled", false}};
+    auto config = m_bundle->full_config();
+    config.apply(m_options_override);
+    const size_t plate = static_cast<size_t>(std::max(0, args.value("plateIndex", 0)));
+    if (plate < m_plate_data.size()) config.apply(m_plate_data[plate]->config);
+    const auto* diameters = config.opt<Slic3r::ConfigOptionFloats>("filament_diameter");
+    if (!config.opt_bool("enable_prime_tower") || !diameters || diameters->values.size() < 2) return {{"enabled", false}};
+    std::vector<unsigned int> filaments;
+    for (size_t i = 0; i < diameters->values.size(); ++i) filaments.push_back(static_cast<unsigned int>(i));
+    double height = 20.0;
+    for (const auto* object : m_model.objects) height = std::max(height, object->bounding_box_exact().size().z());
+    const auto footprint = Slic3r::estimate_wipe_tower_footprint(config, Slic3r::resolve_wipe_tower_type(config), filaments, config.opt_float("layer_height"), height);
+    const auto coordinate = [&](const char* key, double fallback) {
+        const auto* values = config.opt<Slic3r::ConfigOptionFloats>(key);
+        return values && !values->values.empty() ? values->values[std::min(plate, values->values.size() - 1)] : fallback;
+    };
+    return {{"enabled", true}, {"width", footprint.width}, {"depth", footprint.depth}, {"height", footprint.height},
+            {"brim", footprint.brim_width}, {"x", coordinate("wipe_tower_x", 165.0)}, {"y", coordinate("wipe_tower_y", 250.0)},
+            {"rotation", config.opt_float("wipe_tower_rotation_angle")}};
 }
 
 json Engine::Impl::op_getConfig(const json& /*args*/) {
@@ -1704,6 +1734,14 @@ json Engine::Impl::op_arrange(const json& args) {
     config.apply(m_options_override);
 
     bool use_bed = args.value("useBed", false);
+    int plate_index = args.value("plateIndex", -1);
+
+    std::unordered_set<size_t> locked_instances;
+    if (args.contains("lockedOrientations") && args["lockedOrientations"].is_array()) {
+        for (const auto& el : args["lockedOrientations"]) {
+            if (el.is_number()) locked_instances.insert(el.get<size_t>());
+        }
+    }
 
     Slic3r::BoundingBoxf bed_bbox;
     if (const auto *bed_shape_opt = config.opt<Slic3r::ConfigOptionPoints>("printable_area");
@@ -1713,7 +1751,26 @@ json Engine::Impl::op_arrange(const json& args) {
     }
     Slic3r::Vec2d bed_center = bed_bbox.defined ? bed_bbox.center() : Slic3r::Vec2d(100.0, 100.0);
 
-    if (!use_bed) {
+    Slic3r::Vec3d plate_origin = {0, 0, 0};
+    if (plate_index >= 0) {
+        double bed_w = 256.0, bed_d = 256.0, bed_h = 256.0;
+        OrcaEngine::getBedDimensions(config, bed_w, bed_d, bed_h);
+        size_t total_plates = std::max(static_cast<size_t>(plate_index + 1), m_plate_data.size());
+        if (total_plates == 0) total_plates = 1;
+        plate_origin = OrcaEngine::computePlateOrigin(plate_index, total_plates, bed_w, bed_d);
+
+        bed_center += Slic3r::Vec2d(plate_origin.x(), plate_origin.y());
+
+        while (m_plate_data.size() < total_plates) {
+            auto* pd = new Slic3r::PlateData();
+            pd->plate_index = static_cast<int>(m_plate_data.size());
+            pd->plate_name = "Plate " + std::to_string(pd->plate_index + 1);
+            m_plate_data.push_back(pd);
+        }
+        OrcaEngine::assignInstancesToPlates(m_model, m_plate_data, config);
+    }
+
+    if (!use_bed && plate_index < 0 && locked_instances.empty()) {
         m_model.center_instances_around_point(bed_center);
         Slic3r::arrange_objects(m_model, Slic3r::InfiniteBed{Slic3r::Point::new_scale(bed_center.x(), bed_center.y())},
                                 Slic3r::ArrangeParams{Slic3r::scaled(Slic3r::min_object_distance(config))});
@@ -1722,6 +1779,26 @@ json Engine::Impl::op_arrange(const json& args) {
 
     Slic3r::ModelInstancePtrs instances;
     auto input = Slic3r::get_arrange_polys(m_model, instances);
+    if (plate_index >= 0) {
+        // get_arrange_polys includes non-printable instances too. Filter both
+        // parallel arrays explicitly so other plates retain their transforms.
+        std::unordered_set<size_t> allowed_instances;
+        for (const auto& pair : m_plate_data[plate_index]->objects_and_instances)
+            allowed_instances.insert(m_model.objects[pair.first]->instances[pair.second]->id().id);
+        for (size_t i = instances.size(); i-- > 0;) {
+            if (allowed_instances.count(instances[i]->id().id) == 0) {
+                instances.erase(instances.begin() + i);
+                input.erase(input.begin() + i);
+            }
+        }
+    }
+
+    for (size_t i = 0; i < instances.size(); ++i) {
+        if (locked_instances.count(instances[i]->id().id)) {
+            input[i].orientation_locked = true;
+        }
+    }
+
     // Optional spacing (mm) between objects, replacing the one derived from the print settings.
     const double spacing_mm = args.contains("spacing") && args["spacing"].is_number() ? std::max(0.0, args["spacing"].get<double>()) : -1.0;
     Slic3r::ArrangeParams params{Slic3r::scaled(spacing_mm >= 0.0 ? spacing_mm : Slic3r::min_object_distance(config))};
@@ -1737,12 +1814,20 @@ json Engine::Impl::op_arrange(const json& args) {
                     bed_points.emplace_back(Slic3r::Point::new_scale(p.x(), p.y()));
             }
         }
+        if (plate_index >= 0) {
+            Slic3r::Point shift = Slic3r::Point::new_scale(plate_origin.x(), plate_origin.y());
+            for (auto& p : bed_points) {
+                p += shift;
+            }
+        }
+
         if (bed_points.size() >= 3) {
             Slic3r::arrangement::arrange(input, bed_points, params);
         } else {
-            m_model.center_instances_around_point(bed_center);
             Slic3r::arrangement::arrange(input, Slic3r::InfiniteBed{Slic3r::Point::new_scale(bed_center.x(), bed_center.y())}, params);
         }
+    } else {
+        Slic3r::arrangement::arrange(input, Slic3r::InfiniteBed{Slic3r::Point::new_scale(bed_center.x(), bed_center.y())}, params);
     }
 
     Slic3r::apply_arrange_polys(input, instances, Slic3r::throw_if_out_of_bed);
@@ -1766,6 +1851,10 @@ json Engine::Impl::op_getObjectTree(const json& args) {
 
 json Engine::Impl::op_addVolume(const json& args) {
     return OrcaWasm::addVolume(m_model, args);
+}
+
+json Engine::Impl::op_moveVolume(const json& args) {
+    return OrcaWasm::moveVolume(m_model, args);
 }
 
 json Engine::Impl::op_deleteVolume(const json& args) {

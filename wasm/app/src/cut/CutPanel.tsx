@@ -10,8 +10,10 @@ import type {
   CutConnectorStyle,
   CutConnectorShape
 } from './types';
+import { useTranslation } from "../i18n";
 
 export const CutPanel: React.FC = () => {
+    const { t } = useTranslation();
   const isCutActive = useCutStore((s) => s.isCutActive);
   const selectedObjectId = useCutStore((s) => s.selectedObjectId);
   const z = useCutStore((s) => s.z);
@@ -79,7 +81,7 @@ export const CutPanel: React.FC = () => {
         backdropFilter: 'blur(14px)',
         border: '1px solid rgba(255, 255, 255, 0.1)',
         borderRadius: 8,
-        color: '#f4f4f5',
+        color: 'var(--text-color)',
         fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
         fontSize: 12,
         padding: 14,
@@ -99,9 +101,9 @@ export const CutPanel: React.FC = () => {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 16 }}>✂️</span>
+          <span style={{ fontSize: 16 }}>{t("✂️")}</span>
           <span style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>
-            Cut Object {selectedObjectId ? `#${selectedObjectId}` : ''}
+            {t("Cut Object")}{selectedObjectId ? `#${selectedObjectId}` : ''}
           </span>
         </div>
         <button
@@ -111,13 +113,13 @@ export const CutPanel: React.FC = () => {
           style={{
             background: 'transparent',
             border: 'none',
-            color: '#a1a1aa',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
             fontSize: 16,
             padding: '2px 6px',
             borderRadius: 4
           }}
-          title="Close cut tool"
+          title={t("Close cut tool")}
         >
           ✕
         </button>
@@ -126,8 +128,8 @@ export const CutPanel: React.FC = () => {
       {/* Plane Height Slider */}
       <div style={{ marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ color: '#a1a1aa' }}>Cut Height (Z)</span>
-          <span id="cut-z-display" style={{ fontWeight: 600, color: '#38bdf8' }}>{z.toFixed(2)} mm</span>
+          <span style={{ color: 'var(--text-muted)' }}>{t("Cut Height (Z)")}</span>
+          <span id="cut-z-display" style={{ fontWeight: 600, color: '#38bdf8' }}>{z.toFixed(2)} {t("mm")}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input
@@ -154,8 +156,8 @@ export const CutPanel: React.FC = () => {
             onChange={(e) => setZ(parseFloat(e.target.value) || 0)}
             style={{
               width: 56,
-              background: '#27272a',
-              border: '1px solid #3f3f46',
+              background: 'var(--panel-bg)',
+              border: '1px solid var(--control-bg)',
               borderRadius: 4,
               color: '#fff',
               padding: '2px 4px',
@@ -176,8 +178,8 @@ export const CutPanel: React.FC = () => {
           style={{
             width: '100%',
             padding: '5px 8px',
-            background: flipPlane ? '#0284c7' : '#27272a',
-            border: `1px solid ${flipPlane ? '#38bdf8' : '#3f3f46'}`,
+            background: flipPlane ? '#0284c7' : 'var(--panel-bg)',
+            border: `1px solid ${flipPlane ? '#38bdf8' : 'var(--control-bg)'}`,
             borderRadius: 4,
             color: '#fff',
             cursor: isCutFinished ? 'not-allowed' : 'pointer',
@@ -189,8 +191,8 @@ export const CutPanel: React.FC = () => {
             gap: 6
           }}
         >
-          <span>🔄</span>
-          <span>Flip Cut Plane Normal {flipPlane ? '(Inverted)' : '(Default)'}</span>
+          <span>{t("🔄")}</span>
+          <span>{t("Flip Cut Plane Normal")}{flipPlane ? '(Inverted)' : '(Default)'}</span>
         </button>
       </div>
 
@@ -204,9 +206,8 @@ export const CutPanel: React.FC = () => {
           marginBottom: 14
         }}
       >
-        <div style={{ color: '#a1a1aa', fontWeight: 600, marginBottom: 6, fontSize: 11 }}>
-          Halves & Placement
-        </div>
+        <div style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: 6, fontSize: 11 }}>
+          {t("Halves & Placement")}</div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: hasConnectors ? 'not-allowed' : 'pointer' }}>
             <input
@@ -218,7 +219,7 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => setKeepUpper(e.target.checked)}
               style={{ accentColor: '#0ea5e9' }}
             />
-            <span style={{ color: hasConnectors ? '#71717a' : '#f4f4f5' }}>Keep Upper</span>
+            <span style={{ color: hasConnectors ? 'var(--text-dim)' : 'var(--text-color)' }}>{t("Keep Upper")}</span>
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: hasConnectors ? 'not-allowed' : 'pointer' }}>
             <input
@@ -230,7 +231,7 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => setKeepLower(e.target.checked)}
               style={{ accentColor: '#0ea5e9' }}
             />
-            <span style={{ color: hasConnectors ? '#71717a' : '#f4f4f5' }}>Keep Lower</span>
+            <span style={{ color: hasConnectors ? 'var(--text-dim)' : 'var(--text-color)' }}>{t("Keep Lower")}</span>
           </label>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
@@ -243,7 +244,7 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => setPlaceOnCutUpper(e.target.checked)}
               style={{ accentColor: '#0ea5e9' }}
             />
-            <span>Place Cut (Up)</span>
+            <span>{t("Place Cut (Up)")}</span>
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
             <input
@@ -255,7 +256,7 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => setPlaceOnCutLower(e.target.checked)}
               style={{ accentColor: '#0ea5e9' }}
             />
-            <span>Place Cut (Low)</span>
+            <span>{t("Place Cut (Low)")}</span>
           </label>
 
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
@@ -268,7 +269,7 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => setFlipUpper(e.target.checked)}
               style={{ accentColor: '#0ea5e9' }}
             />
-            <span>Flip Upper</span>
+            <span>{t("Flip Upper")}</span>
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
             <input
@@ -280,7 +281,7 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => setFlipLower(e.target.checked)}
               style={{ accentColor: '#0ea5e9' }}
             />
-            <span>Flip Lower</span>
+            <span>{t("Flip Lower")}</span>
           </label>
         </div>
 
@@ -295,14 +296,13 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => setKeepAsParts(e.target.checked)}
               style={{ accentColor: '#0ea5e9' }}
             />
-            <span style={{ color: hasConnectors ? '#71717a' : '#f4f4f5' }}>Keep as volumes in one object</span>
+            <span style={{ color: hasConnectors ? 'var(--text-dim)' : 'var(--text-color)' }}>{t("Keep as volumes in one object")}</span>
           </label>
         </div>
 
         {hasConnectors && (
           <div style={{ marginTop: 6, color: '#38bdf8', fontSize: 10 }}>
-            * Connectors require keeping both halves as separate objects.
-          </div>
+            {t("* Connectors require keeping both halves as separate objects.")}</div>
         )}
       </div>
 
@@ -317,8 +317,8 @@ export const CutPanel: React.FC = () => {
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ color: '#a1a1aa', fontWeight: 600, fontSize: 11 }}>
-            Connectors ({connectors.length})
+          <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: 11 }}>
+            {t("Connectors (")}{connectors.length})
           </span>
           <div style={{ display: 'flex', gap: 4 }}>
             <button
@@ -337,8 +337,7 @@ export const CutPanel: React.FC = () => {
                 fontWeight: 500
               }}
             >
-              + Add
-            </button>
+              {t("+ Add")}</button>
             {connectors.length > 0 && (
               <button
                 id="cut-clear-connectors-btn"
@@ -354,10 +353,9 @@ export const CutPanel: React.FC = () => {
                   padding: '3px 6px',
                   cursor: isCutFinished ? 'not-allowed' : 'pointer'
                 }}
-                title="Clear all connectors"
+                title={t("Clear all connectors")}
               >
-                Clear
-              </button>
+                {t("Clear")}</button>
             )}
           </div>
         </div>
@@ -373,7 +371,7 @@ export const CutPanel: React.FC = () => {
           }}
         >
           <div>
-            <label style={{ color: '#a1a1aa', display: 'block', marginBottom: 2 }}>Type</label>
+            <label style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>{t("Type")}</label>
             <select
               id="cut-connector-type-select"
               data-testid="cut-connector-type-select"
@@ -382,8 +380,8 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => updateDefaultAttrs({ type: e.target.value as CutConnectorType })}
               style={{
                 width: '100%',
-                background: '#27272a',
-                border: '1px solid #3f3f46',
+                background: 'var(--panel-bg)',
+                border: '1px solid var(--control-bg)',
                 borderRadius: 4,
                 color: '#fff',
                 padding: '3px 4px',
@@ -399,7 +397,7 @@ export const CutPanel: React.FC = () => {
           </div>
 
           <div>
-            <label style={{ color: '#a1a1aa', display: 'block', marginBottom: 2 }}>Shape</label>
+            <label style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>{t("Shape")}</label>
             <select
               id="cut-connector-shape-select"
               data-testid="cut-connector-shape-select"
@@ -408,10 +406,10 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => updateDefaultAttrs({ shape: e.target.value as CutConnectorShape })}
               style={{
                 width: '100%',
-                background: isSnap ? '#18181b' : '#27272a',
-                border: '1px solid #3f3f46',
+                background: isSnap ? 'var(--canvas-bg)' : 'var(--panel-bg)',
+                border: '1px solid var(--control-bg)',
                 borderRadius: 4,
-                color: isSnap ? '#71717a' : '#fff',
+                color: isSnap ? 'var(--text-dim)' : '#fff',
                 padding: '3px 4px',
                 fontSize: 11
               }}
@@ -425,7 +423,7 @@ export const CutPanel: React.FC = () => {
           </div>
 
           <div>
-            <label style={{ color: '#a1a1aa', display: 'block', marginBottom: 2 }}>Style</label>
+            <label style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>{t("Style")}</label>
             <select
               id="cut-connector-style-select"
               data-testid="cut-connector-style-select"
@@ -434,10 +432,10 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => updateDefaultAttrs({ style: e.target.value as CutConnectorStyle })}
               style={{
                 width: '100%',
-                background: isSnap ? '#18181b' : '#27272a',
-                border: '1px solid #3f3f46',
+                background: isSnap ? 'var(--canvas-bg)' : 'var(--panel-bg)',
+                border: '1px solid var(--control-bg)',
                 borderRadius: 4,
-                color: isSnap ? '#71717a' : '#fff',
+                color: isSnap ? 'var(--text-dim)' : '#fff',
                 padding: '3px 4px',
                 fontSize: 11
               }}
@@ -451,7 +449,7 @@ export const CutPanel: React.FC = () => {
           </div>
 
           <div>
-            <label style={{ color: '#a1a1aa', display: 'block', marginBottom: 2 }}>Size (ø mm)</label>
+            <label style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>{t("Size (ø mm)")}</label>
             <input
               id="cut-connector-size-input"
               data-testid="cut-connector-size-input"
@@ -464,8 +462,8 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => updateDefaultAttrs({ size: parseFloat(e.target.value) || 3.0 })}
               style={{
                 width: '100%',
-                background: '#27272a',
-                border: '1px solid #3f3f46',
+                background: 'var(--panel-bg)',
+                border: '1px solid var(--control-bg)',
                 borderRadius: 4,
                 color: '#fff',
                 padding: '3px 4px',
@@ -475,7 +473,7 @@ export const CutPanel: React.FC = () => {
           </div>
 
           <div>
-            <label style={{ color: '#a1a1aa', display: 'block', marginBottom: 2 }}>Depth (mm)</label>
+            <label style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>{t("Depth (mm)")}</label>
             <input
               id="cut-connector-depth-input"
               data-testid="cut-connector-depth-input"
@@ -488,8 +486,8 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => updateDefaultAttrs({ depthRatio: parseFloat(e.target.value) || 4.0 })}
               style={{
                 width: '100%',
-                background: '#27272a',
-                border: '1px solid #3f3f46',
+                background: 'var(--panel-bg)',
+                border: '1px solid var(--control-bg)',
                 borderRadius: 4,
                 color: '#fff',
                 padding: '3px 4px',
@@ -499,7 +497,7 @@ export const CutPanel: React.FC = () => {
           </div>
 
           <div>
-            <label style={{ color: '#a1a1aa', display: 'block', marginBottom: 2 }}>Tolerance (mm)</label>
+            <label style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>{t("Tolerance (mm)")}</label>
             <input
               id="cut-connector-tolerance-input"
               data-testid="cut-connector-tolerance-input"
@@ -512,8 +510,8 @@ export const CutPanel: React.FC = () => {
               onChange={(e) => updateDefaultAttrs({ tolerance: parseFloat(e.target.value) || 0.1 })}
               style={{
                 width: '100%',
-                background: '#27272a',
-                border: '1px solid #3f3f46',
+                background: 'var(--panel-bg)',
+                border: '1px solid var(--control-bg)',
                 borderRadius: 4,
                 color: '#fff',
                 padding: '3px 4px',
@@ -524,7 +522,7 @@ export const CutPanel: React.FC = () => {
 
           {isPlug && (
             <div style={{ gridColumn: 'span 2' }}>
-              <label style={{ color: '#a1a1aa', display: 'block', marginBottom: 2 }}>Target Half</label>
+              <label style={{ color: 'var(--text-muted)', display: 'block', marginBottom: 2 }}>{t("Target Half")}</label>
               <select
                 id="cut-connector-target-half-select"
                 data-testid="cut-connector-target-half-select"
@@ -533,16 +531,16 @@ export const CutPanel: React.FC = () => {
                 onChange={(e) => updateDefaultAttrs({ targetHalf: e.target.value as 'upper' | 'lower' })}
                 style={{
                   width: '100%',
-                  background: '#27272a',
-                  border: '1px solid #3f3f46',
+                  background: 'var(--panel-bg)',
+                  border: '1px solid var(--control-bg)',
                   borderRadius: 4,
                   color: '#fff',
                   padding: '3px 4px',
                   fontSize: 11
                 }}
               >
-                <option value="upper">Upper (plug in upper half, socket in lower)</option>
-                <option value="lower">Lower (plug in lower half, socket in upper)</option>
+                <option value="upper">{t("Upper (plug in upper half, socket in lower)")}</option>
+                <option value="lower">{t("Lower (plug in lower half, socket in upper)")}</option>
               </select>
             </div>
           )}
@@ -551,13 +549,11 @@ export const CutPanel: React.FC = () => {
         {/* Type-specific hints */}
         {isSnap && (
           <div style={{ color: '#eab308', fontSize: 10, marginBottom: 6 }}>
-            * Snap connector requires lower targetHalf, prism style, and circle shape.
-          </div>
+            {t("* Snap connector requires lower targetHalf, prism style, and circle shape.")}</div>
         )}
         {isDowel && (
           <div style={{ color: '#38bdf8', fontSize: 10, marginBottom: 6 }}>
-            * Dowels generate an independent pin object and negative sockets in both halves.
-          </div>
+            {t("* Dowels generate an independent pin object and negative sockets in both halves.")}</div>
         )}
 
         {/* Honest clearance notice with plain user wording */}
@@ -575,8 +571,7 @@ export const CutPanel: React.FC = () => {
               marginTop: 6
             }}
           >
-            Inspect connector clearance in sliced preview.
-          </div>
+            {t("Inspect connector clearance in sliced preview.")}</div>
         )}
 
         {/* Connectors List */}
@@ -610,11 +605,11 @@ export const CutPanel: React.FC = () => {
                   }}
                 >
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <span style={{ color: '#71717a' }}>#{idx + 1}</span>
+                    <span style={{ color: 'var(--text-dim)' }}>#{idx + 1}</span>
                     <span style={{ fontWeight: 500 }}>
                       {conn.attrs?.type || 'plug'} ({conn.attrs?.shape || 'circle'})
                     </span>
-                    <span style={{ color: '#a1a1aa', fontSize: 10 }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
                       ø{conn.attrs?.size ?? 3} h{conn.attrs?.depthRatio ?? 4}
                       {conn.attrs?.type === 'plug' ? ` [${conn.attrs?.targetHalf || 'upper'}]` : ''}
                     </span>
@@ -628,12 +623,12 @@ export const CutPanel: React.FC = () => {
                     style={{
                       background: 'transparent',
                       border: 'none',
-                      color: isCutFinished ? '#71717a' : '#ef4444',
+                      color: isCutFinished ? 'var(--text-dim)' : '#ef4444',
                       cursor: isCutFinished ? 'not-allowed' : 'pointer',
                       fontSize: 12,
                       padding: '1px 4px'
                     }}
-                    title="Remove connector"
+                    title={t("Remove connector")}
                   >
                     ✕
                   </button>
@@ -691,10 +686,10 @@ export const CutPanel: React.FC = () => {
           onClick={closeCut}
           disabled={isCutting}
           style={{
-            background: '#27272a',
-            border: '1px solid #3f3f46',
+            background: 'var(--panel-bg)',
+            border: '1px solid var(--control-bg)',
             borderRadius: 6,
-            color: '#d4d4d8',
+            color: 'var(--text-color)',
             fontSize: 12,
             padding: '8px 12px',
             cursor: 'pointer'
@@ -720,12 +715,10 @@ export const CutPanel: React.FC = () => {
           }}
         >
           <div>
-            Cut successful! Produced {lastResult.createdObjects?.length ?? 0} object(s) with{' '}
-            {lastResult.connectorCount ?? 0} connector(s).
-          </div>
+            {t("Cut successful! Produced")}{lastResult.createdObjects?.length ?? 0} {t("object(s) with")}{' '}
+            {lastResult.connectorCount ?? 0} {t("connector(s).")}</div>
           <div style={{ fontSize: 10, color: '#bbf7d0', marginTop: 4 }}>
-            Inspect connector clearance in sliced preview.
-          </div>
+            {t("Inspect connector clearance in sliced preview.")}</div>
         </div>
       )}
     </div>

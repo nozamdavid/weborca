@@ -7,8 +7,10 @@ import React from 'react';
 import { useCalibrationStore } from './calibrationStore';
 import type { InfillPattern } from './types';
 import { ModalBackdrop } from '../components/ModalBackdrop';
+import { useTranslation } from "../i18n";
 
 export const FlowRateModal: React.FC = () => {
+    const { t } = useTranslation();
   const {
     isOpen,
     closeDialog,
@@ -50,13 +52,13 @@ export const FlowRateModal: React.FC = () => {
       >
         {/* Header */}
         <div className="modal-header">
-          <div className="modal-title">Flow Rate Calibration</div>
+          <div className="modal-title">{t("Flow Rate Calibration")}</div>
           <button
             type="button"
             className="modal-close-btn"
             data-testid="calib-close-btn"
             onClick={closeDialog}
-            aria-label="Close Calibration dialog"
+            aria-label={t("Close Calibration dialog")}
           >
             ✕
           </button>
@@ -66,8 +68,8 @@ export const FlowRateModal: React.FC = () => {
         <div
           style={{
             display: 'flex',
-            borderBottom: '1px solid #3f3f46',
-            background: '#27272a'
+            borderBottom: '1px solid var(--control-bg)',
+            background: 'var(--panel-bg)'
           }}
         >
           <button
@@ -76,32 +78,30 @@ export const FlowRateModal: React.FC = () => {
             style={{
               padding: '8px 16px',
               border: 'none',
-              background: activeTab === 'generator' ? '#3f3f46' : 'transparent',
-              color: activeTab === 'generator' ? '#fff' : '#a1a1aa',
+              background: activeTab === 'generator' ? 'var(--control-bg)' : 'transparent',
+              color: activeTab === 'generator' ? '#fff' : 'var(--text-muted)',
               fontWeight: activeTab === 'generator' ? 600 : 400,
               cursor: 'pointer',
               borderBottom: activeTab === 'generator' ? '2px solid #38bdf8' : '2px solid transparent'
             }}
             onClick={() => setActiveTab('generator')}
           >
-            Test Generator
-          </button>
+            {t("Test Generator")}</button>
           <button
             type="button"
             data-testid="calib-tab-calculator"
             style={{
               padding: '8px 16px',
               border: 'none',
-              background: activeTab === 'calculator' ? '#3f3f46' : 'transparent',
-              color: activeTab === 'calculator' ? '#fff' : '#a1a1aa',
+              background: activeTab === 'calculator' ? 'var(--control-bg)' : 'transparent',
+              color: activeTab === 'calculator' ? '#fff' : 'var(--text-muted)',
               fontWeight: activeTab === 'calculator' ? 600 : 400,
               cursor: 'pointer',
               borderBottom: activeTab === 'calculator' ? '2px solid #38bdf8' : '2px solid transparent'
             }}
             onClick={() => setActiveTab('calculator')}
           >
-            Flow Rate Calculator
-          </button>
+            {t("Flow Rate Calculator")}</button>
         </div>
 
         {/* Body */}
@@ -145,8 +145,7 @@ export const FlowRateModal: React.FC = () => {
               {/* Test Type Selection */}
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontWeight: 600, marginBottom: 8, fontSize: '0.9rem' }}>
-                  Calibration Pass
-                </label>
+                  {t("Calibration Pass")}</label>
                 <div style={{ display: 'flex', gap: 12 }}>
                   <label
                     style={{
@@ -154,8 +153,8 @@ export const FlowRateModal: React.FC = () => {
                       display: 'flex',
                       flexDirection: 'column',
                       padding: '10px 14px',
-                      background: selectedPass === 1 ? 'rgba(56, 189, 248, 0.1)' : '#18181b',
-                      border: selectedPass === 1 ? '1px solid #38bdf8' : '1px solid #3f3f46',
+                      background: selectedPass === 1 ? 'rgba(56, 189, 248, 0.1)' : 'var(--canvas-bg)',
+                      border: selectedPass === 1 ? '1px solid #38bdf8' : '1px solid var(--control-bg)',
                       borderRadius: 6,
                       cursor: 'pointer'
                     }}
@@ -169,11 +168,10 @@ export const FlowRateModal: React.FC = () => {
                         onChange={() => setSelectedPass(1)}
                         disabled={isCalibrating}
                       />
-                      <span style={{ fontWeight: 600 }}>Pass 1 (Coarse)</span>
+                      <span style={{ fontWeight: 600 }}>{t("Pass 1 (Coarse)")}</span>
                     </div>
-                    <span style={{ fontSize: '0.78rem', color: '#a1a1aa' }}>
-                      Range: -20% to +20% (step 5%) · 9 chips
-                    </span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      {t("Range: -20% to +20% (step 5%) · 9 chips")}</span>
                   </label>
 
                   <label
@@ -182,8 +180,8 @@ export const FlowRateModal: React.FC = () => {
                       display: 'flex',
                       flexDirection: 'column',
                       padding: '10px 14px',
-                      background: selectedPass === 2 ? 'rgba(56, 189, 248, 0.1)' : '#18181b',
-                      border: selectedPass === 2 ? '1px solid #38bdf8' : '1px solid #3f3f46',
+                      background: selectedPass === 2 ? 'rgba(56, 189, 248, 0.1)' : 'var(--canvas-bg)',
+                      border: selectedPass === 2 ? '1px solid #38bdf8' : '1px solid var(--control-bg)',
                       borderRadius: 6,
                       cursor: 'pointer'
                     }}
@@ -197,11 +195,10 @@ export const FlowRateModal: React.FC = () => {
                         onChange={() => setSelectedPass(2)}
                         disabled={isCalibrating}
                       />
-                      <span style={{ fontWeight: 600 }}>Pass 2 (Fine)</span>
+                      <span style={{ fontWeight: 600 }}>{t("Pass 2 (Fine)")}</span>
                     </div>
-                    <span style={{ fontSize: '0.78rem', color: '#a1a1aa' }}>
-                      Range: -9% to 0% (step 1%) · Fine tuning
-                    </span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      {t("Range: -9% to 0% (step 1%) · Fine tuning")}</span>
                   </label>
                 </div>
               </div>
@@ -212,8 +209,7 @@ export const FlowRateModal: React.FC = () => {
                   htmlFor="calib-pattern-select"
                   style={{ display: 'block', fontWeight: 600, marginBottom: 6, fontSize: '0.9rem' }}
                 >
-                  Top Surface Pattern
-                </label>
+                  {t("Top Surface Pattern")}</label>
                 <select
                   id="calib-pattern-select"
                   data-testid="calib-pattern-select"
@@ -221,14 +217,13 @@ export const FlowRateModal: React.FC = () => {
                   value={selectedPattern}
                   onChange={(e) => setSelectedPattern(e.target.value as InfillPattern)}
                   disabled={isCalibrating}
-                  style={{ width: '100%', padding: '6px 10px', background: '#18181b', color: '#e4e4e7', border: '1px solid #3f3f46', borderRadius: 4 }}
+                  style={{ width: '100%', padding: '6px 10px', background: 'var(--canvas-bg)', color: 'var(--text-color)', border: '1px solid var(--control-bg)', borderRadius: 4 }}
                 >
-                  <option value="archimedeanchords">Archimedean Chords (Recommended)</option>
-                  <option value="monotonic">Monotonic</option>
+                  <option value="archimedeanchords">{t("Archimedean Chords (Recommended)")}</option>
+                  <option value="monotonic">{t("Monotonic")}</option>
                 </select>
-                <span style={{ display: 'block', marginTop: 4, fontSize: '0.75rem', color: '#71717a' }}>
-                  Archimedean Chords creates a distinct center spiral lip that tactilely reveals over/under-extrusion.
-                </span>
+                <span style={{ display: 'block', marginTop: 4, fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                  {t("Archimedean Chords creates a distinct center spiral lip that tactilely reveals over/under-extrusion.")}</span>
               </div>
 
               {/* Replacement confirmation alert */}
@@ -244,11 +239,9 @@ export const FlowRateModal: React.FC = () => {
                     color: '#fef08a'
                   }}
                 >
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>Replace current plate?</div>
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("Replace current plate?")}</div>
                   <div style={{ fontSize: '0.82rem', marginBottom: 10, color: '#fde047' }}>
-                    Objects are currently loaded on the build plate. Generating calibration will replace the plate with test chips.
-                    You can restore your current project at any time using Undo (Ctrl+Z).
-                  </div>
+                    {t("Objects are currently loaded on the build plate. Generating calibration will replace the plate with test chips.\n                    You can restore your current project at any time using Undo (Ctrl+Z).")}</div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button
                       type="button"
@@ -258,8 +251,7 @@ export const FlowRateModal: React.FC = () => {
                       onClick={confirmReplaceAndStart}
                       disabled={isCalibrating}
                     >
-                      Proceed
-                    </button>
+                      {t("Proceed")}</button>
                     <button
                       type="button"
                       id="calib-confirm-cancel"
@@ -268,8 +260,7 @@ export const FlowRateModal: React.FC = () => {
                       onClick={cancelConfirmReplace}
                       disabled={isCalibrating}
                     >
-                      Cancel
-                    </button>
+                      {t("Cancel")}</button>
                   </div>
                 </div>
               )}
@@ -283,8 +274,7 @@ export const FlowRateModal: React.FC = () => {
                     onClick={closeDialog}
                     disabled={isCalibrating}
                   >
-                    Close
-                  </button>
+                    {t("Close")}</button>
                   <button
                     type="button"
                     id="calib-generate-btn"
@@ -302,16 +292,13 @@ export const FlowRateModal: React.FC = () => {
 
           {activeTab === 'calculator' && (
             <div>
-              <p style={{ fontSize: '0.85rem', color: '#a1a1aa', marginBottom: 16 }}>
-                Print the calibration plate and inspect the top surface of the chips with your finger.
-                Select the chip with the smoothest surface without gaps or rough over-extrusion ridges.
-              </p>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 16 }}>
+                {t("Print the calibration plate and inspect the top surface of the chips with your finger.\n                Select the chip with the smoothest surface without gaps or rough over-extrusion ridges.")}</p>
 
               {/* Current flow ratio */}
               <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', color: '#e4e4e7', marginBottom: 4 }}>
-                  Current Flow Ratio:
-                </label>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-color)', marginBottom: 4 }}>
+                  {t("Current Flow Ratio:")}</label>
                 <input
                   type="number"
                   step="0.01"
@@ -321,9 +308,9 @@ export const FlowRateModal: React.FC = () => {
                   style={{
                     width: '100%',
                     padding: '6px 10px',
-                    background: '#18181b',
-                    color: '#e4e4e7',
-                    border: '1px solid #3f3f46',
+                    background: 'var(--canvas-bg)',
+                    color: 'var(--text-color)',
+                    border: '1px solid var(--control-bg)',
                     borderRadius: 4
                   }}
                 />
@@ -331,28 +318,26 @@ export const FlowRateModal: React.FC = () => {
 
               {/* Modifier input */}
               <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', color: '#e4e4e7', marginBottom: 4 }}>
-                  Selected Chip Modifier (%):
-                </label>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-color)', marginBottom: 4 }}>
+                  {t("Selected Chip Modifier (%):")}</label>
                 <input
                   type="number"
                   id="calib-calc-modifier"
                   data-testid="calib-calc-modifier"
-                  placeholder="e.g. 5, -5, 0, -10"
+                  placeholder={t("e.g. 5, -5, 0, -10")}
                   value={calculatorModifier}
                   onChange={(e) => setCalculatorModifier(e.target.value === '' ? '' : parseFloat(e.target.value))}
                   style={{
                     width: '100%',
                     padding: '6px 10px',
-                    background: '#18181b',
-                    color: '#e4e4e7',
-                    border: '1px solid #3f3f46',
+                    background: 'var(--canvas-bg)',
+                    color: 'var(--text-color)',
+                    border: '1px solid var(--control-bg)',
                     borderRadius: 4
                   }}
                 />
-                <span style={{ fontSize: '0.75rem', color: '#71717a' }}>
-                  Enter the chip label number (e.g. 5 for +5%, -10 for -10%).
-                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                  {t("Enter the chip label number (e.g. 5 for +5%, -10 for -10%).")}</span>
               </div>
 
               {/* Calculated Result Card */}
@@ -360,23 +345,23 @@ export const FlowRateModal: React.FC = () => {
                 style={{
                   margin: '16px 0',
                   padding: '12px 14px',
-                  background: '#18181b',
-                  border: '1px solid #3f3f46',
+                  background: 'var(--canvas-bg)',
+                  border: '1px solid var(--control-bg)',
                   borderRadius: 6
                 }}
               >
-                <div style={{ fontSize: '0.8rem', color: '#a1a1aa', marginBottom: 4 }}>
-                  Formula: <code style={{ color: '#38bdf8' }}>New Flow = Old Flow × (100 + Modifier) / 100</code>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                  {t("Formula:")}<code style={{ color: '#38bdf8' }}>{t("New Flow = Old Flow × (100 + Modifier) / 100")}</code>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                  <span style={{ fontSize: '0.9rem', color: '#e4e4e7' }}>New Flow Ratio:</span>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--text-color)' }}>{t("New Flow Ratio:")}</span>
                   <span
                     id="calib-calc-result"
                     data-testid="calib-calc-result"
                     style={{
                       fontSize: '1.25rem',
                       fontWeight: 700,
-                      color: calculatedNewFlow !== null ? '#34d399' : '#71717a'
+                      color: calculatedNewFlow !== null ? '#34d399' : 'var(--text-dim)'
                     }}
                   >
                     {calculatedNewFlow !== null ? calculatedNewFlow.toFixed(4) : '--'}
@@ -408,8 +393,7 @@ export const FlowRateModal: React.FC = () => {
                   className="btn btn-secondary"
                   onClick={closeDialog}
                 >
-                  Close
-                </button>
+                  {t("Close")}</button>
                 <button
                   type="button"
                   id="calib-calc-apply"
@@ -418,8 +402,7 @@ export const FlowRateModal: React.FC = () => {
                   onClick={applyCalculatedFlow}
                   disabled={calculatedNewFlow === null}
                 >
-                  Apply Flow Ratio
-                </button>
+                  {t("Apply Flow Ratio")}</button>
               </div>
             </div>
           )}

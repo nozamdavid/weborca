@@ -4,6 +4,8 @@ export interface WizardStore {
   open: boolean;
   /** The printers the wizard last finished with; the sidebar offers these (plus the selected one) for their brand. */
   addedPrinters: string[];
+  addedFilaments: string[];
+  setAddedFilaments: (filaments: string[]) => void;
   setAddedPrinters: (printers: string[]) => void;
   step: 1 | 2 | 3;
   selectedVendor: string;
@@ -40,6 +42,8 @@ function loadSavedChoices(): { printers: string[]; filaments: string[] } {
 export const useWizardStore = create<WizardStore>((set) => ({
   open: false,
   addedPrinters: loadSavedChoices().printers,
+  addedFilaments: loadSavedChoices().filaments,
+  setAddedFilaments: (addedFilaments) => set({ addedFilaments }),
   setAddedPrinters: (addedPrinters) => set({ addedPrinters }),
   step: 1,
   selectedVendor: 'Voron',

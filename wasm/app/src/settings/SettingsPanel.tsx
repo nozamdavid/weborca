@@ -3,8 +3,10 @@ import { useAppStore } from '../store/appStore';
 import { SettingsGroup } from './SettingsGroup';
 import type { SettingsMode } from './types';
 import './SettingsSearch.css';
+import { useTranslation } from "../i18n";
 
 export const SettingsPanel: React.FC = () => {
+    const { t } = useTranslation();
   const {
     layout,
     configDefs,
@@ -171,16 +173,15 @@ export const SettingsPanel: React.FC = () => {
       <div className="settings-header">
         <div className="settings-header-top">
           <div className="settings-title-wrap">
-            <h2 className="settings-title">Process Settings</h2>
+            <h2 className="settings-title">{t("Process Settings")}</h2>
             <button
               type="button"
               className="btn btn-secondary btn-xs save-preset-btn"
               data-testid="save-process-btn"
-              title="Save current overrides as user process preset"
+              title={t("Save current overrides as user process preset")}
               onClick={() => openSavePresetDialog('process')}
             >
-              💾 Save
-            </button>
+              {t("💾 Save")}</button>
           </div>
 
           {/* Mode Switcher */}
@@ -191,9 +192,9 @@ export const SettingsPanel: React.FC = () => {
               className="mode-select"
               onChange={(e) => setSettingsMode(e.target.value as SettingsMode)}
             >
-              <option value="simple">Simple</option>
-              <option value="advanced">Advanced</option>
-              <option value="expert">Expert</option>
+              <option value="simple">{t("Simple")}</option>
+              <option value="advanced">{t("Advanced")}</option>
+              <option value="expert">{t("Expert")}</option>
             </select>
           </div>
         </div>
@@ -201,16 +202,15 @@ export const SettingsPanel: React.FC = () => {
         {/* Search Input */}
         <div className="settings-search-wrap">
           <label htmlFor="settings-search-input" className="sr-only">
-            Search settings
-          </label>
+            {t("Search settings")}</label>
           <input
             ref={inputRef}
             id="settings-search-input"
             type="text"
             className="settings-search-input"
             data-testid="settings-search"
-            placeholder="🔍 Search settings..."
-            aria-label="Search settings"
+            placeholder={t("🔍 Search settings...")}
+            aria-label={t("Search settings")}
             role="combobox"
             aria-autocomplete="list"
             aria-expanded={isOpen}
@@ -233,8 +233,8 @@ export const SettingsPanel: React.FC = () => {
               type="button"
               className="search-clear-btn"
               data-testid="search-clear-btn"
-              aria-label="Clear search"
-              title="Clear search"
+              aria-label={t("Clear search")}
+              title={t("Clear search")}
               onClick={handleClear}
             >
               ✕
@@ -248,7 +248,7 @@ export const SettingsPanel: React.FC = () => {
               className="search-results-dropdown"
               data-testid="search-results"
               role={displayedResults.length > 0 ? 'listbox' : 'region'}
-              aria-label="Search results"
+              aria-label={t("Search results")}
             >
               {displayedResults.length > 0 ? (
                 displayedResults.map((r, idx) => (
@@ -275,8 +275,7 @@ export const SettingsPanel: React.FC = () => {
                   data-testid="search-no-results"
                   role="status"
                 >
-                  No settings found
-                </div>
+                  {t("No settings found")}</div>
               )}
             </div>
           )}
@@ -296,7 +295,7 @@ export const SettingsPanel: React.FC = () => {
               data-testid={`page-tab-${page.title}`}
               onClick={() => setActivePrintPage(page.title)}
             >
-              <span className="tab-title">{page.title}</span>
+              <span className="tab-title">{t(page.title)}</span>
               {modCount > 0 && (
                 <span className="modified-badge" data-testid={`mod-count-${page.title}`}>
                   {modCount}
@@ -315,7 +314,7 @@ export const SettingsPanel: React.FC = () => {
           ))
         ) : (
           <div className="empty-page-placeholder">
-            <p>Loading settings layout...</p>
+            <p>{t("Loading settings layout...")}</p>
           </div>
         )}
       </div>

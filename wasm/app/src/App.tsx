@@ -23,6 +23,8 @@ import { HelpDialogs } from './shell/HelpDialogs';
 import { PrepareSidebar } from './shell/PrepareSidebar';
 import { TopBar } from './shell/TopBar';
 import { RecoveryDialog } from './shell/RecoveryDialog';
+import { ProjectNotesDialog } from './shell/ProjectNotesDialog';
+import { SlicingWarningsDialog } from './shell/SlicingWarningsDialog';
 import { ToastContainer } from './shell/Toast';
 import { showToast } from './shell/toastStore';
 import { EditOpsDialogs } from './editops';
@@ -140,6 +142,8 @@ export const App: React.FC = () => {
       <TopBar activeTab={activeTab} setActiveTab={setActiveTab} />
       <StepImportModal />
       <RecoveryDialog />
+      <ProjectNotesDialog />
+      <SlicingWarningsDialog />
 
       <main className="workspace orca-workspace" aria-busy={isModelLoading}>
         <div className="tab-page prepare-page" hidden={activeTab !== 'prepare'}>

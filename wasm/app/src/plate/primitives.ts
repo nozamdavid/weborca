@@ -1,5 +1,5 @@
 /** Primitive shapes for "Add Primitive" in the plate's context menu, as OBJ text that goes through the normal model import. */
-export type PlatePrimitive = 'cube' | 'cylinder' | 'sphere' | 'cone' | 'disc' | 'torus';
+export type PlatePrimitive = 'cube' | 'cylinder' | 'sphere' | 'cone' | 'disc' | 'torus' | 'slab';
 
 export const PRIMITIVE_LABELS: Record<PlatePrimitive, string> = {
   cube: 'Cube',
@@ -7,7 +7,8 @@ export const PRIMITIVE_LABELS: Record<PlatePrimitive, string> = {
   sphere: 'Sphere',
   cone: 'Cone',
   disc: 'Disc',
-  torus: 'Torus'
+  torus: 'Torus',
+  slab: 'Slab'
 };
 
 type Vec = [number, number, number];
@@ -94,6 +95,11 @@ export function primitiveMesh(shape: PlatePrimitive, side: number): Mesh {
   const r = side / 2;
   switch (shape) {
     case 'cube': return cube(side);
+    case 'slab': {
+      const mesh = cube(side);
+      mesh.vertices = mesh.vertices.map(([x, y, z]) => [x * 1.5, y * 1.5, z * 0.5]);
+      return mesh;
+    }
     case 'cylinder': return revolve([[r, 0], [r, side]]);
     case 'cone': return revolve([[r, 0], [0, side]]);
     case 'disc': return revolve([[r, 0], [r, side * 0.1]]);

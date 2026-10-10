@@ -163,6 +163,30 @@ describe('Orca WASM Engine Multiple Plates Test Suite', () => {
     assert.ok(plate1Insts.includes(inst2Id), 'Plate 1 must contain instance 2');
   });
 
+  test('current-plate arrange preserves other plates and locked orientation', async () => {
+    const objects = await core.call('listObjects', {});
+    const objectId = objects[0].id;
+    const [first, second] = objects[0].instances;
+    await core.call('setInstanceTransform', {
+      objectId, instanceId: first.id, rotation: [0, 0, 0.37]
+    });
+    const before = (await core.call('listObjects', {}))[0].instances;
+    await core.call('arrange', {
+      useBed: true, plateIndex: 0, allowRotations: true,
+      lockedOrientations: [first.id], spacing: 6
+    });
+    const after = (await core.call('listObjects', {}))[0].instances;
+    assert.deepEqual(after.find(i => i.id === second.id), before.find(i => i.id === second.id),
+      'other plate instance must retain every transform');
+    const oldRotation = before.find(i => i.id === first.id).rotation;
+    after.find(i => i.id === first.id).rotation.forEach((angle, axis) => {
+      assert.ok(Math.abs(angle - oldRotation[axis]) < 1e-12, 'locked instance must retain orientation');
+    });
+    const plates = await core.call('listPlates', {});
+    assert.ok(plates[0].instances.some(i => i.instanceId === first.id));
+    assert.ok(plates[1].instances.some(i => i.instanceId === second.id));
+  });
+
   test('slice plateIndex 1 slices only plate 2 instances in bed coordinates', async () => {
     const sliceRes = await core.call('slice', {
       outPath: '/out/plate2.gcode',
@@ -332,9 +356,6 @@ describe('Orca WASM Engine Multiple Plates Test Suite', () => {
 
     await core.call('arrange', {});
 
-    // Genuine two-tool slicing with wipe tower triggers engine defect:
-    // "Error: WipeTowerIntegration::append_tcr was asked to do a toolchange it didn't expect."
-    // (src/libslic3r/GCode.cpp:1054)
     const sliceRes = await core.call('slice', {
       outPath: '/out/bbl_two_tool.gcode',
       threads: 4
@@ -354,4 +375,24 @@ describe('Orca WASM Engine Multiple Plates Test Suite', () => {
     const hasTower = gcodeText.includes('; Wipe tower') || gcodeText.includes('; WIPE_TOWER') || gcodeText.includes('CP TOOLCHANGE WIPE');
     assert.ok(hasTower, 'must contain wipe tower extrusion moves');
   });
+  test('flush matrix changes physical purge extrusion in a two-tool slice', async () => {
+    await core.call('setOptions', { options: { flush_volumes_matrix: '0,60,60,0' } });
+    const low = await core.call('slice', { outPath: '/out/flush_low.gcode', threads: 4 });
+    await core.call('setOptions', { options: { flush_volumes_matrix: '0,600,600,0' } });
+    const high = await core.call('slice', { outPath: '/out/flush_high.gcode', threads: 4 });
+    assert.ok(high.filamentMm > low.filamentMm, 'larger purge matrix must increase extruded filament');
+    const commands = path => new TextDecoder().decode(core.readFile(path)).split('\n').filter(line => /^[GMT]\d/.test(line)).join('\n');
+    assert.notEqual(commands('/out/flush_low.gcode'), commands('/out/flush_high.gcode'),
+      'machine commands must change, not just the config footer');
+  });
+
+  test('wipe tower preview honors per-plate prime tower overrides', async () => {
+    await core.call('listPlates', {});
+    const enabled = await core.call('getWipeTowerPreview', { plateIndex: 0 });
+    assert.equal(enabled.enabled, true);
+    assert.ok(enabled.width > 0 && enabled.depth > 0 && enabled.height > 0);
+    await core.call('setPlateConfig', { plateIndex: 0, config: { enable_prime_tower: '0' } });
+    assert.equal((await core.call('getWipeTowerPreview', { plateIndex: 0 })).enabled, false);
+  });
+
 });

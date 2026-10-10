@@ -213,6 +213,27 @@ async function runBrowserSuite(browserType, browserName) {
     }
     results.push({ name: 'Layer Slider Scrub Updates Highlighted Line', pass: true });
 
+    // Source mapping comes from native path vertices, rather than a proportion of layer lines.
+    for (const fraction of [0.1, 0.4, 0.8]) {
+      await page.evaluate((fraction) => {
+        const store = window.__previewStore.getState();
+        store.setMoveAction(Math.floor(store.minMove + (store.maxMove - store.minMove) * fraction));
+      }, fraction);
+      await page.waitForTimeout(50);
+      const mapped = await page.evaluate(() => {
+        const move = window.__previewStore.getState().currentMove;
+        const nativeLine = window.preview.getMoveGcodeLine(move);
+        const row = document.querySelector('#gcode-current-line');
+        const source = new TextDecoder().decode(window.__appStore.getState().sliceResult.gcode).split('\n')[nativeLine - 1]?.replace(/\r$/, '');
+        const displayedSource = [...row.querySelectorAll('span')].slice(1).map((span) => span.textContent).join(' ').trim();
+        return { nativeLine, shownLine: Number(row.dataset.lineNumber), source: source?.length > 55 ? source.slice(0, 52) + '...' : source, displayedSource };
+      });
+      if (mapped.nativeLine !== mapped.shownLine || mapped.source?.trim().replace(/\s+/g, ' ') !== mapped.displayedSource.replace(/\s+/g, ' ')) {
+        throw new Error(`G-code source mapping mismatch: ${JSON.stringify(mapped)}`);
+      }
+    }
+    results.push({ name: 'Exact Native Move-to-Source-Line Mapping', pass: true });
+
     // 10. Test Collapse and Expand Buttons
     console.log(`[${browserName}] Step 10: Testing collapse and expand buttons...`);
     const collapseBtn = page.locator('#btn-collapse-gcode-window');

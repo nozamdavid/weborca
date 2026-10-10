@@ -69,6 +69,11 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     // Navigate to page
     console.log(`[${browserName}] Step 1: Navigating to ${BASE_URL}...`);
     await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+    try {
+      await page.waitForSelector('#recovery-dialog', { timeout: 2000 });
+      await page.click('#recovery-discard');
+      await page.waitForSelector('#recovery-dialog', { state: 'detached' });
+    } catch {}
 
     // Wait for app ready
     await page.waitForFunction(() => {
@@ -99,6 +104,9 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     const qualityPage = printTab.pages.find((p) => p.title === 'Quality');
     const expectedQualityGroups = qualityPage.groups.map((g) => g.title);
 
+    await page.selectOption('[data-testid="mode-select"]', 'expert');
+
+    await page.selectOption('[data-testid="mode-select"]', 'expert');
     await page.waitForSelector('[data-testid^="page-tab-"]');
     const renderedPages = await page.$$eval('[data-testid^="page-tab-"]', (els) =>
       els.map((e) => e.querySelector('.tab-title')?.textContent?.trim() || e.textContent?.trim())
@@ -309,6 +317,11 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     // Reload page
     console.log(`[${browserName}] Reloading page to verify persistence...`);
     await page.reload({ waitUntil: 'domcontentloaded' });
+    try {
+      await page.waitForSelector('#recovery-dialog', { timeout: 3000 });
+      await page.click('#recovery-discard');
+      await page.waitForSelector('#recovery-dialog', { state: 'detached' });
+    } catch {}
     await page.waitForFunction(() => {
       const v = document.getElementById('vendor-select');
       return v && v.options.length > 1;
@@ -342,15 +355,20 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     // Slice cube with user preset
     await page.click('#slice-btn');
     await page.waitForSelector('#stat-layers', { state: 'attached', timeout: 30000 });
-    const prepTab3 = await page.$('#tab-prepare');
-    if (prepTab3) await prepTab3.click();
+    await page.waitForFunction(() => !window.__appStore?.getState().isSlicing, null, { timeout: 30000 });
     const layersValUser = await page.$eval(
       '#stat-layers',
       (el) => parseInt(el.textContent?.trim() || '0', 10)
     );
     assert(layersValUser < 100, `Expected < 100 layers with user preset 0.3mm, got ${layersValUser}`);
 
-    // Delete user preset
+    // Switch back to prepare and delete user preset
+    await page.click('#tab-prepare');
+    await page.waitForFunction(() => !document.querySelector('.tab-page.prepare-page')?.hidden, null, { timeout: 10000 });
+    if (await page.evaluate(() => window.__appStore?.getState().activeUserPreset.process !== 'Fast 0.3 User')) {
+      await page.selectOption('#process-select', 'user:Fast 0.3 User');
+    }
+    await page.waitForSelector('[data-testid="delete-process-preset-btn"]', { timeout: 10000 });
     await page.click('[data-testid="delete-process-preset-btn"]');
     await page.waitForFunction(() => {
       const ps = document.getElementById('process-select');
@@ -372,7 +390,14 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     const simpleAdvOption = await page.$('#setting-row-initial_layer_line_width');
     assert.strictEqual(simpleAdvOption, null, 'initial_layer_line_width must be hidden in Simple mode');
 
+
+    // Check that empty groups are hidden in simple mode
+    // (Ironing / Z contouring)
+    await page.waitForSelector('.settings-group-header:has-text("Ironing")', { state: 'detached', timeout: 5000 });
+    await page.waitForSelector('.settings-group-header:has-text("Z contouring")', { state: 'detached', timeout: 5000 });
+
     // Switch back to Advanced mode
+
     await page.selectOption('[data-testid="mode-select"]', 'advanced');
     await page.waitForSelector('#setting-row-initial_layer_line_width', { timeout: 5000 });
     results.push({ name: '(g) Mode Switch Filtering', pass: true });

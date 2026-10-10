@@ -1,6 +1,6 @@
 export type VolumeType = 'part' | 'negative' | 'modifier' | 'support_blocker' | 'support_enforcer';
 
-export type PrimitiveShape = 'cube' | 'cylinder' | 'sphere' | 'cone';
+export type PrimitiveShape = 'cube' | 'cylinder' | 'sphere' | 'cone' | 'disc' | 'torus' | 'slab';
 
 export interface VolumeTreeNode {
   id: number;

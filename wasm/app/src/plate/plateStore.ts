@@ -1,3 +1,4 @@
+import { usePlatesStore } from '../plates/platesStore';
 import { create } from 'zustand';
 import { getEngine } from '../engine/orcaEngine';
 import { useAppStore } from '../store/appStore';
@@ -38,6 +39,7 @@ const PASTE_OFFSET_MM = 20;
 export interface ArrangeSettings {
   spacing: number | null;
   allowRotations: boolean;
+  plateScope?: 'all' | 'current';
 }
 const ARRANGE_KEY = 'orca.arrange';
 function loadArrangeSettings(): ArrangeSettings {
@@ -80,6 +82,9 @@ export interface PlateStoreState {
   isLoading: boolean;
   meshCache: Map<number, MeshBufferData>;
 
+  lockedOrientations: number[];
+  toggleOrientationLock: (instanceId: number) => void;
+  isOrientationLocked: (instanceId: number) => boolean;
   // Actions
   initBedConfig: (printableArea?: string, printableHeight?: string) => void;
   refreshObjects: () => Promise<PlateObject[]>;
@@ -119,6 +124,13 @@ export interface PlateStoreState {
 }
 
 export const usePlateStore = create<PlateStoreState>((set, get) => ({
+  lockedOrientations: [],
+  toggleOrientationLock: (instanceId: number) => set((state) => ({
+    lockedOrientations: state.lockedOrientations.includes(instanceId)
+      ? state.lockedOrientations.filter(id => id !== instanceId)
+      : [...state.lockedOrientations, instanceId]
+  })),
+  isOrientationLocked: (instanceId: number) => get().lockedOrientations.includes(instanceId),
   objects: [],
   selectedObjectId: null,
   selectedInstanceId: null,
@@ -481,11 +493,23 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     try {
       const engine = await getEngine();
       const { spacing, allowRotations } = get().arrangeSettings;
-      const args = { useBed, ...(spacing !== null ? { spacing } : {}), allowRotations };
-      if (typeof (engine as any).arrange === 'function') {
-        await (engine as any).arrange(args);
-      } else {
-        await engine.call('arrange', args);
+      const args: any = { useBed, ...(spacing !== null ? { spacing } : {}), allowRotations, lockedOrientations: get().lockedOrientations };
+      const { plateScope } = get().arrangeSettings;
+      if (plateScope === 'current') {
+        const activePlate = usePlatesStore.getState().activePlateIndex;
+        if (activePlate >= 0) args.plateIndex = activePlate;
+      }
+      const plates = usePlatesStore.getState();
+      const targets = useBed && plateScope !== 'current'
+        ? (await plates.fetchPlates()).map((plate) => plate.index)
+        : [args.plateIndex];
+      for (const plateIndex of targets) {
+        const options = { ...args, ...(plateIndex !== undefined ? { plateIndex } : {}) };
+        if (typeof (engine as any).arrange === 'function') {
+          await (engine as any).arrange(options);
+        } else {
+          await engine.call('arrange', options);
+        }
       }
       await get().refreshObjects();
       try {

@@ -1,7 +1,9 @@
 import React from 'react';
 import { useEditOpsStore } from './editOpsStore';
+import { useTranslation } from "../i18n";
 
 export const FlattenPanel: React.FC = () => {
+    const { t } = useTranslation();
   const activeTool = useEditOpsStore((s) => s.activeTool);
   const flattenClusters = useEditOpsStore((s) => s.flattenClusters);
   const isLoadingClusters = useEditOpsStore((s) => s.isLoadingClusters);
@@ -35,22 +37,21 @@ export const FlattenPanel: React.FC = () => {
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>Place on Face (F)</h3>
-        <button className="icon-btn" onClick={stopFlatten} aria-label="Close">✕</button>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{t("Place on Face (F)")}</h3>
+        <button className="icon-btn" onClick={stopFlatten} aria-label={t("Close")}>✕</button>
       </div>
 
       <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>
-        Click a face cluster in the 3D viewport or pick a flat facet below to lay it on the print bed.
-      </p>
+        {t("Click a face cluster in the 3D viewport or pick a flat facet below to lay it on the print bed.")}</p>
 
       {error && <div style={{ color: 'var(--danger-color)', fontSize: 12 }}>{error}</div>}
 
       {isLoadingClusters ? (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Detecting planar facets...</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t("Detecting planar facets...")}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
           {flattenClusters.length === 0 ? (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No planar facets found</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t("No planar facets found")}</div>
           ) : (
             flattenClusters.map((cluster, idx) => (
               <button
@@ -69,10 +70,9 @@ export const FlattenPanel: React.FC = () => {
                   textAlign: 'left'
                 }}
               >
-                <span>Face #{idx + 1}</span>
+                <span>{t("Face #")}{idx + 1}</span>
                 <span style={{ color: 'var(--text-muted)' }}>
-                  {Math.round(cluster.area)} mm²
-                </span>
+                  {Math.round(cluster.area)} {t("mm²")}</span>
               </button>
             ))
           )}
@@ -80,8 +80,7 @@ export const FlattenPanel: React.FC = () => {
       )}
 
       <button className="btn btn-primary" onClick={stopFlatten} style={{ marginTop: 4 }}>
-        Done
-      </button>
+        {t("Done")}</button>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import { BambuApi } from './bambu';
+import { FlashforgeApi } from './flashforge';
 import { MoonrakerApi } from './moonraker';
 import { OctoPrintApi, PrusaConnectApi, PrusaLinkApi } from './octoprint';
 import type { PhysicalPrinter, PrinterApi } from './types';
@@ -10,5 +11,6 @@ export function createPrinterApi(printer: PhysicalPrinter): PrinterApi {
     case 'prusaconnect': return new PrusaConnectApi(printer);
     case 'octoprint': return new OctoPrintApi(printer);
     case 'bambu': return new BambuApi(printer);
+    case 'flashforge': return new FlashforgeApi(printer);
   }
 }

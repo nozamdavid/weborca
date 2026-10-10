@@ -6,8 +6,10 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useLayersStore } from './layersStore';
 import type { LayerEditAction } from './types';
+import { useTranslation } from "../i18n";
 
 export const LayerHeightBar: React.FC = () => {
+    const { t } = useTranslation();
   const isLayersActive = useLayersStore((s) => s.isLayersActive);
   const profileData = useLayersStore((s) => s.profileData);
   const quality = useLayersStore((s) => s.quality);
@@ -58,9 +60,9 @@ export const LayerHeightBar: React.FC = () => {
     const plotH = canvasHeight - margin.top - margin.bottom;
 
     // Background
-    ctx.fillStyle = '#18181b';
+    ctx.fillStyle = 'var(--canvas-bg)';
     ctx.fillRect(margin.left, margin.top, plotW, plotH);
-    ctx.strokeStyle = '#3f3f46';
+    ctx.strokeStyle = 'var(--control-bg)';
     ctx.strokeRect(margin.left, margin.top, plotW, plotH);
 
     const zToY = (z: number) => {
@@ -97,7 +99,7 @@ export const LayerHeightBar: React.FC = () => {
     for (let i = 0; i <= ticks; i++) {
       const zVal = (objectHeight / ticks) * i;
       const yVal = zToY(zVal);
-      ctx.fillStyle = '#a1a1aa';
+      ctx.fillStyle = 'var(--text-muted)';
       ctx.fillText(`${zVal.toFixed(0)}`, margin.left - 4, yVal + 3);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
       ctx.beginPath();
@@ -232,7 +234,7 @@ export const LayerHeightBar: React.FC = () => {
         border: '1px solid rgba(255, 255, 255, 0.15)',
         borderRadius: 10,
         padding: '12px 14px',
-        color: '#f4f4f5',
+        color: 'var(--text-color)',
         width: 250,
         maxHeight: 'calc(100vh - 136px)',
         overflowY: 'auto',
@@ -252,15 +254,14 @@ export const LayerHeightBar: React.FC = () => {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: '1.1rem' }}>📏</span>
+          <span style={{ fontSize: '1.1rem' }}>{t("📏")}</span>
           <strong id="layers-panel-title" style={{ fontSize: '0.92rem', color: '#38bdf8' }}>
-            Variable Layer Height
-          </strong>
+            {t("Variable Layer Height")}</strong>
         </div>
         <button
           id="layers-close-btn"
           onClick={stopEditing}
-          title="Close tool"
+          title={t("Close tool")}
           style={{
             background: 'transparent',
             border: 'none',
@@ -287,13 +288,13 @@ export const LayerHeightBar: React.FC = () => {
         }}
       >
         <div>
-          Layers: <strong id="layers-count">{profileData.layerCount}</strong>
+          {t("Layers:")}<strong id="layers-count">{profileData.layerCount}</strong>
         </div>
         <div>
-          Height: <strong>{profileData.objectHeight.toFixed(1)}mm</strong>
+          {t("Height:")}<strong>{profileData.objectHeight.toFixed(1)}{t("mm")}</strong>
         </div>
         <div>
-          Nominal: <strong>{profileData.layerHeight.toFixed(2)}mm</strong>
+          {t("Nominal:")}<strong>{profileData.layerHeight.toFixed(2)}{t("mm")}</strong>
         </div>
       </div>
 
@@ -316,10 +317,9 @@ export const LayerHeightBar: React.FC = () => {
               cursor: isLoading ? 'wait' : 'pointer'
             }}
           >
-            Adaptive
-          </button>
+            {t("Adaptive")}</button>
           <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-            Q: {(quality * 100).toFixed(0)}%
+            {t("Q:")}{(quality * 100).toFixed(0)}%
           </span>
         </div>
         <input
@@ -353,8 +353,7 @@ export const LayerHeightBar: React.FC = () => {
               cursor: isLoading ? 'wait' : 'pointer'
             }}
           >
-            Smooth
-          </button>
+            {t("Smooth")}</button>
           <button
             id="layers-reset-btn"
             disabled={isLoading}
@@ -370,12 +369,11 @@ export const LayerHeightBar: React.FC = () => {
               cursor: isLoading ? 'wait' : 'pointer'
             }}
           >
-            Reset
-          </button>
+            {t("Reset")}</button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Radius:</span>
+            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{t("Radius:")}</span>
             <input
               id="layers-radius-input"
               type="number"
@@ -385,8 +383,8 @@ export const LayerHeightBar: React.FC = () => {
               onChange={(e) => setRadius(parseInt(e.target.value, 10) || 5)}
               style={{
                 width: 44,
-                background: '#27272a',
-                border: '1px solid #3f3f46',
+                background: 'var(--panel-bg)',
+                border: '1px solid var(--control-bg)',
                 borderRadius: 4,
                 color: '#fff',
                 padding: '2px 4px',
@@ -401,15 +399,14 @@ export const LayerHeightBar: React.FC = () => {
               checked={keepMin}
               onChange={(e) => setKeepMin(e.target.checked)}
             />
-            Keep Min
-          </label>
+            {t("Keep Min")}</label>
         </div>
       </div>
 
       {/* Band Width Control */}
       <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-          Brush Band: <strong id="layers-bandwidth-val">{bandWidth.toFixed(1)}mm</strong>
+          {t("Brush Band:")}<strong id="layers-bandwidth-val">{bandWidth.toFixed(1)}{t("mm")}</strong>
         </span>
         <input
           id="layers-bandwidth-slider"
@@ -436,7 +433,7 @@ export const LayerHeightBar: React.FC = () => {
           onWheel={handleWheel}
           onContextMenu={(e) => e.preventDefault()}
           style={{
-            background: '#18181b',
+            background: 'var(--canvas-bg)',
             borderRadius: 6,
             cursor: 'ns-resize',
             touchAction: 'none'
@@ -454,10 +451,8 @@ export const LayerHeightBar: React.FC = () => {
           lineHeight: '1.3'
         }}
       >
-        Left drag: raise • Right drag: lower
-        <br />
-        Shift drag: smooth • Wheel: band size
-      </div>
+        {t("Left drag: raise • Right drag: lower")}<br />
+        {t("Shift drag: smooth • Wheel: band size")}</div>
 
       {error && (
         <div style={{ marginTop: 6, color: '#ef4444', fontSize: '0.72rem', textAlign: 'center' }}>

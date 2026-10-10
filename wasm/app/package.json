@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run check:locales && tsc --noEmit && vite build",
+    "check:locales": "node tools/check-locales.cjs",
     "preview": "vite preview",
     "gateway": "node gateway/local.ts"
   },
@@ -23,10 +24,10 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/ws": "^8.18.2",
-    "esbuild": "^0.21.5",
     "@vitejs/plugin-react": "^4.3.4",
     "aedes": "^1.2.0",
     "basic-ftp": "^6.2.3",
+    "esbuild": "^0.21.5",
     "mqtt": "^5.16.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",

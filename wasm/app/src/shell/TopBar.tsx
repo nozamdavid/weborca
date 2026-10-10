@@ -11,22 +11,24 @@ import { usePlatesStore } from '../plates/platesStore';
 import { useAppStore } from '../store/appStore';
 import { useEditOpsStore } from '../editops';
 import { CAMERA_VIEWS, setCameraView } from './cameraBridge';
-import { exportGcode } from './exportGcode';
+import { exportGcode, exportGcodeToFile } from './exportGcode';
 import { exportPlateAsStl } from './exportStl';
 import { exportPlateSlicedFile } from './exportPlateSlicedFile';
 import { getRecentFiles, openRecentFile } from './recentFiles';
 import { ImportIcon, RedoIcon, UndoIcon } from './glyphs';
 import { useHelpStore } from './HelpDialogs';
+import { useProjectNotesStore } from './ProjectNotesDialog';
 import { usePrefsStore } from '../prefs/prefsStore';
 import { usePreviewStore } from '../preview/previewStore';
+import { useTranslation } from "../i18n";
 
 export type TabId = 'prepare' | 'preview' | 'device' | 'calibration';
 
 const TABS: Array<{ id: TabId; label: string }> = [
-  { id: 'prepare', label: 'Prepare' },
-  { id: 'preview', label: 'Preview' },
-  { id: 'device', label: 'Device' },
-  { id: 'calibration', label: 'Calibration' }
+  { id: 'prepare', label: "Prepare" },
+  { id: 'preview', label: "Preview" },
+  { id: 'device', label: "Device" },
+  { id: 'calibration', label: "Calibration" }
 ];
 
 interface Item {
@@ -46,6 +48,7 @@ const Menu: React.FC<{
   openMenu: string | null;
   setOpenMenu: (m: string | null) => void;
 }> = ({ label, entries, openMenu, setOpenMenu }) => {
+    const { t } = useTranslation();
   const open = openMenu === label;
   return (
     <div className={`menu ${open ? 'open' : ''}`} onMouseEnter={() => openMenu && setOpenMenu(label)}>
@@ -132,6 +135,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
   activeTab,
   setActiveTab
 }) => {
+    const { t } = useTranslation();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const barRef = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -303,7 +307,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
 
   /** Empties the plate and the extra plates, like desktop's File > New project. */
   const newProject = async () => {
-    if (!(await confirmDialog({ title: 'Close the current project?', message: 'Unsaved changes are lost.', confirmLabel: 'Close project', cancelLabel: 'Cancel' }))) return;
+    if (!(await confirmDialog({ title: t("Close the current project?"), message: 'Unsaved changes are lost.', confirmLabel: 'Close project', cancelLabel: 'Cancel' }))) return;
     const plates = usePlatesStore.getState();
     for (const plate of [...plates.plates].reverse()) if (plate.index > 0) await plates.deletePlate(plate.index, false);
     await usePlateStore.getState().deleteAll();
@@ -315,12 +319,13 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
     [
       'File',
       [
-        { label: 'New project', disabled: isBusy || !hasObjects, onClick: newProject },
-        { label: 'Open project...', keys: 'Ctrl+O', disabled: isBusy, onClick: openProject },
-        { label: 'Save project', keys: 'Ctrl+S', disabled: isBusy || !hasObjects, onClick: saveProject },
-        { label: 'Save project as...', disabled: isBusy || !hasObjects, onClick: saveProjectAs },
+        { label: t("New project"), disabled: isBusy || !hasObjects, onClick: newProject },
+        { label: t("Open project..."), keys: 'Ctrl+O', disabled: isBusy, onClick: openProject },
+        { label: t("Save project"), keys: 'Ctrl+S', disabled: isBusy || !hasObjects, onClick: saveProject },
+        { label: t("Project notes..."), disabled: isBusy, onClick: () => useProjectNotesStore.getState().setOpen(true) },
+        { label: t("Save project as..."), disabled: isBusy || !hasObjects, onClick: saveProjectAs },
         {
-          label: 'Recent files',
+          label: t("Recent files"),
           submenu:
             recentFiles.length > 0
               ? recentFiles.map((rf) => ({
@@ -332,60 +337,61 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
                       else fileInput.current?.click();
                     })
                 }))
-              : [{ label: 'No recent files', disabled: true }]
+              : [{ label: t("No recent files"), disabled: true }]
         },
         'sep',
-        { label: 'Import model...', keys: 'Ctrl+I', disabled: isBusy, onClick: importModel },
-        { label: 'Open G-code...', disabled: isBusy, onClick: openGcode },
+        { label: t("Import model..."), keys: 'Ctrl+I', disabled: isBusy, onClick: importModel },
+        { label: t("Open G-code..."), disabled: isBusy, onClick: openGcode },
         'sep',
-        { label: 'Export plate as STL...', disabled: isBusy || !hasObjects, onClick: () => void exportPlateAsStl() },
-        { label: 'Export G-code', keys: 'Ctrl+G', disabled: !hasGcode || isBusy, onClick: exportGcode },
-        { label: 'Export plate sliced file', disabled: !hasGcode || isBusy, onClick: () => void exportPlateSlicedFile() },
+        { label: t("Export plate as STL..."), disabled: isBusy || !hasObjects, onClick: () => void exportPlateAsStl() },
+        { label: t("Export G-code"), keys: 'Ctrl+G', disabled: !hasGcode || isBusy, onClick: exportGcode },
+        { label: t("Export G-code to drive..."), disabled: !hasGcode || isBusy, onClick: () => void exportGcodeToFile() },
+        { label: t("Export plate sliced file"), disabled: !hasGcode || isBusy, onClick: () => void exportPlateSlicedFile() },
         'sep',
-        { label: 'Printer presets...', onClick: () => openManagePresetsDialog('printer') },
-        { label: 'Filament presets...', onClick: () => openManagePresetsDialog('filament') },
-        { label: 'Process presets...', onClick: () => openManagePresetsDialog('process') },
-        { label: 'Compare presets...', onClick: () => useCompareStore.getState().setOpen(true) },
-        { label: 'Configuration wizard...', onClick: () => useWizardStore.getState().setOpen(true) },
+        { label: t("Printer presets..."), onClick: () => openManagePresetsDialog('printer') },
+        { label: t("Filament presets..."), onClick: () => openManagePresetsDialog('filament') },
+        { label: t("Process presets..."), onClick: () => openManagePresetsDialog('process') },
+        { label: t("Compare presets..."), onClick: () => useCompareStore.getState().setOpen(true) },
+        { label: t("Configuration wizard..."), onClick: () => useWizardStore.getState().setOpen(true) },
         'sep',
-        { label: 'Preferences...', keys: 'Ctrl+P', onClick: () => openPrefs('general') }
+        { label: t("Preferences..."), keys: 'Ctrl+P', onClick: () => openPrefs('general') }
       ]
     ],
     [
       'Edit',
       [
-        { label: 'Undo', keys: 'Ctrl+Z', disabled: !canUndo || isBusy, onClick: () => undo() },
-        { label: 'Redo', keys: 'Ctrl+Y', disabled: !canRedo || isBusy, onClick: () => redo() },
+        { label: t("Undo"), keys: 'Ctrl+Z', disabled: !canUndo || isBusy, onClick: () => undo() },
+        { label: t("Redo"), keys: 'Ctrl+Y', disabled: !canRedo || isBusy, onClick: () => redo() },
         'sep',
-        { label: 'Select all', keys: 'Ctrl+A', disabled: isBusy || !hasObjects, onClick: () => usePlateStore.getState().selectAll() },
-        { label: 'Deselect all', keys: 'Esc', disabled: !hasSelection, onClick: () => usePlateStore.getState().selectObject(null) },
-        { label: 'Copy', keys: 'Ctrl+C', disabled: isBusy || !hasSelection, onClick: () => usePlateStore.getState().copySelected() },
-        { label: 'Paste', keys: 'Ctrl+V', disabled: isBusy || !hasClipboard, onClick: () => void usePlateStore.getState().pasteClipboard() },
-        { label: 'Clone', keys: 'Ctrl+K', disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().duplicateSelected() },
-        { label: 'Mirror X', disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().mirrorSelected(0) },
-        { label: 'Mirror Y', disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().mirrorSelected(1) },
-        { label: 'Mirror Z', disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().mirrorSelected(2) },
-        { label: 'Delete all', keys: 'Ctrl+D', disabled: isBusy || !hasObjects, onClick: () => void usePlateStore.getState().deleteAll() },
+        { label: t("Select all"), keys: 'Ctrl+A', disabled: isBusy || !hasObjects, onClick: () => usePlateStore.getState().selectAll() },
+        { label: t("Deselect all"), keys: 'Esc', disabled: !hasSelection, onClick: () => usePlateStore.getState().selectObject(null) },
+        { label: t("Copy"), keys: 'Ctrl+C', disabled: isBusy || !hasSelection, onClick: () => usePlateStore.getState().copySelected() },
+        { label: t("Paste"), keys: 'Ctrl+V', disabled: isBusy || !hasClipboard, onClick: () => void usePlateStore.getState().pasteClipboard() },
+        { label: t("Clone"), keys: 'Ctrl+K', disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().duplicateSelected() },
+        { label: t("Mirror X"), disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().mirrorSelected(0) },
+        { label: t("Mirror Y"), disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().mirrorSelected(1) },
+        { label: t("Mirror Z"), disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().mirrorSelected(2) },
+        { label: t("Delete all"), keys: 'Ctrl+D', disabled: isBusy || !hasObjects, onClick: () => void usePlateStore.getState().deleteAll() },
         'sep',
-        { label: 'Auto-orient', keys: 'A', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().autoOrient() },
-        { label: 'Place on face', keys: 'F', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().startFlatten() },
-        { label: 'Arrange options...', disabled: isBusy, onClick: () => usePlateStore.getState().setArrangeDialogOpen(true) },
-        { label: 'Arrange', disabled: isBusy, onClick: () => void usePlateStore.getState().arrange(true) },
+        { label: t("Auto-orient"), keys: 'A', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().autoOrient() },
+        { label: t("Place on face"), keys: 'F', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().startFlatten() },
+        { label: t("Arrange options..."), disabled: isBusy, onClick: () => usePlateStore.getState().setArrangeDialogOpen(true) },
+        { label: t("Arrange"), disabled: isBusy, onClick: () => void usePlateStore.getState().arrange(true) },
         {
-          label: 'Delete',
+          label: t("Delete"),
           keys: 'Del',
           disabled: isBusy || !hasSelection,
           onClick: () => void usePlateStore.getState().deleteSelected()
         },
         'sep',
-        { label: 'Split to objects', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().splitSelectedObject() },
-        { label: 'Split to parts', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().splitSelectedVolume() },
-        { label: 'Simplify...', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().openSimplifyDialog() },
-        { label: 'Mesh boolean...', disabled: isBusy || objectCount < 2, onClick: () => void useEditOpsStore.getState().openBooleanDialog() },
-        { label: 'Brim ears...', disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().startBrimEars() },
-        { label: 'Add SVG...', disabled: isBusy, onClick: () => void useEditOpsStore.getState().openSvgDialog() },
+        { label: t("Split to objects"), disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().splitSelectedObject() },
+        { label: t("Split to parts"), disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().splitSelectedVolume() },
+        { label: t("Simplify..."), disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().openSimplifyDialog() },
+        { label: t("Mesh boolean..."), disabled: isBusy || objectCount < 2, onClick: () => void useEditOpsStore.getState().openBooleanDialog() },
+        { label: t("Brim ears..."), disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().startBrimEars() },
+        { label: t("Add SVG..."), disabled: isBusy, onClick: () => void useEditOpsStore.getState().openSvgDialog() },
         'sep',
-        { label: 'Preferences...', keys: 'Ctrl+P', onClick: () => openPrefs('general') }
+        { label: t("Preferences..."), keys: 'Ctrl+P', onClick: () => openPrefs('general') }
       ]
     ],
     [
@@ -401,7 +407,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         })),
         'sep',
         {
-          label: 'Zoom to selection',
+          label: t("Zoom to selection"),
           keys: 'Z',
           onClick: () => {
             setActiveTab('prepare');
@@ -409,7 +415,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           }
         },
         {
-          label: 'Zoom to bed',
+          label: t("Zoom to bed"),
           keys: 'Ctrl+0',
           onClick: () => {
             setActiveTab('prepare');
@@ -418,54 +424,54 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         },
         'sep',
         {
-          label: 'Orthographic camera',
+          label: t("Orthographic camera"),
           keys: 'K',
           checked: prefsDisplay.cameraType === 'orthographic',
           onClick: toggleCameraType
         },
         'sep',
         {
-          label: 'Bed grid',
+          label: t("Bed grid"),
           checked: prefsDisplay.showGrid,
           onClick: toggleShowGrid
         },
         {
-          label: '3D navigator',
+          label: t("3D navigator"),
           checked: prefsDisplay.showNavigator,
           onClick: () => usePrefsStore.getState().setDisplayPref('showNavigator', !prefsDisplay.showNavigator)
         },
         {
-          label: 'Axes',
+          label: t("Axes"),
           checked: prefsDisplay.showAxes,
           onClick: toggleShowAxes
         },
         {
-          label: 'Object labels',
+          label: t("Object labels"),
           keys: 'Ctrl+E',
           checked: prefsDisplay.showLabels,
           onClick: toggleShowLabels
         },
         {
-          label: 'Build volume wireframe',
+          label: t("Build volume wireframe"),
           checked: prefsDisplay.showBuildVolume,
           onClick: toggleShowBuildVolume
         },
         {
-          label: 'Wireframe objects',
+          label: t("Wireframe objects"),
           keys: 'Ctrl+Shift+Enter',
           checked: prefsDisplay.showWireframe,
           onClick: toggleShowWireframe
         },
         'sep',
         {
-          label: 'Explode view',
+          label: t("Explode view"),
           id: 'menu-view-explode',
           checked: explodeActive,
           onClick: () => usePlateStore.getState().setExplodeActive(!explodeActive)
         },
         'sep',
         {
-          label: 'Show shells',
+          label: t("Show shells"),
           checked: shellsItem ? shellsItem.visible : true,
           disabled: !inPreview || !shellsItem,
           onClick: () => {
@@ -473,7 +479,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           }
         },
         {
-          label: 'Show travel moves',
+          label: t("Show travel moves"),
           checked: travelOpt ? travelOpt.visible : true,
           disabled: !inPreview || !travelOpt,
           onClick: () => {
@@ -481,7 +487,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           }
         },
         {
-          label: 'Show retractions',
+          label: t("Show retractions"),
           checked: retractOpt ? retractOpt.visible : true,
           disabled: !inPreview || !retractOpt,
           onClick: () => {
@@ -489,7 +495,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           }
         },
         {
-          label: 'Show wipe moves',
+          label: t("Show wipe moves"),
           checked: wipeOpt ? wipeOpt.visible : true,
           disabled: !inPreview || !wipeOpt,
           onClick: () => {
@@ -498,13 +504,13 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         },
         'sep',
         {
-          label: 'Show sidebar',
+          label: t("Show sidebar"),
           keys: 'Shift+Tab',
           checked: prefsDisplay.showSidebar,
           onClick: toggleSidebar
         },
         {
-          label: 'Fullscreen',
+          label: t("Fullscreen"),
           keys: 'F11',
           checked: isFullscreen,
           onClick: toggleFullscreen
@@ -514,34 +520,34 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
     [
       'Calibration',
       [
-        { label: 'Flow rate...', onClick: () => useCalibrationStore.getState().openDialog() },
-        { label: 'Temperature...', onClick: () => other().openDialog('temp') },
-        { label: 'Pressure advance (line)...', onClick: () => other().openDialog('pa_line') },
-        { label: 'Pressure advance (pattern)...', onClick: () => other().openDialog('pa_pattern') },
-        { label: 'Pressure advance (tower)...', onClick: () => other().openDialog('pa_tower') },
-        { label: 'Retraction...', onClick: () => other().openDialog('retraction') },
-        { label: 'Max volumetric speed...', onClick: () => other().openDialog('max_vol') },
-        { label: 'VFA...', onClick: () => other().openDialog('vfa') },
+        { label: t("Flow rate..."), onClick: () => useCalibrationStore.getState().openDialog() },
+        { label: t("Temperature..."), onClick: () => other().openDialog('temp') },
+        { label: t("Pressure advance (line)..."), onClick: () => other().openDialog('pa_line') },
+        { label: t("Pressure advance (pattern)..."), onClick: () => other().openDialog('pa_pattern') },
+        { label: t("Pressure advance (tower)..."), onClick: () => other().openDialog('pa_tower') },
+        { label: t("Retraction..."), onClick: () => other().openDialog('retraction') },
+        { label: t("Max volumetric speed..."), onClick: () => other().openDialog('max_vol') },
+        { label: t("VFA..."), onClick: () => other().openDialog('vfa') },
         'sep',
-        { label: 'Input shaping frequency...', onClick: () => useInputShapingStore.getState().openDialog('freq') },
-        { label: 'Input shaping damping...', onClick: () => useInputShapingStore.getState().openDialog('damp') },
-        { label: 'Cornering...', onClick: () => useInputShapingStore.getState().openDialog('cornering') }
+        { label: t("Input shaping frequency..."), onClick: () => useInputShapingStore.getState().openDialog('freq') },
+        { label: t("Input shaping damping..."), onClick: () => useInputShapingStore.getState().openDialog('damp') },
+        { label: t("Cornering..."), onClick: () => useInputShapingStore.getState().openDialog('cornering') }
       ]
     ],
     [
       'Help',
       [
         {
-          label: 'OrcaSlicer Wiki',
+          label: t("OrcaSlicer Wiki"),
           onClick: () => window.open('https://github.com/OrcaSlicer/OrcaSlicer/wiki', '_blank', 'noopener,noreferrer')
         },
         {
-          label: 'OrcaSlicer GitHub',
+          label: t("OrcaSlicer GitHub"),
           onClick: () => window.open('https://github.com/OrcaSlicer/OrcaSlicer', '_blank', 'noopener,noreferrer')
         },
         'sep',
-        { label: 'Keyboard shortcuts', onClick: () => useHelpStore.getState().open('shortcuts') },
-        { label: 'About OrcaSlicer Web', onClick: () => useHelpStore.getState().open('about') }
+        { label: t("Keyboard shortcuts"), onClick: () => useHelpStore.getState().open('shortcuts') },
+        { label: t("About OrcaSlicer Web"), onClick: () => useHelpStore.getState().open('about') }
       ]
     ]
   ];
@@ -551,25 +557,24 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
       <div className="topbar-left">
         <div className="topbar-logo">
           <img src="/icons/OrcaSlicer.svg" alt="" />
-          OrcaSlicer Web
-        </div>
+          {t("OrcaSlicer Web")}</div>
         {menus.map(([label, entries]) => (
           <Menu key={label} label={label} entries={entries} openMenu={openMenu} setOpenMenu={setOpenMenu} />
         ))}
       </div>
 
       <nav className="tabs" role="tablist">
-        {TABS.map((t) => (
+        {TABS.map((tab) => (
           <button
-            key={t.id}
-            id={`tab-${t.id}`}
-            data-testid={`tab-${t.id}`}
+            key={tab.id}
+            id={`tab-${tab.id}`}
+            data-testid={`tab-${tab.id}`}
             role="tab"
-            aria-selected={activeTab === t.id}
-            className={`tab ${activeTab === t.id ? 'active' : ''}`}
-            onClick={() => setActiveTab(t.id)}
+            aria-selected={activeTab === tab.id}
+            className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+            onClick={() => setActiveTab(tab.id)}
           >
-            {t.label}
+            {t(tab.label)}
           </button>
         ))}
       </nav>
@@ -617,8 +622,8 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         <button
           className="icon-btn"
           id="import-btn"
-          title="Import model (Ctrl+I)"
-          aria-label="Import model"
+          title={t("Import model (Ctrl+I)")}
+          aria-label={t("Import model")}
           disabled={isBusy}
           onClick={importModel}
         >
@@ -628,8 +633,8 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           className="icon-btn"
           id="undo-btn"
           data-testid="undo-btn"
-          title="Undo (Ctrl+Z)"
-          aria-label="Undo"
+          title={t("Undo (Ctrl+Z)")}
+          aria-label={t("Undo")}
           disabled={!canUndo || isBusy}
           onClick={() => undo()}
         >
@@ -639,8 +644,8 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           className="icon-btn"
           id="redo-btn"
           data-testid="redo-btn"
-          title="Redo (Ctrl+Y)"
-          aria-label="Redo"
+          title={t("Redo (Ctrl+Y)")}
+          aria-label={t("Redo")}
           disabled={!canRedo || isBusy}
           onClick={() => redo()}
         >

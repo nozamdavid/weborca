@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
+import { PresetInheritance } from './PresetInheritance';
 import type { PresetKind, ConflictStrategy } from './types';
 import { exportPresetBundle, downloadPresetBundle, BUNDLE_BOUNDARY_NOTE } from './presetBundle';
 import { exportDesktopPresetsZip, downloadBinaryArchive } from './presetArchive';
 import { ModalBackdrop } from '../components/ModalBackdrop';
+import { useTranslation } from "../i18n";
 
 export const ManagePresetsDialog: React.FC = () => {
+    const { t } = useTranslation();
   const {
     managePresetsDialogTarget,
     closeManagePresetsDialog,
@@ -268,13 +271,13 @@ export const ManagePresetsDialog: React.FC = () => {
         }}
       >
         <div className="modal-header">
-          <div className="modal-title">Manage Presets</div>
+          <div className="modal-title">{t("Manage Presets")}</div>
           <button
             type="button"
             className="modal-close-btn"
             data-testid="manage-preset-close-btn"
             onClick={closeManagePresetsDialog}
-            aria-label="Close Manage Presets dialog"
+            aria-label={t("Close Manage Presets dialog")}
           >
             ✕
           </button>
@@ -284,8 +287,8 @@ export const ManagePresetsDialog: React.FC = () => {
         <div
           style={{
             display: 'flex',
-            borderBottom: '1px solid #3f3f46',
-            background: '#27272a'
+            borderBottom: '1px solid var(--control-bg)',
+            background: 'var(--panel-bg)'
           }}
         >
           {(['process', 'filament', 'printer'] as PresetKind[]).map((k) => (
@@ -297,8 +300,8 @@ export const ManagePresetsDialog: React.FC = () => {
               style={{
                 flex: 1,
                 padding: '8px 12px',
-                background: activeKind === k ? '#18181b' : 'transparent',
-                color: activeKind === k ? '#38bdf8' : '#a1a1aa',
+                background: activeKind === k ? 'var(--canvas-bg)' : 'transparent',
+                color: activeKind === k ? '#38bdf8' : 'var(--text-muted)',
                 border: 'none',
                 borderBottom: activeKind === k ? '2px solid #38bdf8' : 'none',
                 cursor: 'pointer',
@@ -307,8 +310,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 textTransform: 'capitalize'
               }}
             >
-              {k} Presets
-            </button>
+              {k} {t("Presets")}</button>
           ))}
         </div>
 
@@ -357,11 +359,11 @@ export const ManagePresetsDialog: React.FC = () => {
             </div>
           )}
 
+          <PresetInheritance kind={activeKind} name={selectedPreset} />
           {/* Preset Selector / List */}
           <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label htmlFor="manage-preset-target-select" style={{ fontSize: '0.85rem', color: '#e4e4e7', fontWeight: 500 }}>
-              Select Preset to Manage:
-            </label>
+            <label htmlFor="manage-preset-target-select" style={{ fontSize: '0.85rem', color: 'var(--text-color)', fontWeight: 500 }}>
+              {t("Select Preset to Manage:")}</label>
             <select
               id="manage-preset-target-select"
               data-testid="manage-preset-select"
@@ -374,16 +376,16 @@ export const ManagePresetsDialog: React.FC = () => {
                 setRenameName(e.target.value);
               }}
               style={{
-                background: '#27272a',
-                color: '#f4f4f5',
-                border: '1px solid #52525b',
+                background: 'var(--panel-bg)',
+                color: 'var(--text-color)',
+                border: '1px solid var(--border-color)',
                 padding: '6px 10px',
                 borderRadius: 4,
                 fontSize: '0.9rem'
               }}
             >
               {currentUserPresets.length > 0 && (
-                <optgroup label="User Presets (Editable)">
+                <optgroup label={t("User Presets (Editable)")}>
                   {currentUserPresets.map((u) => (
                     <option key={u.name} value={u.name}>
                       {u.name} {activeUserPreset[activeKind] === u.name ? '★ [Active]' : ''}
@@ -392,21 +394,20 @@ export const ManagePresetsDialog: React.FC = () => {
                 </optgroup>
               )}
               {currentSystemPresets.length > 0 && (
-                <optgroup label="System Presets (Immutable)">
+                <optgroup label={t("System Presets (Immutable)")}>
                   {currentSystemPresets.map((s) => (
                     <option key={s.name} value={s.name}>
-                      {s.name} [System]
-                    </option>
+                      {s.name} {t("[System]")}</option>
                   ))}
                 </optgroup>
               )}
             </select>
-            <div style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>
-              Status:{' '}
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {t("Status:")}{' '}
               {isSelectedUserPreset ? (
-                <span style={{ color: '#38bdf8', fontWeight: 500 }}>User Preset (Customizable)</span>
+                <span style={{ color: '#38bdf8', fontWeight: 500 }}>{t("User Preset (Customizable)")}</span>
               ) : (
-                <span style={{ color: '#eab308', fontWeight: 500 }}>System Preset (Read-Only)</span>
+                <span style={{ color: '#eab308', fontWeight: 500 }}>{t("System Preset (Read-Only)")}</span>
               )}
             </div>
           </div>
@@ -414,27 +415,25 @@ export const ManagePresetsDialog: React.FC = () => {
           {/* Duplicate Section */}
           <div
             style={{
-              background: '#27272a',
+              background: 'var(--panel-bg)',
               padding: 12,
               borderRadius: 6,
-              border: '1px solid #3f3f46',
+              border: '1px solid var(--control-bg)',
               display: 'flex',
               flexDirection: 'column',
               gap: 8
             }}
           >
-            <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#f4f4f5' }}>
-              Duplicate Preset
-            </div>
-            <div style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>
-              Create an editable copy of <strong>{selectedPreset || 'selected preset'}</strong> preserving all base values.
-            </div>
+            <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-color)' }}>
+              {t("Duplicate Preset")}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              {t("Create an editable copy of")}<strong>{selectedPreset || 'selected preset'}</strong> {t("preserving all base values.")}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <input
                 type="text"
                 data-testid="duplicate-preset-input"
                 className="form-control"
-                placeholder="Name for duplicate copy..."
+                placeholder={t("Name for duplicate copy...")}
                 value={duplicateName}
                 onChange={(e) => {
                   setDuplicateName(e.target.value);
@@ -443,9 +442,9 @@ export const ManagePresetsDialog: React.FC = () => {
                 }}
                 style={{
                   flex: 1,
-                  background: '#18181b',
+                  background: 'var(--canvas-bg)',
                   color: '#fff',
-                  border: '1px solid #52525b',
+                  border: '1px solid var(--border-color)',
                   padding: '5px 8px',
                   borderRadius: 4,
                   fontSize: '0.85rem'
@@ -459,8 +458,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 onClick={handleDuplicate}
                 style={{ whiteSpace: 'nowrap' }}
               >
-                Duplicate
-              </button>
+                {t("Duplicate")}</button>
             </div>
           </div>
 
@@ -468,27 +466,25 @@ export const ManagePresetsDialog: React.FC = () => {
           {isSelectedUserPreset && (
             <div
               style={{
-                background: '#27272a',
+                background: 'var(--panel-bg)',
                 padding: 12,
                 borderRadius: 6,
-                border: '1px solid #3f3f46',
+                border: '1px solid var(--control-bg)',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 8
               }}
             >
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#f4f4f5' }}>
-                Rename User Preset
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#a1a1aa' }}>
-                Change the name of <strong>{selectedPreset}</strong>. Active selection will be retained.
-              </div>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-color)' }}>
+                {t("Rename User Preset")}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                {t("Change the name of")}<strong>{selectedPreset}</strong>{t(". Active selection will be retained.")}</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
                   type="text"
                   data-testid="rename-preset-input"
                   className="form-control"
-                  placeholder="New preset name..."
+                  placeholder={t("New preset name...")}
                   value={renameName}
                   onChange={(e) => {
                     setRenameName(e.target.value);
@@ -497,9 +493,9 @@ export const ManagePresetsDialog: React.FC = () => {
                   }}
                   style={{
                     flex: 1,
-                    background: '#18181b',
+                    background: 'var(--canvas-bg)',
                     color: '#fff',
-                    border: '1px solid #52525b',
+                    border: '1px solid var(--border-color)',
                     padding: '5px 8px',
                     borderRadius: 4,
                     fontSize: '0.85rem'
@@ -513,8 +509,7 @@ export const ManagePresetsDialog: React.FC = () => {
                   onClick={handleRename}
                   style={{ whiteSpace: 'nowrap' }}
                 >
-                  Rename
-                </button>
+                  {t("Rename")}</button>
               </div>
             </div>
           )}
@@ -533,8 +528,7 @@ export const ManagePresetsDialog: React.FC = () => {
               }}
             >
               <div style={{ fontSize: '0.82rem', color: '#fca5a5' }}>
-                Delete this user preset permanently
-              </div>
+                {t("Delete this user preset permanently")}</div>
               <button
                 type="button"
                 className="btn btn-danger"
@@ -542,27 +536,25 @@ export const ManagePresetsDialog: React.FC = () => {
                 onClick={handleDelete}
                 style={{ fontSize: '0.82rem', padding: '4px 10px' }}
               >
-                Delete Preset
-              </button>
+                {t("Delete Preset")}</button>
             </div>
           )}
 
           {/* Preset Bundles Section */}
           <div
             style={{
-              background: '#27272a',
+              background: 'var(--panel-bg)',
               padding: 12,
               borderRadius: 6,
-              border: '1px solid #3f3f46',
+              border: '1px solid var(--control-bg)',
               display: 'flex',
               flexDirection: 'column',
               gap: 10
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: '#f4f4f5' }}>
-                Preset Bundles & Archives (Import & Export)
-              </div>
+              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-color)' }}>
+                {t("Preset Bundles & Archives (Import & Export)")}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <button
                   type="button"
@@ -570,10 +562,9 @@ export const ManagePresetsDialog: React.FC = () => {
                   data-testid="export-bundle-btn"
                   onClick={handleExportBundle}
                   style={{ fontSize: '0.78rem', padding: '4px 8px' }}
-                  aria-label="Export all user presets to bundle JSON"
+                  aria-label={t("Export all user presets to bundle JSON")}
                 >
-                  Export Bundle JSON
-                </button>
+                  {t("Export Bundle JSON")}</button>
                 <button
                   type="button"
                   className="btn btn-secondary"
@@ -581,10 +572,9 @@ export const ManagePresetsDialog: React.FC = () => {
                   onClick={() => handleExportArchive('printer')}
                   disabled={activeKind !== 'printer' || !isSelectedUserPreset}
                   style={{ fontSize: '0.78rem', padding: '4px 8px' }}
-                  aria-label="Export printer preset archive"
+                  aria-label={t("Export printer preset archive")}
                 >
-                  Export .orca_printer
-                </button>
+                  {t("Export .orca_printer")}</button>
                 <button
                   type="button"
                   className="btn btn-secondary"
@@ -592,53 +582,49 @@ export const ManagePresetsDialog: React.FC = () => {
                   onClick={() => handleExportArchive('filament')}
                   disabled={activeKind !== 'filament' || !isSelectedUserPreset}
                   style={{ fontSize: '0.78rem', padding: '4px 8px' }}
-                  aria-label="Export filament preset archive"
+                  aria-label={t("Export filament preset archive")}
                 >
-                  Export .orca_filament
-                </button>
+                  {t("Export .orca_filament")}</button>
                 <button
                   type="button"
                   className="btn btn-secondary"
                   data-testid="export-desktop-zip-btn"
                   onClick={handleExportZipArchive}
                   style={{ fontSize: '0.78rem', padding: '4px 8px' }}
-                  aria-label="Export all presets as zip archive"
+                  aria-label={t("Export all presets as zip archive")}
                 >
-                  Export .zip
-                </button>
+                  {t("Export .zip")}</button>
               </div>
             </div>
 
-            <div style={{ fontSize: '0.78rem', color: '#a1a1aa' }}>
-              Import and export presets in native OrcaSlicer formats (.orca_printer, .orca_filament, .zip, .json, .ini) or web bundles. System presets remain immutable.
-            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              {t("Import and export presets in native OrcaSlicer formats (.orca_printer, .orca_filament, .zip, .json, .ini) or web bundles. System presets remain immutable.")}</div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <label
                 htmlFor="bundle-conflict-strategy"
-                style={{ fontSize: '0.8rem', color: '#e4e4e7', fontWeight: 500 }}
+                style={{ fontSize: '0.8rem', color: 'var(--text-color)', fontWeight: 500 }}
               >
-                Conflict Resolution Strategy for Existing Presets:
-              </label>
+                {t("Conflict Resolution Strategy for Existing Presets:")}</label>
               <select
                 id="bundle-conflict-strategy"
                 data-testid="bundle-conflict-strategy"
                 className="form-control"
                 value={conflictStrategy}
                 onChange={(e) => setConflictStrategy(e.target.value as ConflictStrategy)}
-                aria-label="Conflict resolution strategy"
+                aria-label={t("Conflict resolution strategy")}
                 style={{
-                  background: '#18181b',
+                  background: 'var(--canvas-bg)',
                   color: '#fff',
-                  border: '1px solid #52525b',
+                  border: '1px solid var(--border-color)',
                   padding: '5px 8px',
                   borderRadius: 4,
                   fontSize: '0.85rem'
                 }}
               >
-                <option value="overwrite">Overwrite existing presets</option>
-                <option value="rename">Rename imported presets on conflict</option>
-                <option value="skip">Skip existing presets</option>
+                <option value="overwrite">{t("Overwrite existing presets")}</option>
+                <option value="rename">{t("Rename imported presets on conflict")}</option>
+                <option value="skip">{t("Skip existing presets")}</option>
               </select>
             </div>
 
@@ -650,7 +636,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 data-testid="bundle-file-input"
                 accept=".json,.ini,.zip,.orca_printer,.orca_filament,.orca_bundle,application/json"
                 onChange={handleFileImport}
-                aria-label="Import preset bundle file"
+                aria-label={t("Import preset bundle file")}
                 style={{ display: 'none' }}
               />
               <button
@@ -659,24 +645,22 @@ export const ManagePresetsDialog: React.FC = () => {
                 data-testid="import-bundle-btn"
                 onClick={() => fileInputRef.current?.click()}
                 style={{ fontSize: '0.85rem', padding: '6px 12px' }}
-                aria-label="Choose preset bundle or archive file to import"
+                aria-label={t("Choose preset bundle or archive file to import")}
               >
-                Import Archive / Preset File...
-              </button>
+                {t("Import Archive / Preset File...")}</button>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <label
                 htmlFor="bundle-json-textarea"
-                style={{ fontSize: '0.78rem', color: '#a1a1aa' }}
+                style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}
               >
-                Or paste bundle JSON, preset JSON, or INI directly:
-              </label>
+                {t("Or paste bundle JSON, preset JSON, or INI directly:")}</label>
               <textarea
                 id="bundle-json-textarea"
                 data-testid="bundle-json-textarea"
-                aria-label="Paste bundle JSON or INI content"
-                placeholder='{"format":"orcaslicer-web-preset-bundle","version":1,"presets":[...]} or preset JSON / INI'
+                aria-label={t("Paste bundle JSON or INI content")}
+                placeholder={t("{\"format\":\"orcaslicer-web-preset-bundle\",\"version\":1,\"presets\":[...]} or preset JSON / INI")}
                 value={bundleJsonText}
                 onChange={(e) => {
                   setBundleJsonText(e.target.value);
@@ -688,9 +672,9 @@ export const ManagePresetsDialog: React.FC = () => {
                   width: '100%',
                   minHeight: 60,
                   maxHeight: 120,
-                  background: '#18181b',
+                  background: 'var(--canvas-bg)',
                   color: '#fff',
-                  border: '1px solid #52525b',
+                  border: '1px solid var(--border-color)',
                   padding: '6px 8px',
                   borderRadius: 4,
                   fontSize: '0.8rem',
@@ -706,25 +690,23 @@ export const ManagePresetsDialog: React.FC = () => {
                 onClick={handleJsonImport}
                 style={{ alignSelf: 'flex-start', fontSize: '0.8rem', padding: '4px 10px' }}
               >
-                Import Pasted Content
-              </button>
+                {t("Import Pasted Content")}</button>
             </div>
 
-            <div style={{ fontSize: '0.75rem', color: '#71717a', fontStyle: 'italic', marginTop: 2 }}>
-              Supported formats: .orca_printer, .orca_filament, .zip, .json, .ini ({BUNDLE_BOUNDARY_NOTE})
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontStyle: 'italic', marginTop: 2 }}>
+              {t("Supported formats: .orca_printer, .orca_filament, .zip, .json, .ini (")}{BUNDLE_BOUNDARY_NOTE})
             </div>
           </div>
         </div>
 
-        <div className="modal-footer" style={{ borderTop: '1px solid #3f3f46', padding: 12 }}>
+        <div className="modal-footer" style={{ borderTop: '1px solid var(--control-bg)', padding: 12 }}>
           <button
             type="button"
             className="btn btn-secondary"
             data-testid="manage-preset-done-btn"
             onClick={closeManagePresetsDialog}
           >
-            Done
-          </button>
+            {t("Done")}</button>
         </div>
       </div>
     </ModalBackdrop>

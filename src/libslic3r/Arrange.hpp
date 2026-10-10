@@ -64,6 +64,7 @@ struct ArrangePolygon {
     int       priority{0};
     //BBS: add locked_plate to indicate whether it is in the locked plate
     int       locked_plate{ -1 };
+    bool      orientation_locked{ false };
     bool      is_virt_object{ false };
     bool      is_extrusion_cali_object{ false };
     bool      is_wipe_tower{ false };

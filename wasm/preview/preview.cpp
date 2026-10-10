@@ -1,3 +1,4 @@
+#include "libslic3r/Utils.hpp"
 #include <emscripten.h>
 #include <emscripten/bind.h>
 #include <emscripten/html5.h>
@@ -289,6 +290,12 @@ public:
         glUseProgram(0);
     }
 
+    void setLightTheme(bool light) {
+        if (m_light_theme == light) return;
+        m_light_theme = light;
+        rebuildMesh();
+    }
+
     float getCenterX() const { return (m_min_x + m_max_x) * 0.5f; }
     float getCenterY() const { return (m_min_y + m_max_y) * 0.5f; }
     float getWidth() const { return m_max_x - m_min_x; }
@@ -318,7 +325,7 @@ private:
 
         // 1. Bed subtle floor plate at z = -0.05 mm
         const float fz = -0.05f;
-        const float fr = 0.14f, fg = 0.15f, fb = 0.17f, fa = 1.0f;
+        const float fr = m_light_theme ? 0.83f : 0.14f, fg = m_light_theme ? 0.85f : 0.15f, fb = m_light_theme ? 0.87f : 0.17f, fa = 1.0f;
         verts.push_back({m_min_x, m_min_y, fz, fr, fg, fb, fa});
         verts.push_back({m_max_x, m_min_y, fz, fr, fg, fb, fa});
         verts.push_back({m_max_x, m_max_y, fz, fr, fg, fb, fa});
@@ -392,6 +399,7 @@ private:
     GLsizei m_floor_count;
     GLsizei m_lines_count;
     bool m_initialized;
+    bool m_light_theme = false;
 };
 
 class OrcaPreview {
@@ -422,6 +430,7 @@ public:
 
     bool init(const std::string& canvas_selector) {
         if (m_initialized) return true;
+        Slic3r::set_resources_dir("/resources");
 
         EmscriptenWebGLContextAttributes attrs;
         emscripten_webgl_init_context_attributes(&attrs);
@@ -627,6 +636,12 @@ public:
         std::snprintf(buf, sizeof(buf), "{\"min\":%zu,\"max\":%zu,\"current\":%zu}",
                       enabled[0], enabled[1], visible[1]);
         return std::string(buf);
+    }
+
+    // PathVertex preserves the processor's exact source line, including arc-generated vertices.
+    unsigned int getMoveGcodeLine(int move) const {
+        if (!m_initialized || move < 0 || static_cast<size_t>(move) >= m_viewer.get_vertices_count()) return 0;
+        return m_viewer.get_vertex_at(static_cast<size_t>(move)).gcode_id;
     }
 
     std::string getLayersZs() const {
@@ -862,6 +877,11 @@ public:
         }
     }
 
+    void setLightTheme(bool light) {
+        m_light_theme = light;
+        m_bed.setLightTheme(light);
+    }
+
     void setBed(float min_x, float min_y, float max_x, float max_y) {
         m_bed.setBed(min_x, min_y, max_x, max_y);
     }
@@ -989,7 +1009,8 @@ private:
         emscripten_webgl_make_context_current(m_ctx);
 
         glViewport(0, 0, m_width, m_height);
-        glClearColor(0.13f, 0.14f, 0.16f, 1.0f);
+        if (m_light_theme) glClearColor(0.91f, 0.92f, 0.93f, 1.0f);
+        else glClearColor(0.13f, 0.14f, 0.16f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
@@ -1014,6 +1035,7 @@ private:
 
     libvgcode::Viewer m_viewer;
     BedRenderer m_bed;
+    bool m_light_theme = false;
     EMSCRIPTEN_WEBGL_CONTEXT_HANDLE m_ctx;
     int m_width;
     int m_height;
@@ -1034,6 +1056,7 @@ EMSCRIPTEN_BINDINGS(orca_preview) {
         .function("setLayerRange", &OrcaPreview::setLayerRange)
         .function("setMove", &OrcaPreview::setMove)
         .function("getMoveRange", &OrcaPreview::getMoveRange)
+        .function("getMoveGcodeLine", &OrcaPreview::getMoveGcodeLine)
         .function("getLayersZs", &OrcaPreview::getLayersZs)
         .function("getLayerZ", &OrcaPreview::getLayerZ)
         .function("setViewType", &OrcaPreview::setViewType)
@@ -1042,6 +1065,7 @@ EMSCRIPTEN_BINDINGS(orca_preview) {
         .function("setExtrusionRoleVisible", &OrcaPreview::setExtrusionRoleVisible)
         .function("toggleOption", &OrcaPreview::toggleOption)
         .function("setOptionVisible", &OrcaPreview::setOptionVisible)
+        .function("setLightTheme", &OrcaPreview::setLightTheme)
         .function("setBed", &OrcaPreview::setBed)
         .function("setBedPolygon", &OrcaPreview::setBedPolygon)
         .function("resize", &OrcaPreview::resize)

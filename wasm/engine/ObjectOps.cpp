@@ -6,6 +6,7 @@
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Utils.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -195,6 +196,15 @@ json addVolume(Slic3r::Model& model, const json& args) {
     } else if (shape == "cone" || shape == "Cone") {
         mesh = Slic3r::make_cone(0.5 * sx, sz);
         default_name = "Cone";
+    } else if (shape == "disc") {
+        mesh = Slic3r::make_cylinder(0.5 * sx, 0.2 * sx);
+        default_name = "Disc";
+    } else if (shape == "torus") {
+        mesh = Slic3r::make_torus(0.5 * sx, 0.125 * sx, M_PI / 60.0);
+        default_name = "Torus";
+    } else if (shape == "slab") {
+        mesh = Slic3r::make_cube(1.5 * sx, 1.5 * sy, 0.5 * sz);
+        default_name = "Slab";
     } else {
         throw Slic3r::RuntimeError("Unknown shape: " + shape);
     }
@@ -419,4 +429,30 @@ json setVolumeExtruder(Slic3r::Model& model, const json& args) {
     return json::object();
 }
 
+
+
+json moveVolume(Slic3r::Model& model, const json& args) {
+    size_t object_id = args.at("objectId").get<size_t>();
+    size_t volume_id = args.at("volumeId").get<size_t>();
+    int to_index = args.at("toIndex").get<int>();
+
+    Slic3r::ModelObject* obj = find_object(model, object_id);
+    if (!obj) {
+        throw Slic3r::RuntimeError("Object not found: " + std::to_string(object_id));
+    }
+
+    auto& volumes = obj->volumes;
+    auto it = std::find_if(volumes.begin(), volumes.end(), [&](const Slic3r::ModelVolume* v) {
+        return v && v->id().id == volume_id;
+    });
+    if (it == volumes.end()) {
+        throw Slic3r::RuntimeError("Volume not found: " + std::to_string(volume_id));
+    }
+
+    Slic3r::ModelVolume* vol = *it;
+    volumes.erase(it);
+    const size_t target = static_cast<size_t>(std::clamp(to_index, 0, static_cast<int>(volumes.size())));
+    volumes.insert(volumes.begin() + target, vol);
+    return {{"index", target}};
+}
 } // namespace OrcaWasm

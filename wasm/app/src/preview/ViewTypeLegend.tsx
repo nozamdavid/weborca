@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { usePreviewStore } from './previewStore';
 import { useAppStore } from '../store/appStore';
 import type { PreviewViewType } from './types';
+import { useTranslation } from "../i18n";
 
 function formatDuration(seconds?: number): string {
   if (!seconds || seconds <= 0) return '';
@@ -28,6 +29,7 @@ function normalizeHexColor(c: string): string {
 }
 
 export const ViewTypeLegend: React.FC = () => {
+    const { t } = useTranslation();
   const viewType = usePreviewStore((s) => s.viewType);
   const legend = usePreviewStore((s) => s.legend);
   const setViewType = usePreviewStore((s) => s.setViewTypeAction);
@@ -84,15 +86,15 @@ export const ViewTypeLegend: React.FC = () => {
         left: 16,
         maxHeight: 'calc(100% - 90px)',
         width: 280,
-        background: 'rgba(24, 24, 27, 0.90)',
+        background: 'var(--panel-bg)',
         backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
+        border: '1px solid var(--border-color)',
         borderRadius: 8,
         display: 'flex',
         flexDirection: 'column',
         zIndex: 20,
         fontSize: '0.8rem',
-        color: '#e4e4e7',
+        color: 'var(--text-color)',
         boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
         overflow: 'hidden'
       }}
@@ -104,8 +106,8 @@ export const ViewTypeLegend: React.FC = () => {
           alignItems: 'center',
           gap: 8,
           padding: '8px 10px',
-          borderBottom: isFolded ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
-          background: 'rgba(39, 39, 42, 0.6)'
+          borderBottom: isFolded ? 'none' : '1px solid var(--border-color)',
+          background: 'var(--panel-header-bg)'
         }}
       >
         <button
@@ -116,7 +118,7 @@ export const ViewTypeLegend: React.FC = () => {
           style={{
             background: 'transparent',
             border: 'none',
-            color: '#a1a1aa',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
             padding: 2,
             fontSize: '0.9rem',
@@ -130,13 +132,12 @@ export const ViewTypeLegend: React.FC = () => {
           htmlFor="view-type-select"
           style={{
             fontWeight: 600,
-            color: '#94a3b8',
+            color: 'var(--text-muted)',
             fontSize: '0.75rem',
             whiteSpace: 'nowrap'
           }}
         >
-          Color Scheme:
-        </label>
+          {t("Color Scheme:")}</label>
 
         <select
           id="view-type-select"
@@ -145,7 +146,7 @@ export const ViewTypeLegend: React.FC = () => {
           onChange={handleViewTypeChange}
           style={{
             flex: 1,
-            background: '#18181b',
+            background: 'var(--canvas-bg)',
             color: '#fff',
             border: '1px solid rgba(255, 255, 255, 0.15)',
             borderRadius: 4,
@@ -154,23 +155,23 @@ export const ViewTypeLegend: React.FC = () => {
             cursor: 'pointer'
           }}
         >
-          <option value="FeatureType">Line type</option>
-          <option value="Speed">Speed</option>
-          <option value="ActualSpeed">Actual speed</option>
-          <option value="Acceleration">Acceleration</option>
-          <option value="Jerk">Jerk</option>
-          <option value="Height">Layer height</option>
-          <option value="Width">Line width</option>
-          <option value="VolumetricFlowRate">Flow rate</option>
-          <option value="ActualVolumetricFlowRate">Actual flow rate</option>
-          <option value="LayerTimeLinear">Layer time</option>
-          <option value="LayerTimeLogarithmic">Layer time (log)</option>
-          <option value="FanSpeed">Fan speed</option>
-          <option value="Temperature">Temperature</option>
-          <option value="PressureAdvance">Pressure advance</option>
-          <option value="Tool">Filament</option>
-          <option value="ColorPrint">Color print</option>
-          <option value="Summary">Summary</option>
+          <option value="FeatureType">{t("Line type")}</option>
+          <option value="Speed">{t("Speed")}</option>
+          <option value="ActualSpeed">{t("Actual speed")}</option>
+          <option value="Acceleration">{t("Acceleration")}</option>
+          <option value="Jerk">{t("Jerk")}</option>
+          <option value="Height">{t("Layer height")}</option>
+          <option value="Width">{t("Line width")}</option>
+          <option value="VolumetricFlowRate">{t("Flow rate")}</option>
+          <option value="ActualVolumetricFlowRate">{t("Actual flow rate")}</option>
+          <option value="LayerTimeLinear">{t("Layer time")}</option>
+          <option value="LayerTimeLogarithmic">{t("Layer time (log)")}</option>
+          <option value="FanSpeed">{t("Fan speed")}</option>
+          <option value="Temperature">{t("Temperature")}</option>
+          <option value="PressureAdvance">{t("Pressure advance")}</option>
+          <option value="Tool">{t("Filament")}</option>
+          <option value="ColorPrint">{t("Color print")}</option>
+          <option value="Summary">{t("Summary")}</option>
         </select>
       </div>
 
@@ -214,7 +215,7 @@ export const ViewTypeLegend: React.FC = () => {
                     borderRadius: 4,
                     cursor: legend.type === 'features' ? 'pointer' : 'default',
                     opacity: item.visible ? 1 : 0.4,
-                    background: item.visible ? 'transparent' : 'rgba(255, 255, 255, 0.02)'
+                    background: item.visible ? 'transparent' : 'var(--control-bg)'
                   }}
                   title={legend.type === 'features' ? `Click to ${item.visible ? 'hide' : 'show'} ${item.name}` : item.name}
                 >
@@ -242,7 +243,7 @@ export const ViewTypeLegend: React.FC = () => {
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {item.timeS !== undefined && item.timeS > 0 && (
-                      <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                         {formatDuration(item.timeS)}
                       </span>
                     )}
@@ -256,7 +257,7 @@ export const ViewTypeLegend: React.FC = () => {
                         style={{
                           background: 'transparent',
                           border: 'none',
-                          color: item.visible ? '#009688' : '#71717a',
+                          color: item.visible ? '#009688' : 'var(--text-dim)',
                           cursor: 'pointer',
                           padding: 0,
                           fontSize: '0.85rem'
@@ -302,16 +303,15 @@ export const ViewTypeLegend: React.FC = () => {
                           borderRadius: 1
                         }}
                       />
-                      <span style={{ fontSize: '0.75rem', color: '#d4d4d8' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-color)' }}>
                         {typeof range.value === 'number' ? (viewType === 'PressureAdvance' ? range.value.toFixed(3) : range.value.toFixed(1)) : range.value}
                       </span>
                     </div>
                   </div>
                 ))
               ) : (
-                <div style={{ padding: '2px 6px', fontSize: '0.75rem', color: '#94a3b8' }}>
-                  Calculating range...
-                </div>
+                <div style={{ padding: '2px 6px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {t("Calculating range...")}</div>
               )}
             </div>
           )}
@@ -320,7 +320,7 @@ export const ViewTypeLegend: React.FC = () => {
           {legend.options && legend.options.length > 0 && (
             <div
               style={{
-                borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                borderTop: '1px solid var(--border-color)',
                 paddingTop: 6,
                 marginTop: 4
               }}
@@ -329,13 +329,12 @@ export const ViewTypeLegend: React.FC = () => {
                 style={{
                   fontSize: '0.7rem',
                   fontWeight: 600,
-                  color: '#94a3b8',
+                  color: 'var(--text-muted)',
                   marginBottom: 4,
                   padding: '0 4px'
                 }}
               >
-                Features:
-              </div>
+                {t("Features:")}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {legend.options.map((opt) => (
                   <div
@@ -377,7 +376,7 @@ export const ViewTypeLegend: React.FC = () => {
                       style={{
                         background: 'transparent',
                         border: 'none',
-                        color: opt.visible ? '#009688' : '#71717a',
+                        color: opt.visible ? '#009688' : 'var(--text-dim)',
                         cursor: 'pointer',
                         padding: 0,
                         fontSize: '0.85rem'

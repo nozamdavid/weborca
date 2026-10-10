@@ -87,6 +87,33 @@ async function runSuite(browserType, name) {
     assert.ok(wizardChoices.filaments.includes(fil1), `filaments should contain "${fil1}"`);
     assert.ok(wizardChoices.filaments.includes(fil2), `filaments should contain "${fil2}"`);
 
+    const filamentOptions = await page.locator('#filament-select option').evaluateAll(options => options.map(o => o.value));
+    assert.ok(filamentOptions.includes(fil1));
+    assert.ok(filamentOptions.includes(fil2));
+    assert.ok(!filamentOptions.includes('Generic ABS @System'), 'wizard excludes unselected filaments');
+
+    log('create a custom printer with bed dimensions and nozzle size');
+    await page.locator('.menu-label', { hasText: 'File' }).first().click();
+    await page.locator('.menu.open .menu-item', { hasText: 'Configuration wizard' }).first().click();
+    await page.check('#wizard-custom-printer');
+    await page.fill('#wizard-custom-name', 'My custom printer');
+    await page.fill('#wizard-custom-x', '220');
+    await page.fill('#wizard-custom-y', '180');
+    await page.fill('#wizard-custom-z', '240');
+    await page.fill('#wizard-custom-nozzle', '0.6');
+    await page.click('#wizard-next-btn');
+    await page.click('#wizard-next-btn');
+    await page.click('#wizard-finish-btn');
+    await page.waitForSelector('#wizard-dialog', { state: 'detached' });
+    const custom = await page.evaluate(() => {
+      const app = window.__appStore.getState();
+      return { name: app.activeUserPreset.printer, config: app.currentConfig, error: app.engineError };
+    });
+    assert.equal(custom.error, null);
+    assert.equal(custom.name, 'My custom printer');
+    assert.equal(custom.config.printable_area, '0x0,220x0,220x180,0x180');
+    assert.equal(Number(custom.config.printable_height), 240);
+    assert.equal(Number(custom.config.nozzle_diameter), 0.6);
     log('all checks passed');
   } finally {
     await browser.close();

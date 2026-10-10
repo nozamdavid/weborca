@@ -3,8 +3,10 @@ import { useEditOpsStore } from './editOpsStore';
 import { usePlateStore } from '../plate/plateStore';
 import type { MeshBooleanMode } from './types';
 import { ModalBackdrop } from '../components/ModalBackdrop';
+import { useTranslation } from "../i18n";
 
 export const MeshBooleanDialog: React.FC = () => {
+    const { t } = useTranslation();
   const activeDialog = useEditOpsStore((s) => s.activeDialog);
   const booleanMode = useEditOpsStore((s) => s.booleanMode);
   const booleanTargetObjectId = useEditOpsStore((s) => s.booleanTargetObjectId);
@@ -27,7 +29,7 @@ export const MeshBooleanDialog: React.FC = () => {
   const toolCandidates = objects.filter((o) => o.id !== booleanTargetObjectId);
 
   return (
-    <ModalBackdrop onClose={closeBooleanDialog} role="dialog" aria-label="Mesh Boolean">
+    <ModalBackdrop onClose={closeBooleanDialog} role="dialog" aria-label={t("Mesh Boolean")}>
       <div
         className="modal-content"
         id="mesh-boolean-dialog"
@@ -36,15 +38,15 @@ export const MeshBooleanDialog: React.FC = () => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h2>Mesh Boolean</h2>
-          <button className="icon-btn" onClick={closeBooleanDialog} aria-label="Close">✕</button>
+          <h2>{t("Mesh Boolean")}</h2>
+          <button className="icon-btn" onClick={closeBooleanDialog} aria-label={t("Close")}>✕</button>
         </div>
 
         <div className="modal-body">
           {error && <div className="error-message" style={{ color: 'var(--danger-color)', fontSize: 12 }}>{error}</div>}
 
           <div>
-            <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>Operation Mode</label>
+            <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>{t("Operation Mode")}</label>
             <div style={{ display: 'flex', gap: 16 }}>
               {(['union', 'difference', 'intersection'] as MeshBooleanMode[]).map((mode) => (
                 <label key={mode} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
@@ -63,8 +65,7 @@ export const MeshBooleanDialog: React.FC = () => {
 
           <div>
             <label htmlFor="boolean-target-select" style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
-              Target Object
-            </label>
+              {t("Target Object")}</label>
             <select
               id="boolean-target-select"
               data-testid="boolean-target-select"
@@ -74,7 +75,7 @@ export const MeshBooleanDialog: React.FC = () => {
             >
               {objects.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {o.name} (id: {o.id})
+                  {o.name} {t("(id:")}{o.id})
                 </option>
               ))}
             </select>
@@ -82,11 +83,10 @@ export const MeshBooleanDialog: React.FC = () => {
 
           <div>
             <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
-              Tool Objects (to apply to target)
-            </label>
+              {t("Tool Objects (to apply to target)")}</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 120, overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 4, padding: 8 }}>
               {toolCandidates.length === 0 ? (
-                <span style={{ color: 'var(--text-muted)' }}>No other objects available</span>
+                <span style={{ color: 'var(--text-muted)' }}>{t("No other objects available")}</span>
               ) : (
                 toolCandidates.map((o) => (
                   <label key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -95,7 +95,7 @@ export const MeshBooleanDialog: React.FC = () => {
                       checked={booleanToolObjectIds.includes(o.id)}
                       onChange={() => toggleBooleanToolObjectId(o.id)}
                     />
-                    <span>{o.name} (id: {o.id})</span>
+                    <span>{o.name} {t("(id:")}{o.id})</span>
                   </label>
                 ))
               )}
@@ -109,14 +109,13 @@ export const MeshBooleanDialog: React.FC = () => {
               checked={booleanKeepTools}
               onChange={(e) => setBooleanKeepTools(e.target.checked)}
             />
-            <span>Keep tool objects after operation</span>
+            <span>{t("Keep tool objects after operation")}</span>
           </label>
         </div>
 
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={closeBooleanDialog} disabled={isOperating}>
-            Cancel
-          </button>
+            {t("Cancel")}</button>
           <button
             className="btn btn-primary"
             id="boolean-apply-btn"

@@ -281,4 +281,22 @@ describe('Orca WASM Engine Object List & Modifiers Test Suite', () => {
     const tree3 = await core.call('getObjectTree', {});
     assert.equal(tree3.objects[0].volumes[0].extruder, 0);
   });
+  test('reordering parts preserves IDs, settings and all desktop primitive shapes', async () => {
+    const objectId = (await core.call('getObjectTree', {})).objects[0].id;
+    const ids = [];
+    for (const shape of ['disc', 'torus', 'slab']) {
+      const result = await core.call('addVolume', { objectId, type: 'part', shape, size: [10, 10, 10] });
+      ids.push(result.volumeId);
+    }
+    const volumeId = ids[2];
+    await core.call('renameVolume', { objectId, volumeId, name: 'Reordered slab' });
+    await core.call('setVolumeExtruder', { objectId, volumeId, extruder: 2 });
+    const before = (await core.call('getObjectTree', {})).objects[0].volumes;
+    await core.call('moveVolume', { objectId, volumeId, toIndex: 0 });
+    const after = (await core.call('getObjectTree', {})).objects[0].volumes;
+    assert.deepEqual(after[0], before.find(v => v.id === volumeId));
+    assert.deepEqual(after.slice(1), before.filter(v => v.id !== volumeId));
+    for (const id of ids) await core.call('deleteVolume', { objectId, volumeId: id });
+  });
+
 });

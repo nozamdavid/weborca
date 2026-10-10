@@ -147,6 +147,7 @@ const MUTATING_SEGMENTS = new Set([
  * Read-only mode exists for testing against a real printer, so it errs on the side of blocking.
  */
 export function httpAllowedInReadOnly(method: string, path: string): boolean {
+  if (method.toUpperCase() === 'POST' && path.split('?')[0].replace(/^\/+/, '') === 'detail') return true;
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())) return false;
   const segments = path.split('?')[0].split('/').filter(Boolean).slice(0, 3).map((s) => s.toLowerCase());
   return !segments.some((s) => MUTATING_SEGMENTS.has(s) || s.startsWith('delete'));

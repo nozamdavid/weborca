@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore';
 import { useObjectListStore } from './objectListStore';
 import { ObjectSettingRow } from './ObjectSettingRow';
 import type { ObjectTreeNode, VolumeTreeNode } from './types';
+import { useTranslation } from "../i18n";
 
 const OBJECT_CATEGORIES: Record<string, string[]> = {
   Quality: [
@@ -74,6 +75,7 @@ const PART_CATEGORIES: Record<string, string[]> = {
 };
 
 export const ObjectSettingsEditor: React.FC = () => {
+    const { t } = useTranslation();
   const { objects, selectedObjectId, selectedVolumeId, setObjectConfig, resetObjectConfig } = useObjectListStore();
   const { configDefs, currentConfig } = useAppStore();
 
@@ -82,9 +84,8 @@ export const ObjectSettingsEditor: React.FC = () => {
 
   if (selectedObjectId === null) {
     return (
-      <div style={{ padding: 16, color: '#71717a', fontSize: '0.85rem', textAlign: 'center' }}>
-        Select an object or part to edit overrides
-      </div>
+      <div style={{ padding: 16, color: 'var(--text-dim)', fontSize: '0.85rem', textAlign: 'center' }}>
+        {t("Select an object or part to edit overrides")}</div>
     );
   }
 
@@ -146,8 +147,8 @@ export const ObjectSettingsEditor: React.FC = () => {
         flexDirection: 'column',
         height: '100%',
         overflow: 'hidden',
-        background: '#18181b',
-        borderTop: '1px solid #27272a'
+        background: 'var(--canvas-bg)',
+        borderTop: '1px solid var(--panel-bg)'
       }}
     >
       {/* Header */}
@@ -155,21 +156,21 @@ export const ObjectSettingsEditor: React.FC = () => {
         style={{
           padding: '8px 12px',
           background: '#202023',
-          borderBottom: '1px solid #27272a',
+          borderBottom: '1px solid var(--panel-bg)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between'
         }}
       >
         <div style={{ overflow: 'hidden' }}>
-          <div style={{ fontSize: '0.7rem', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
             {isVolume ? 'Part Overrides' : 'Object Overrides'}
           </div>
           <div
             style={{
               fontSize: '0.85rem',
               fontWeight: 600,
-              color: '#f4f4f5',
+              color: 'var(--text-color)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap'
@@ -197,8 +198,7 @@ export const ObjectSettingsEditor: React.FC = () => {
               cursor: 'pointer'
             }}
           >
-            + Add Setting
-          </button>
+            {t("+ Add Setting")}</button>
 
           {overrideKeys.length > 0 && (
             <button
@@ -206,7 +206,7 @@ export const ObjectSettingsEditor: React.FC = () => {
               id="btn-reset-overrides"
               data-testid="btn-reset-overrides"
               onClick={handleResetAll}
-              title="Reset all overrides"
+              title={t("Reset all overrides")}
               style={{
                 background: 'rgba(255, 255, 255, 0.08)',
                 color: '#f87171',
@@ -217,8 +217,7 @@ export const ObjectSettingsEditor: React.FC = () => {
                 cursor: 'pointer'
               }}
             >
-              Reset All
-            </button>
+              {t("Reset All")}</button>
           )}
 
           {/* Add Setting Popup */}
@@ -233,8 +232,8 @@ export const ObjectSettingsEditor: React.FC = () => {
                 marginTop: 4,
                 width: 240,
                 maxHeight: 300,
-                background: '#27272a',
-                border: '1px solid #3f3f46',
+                background: 'var(--panel-bg)',
+                border: '1px solid var(--control-bg)',
                 borderRadius: 6,
                 boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
                 zIndex: 100,
@@ -243,16 +242,16 @@ export const ObjectSettingsEditor: React.FC = () => {
                 overflow: 'hidden'
               }}
             >
-              <div style={{ padding: '6px 8px', borderBottom: '1px solid #3f3f46' }}>
+              <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--control-bg)' }}>
                 <input
                   type="text"
-                  placeholder="Filter settings..."
+                  placeholder={t("Filter settings...")}
                   value={searchFilter}
                   onChange={(e) => setSearchFilter(e.target.value)}
                   style={{
                     width: '100%',
-                    background: '#18181b',
-                    border: '1px solid #3f3f46',
+                    background: 'var(--canvas-bg)',
+                    border: '1px solid var(--control-bg)',
                     borderRadius: 4,
                     color: '#fff',
                     padding: '3px 6px',
@@ -300,7 +299,7 @@ export const ObjectSettingsEditor: React.FC = () => {
                             style={{
                               padding: '5px 12px',
                               fontSize: '0.78rem',
-                              color: '#e4e4e7',
+                              color: 'var(--text-color)',
                               cursor: 'pointer'
                             }}
                             onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)')}
@@ -322,10 +321,9 @@ export const ObjectSettingsEditor: React.FC = () => {
       {/* List of active overrides */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
         {overrideKeys.length === 0 ? (
-          <div style={{ padding: '24px 16px', textAlign: 'center', color: '#71717a', fontSize: '0.8rem' }}>
-            No custom overrides set.
-            <br />
-            Click <strong>+ Add Setting</strong> to customize parameters for this {isVolume ? 'part' : 'object'}.
+          <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8rem' }}>
+            {t("No custom overrides set.")}<br />
+            {t("Click")}<strong>{t("+ Add Setting")}</strong> {t("to customize parameters for this")}{isVolume ? 'part' : 'object'}.
           </div>
         ) : (
           overrideKeys.map((key) => (

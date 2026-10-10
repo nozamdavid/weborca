@@ -1,8 +1,10 @@
 import React from 'react';
 import { useEditOpsStore } from './editOpsStore';
 import { ModalBackdrop } from '../components/ModalBackdrop';
+import { useTranslation } from "../i18n";
 
 export const SimplifyDialog: React.FC = () => {
+    const { t } = useTranslation();
   const activeDialog = useEditOpsStore((s) => s.activeDialog);
   const simplifyMethod = useEditOpsStore((s) => s.simplifyMethod);
   const simplifyRatio = useEditOpsStore((s) => s.simplifyRatio);
@@ -22,7 +24,7 @@ export const SimplifyDialog: React.FC = () => {
   if (activeDialog !== 'simplify') return null;
 
   return (
-    <ModalBackdrop onClose={closeSimplifyDialog} role="dialog" aria-label="Simplify Mesh">
+    <ModalBackdrop onClose={closeSimplifyDialog} role="dialog" aria-label={t("Simplify Mesh")}>
       <div
         className="modal-content"
         id="simplify-dialog"
@@ -31,20 +33,20 @@ export const SimplifyDialog: React.FC = () => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h2>Simplify Mesh</h2>
-          <button className="icon-btn" onClick={closeSimplifyDialog} aria-label="Close">✕</button>
+          <h2>{t("Simplify Mesh")}</h2>
+          <button className="icon-btn" onClick={closeSimplifyDialog} aria-label={t("Close")}>✕</button>
         </div>
 
         <div className="modal-body">
           {error && <div className="error-message" style={{ color: 'var(--danger-color)', fontSize: 12 }}>{error}</div>}
 
           <div style={{ padding: '8px 12px', background: 'var(--control-bg)', borderRadius: 4 }}>
-            <span style={{ color: 'var(--text-muted)' }}>Current Triangles: </span>
+            <span style={{ color: 'var(--text-muted)' }}>{t("Current Triangles:")}</span>
             <strong id="simplify-current-count">{currentTriangleCount}</strong>
           </div>
 
           <div>
-            <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>Simplification Method</label>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>{t("Simplification Method")}</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input
@@ -54,7 +56,7 @@ export const SimplifyDialog: React.FC = () => {
                   checked={simplifyMethod === 'ratio'}
                   onChange={() => setSimplifyMethod('ratio')}
                 />
-                <span>Ratio (% of original triangles)</span>
+                <span>{t("Ratio (% of original triangles)")}</span>
               </label>
 
               {simplifyMethod === 'ratio' && (
@@ -70,7 +72,7 @@ export const SimplifyDialog: React.FC = () => {
                   />
                   <input
                     type="number"
-                    aria-label="Ratio"
+                    aria-label={t("Ratio")}
                     id="simplify-ratio-input"
                     data-testid="simplify-ratio-input"
                     min="5"
@@ -91,14 +93,14 @@ export const SimplifyDialog: React.FC = () => {
                   checked={simplifyMethod === 'target'}
                   onChange={() => setSimplifyMethod('target')}
                 />
-                <span>Target Triangle Count</span>
+                <span>{t("Target Triangle Count")}</span>
               </label>
 
               {simplifyMethod === 'target' && (
                 <div style={{ marginLeft: 24 }}>
                   <input
                     type="number"
-                    aria-label="Target Triangles"
+                    aria-label={t("Target Triangles")}
                     id="simplify-target-input"
                     data-testid="simplify-target-input"
                     min="4"
@@ -118,14 +120,13 @@ export const SimplifyDialog: React.FC = () => {
               checked={simplifyKeepPainting}
               onChange={(e) => setSimplifyKeepPainting(e.target.checked)}
             />
-            <span>Preserve multi-material & support painting</span>
+            <span>{t("Preserve multi-material & support painting")}</span>
           </label>
         </div>
 
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={closeSimplifyDialog} disabled={isOperating}>
-            Cancel
-          </button>
+            {t("Cancel")}</button>
           <button
             className="btn btn-primary"
             id="simplify-apply-btn"

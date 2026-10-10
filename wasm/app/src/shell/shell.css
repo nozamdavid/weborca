@@ -22,7 +22,7 @@
   border-bottom: 1px solid var(--border-color);
   user-select: none;
   position: relative;
-  z-index: 30;
+  z-index: 50;
 }
 .topbar-left, .topbar-right { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .topbar-right { justify-content: flex-end; padding-right: 10px; }
@@ -34,7 +34,7 @@
 }
 .menu-label:hover, .menu.open .menu-label { background: var(--control-hover-bg); }
 .menu-popup {
-  position: absolute; top: 100%; left: 0; min-width: 230px; padding: 4px 0;
+  position: absolute; z-index: 50; top: 100%; left: 0; min-width: 230px; padding: 4px 0;
   background: var(--panel-header-bg); border: 1px solid var(--border-color); border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
@@ -82,7 +82,7 @@
 .sb-section { border-bottom: 1px solid var(--border-color); }
 .sb-head {
   display: flex; align-items: center; gap: 6px; padding: 0 8px 0 10px; height: 30px; cursor: pointer;
-  background: linear-gradient(var(--panel-header-bg), #36363b); font-weight: 600; font-size: 13px;
+  background: linear-gradient(var(--panel-header-bg), var(--panel-header-bg)); font-weight: 600; font-size: 13px;
 }
 .sb-head .chev { width: 10px; transition: transform 0.12s; color: var(--text-muted); font-size: 10px; }
 .sb-section.closed .chev { transform: rotate(-90deg); }
@@ -130,7 +130,7 @@
 .canvas-toolbar .icon-btn.danger:not(:disabled) { color: #ef6a6a; }
 .canvas-toolbar .icon-btn[data-tip]:hover::after {
   content: attr(data-tip); position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%); white-space: nowrap; z-index: 40;
-  background: #1c1c20; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 8px; font-size: 12px; pointer-events: none;
+  background: var(--panel-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; padding: 3px 8px; font-size: 12px; pointer-events: none;
 }
 .view-buttons {
   position: absolute; top: 12px; right: 12px; z-index: 10; display: flex; gap: 2px; padding: 3px;
@@ -309,3 +309,10 @@
     transform: translateY(0);
   }
 }
+
+.sidebar { position: relative; max-width: 30%; min-width: 0; }
+.sidebar-resizer { position: absolute; right: -4px; top: 0; bottom: 0; width: 8px; z-index: 30; cursor: col-resize; touch-action: none; }
+.sidebar-resizer:hover, .sidebar-resizer:focus-visible { background: var(--accent-color); outline: none; }
+.canvas-toolbar.horizontal { flex-direction: row; max-width: calc(100% - 24px); flex-wrap: wrap; }
+.canvas-toolbar.horizontal .tool-sep { width: 1px; height: 24px; margin: 0 3px; }
+.canvas-toolbar.horizontal .icon-btn[data-tip]:hover::after { left: 50%; top: calc(100% + 8px); transform: translateX(-50%); }

@@ -2,8 +2,10 @@ import React, { useRef } from 'react';
 import { useEditOpsStore } from './editOpsStore';
 import { usePlateStore } from '../plate/plateStore';
 import { ModalBackdrop } from '../components/ModalBackdrop';
+import { useTranslation } from "../i18n";
 
 export const SvgDialog: React.FC = () => {
+    const { t } = useTranslation();
   const activeDialog = useEditOpsStore((s) => s.activeDialog);
   const svgDepth = useEditOpsStore((s) => s.svgDepth);
   const svgText = useEditOpsStore((s) => s.svgText);
@@ -37,7 +39,7 @@ export const SvgDialog: React.FC = () => {
   };
 
   return (
-    <ModalBackdrop onClose={closeSvgDialog} role="dialog" aria-label="Add SVG">
+    <ModalBackdrop onClose={closeSvgDialog} role="dialog" aria-label={t("Add SVG")}>
       <div
         className="modal-content"
         id="svg-dialog"
@@ -46,15 +48,15 @@ export const SvgDialog: React.FC = () => {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
-          <h2>Add SVG</h2>
-          <button className="icon-btn" onClick={closeSvgDialog} aria-label="Close">✕</button>
+          <h2>{t("Add SVG")}</h2>
+          <button className="icon-btn" onClick={closeSvgDialog} aria-label={t("Close")}>✕</button>
         </div>
 
         <div className="modal-body">
           {error && <div className="error-message" style={{ color: 'var(--danger-color)', fontSize: 12 }}>{error}</div>}
 
           <div>
-            <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>SVG File</label>
+            <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>{t("SVG File")}</label>
             <input
               type="file"
               ref={fileInputRef}
@@ -72,8 +74,7 @@ export const SvgDialog: React.FC = () => {
                 data-testid="svg-choose-file-btn"
                 onClick={() => fileInputRef.current?.click()}
               >
-                Choose SVG...
-              </button>
+                {t("Choose SVG...")}</button>
               <span style={{ fontSize: 13, color: svgFileName ? 'var(--text-color)' : 'var(--text-muted)' }}>
                 {svgFileName || 'No file selected'}
               </span>
@@ -82,13 +83,12 @@ export const SvgDialog: React.FC = () => {
 
           <div>
             <label htmlFor="svg-depth-input" style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>
-              Emboss Depth (mm)
-            </label>
+              {t("Emboss Depth (mm)")}</label>
             <input
               type="number"
               id="svg-depth-input"
               data-testid="svg-depth-input"
-              aria-label="Emboss Depth"
+              aria-label={t("Emboss Depth")}
               min="0.1"
               max="100"
               step="0.5"
@@ -100,7 +100,7 @@ export const SvgDialog: React.FC = () => {
 
           {selectedObject && (
             <div>
-              <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>Target</label>
+              <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>{t("Target")}</label>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
@@ -109,7 +109,7 @@ export const SvgDialog: React.FC = () => {
                     checked={svgTargetObjectId === null}
                     onChange={() => setSvgTargetObjectId(null)}
                   />
-                  <span>Add as new object</span>
+                  <span>{t("Add as new object")}</span>
                 </label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
@@ -118,7 +118,7 @@ export const SvgDialog: React.FC = () => {
                     checked={svgTargetObjectId === selectedObject.id}
                     onChange={() => setSvgTargetObjectId(selectedObject.id)}
                   />
-                  <span>Add as part to {selectedObject.name}</span>
+                  <span>{t("Add as part to")}{selectedObject.name}</span>
                 </label>
               </div>
             </div>
@@ -127,8 +127,7 @@ export const SvgDialog: React.FC = () => {
 
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={closeSvgDialog} disabled={isOperating}>
-            Cancel
-          </button>
+            {t("Cancel")}</button>
           <button
             className="btn btn-primary"
             id="svg-apply-btn"

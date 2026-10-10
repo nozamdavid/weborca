@@ -41,6 +41,17 @@ export async function getPreviewModule(canvas?: HTMLCanvasElement): Promise<any>
       }
     });
 
+    // The preview is a separate WASM filesystem from the slicing worker. Its G-code processor
+    // needs the same nozzle/filament metadata, including non-default nozzle hardness values.
+    try {
+      const response = await fetch('/profiles/resources.json');
+      if (!response.ok) throw new Error('Preview runtime resources are unavailable');
+      const bundle = await response.json() as { files: Record<string, string> };
+      instance.FS.mkdirTree('/resources/info');
+      for (const [path, contents] of Object.entries(bundle.files)) {
+        if (path.startsWith('info/') && !path.includes('..')) instance.FS.writeFile(`/resources/${path}`, contents);
+      }
+    } catch (error) { console.warn('[OrcaPreview] Could not load runtime resources:', error); }
     previewModule = instance;
     return instance;
   })();
@@ -149,6 +160,10 @@ export function getMoveRange(): { min: number; max: number; current: number } {
   }
 }
 
+export function getMoveGcodeLine(move: number): number {
+  return previewInstance?.getMoveGcodeLine?.(move) ?? 0;
+}
+
 export function getLayersZs(): number[] {
   if (!previewInstance) return [];
   try {
@@ -212,6 +227,7 @@ export function resize(width: number, height: number): void {
 
 export function render(): void {
   if (previewInstance) {
+    previewInstance.setLightTheme?.(document.documentElement.dataset.theme === 'light');
     previewInstance.render();
   }
 }

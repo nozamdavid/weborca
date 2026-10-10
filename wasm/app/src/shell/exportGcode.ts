@@ -5,7 +5,7 @@ import { showToast } from './toastStore';
 import { buildExportGcodeFileName } from './exportName';
 
 /** Downloads the sliced G-code using filename_format or fallback. */
-export function exportGcode(): void {
+function preparedExport(): { name: string; gcode: Uint8Array } | undefined {
   const {
     sliceResult,
     modelFile,
@@ -38,11 +38,39 @@ export function exportGcode(): void {
     useProjectNameForExport
   });
 
-  const url = URL.createObjectURL(new Blob([sliceResult.gcode as BlobPart], { type: 'text/plain' }));
+  return { name, gcode: sliceResult.gcode };
+}
+
+export function exportGcode(): void {
+  const prepared = preparedExport();
+  if (!prepared) return;
+  const { name, gcode } = prepared;
+  const url = URL.createObjectURL(new Blob([gcode as BlobPart], { type: 'text/plain' }));
   const link = document.createElement('a');
   link.href = url;
   link.download = name;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast(`Exported G-code: ${name}`, 'success');
+}
+
+/** The browser's file picker lets the user choose an SD card, USB drive or another writable folder. */
+export async function exportGcodeToFile(): Promise<void> {
+  const prepared = preparedExport();
+  if (!prepared) return;
+  const picker = (window as unknown as { showSaveFilePicker?: (options: object) => Promise<{ createWritable: () => Promise<{ write: (data: Blob) => Promise<void>; close: () => Promise<void> }> }> }).showSaveFilePicker;
+  if (!picker) {
+    showToast('This browser cannot choose a drive directly. Choose the removable drive in your browser download dialog.', 'info');
+    exportGcode();
+    return;
+  }
+  try {
+    const handle = await picker({ suggestedName: prepared.name, types: [{ description: 'G-code', accept: { 'text/plain': ['.gcode'] } }] });
+    const writable = await handle.createWritable();
+    await writable.write(new Blob([prepared.gcode as BlobPart], { type: 'text/plain' }));
+    await writable.close();
+    showToast(`Saved G-code: ${prepared.name}`, 'success');
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) showToast(`Could not save G-code: ${error instanceof Error ? error.message : String(error)}`, 'error');
+  }
 }

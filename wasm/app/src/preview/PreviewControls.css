@@ -46,7 +46,7 @@
   padding: 6px 12px;
   background: transparent;
   border: none;
-  color: #f4f4f5;
+  color: var(--text-color);
   font-size: 0.8rem;
   font-weight: 500;
   text-align: left;
@@ -68,7 +68,7 @@
 .layer-event-menu-item.disabled,
 .layer-event-menu-item:disabled {
   opacity: 0.45;
-  color: #71717a;
+  color: var(--text-dim);
   cursor: not-allowed;
 }
 

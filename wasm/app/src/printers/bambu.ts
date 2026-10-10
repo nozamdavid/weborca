@@ -1,5 +1,5 @@
 import { bambuFtpUrl, bambuMqttUrl, sendWithProgress } from './gatewayUrl';
-import type { Heater, PhysicalPrinter, PrinterApi, PrinterRunState, PrinterState, UploadOptions } from './types';
+import type { PrinterFilament, Heater, PhysicalPrinter, PrinterApi, PrinterRunState, PrinterState, UploadOptions } from './types';
 
 const CONNECT_TIMEOUT_MS = 12_000;
 
@@ -12,6 +12,43 @@ const STATES: Record<string, PrinterRunState> = {
 
 /** Fans are reported as a "0".."15" string. */
 const fan = (value: unknown) => Math.min(1, Math.max(0, Number(value) / 15));
+
+/** AMS reports use RGBA hex; slicer colors use RGB. Empty trays have no material type. */
+export function deriveBambuFilaments(print: Record<string, any>): PrinterFilament[] {
+  const slots: PrinterFilament[] = [];
+  const add = (tray: any, id: string, label: string) => {
+    if (!tray || typeof tray.tray_type !== 'string' || !tray.tray_type.trim()) return;
+    const hex = String(tray.tray_color || '').replace(/^#/, '');
+    slots.push({ id, label, material: tray.tray_type, presetId: tray.tray_info_idx,
+      color: /^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(hex) ? `#${hex.slice(0, 6)}` : undefined });
+  };
+  for (const unit of print.ams?.ams ?? []) {
+    for (const tray of unit.tray ?? []) add(tray, `ams:${unit.id}:${tray.id}`, `AMS ${Number(unit.id) + 1} / ${Number(tray.id) + 1}`);
+  }
+  if (Array.isArray(print.vir_slot)) {
+    for (const tray of print.vir_slot) add(tray, `external:${tray.id}`, `External spool ${tray.id}`);
+  } else add(print.vt_tray, 'external:254', 'External spool');
+  return slots;
+}
+
+/** Status pushes can omit unchanged AMS units or trays. Retain their last reported fields. */
+export function mergeBambuReport(previous: Record<string, any>, update: Record<string, any>): Record<string, any> {
+  const result = { ...previous };
+  for (const [key, value] of Object.entries(update)) {
+    if (Array.isArray(value) && value.every((item) => item && typeof item === 'object' && item.id != null)) {
+      const old = Array.isArray(previous[key]) ? previous[key] : [];
+      result[key] = old.map((item: any) => ({ ...item }));
+      for (const item of value) {
+        const index = result[key].findIndex((oldItem: any) => String(oldItem.id) === String(item.id));
+        if (index < 0) result[key].push(item);
+        else result[key][index] = mergeBambuReport(result[key][index], item);
+      }
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      result[key] = mergeBambuReport(previous[key] ?? {}, value);
+    } else result[key] = value;
+  }
+  return result;
+}
 
 export function deriveBambuState(print: Record<string, any>): PrinterState {
   const state = STATES[print.gcode_state] ?? 'ready';
@@ -32,7 +69,8 @@ export function deriveBambuState(print: Record<string, any>): PrinterState {
     remaining: active && print.mc_remaining_time != null ? print.mc_remaining_time * 60 : undefined,
     layer: active && print.layer_num != null ? { current: print.layer_num, total: print.total_layer_num || undefined } : undefined,
     speedFactor: SPEED_PERCENT[print.spd_lvl] || undefined,
-    software: 'Bambu Lab'
+    software: 'Bambu Lab',
+    filaments: deriveBambuFilaments(print)
   };
 }
 
@@ -80,12 +118,12 @@ export class BambuApi implements PrinterApi {
   connect(onState: (state: PrinterState) => void, onError: (error: Error) => void): () => void {
     let stopped = false;
     let socket: WebSocket | undefined;
-    const print: Record<string, any> = {};
+    let print: Record<string, any> = {};
     try {
       socket = this.open(
         (m) => {
           if (m.type === 'report' && m.payload?.print) {
-            Object.assign(print, m.payload.print);
+            print = mergeBambuReport(print, m.payload.print);
             onState(deriveBambuState(print));
           } else if (m.type === 'error' || m.orca_gateway_error) {
             onError(new Error(m.message ?? m.orca_gateway_error));

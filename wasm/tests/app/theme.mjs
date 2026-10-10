@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Browser test of the theme preference: Light inverts the page, the choice persists, and Follow the system tracks the OS. */
+/** Browser test of the theme preference: Light uses its own palette, the choice persists, and Follow the system tracks the OS. */
 import assert from 'node:assert/strict';
 import { chromium, firefox } from 'playwright';
 import { startServer, stopServer } from './lib/dist.mjs';
@@ -38,11 +38,14 @@ async function runSuite(browserType, name) {
     assert.equal(box.on, 'rgb(0, 150, 136)');
     assert.equal(box.accent.toLowerCase(), '#009688');
 
-    log('Light sets the attribute and inverts the page, but not the 3D canvas');
+    log('Light uses a real palette and a light bed without inversion');
     await setTheme('light');
     assert.equal(await theme(), 'light');
-    assert.match(await page.evaluate(() => getComputedStyle(document.documentElement).filter), /invert/);
-    assert.match(await page.evaluate(() => getComputedStyle(document.querySelector('canvas')).filter), /invert/);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).filter), 'none');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.sidebar')).backgroundColor), 'rgb(246, 246, 247)');
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('canvas')).filter), 'none');
+    await page.waitForFunction(() => window.__plateScene?.scene.background.getHex() === 0xe7e9ec);
+    assert.equal(await page.evaluate(() => { const material = window.__plateScene.bedFloorMaterial; return material.color.getHex() === (material.map ? 0xffffff : 0xd4d8dd); }), true);
 
     log('the choice survives a reload');
     await page.reload();

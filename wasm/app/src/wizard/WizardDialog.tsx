@@ -5,6 +5,7 @@ import { useAppStore } from '../store/appStore';
 import './wizard.css';
 import { useWizardStore } from './wizardStore';
 import { ModalBackdrop } from '../components/ModalBackdrop';
+import { useTranslation } from "../i18n";
 
 const FILAMENT_TYPES = [
   'PLA-CF', 'PETG-CF', 'PA-CF', 'ABS-GF', 'PETG-Metal', 'PLA+', 'PLA',
@@ -32,6 +33,7 @@ function parseFilament(p: PresetItem) {
 }
 
 export const WizardDialog: React.FC = () => {
+    const { t } = useTranslation();
   const open = useWizardStore((s) => s.open);
   const setOpen = useWizardStore((s) => s.setOpen);
   const step = useWizardStore((s) => s.step);
@@ -53,6 +55,11 @@ export const WizardDialog: React.FC = () => {
   const [printerSearch, setPrinterSearch] = useState('');
   const [compatibleFilaments, setCompatibleFilaments] = useState<PresetItem[]>([]);
   const [filamentSearch, setFilamentSearch] = useState('');
+  const [customPrinter, setCustomPrinter] = useState(false);
+  const [customName, setCustomName] = useState('My custom printer');
+  const [customSize, setCustomSize] = useState({ x: 220, y: 220, z: 250, nozzle: 0.4 });
+  const [customFlavor, setCustomFlavor] = useState('klipper');
+  const [finishError, setFinishError] = useState('');
   const [isFinishing, setIsFinishing] = useState(false);
 
   // Auto-open on first run (no 'orca.wizard' key and no saved prefs)
@@ -188,20 +195,12 @@ export const WizardDialog: React.FC = () => {
 
   const handleFinish = async () => {
     setIsFinishing(true);
+    setFinishError('');
     try {
-      const wizardData = {
-        printers: selectedPrinters,
-        filaments: selectedFilaments,
-        completedAt: new Date().toISOString()
-      };
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('orca.wizard', JSON.stringify(wizardData));
-      }
-      useWizardStore.getState().setAddedPrinters(selectedPrinters);
-
-      const firstPrinter = selectedPrinters[0];
+      if (customPrinter && (!customName.trim() || Object.values(customSize).some((value) => !Number.isFinite(value) || value <= 0))) throw new Error(t('Enter a printer name and positive dimensions.'));
+      const firstPrinter = customPrinter ? useAppStore.getState().selectedPrinter : selectedPrinters[0];
       if (firstPrinter) {
-        let vendorToUse = selectedVendor;
+        let vendorToUse = customPrinter ? useAppStore.getState().selectedVendor : selectedVendor;
         const found = vendorPrinters.find((p) => p.name === firstPrinter);
         if (found?.vendor) {
           vendorToUse = found.vendor;
@@ -219,12 +218,34 @@ export const WizardDialog: React.FC = () => {
         await useAppStore.getState().choosePrinter(firstPrinter);
       }
 
+      if (customPrinter) {
+        const app = useAppStore.getState();
+        await app.applyOptionChange('printable_area', `0x0,${customSize.x}x0,${customSize.x}x${customSize.y},0x${customSize.y}`, 'printer');
+        await app.applyOptionChange('printable_height', String(customSize.z), 'printer');
+        await app.applyOptionChange('nozzle_diameter', String(customSize.nozzle), 'printer');
+        await app.applyOptionChange('gcode_flavor', customFlavor, 'printer');
+        if (useAppStore.getState().engineError) throw new Error(useAppStore.getState().engineError || 'Could not configure printer');
+        await app.saveCurrentUserPreset('printer', customName.trim());
+        if (useAppStore.getState().engineError) throw new Error(useAppStore.getState().engineError!);
+      }
       if (selectedFilaments.length > 0) {
         await useAppStore.getState().chooseFilament(selectedFilaments[0], 0);
       }
 
+      const wizardData = {
+        printers: selectedPrinters,
+        filaments: selectedFilaments,
+        completedAt: new Date().toISOString()
+      };
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('orca.wizard', JSON.stringify(wizardData));
+      }
+      useWizardStore.getState().setAddedPrinters(selectedPrinters);
+      useWizardStore.getState().setAddedFilaments(selectedFilaments);
+
       setOpen(false);
     } catch (err) {
+      setFinishError(err instanceof Error ? err.message : String(err));
       console.error('Wizard finish error:', err);
     } finally {
       setIsFinishing(false);
@@ -234,16 +255,16 @@ export const WizardDialog: React.FC = () => {
   if (!open) return null;
 
   return (
-    <ModalBackdrop onClose={() => setOpen(false)} id="wizard-dialog" role="dialog" aria-label="Configuration wizard">
+    <ModalBackdrop onClose={() => setOpen(false)} id="wizard-dialog" role="dialog" aria-label={t("Configuration wizard")}>
       <div className="wizard-modal">
         {/* Header */}
         <div className="wizard-header">
-          <h3>Configuration Wizard</h3>
+          <h3>{t("Configuration Wizard")}</h3>
           <button
             id="wizard-close-x"
             className="modal-close-btn"
             onClick={() => setOpen(false)}
-            aria-label="Close"
+            aria-label={t("Close")}
           >
             ✕
           </button>
@@ -252,30 +273,41 @@ export const WizardDialog: React.FC = () => {
         {/* Steps indicator */}
         <div className="wizard-steps-bar" id="wizard-step-indicator">
           <div className={`wizard-step-pill ${step === 1 ? 'active' : step > 1 ? 'completed' : ''}`}>
-            <span>1</span> Printers & Nozzles
-          </div>
+            <span>1</span> {t("Printers & Nozzles")}</div>
           <span style={{ color: '#555' }}>›</span>
           <div className={`wizard-step-pill ${step === 2 ? 'active' : step > 2 ? 'completed' : ''}`}>
-            <span>2</span> Filaments
-          </div>
+            <span>2</span> {t("Filaments")}</div>
           <span style={{ color: '#555' }}>›</span>
           <div className={`wizard-step-pill ${step === 3 ? 'active' : ''}`}>
-            <span>3</span> Summary
-          </div>
+            <span>3</span> {t("Summary")}</div>
         </div>
 
+        {finishError && <p role="alert">{finishError}</p>}
         {/* Step 1: Printers & Nozzles */}
         {step === 1 && (
           <div className="wizard-body" id="wizard-step-1">
+            <label><input id="wizard-custom-printer" type="checkbox" checked={customPrinter} onChange={(e) => setCustomPrinter(e.target.checked)} /> {t("Create a custom printer from the current printer profile")}</label>
+            {customPrinter && <fieldset style={{ display: 'grid', gap: 8 }}>
+              <legend>{t("Custom printer")}</legend>
+              <label>{t("Name")} <input id="wizard-custom-name" value={customName} onChange={(e) => setCustomName(e.target.value)} /></label>
+              {(['x', 'y', 'z', 'nozzle'] as const).map((key) => <label key={key}>
+                {key === 'nozzle' ? t('Nozzle diameter') : t('Build volume') + ' ' + key.toUpperCase()} (mm)
+                <input id={`wizard-custom-${key}`} type="number" min={key === 'nozzle' ? 0.1 : 1} step={key === 'nozzle' ? 0.05 : 1} value={customSize[key]} onChange={(e) => setCustomSize({ ...customSize, [key]: Number(e.target.value) })} />
+              </label>)}
+              <label>{t("Firmware")} <select id="wizard-custom-firmware" value={customFlavor} onChange={(e) => setCustomFlavor(e.target.value)}>
+                <option value="klipper">Klipper</option><option value="marlin2">Marlin 2</option><option value="reprapfirmware">RepRapFirmware</option>
+              </select></label>
+              <p>{t("Review start/end G-code in Printer Settings before printing.")}</p>
+            </fieldset>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={{ fontSize: 13, fontWeight: 600 }}>Select Printer Brand</label>
+              <label style={{ fontSize: 13, fontWeight: 600 }}>{t("Select Printer Brand")}</label>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <select
                   id="wizard-vendor-select"
-                  aria-label="Printer Brand"
+                  aria-label={t("Printer Brand")}
                   value={selectedVendor}
                   onChange={(e) => setSelectedVendor(e.target.value)}
-                  style={{ minWidth: 160, padding: '6px 10px', background: '#27272a', color: '#fff', border: '1px solid #444', borderRadius: 4 }}
+                  style={{ minWidth: 160, padding: '6px 10px', background: 'var(--panel-bg)', color: '#fff', border: '1px solid var(--border-color)', borderRadius: 4 }}
                 >
                   {vendors.map((v) => (
                     <option key={v.name} value={v.name}>
@@ -304,13 +336,12 @@ export const WizardDialog: React.FC = () => {
                 id="wizard-printer-search"
                 type="search"
                 className="wizard-search-box"
-                placeholder="Filter models or nozzle sizes..."
+                placeholder={t("Filter models or nozzle sizes...")}
                 value={printerSearch}
                 onChange={(e) => setPrinterSearch(e.target.value)}
               />
               <span style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>
-                {selectedPrinters.length} selected
-              </span>
+                {selectedPrinters.length} {t("selected")}</span>
             </div>
 
             <div className="wizard-models-grid">
@@ -363,7 +394,7 @@ export const WizardDialog: React.FC = () => {
                 type="search"
                 className="wizard-search-box"
                 style={{ maxWidth: 360 }}
-                placeholder="Search filaments (name, brand, material)..."
+                placeholder={t("Search filaments (name, brand, material)...")}
                 value={filamentSearch}
                 onChange={(e) => setFilamentSearch(e.target.value)}
               />
@@ -374,19 +405,16 @@ export const WizardDialog: React.FC = () => {
                   className="btn btn-secondary"
                   onClick={() => selectAllFilaments(allVisibleFilamentNames)}
                 >
-                  Select All
-                </button>
+                  {t("Select All")}</button>
                 <button
                   id="wizard-filament-select-none"
                   type="button"
                   className="btn btn-secondary"
                   onClick={selectNoneFilaments}
                 >
-                  Select None
-                </button>
+                  {t("Select None")}</button>
                 <span style={{ fontSize: 12, color: '#aaa', marginLeft: 6 }}>
-                  {selectedFilaments.length} selected
-                </span>
+                  {selectedFilaments.length} {t("selected")}</span>
               </div>
             </div>
 
@@ -395,7 +423,7 @@ export const WizardDialog: React.FC = () => {
                 <div key={vendor} className="wizard-vendor-group">
                   <div className="wizard-vendor-group-title">
                     <span>{vendor}</span>
-                    <span style={{ fontSize: 11, color: '#999' }}>{items.length} presets</span>
+                    <span style={{ fontSize: 11, color: '#999' }}>{items.length} {t("presets")}</span>
                   </div>
                   <div className="wizard-filament-list">
                     {items.map((item) => {
@@ -426,9 +454,9 @@ export const WizardDialog: React.FC = () => {
         {step === 3 && (
           <div className="wizard-body" id="wizard-step-3">
             <div className="wizard-summary-card">
-              <div className="wizard-summary-title">Printers to Install</div>
+              <div className="wizard-summary-title">{t("Printers to Install")}</div>
               {selectedPrinters.length === 0 ? (
-                <div style={{ color: '#a0a0a0', fontSize: 13 }}>No printers selected.</div>
+                <div style={{ color: '#a0a0a0', fontSize: 13 }}>{t("No printers selected.")}</div>
               ) : (
                 <div className="wizard-summary-list">
                   {selectedPrinters.map((p, idx) => (
@@ -442,10 +470,10 @@ export const WizardDialog: React.FC = () => {
 
             <div className="wizard-summary-card">
               <div className="wizard-summary-title">
-                Curated Filaments ({selectedFilaments.length})
+                {t("Curated Filaments (")}{selectedFilaments.length})
               </div>
               {selectedFilaments.length === 0 ? (
-                <div style={{ color: '#a0a0a0', fontSize: 13 }}>No filaments selected.</div>
+                <div style={{ color: '#a0a0a0', fontSize: 13 }}>{t("No filaments selected.")}</div>
               ) : (
                 <div className="wizard-summary-list">
                   {selectedFilaments.map((f, idx) => (
@@ -458,9 +486,7 @@ export const WizardDialog: React.FC = () => {
             </div>
 
             <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
-              Clicking <strong>Finish</strong> will apply the first selected printer and filament to your workspace,
-              and save your configuration choices.
-            </div>
+              {t("Clicking")}<strong>{t("Finish")}</strong> {t("will apply the first selected printer and filament to your workspace,\n              and save your configuration choices.")}</div>
           </div>
         )}
 
@@ -472,8 +498,7 @@ export const WizardDialog: React.FC = () => {
             className="btn btn-secondary"
             onClick={() => setOpen(false)}
           >
-            Cancel
-          </button>
+            {t("Cancel")}</button>
           <div className="wizard-footer-right">
             {step > 1 && (
               <button
@@ -482,8 +507,7 @@ export const WizardDialog: React.FC = () => {
                 className="btn btn-secondary"
                 onClick={() => setStep((step - 1) as 1 | 2 | 3)}
               >
-                Back
-              </button>
+                {t("Back")}</button>
             )}
             {step < 3 && (
               <button
@@ -491,10 +515,9 @@ export const WizardDialog: React.FC = () => {
                 type="button"
                 className="btn btn-primary"
                 onClick={() => setStep((step + 1) as 1 | 2 | 3)}
-                disabled={step === 1 && selectedPrinters.length === 0}
+                disabled={step === 1 && !customPrinter && selectedPrinters.length === 0}
               >
-                Next
-              </button>
+                {t("Next")}</button>
             )}
             {step === 3 && (
               <button

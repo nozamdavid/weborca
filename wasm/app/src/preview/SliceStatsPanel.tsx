@@ -9,6 +9,7 @@ import { usePreviewStore } from './previewStore';
 import { useAppStore } from '../store/appStore';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
 import { SendToPrinterDialog } from '../printers/SendToPrinterDialog';
+import { useTranslation } from "../i18n";
 
 function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
@@ -86,6 +87,7 @@ export function formatFilamentLength(mm: number): string {
 }
 
 export const SliceStatsPanel: React.FC = () => {
+    const { t } = useTranslation();
   const stats = usePreviewStore((s) => s.stats);
   const showStatsPanel = usePreviewStore((s) => s.showStatsPanel);
   const toggleStatsPanel = usePreviewStore((s) => s.toggleStatsPanelAction);
@@ -134,7 +136,7 @@ export const SliceStatsPanel: React.FC = () => {
         flexDirection: 'column',
         zIndex: 15,
         fontSize: '0.8rem',
-        color: '#e4e4e7',
+        color: 'var(--text-color)',
         boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
         overflow: 'hidden'
       }}
@@ -151,8 +153,8 @@ export const SliceStatsPanel: React.FC = () => {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
-          <span>📊 Slicing Statistics</span>
-          <span id="status-text" style={{ display: 'none' }}>Slicing complete!</span>
+          <span>{t("📊 Slicing Statistics")}</span>
+          <span id="status-text" style={{ display: 'none' }}>{t("Slicing complete!")}</span>
         </div>
         <button
           type="button"
@@ -161,7 +163,7 @@ export const SliceStatsPanel: React.FC = () => {
           style={{
             background: 'transparent',
             border: 'none',
-            color: '#a1a1aa',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
             padding: 2
           }}
@@ -189,7 +191,7 @@ export const SliceStatsPanel: React.FC = () => {
                 border: '1px solid rgba(255, 255, 255, 0.06)'
               }}
             >
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Total Layers</div>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{t("Total Layers")}</div>
               <div style={{ fontSize: '1rem', fontWeight: 600, color: '#38bdf8' }} id="stat-layers">
                 {stats.layers}
               </div>
@@ -203,7 +205,7 @@ export const SliceStatsPanel: React.FC = () => {
                 border: '1px solid rgba(255, 255, 255, 0.06)'
               }}
             >
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Print Time</div>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{t("Print Time")}</div>
               <div style={{ fontSize: '1rem', fontWeight: 600, color: '#10b981' }} id="stat-time">
                 {timeFormatted}
               </div>
@@ -217,7 +219,7 @@ export const SliceStatsPanel: React.FC = () => {
                 border: '1px solid rgba(255, 255, 255, 0.06)'
               }}
             >
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Filament Length</div>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{t("Filament Length")}</div>
               <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f59e0b' }} id="stat-filament-mm">
                 {filamentM}
               </div>
@@ -231,7 +233,7 @@ export const SliceStatsPanel: React.FC = () => {
                 border: '1px solid rgba(255, 255, 255, 0.06)'
               }}
             >
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Filament Weight</div>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{t("Filament Weight")}</div>
               <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f59e0b' }} id="stat-filament-g">
                 {filamentG}
               </div>
@@ -240,7 +242,7 @@ export const SliceStatsPanel: React.FC = () => {
 
           {filamentCost > 0 && (
             <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255, 255, 255, 0.06)', marginBottom: 10 }}>
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Filament Cost</div>
+              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{t("Filament Cost")}</div>
               <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f59e0b' }} id="stat-filament-cost">{filamentCost.toFixed(2)}</div>
             </div>
           )}
@@ -259,7 +261,7 @@ export const SliceStatsPanel: React.FC = () => {
                   justifyContent: 'space-between'
                 }}
               >
-                <span>Filaments ({filamentStats.length})</span>
+                <span>{t("Filaments (")}{filamentStats.length})</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {filamentStats.map((item) => (
@@ -292,7 +294,7 @@ export const SliceStatsPanel: React.FC = () => {
                       <span style={{ color: '#38bdf8', fontWeight: 600 }}>#{item.slot}</span>
                       <span
                         style={{
-                          color: '#d4d4d8',
+                          color: 'var(--text-color)',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           whiteSpace: 'nowrap'
@@ -304,7 +306,7 @@ export const SliceStatsPanel: React.FC = () => {
                     </div>
                     <div style={{ display: 'flex', gap: 6, color: '#f59e0b', fontWeight: 500, flexShrink: 0, fontSize: '0.7rem' }}>
                       <span>{formatFilamentLength(item.mm)}</span>
-                      <span style={{ color: '#a1a1aa' }}>({item.g.toFixed(2)} g)</span>
+                      <span style={{ color: 'var(--text-muted)' }}>({item.g.toFixed(2)} {t("g)")}</span>
                     </div>
                   </div>
                 ))}
@@ -329,7 +331,7 @@ export const SliceStatsPanel: React.FC = () => {
                   borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
                 }}
               >
-                <span>Time by Feature</span>
+                <span>{t("Time by Feature")}</span>
                 <span>{isBreakdownOpen ? '▼' : '▶'}</span>
               </div>
 
@@ -345,10 +347,10 @@ export const SliceStatsPanel: React.FC = () => {
                         fontSize: '0.75rem'
                       }}
                     >
-                      <span style={{ color: '#d4d4d8' }}>{feat.name}</span>
+                      <span style={{ color: 'var(--text-color)' }}>{feat.name}</span>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <span style={{ color: '#a1a1aa' }}>{formatPrintTime(feat.timeS)}</span>
-                        <span style={{ color: '#71717a', minWidth: 40, textAlign: 'right' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>{formatPrintTime(feat.timeS)}</span>
+                        <span style={{ color: 'var(--text-dim)', minWidth: 40, textAlign: 'right' }}>
                           {feat.percent.toFixed(1)}%
                         </span>
                       </div>
@@ -380,15 +382,13 @@ export const SliceStatsPanel: React.FC = () => {
                   fontSize: '0.8rem'
                 }}
               >
-                ⬇️ Download
-              </a>
+                {t("⬇️ Download")}</a>
               <button
                 className="btn btn-primary"
                 style={{ flex: 1, padding: '6px 12px', borderRadius: 6, fontWeight: 600, fontSize: '0.8rem', background: '#3b82f6', color: '#fff', border: 'none', cursor: 'pointer' }}
                 onClick={() => openSendDialog()}
               >
-                🖨️ Send to Printer
-              </button>
+                {t("🖨️ Send to Printer")}</button>
             </div>
           )}
           <SendToPrinterDialog 

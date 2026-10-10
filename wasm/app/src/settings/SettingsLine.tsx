@@ -3,6 +3,8 @@ import { useAppStore } from '../store/appStore';
 import { SettingInput } from './SettingInput';
 import type { LayoutLine } from './types';
 import { getLineDocUrl } from './settingDocs';
+import { isModeVisible } from './visibility';
+import { useTranslation } from "../i18n";
 
 interface SettingsLineProps {
   line: LayoutLine;
@@ -10,30 +12,20 @@ interface SettingsLineProps {
 }
 
 export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
+  const { t } = useTranslation();
   const { configDefs, rulesState, settingsMode, highlightedKey } = useAppStore();
-
-  const isModeVisible = (mode?: string): boolean => {
-    const optMode = mode || 'simple';
-    if (settingsMode === 'simple') {
-      return optMode === 'simple';
-    }
-    if (settingsMode === 'advanced') {
-      return optMode === 'simple' || optMode === 'advanced';
-    }
-    return true; // expert shows all (simple, advanced, expert, develop)
-  };
 
   const helpLink = (keys: Array<string | undefined>) => {
     const url = getLineDocUrl(keys);
     return url ? (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="setting-help-link" title="Open documentation" aria-label="Open documentation"
-        style={{ marginLeft: 4, color: '#71717a', textDecoration: 'none', fontSize: 11, fontWeight: 'bold' }}>?</a>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="setting-help-link" title={t("Open documentation")} aria-label={t("Open documentation")}
+        style={{ marginLeft: 4, color: 'var(--text-dim)', textDecoration: 'none', fontSize: 11, fontWeight: 'bold' }}>?</a>
     ) : null;
   };
 
   if (line.type === 'option' && line.key) {
     const def = configDefs[line.key];
-    if (!isModeVisible(def?.mode)) return null;
+    if (!isModeVisible(settingsMode, def?.mode)) return null;
 
     const ruleKey = line.index !== undefined ? `${line.key}#${line.index}` : line.key;
     const fieldState = rulesState.fields[ruleKey] || rulesState.fields[line.key];
@@ -47,14 +39,14 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
       <div
         id={`setting-row-${line.key}`}
         className={`setting-row ${isHighlighted ? 'highlighted-row' : ''}`}
-        title={tooltip}
+        title={tooltip ? t(tooltip) : ''}
       >
         <label
           htmlFor={`setting-input-${line.key}`}
           className="setting-label"
-          title={tooltip}
+          title={tooltip ? t(tooltip) : ''}
         >
-          {displayLabel}
+          {t(displayLabel)}
           {helpLink([line.key])}
         </label>
         <SettingInput
@@ -72,7 +64,7 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
     // Multi-option line
     const visibleOptions = line.options.filter((k) => {
       const def = configDefs[k];
-      if (!isModeVisible(def?.mode)) return false;
+      if (!isModeVisible(settingsMode, def?.mode)) return false;
       const fieldState = rulesState.fields[k];
       if (fieldState && fieldState.visible === false) return false;
       return true;
@@ -88,10 +80,10 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
       <div
         id={`setting-row-${visibleOptions[0]}`}
         className={`setting-row multi-option-row ${isHighlighted ? 'highlighted-row' : ''}`}
-        title={tooltip}
+        title={tooltip ? t(tooltip) : ''}
       >
-        <span className="setting-label" title={tooltip}>
-          {line.label || firstDef?.label || visibleOptions[0]}
+        <span className="setting-label" title={tooltip ? t(tooltip) : ''}>
+          {t(line.label || firstDef?.label || visibleOptions[0])}
           {helpLink(visibleOptions)}
         </span>
         <div className="multi-option-inputs">
@@ -117,7 +109,7 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
   if (line.type === 'custom') {
     const key = line.key;
     const def = key ? configDefs[key] : undefined;
-    if (def && !isModeVisible(def.mode)) return null;
+    if (def && !isModeVisible(settingsMode, def.mode)) return null;
 
     const fieldState = key ? rulesState.fields[key] : undefined;
     if (fieldState && fieldState.visible === false) return null;
@@ -127,12 +119,12 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
         id={key ? `setting-row-${key}` : undefined}
         className="setting-row custom-widget-row"
       >
-        <span className="setting-label">{line.note || def?.label || key || 'Custom Widget'}</span>
+        <span className="setting-label">{t(line.note || def?.label || key || 'Custom Widget')}</span>
         <span className="setting-readonly-note">
           {key && def ? (
             <SettingInput optionKey={key} def={def} fieldState={fieldState} kind={kind} />
           ) : (
-            <span className="custom-summary">{line.note || 'Custom Setting'}</span>
+            <span className="custom-summary">{t(line.note || 'Custom Setting')}</span>
           )}
         </span>
       </div>

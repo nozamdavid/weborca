@@ -1,6 +1,6 @@
 .device-panel {
   --dev-card: var(--panel-header-bg, #333);
-  --dev-border: var(--border-color, #444);
+  --dev-border: var(--border-color, var(--border-color));
   --dev-accent: var(--accent-color, #009688);
   --dev-muted: var(--text-muted, #a0a0a0);
   display: flex;

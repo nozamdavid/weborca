@@ -145,7 +145,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
           background: isObjectSelected ? 'rgba(0, 150, 136, 0.25)' : 'transparent',
           border: isObjectSelected ? '1px solid rgba(0, 150, 136, 0.4)' : '1px solid transparent',
           cursor: 'pointer',
-          color: '#f4f4f5',
+          color: 'var(--text-color)',
           fontSize: '0.82rem',
           userSelect: 'none'
         }}
@@ -165,7 +165,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
           style={{
             background: 'transparent',
             border: 'none',
-            color: '#a1a1aa',
+            color: 'var(--text-muted)',
             padding: 0,
             cursor: 'pointer',
             display: 'flex',
@@ -193,7 +193,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
             autoFocus
             style={{
               flex: 1,
-              background: '#18181b',
+              background: 'var(--canvas-bg)',
               border: '1px solid #009688',
               borderRadius: 3,
               color: '#fff',
@@ -230,7 +230,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
               data-testid={`badge-extruder-object-${object.id}`}
               style={{
                 background: 'rgba(255, 255, 255, 0.1)',
-                color: '#a1a1aa',
+                color: 'var(--text-muted)',
                 fontSize: '0.65rem',
                 padding: '1px 4px',
                 borderRadius: 4,
@@ -278,14 +278,14 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
           style={{
             background: 'transparent',
             border: 'none',
-            color: '#71717a',
+            color: 'var(--text-dim)',
             padding: 2,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center'
           }}
           onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = '#71717a')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-dim)')}
         >
           <MoreDotsIcon size={14} />
         </button>
@@ -317,7 +317,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
                   background: isVolSelected ? 'rgba(0, 150, 136, 0.25)' : 'transparent',
                   border: isVolSelected ? '1px solid rgba(0, 150, 136, 0.4)' : '1px solid transparent',
                   cursor: 'pointer',
-                  color: '#e4e4e7',
+                  color: 'var(--text-color)',
                   fontSize: '0.78rem',
                   userSelect: 'none',
                   marginTop: 1
@@ -347,7 +347,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
                     autoFocus
                     style={{
                       flex: 1,
-                      background: '#18181b',
+                      background: 'var(--canvas-bg)',
                       border: '1px solid #009688',
                       borderRadius: 3,
                       color: '#fff',
@@ -378,7 +378,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
                     data-testid={`badge-extruder-${vol.id}`}
                     style={{
                       background: 'rgba(255, 255, 255, 0.1)',
-                      color: '#a1a1aa',
+                      color: 'var(--text-muted)',
                       fontSize: '0.65rem',
                       padding: '1px 4px',
                       borderRadius: 4,
@@ -425,14 +425,14 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
                   style={{
                     background: 'transparent',
                     border: 'none',
-                    color: '#71717a',
+                    color: 'var(--text-dim)',
                     padding: 2,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center'
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = '#71717a')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-dim)')}
                 >
                   <MoreDotsIcon size={14} />
                 </button>
