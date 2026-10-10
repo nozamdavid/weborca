@@ -92,6 +92,14 @@ for (const vendor of vendorList) {
     bundle.files[relPath] = fs.readFileSync(file, 'utf8');
   }
 
+  // Printer pictures shown when adding a printer: profiles/covers/<vendor>/<model>_cover.png
+  const coversOut = path.join(profilesOutDir, 'covers', vendor);
+  for (const file of subFiles) {
+    if (!file.endsWith('_cover.png')) continue;
+    fs.mkdirSync(coversOut, { recursive: true });
+    fs.copyFileSync(file, path.join(coversOut, path.basename(file)));
+  }
+
   const bundleJson = JSON.stringify(bundle);
   const outFile = path.join(profilesOutDir, `${vendor}.json`);
   fs.writeFileSync(outFile, bundleJson, 'utf8');

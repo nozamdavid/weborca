@@ -151,7 +151,7 @@ export const WizardDialog: React.FC = () => {
     const map = new Map<string, Array<{ presetName: string; nozzleLabel: string }>>();
     for (const p of vendorPrinters) {
       if (q && !p.name.toLowerCase().includes(q)) continue;
-      const match = p.name.match(/^(.*?)\s+((?:HF\s*)?[\d\.]+\s*nozzle.*)$/i);
+      const match = p.name.match(/^(.*?)\s+\(?((?:HF\s*)?[\d\.]+\s*nozzle[^)]*)\)?$/i);
       const model = match ? match[1].trim() : p.name;
       const nozzle = match ? match[2].trim() : '0.4 nozzle';
       if (!map.has(model)) map.set(model, []);
@@ -323,6 +323,13 @@ export const WizardDialog: React.FC = () => {
             <div className="wizard-models-grid">
               {printerModels.map(({ modelName, nozzles }) => (
                 <div key={modelName} className="wizard-model-card">
+                  <img
+                    className="wizard-model-img"
+                    src={`/profiles/covers/${encodeURIComponent(selectedVendor)}/${encodeURIComponent(modelName)}_cover.png`}
+                    alt={modelName}
+                    loading="lazy"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
                   <div className="wizard-model-title">{modelName}</div>
                   <div className="wizard-nozzle-options">
                     {nozzles.map(({ presetName, nozzleLabel }) => {

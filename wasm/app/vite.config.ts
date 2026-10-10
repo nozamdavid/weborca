@@ -145,7 +145,7 @@ function orcaAssetsPlugin() {
 
         // Serve packed profiles at /profiles/
         if (url.startsWith('/profiles/')) {
-          const subPath = url.replace(/^\/profiles\//, '');
+          const subPath = decodeURIComponent(url.replace(/^\/profiles\//, '').split('?')[0]);
           if (serveStaticFile(subPath, profilesBuildDir, res)) return;
         }
 
@@ -212,6 +212,8 @@ function orcaAssetsPlugin() {
             fs.copyFileSync(path.join(profilesBuildDir, file), path.join(distProfiles, file));
           }
         }
+        const covers = path.join(profilesBuildDir, 'covers');
+        if (fs.existsSync(covers)) fs.cpSync(covers, path.join(distProfiles, 'covers'), { recursive: true });
       }
 
       // 4. Copy web worker & orca-engine files into dist/web and dist/ root
