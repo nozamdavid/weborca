@@ -3,6 +3,7 @@ import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
 import { useAppStore } from '../store/appStore';
 import { PlateContextMenu } from './PlateContextMenu';
+import { usePlatesStore } from '../plates/platesStore';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
 import { usePaintToolsStore, PaintToolsPanel, StrokeCollector } from '../paint-tools';
 import { useLayersStore, LayerHeightPanel } from '../layers';
@@ -690,6 +691,14 @@ export const PlateView: React.FC = () => {
       { id: 'tool-delete-btn', label: 'Delete', shortcut: 'Del', icon: 'delete', danger: true, disabled: !selectedObject || busy || isOperatingEdit, onClick: () => deleteSelected() }
     ]
   ];
+
+  // The active plate's number and title are printed on the bed.
+  const activePlate = usePlatesStore((s) => s.plates[s.activePlateIndex]);
+  const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
+  const plateTitle = activePlate?.name && activePlate.name !== `Plate ${activePlateIndex + 1}` ? activePlate.name : '';
+  useEffect(() => {
+    sceneRef.current?.setPlateLabel(activePlateIndex + 1, plateTitle);
+  }, [activePlateIndex, plateTitle, meshRevision]);
 
   // A right-click on the empty plate opens its menu. Dragging with the right button pans, so the menu opens on release
   // when the pointer barely moved (browsers fire `contextmenu` on press on Linux and macOS, on release on Windows).

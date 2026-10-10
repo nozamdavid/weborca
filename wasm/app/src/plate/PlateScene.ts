@@ -48,6 +48,8 @@ export class PlateScene {
   private axesHelper: THREE.AxesHelper | null = null;
   private buildVolumeHelper: THREE.LineSegments | null = null;
   private labelsGroup: THREE.Group;
+  public plateLabelGroup = new THREE.Group();
+  private plateLabel: { number: number; title: string } = { number: 1, title: '' };
   private labelSprites: Map<string, THREE.Sprite> = new Map();
 
   private flattenClusters: Array<{ normal: [number, number, number]; center: [number, number, number]; area: number; outline: Array<[number, number, number]> }> = [];
@@ -252,6 +254,8 @@ export class PlateScene {
     this.scene.add(this.flattenGroup);
     this.scene.add(this.brimEarsGroup);
     this.scene.add(this.labelsGroup);
+    this.scene.add(this.plateLabelGroup);
+    this.rebuildPlateLabel();
 
     // 8. Materials
     this.defaultMaterial = new THREE.MeshStandardMaterial({
@@ -437,6 +441,54 @@ export class PlateScene {
     return this.showAxes;
   }
 
+  /** The number of the plate (printed large in its front-left corner, like desktop) and its custom title, if any. */
+  public setPlateLabel(number: number, title: string): void {
+    this.plateLabel = { number, title };
+    this.rebuildPlateLabel();
+  }
+
+  private rebuildPlateLabel(): void {
+    for (const child of [...this.plateLabelGroup.children] as THREE.Mesh[]) {
+      this.plateLabelGroup.remove(child);
+      child.geometry.dispose();
+      const material = child.material as THREE.MeshBasicMaterial;
+      material.map?.dispose();
+      material.dispose();
+    }
+    const { width, depth, center } = this.bedConfig;
+    const [cx, cy] = center;
+    const plane = (text: string, font: string, height: number, color: string, align: CanvasTextAlign, x: number, y: number) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+      ctx.font = font;
+      const textWidth = Math.ceil(ctx.measureText(text).width) + 16;
+      canvas.width = textWidth;
+      canvas.height = Math.round(parseInt(font.match(/(\d+)px/)![1], 10) * 1.4);
+      ctx.font = font;
+      ctx.fillStyle = color;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+      const texture = new THREE.CanvasTexture(canvas);
+      const mesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(height * (canvas.width / canvas.height), height),
+        new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+      );
+      const halfW = (height * (canvas.width / canvas.height)) / 2;
+      mesh.position.set(align === 'left' ? x + halfW : align === 'right' ? x - halfW : x, y, 0.05);
+      mesh.name = 'plate-label';
+      return mesh;
+    };
+    const size = Math.min(width, depth);
+    const margin = size * 0.03;
+    const number = plane(String(this.plateLabel.number), 'bold 96px sans-serif', size * 0.12, 'rgba(255,255,255,0.35)', 'left', cx - width / 2 + margin, cy - depth / 2 + margin + size * 0.06);
+    this.plateLabelGroup.add(number);
+    if (this.plateLabel.title) {
+      const title = this.plateLabel.title.length > 40 ? `${this.plateLabel.title.slice(0, 38)}...` : this.plateLabel.title;
+      this.plateLabelGroup.add(plane(title, 'bold 48px sans-serif', size * 0.05, 'rgba(255,255,255,0.45)', 'center', cx, cy - depth / 2 + margin + size * 0.025));
+    }
+  }
+
   public setShowLabels(visible: boolean): void {
     this.showLabels = visible;
     this.labelsGroup.visible = visible;
@@ -589,6 +641,7 @@ export class PlateScene {
   public updateBedConfig(bedConfig: BedConfig): void {
     this.bedConfig = bedConfig;
     this.buildBed();
+    this.rebuildPlateLabel();
     this.orbitControls.target.set(bedConfig.center[0], bedConfig.center[1], 0);
   }
 

@@ -8,12 +8,23 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
   const setActivePlate = usePlatesStore((s) => s.setActivePlate);
   const addPlate = usePlatesStore((s) => s.addPlate);
   const deletePlate = usePlatesStore((s) => s.deletePlate);
+  const setPlateConfig = usePlatesStore((s) => s.setPlateConfig);
   const slicePlate = usePlatesStore((s) => s.slicePlate);
   const sliceAll = usePlatesStore((s) => s.sliceAll);
 
   const isSlicing = useAppStore((s) => s.isSlicing);
 
   const [sliceMenuOpen, setSliceMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState<{ index: number; value: string } | null>(null);
+
+  // An empty title goes back to the default "Plate N".
+  const commitRename = () => {
+    if (!renaming) return;
+    const { index, value } = renaming;
+    setRenaming(null);
+    const title = value.trim();
+    if (title !== (plates.find((p) => p.index === index)?.name ?? '')) void setPlateConfig(index, {}, title || `Plate ${index + 1}`);
+  };
 
   return (
     <div
@@ -47,6 +58,8 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
               id={`plate-tab-${plate.index}`}
               data-testid={`plate-tab-${plate.index}`}
               onClick={() => setActivePlate(plate.index)}
+              onDoubleClick={() => setRenaming({ index: plate.index, value: plate.name || '' })}
+              title="Double-click to rename"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -59,10 +72,36 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
                 fontWeight: isActive ? 600 : 400,
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
-                userSelect: 'none'
+                userSelect: 'none',
+                whiteSpace: 'nowrap'
               }}
             >
-              <span>{plate.name || `Plate ${plate.index + 1}`}</span>
+              <span
+                id={`plate-number-${plate.index}`}
+                style={{ minWidth: 18, height: 18, borderRadius: 9, background: 'rgba(0, 0, 0, 0.3)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem' }}
+              >
+                {plate.index + 1}
+              </span>
+              {renaming?.index === plate.index ? (
+                <input
+                  id={`plate-name-input-${plate.index}`}
+                  data-testid={`plate-name-input-${plate.index}`}
+                  autoFocus
+                  value={renaming.value}
+                  onChange={(e) => setRenaming({ index: plate.index, value: e.target.value })}
+                  onClick={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') setRenaming(null);
+                  }}
+                  style={{ width: 110, background: 'rgba(0, 0, 0, 0.35)', color: '#fff', border: '1px solid rgba(255, 255, 255, 0.4)', borderRadius: 3, padding: '1px 4px', fontSize: '0.85rem' }}
+                />
+              ) : (
+                <span id={`plate-name-${plate.index}`}>{plate.name || `Plate ${plate.index + 1}`}</span>
+              )}
               {plates.length > 1 && (
                 <button
                   type="button"
@@ -107,6 +146,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
           fontSize: '0.85rem',
           cursor: 'pointer',
           fontWeight: 500,
+          whiteSpace: 'nowrap',
           transition: 'background 0.15s ease'
         }}
       >

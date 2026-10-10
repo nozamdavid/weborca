@@ -13,6 +13,7 @@
  * 7. Cleanly shuts down server and releases port 5064.
  */
 
+import assert from 'node:assert/strict';
 import { spawn, execSync } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
@@ -154,6 +155,24 @@ async function runBrowserSuite(browserType, browserName) {
 
     // Switch active plate to Plate 2 tab
     await page.click('#plate-tab-1');
+
+    // Each plate tab carries its number, and a double-click renames the plate (the title is kept in the project)
+    assert.equal(await page.locator('#plate-number-0').innerText(), '1');
+    assert.equal(await page.locator('#plate-number-1').innerText(), '2');
+    await page.dblclick('#plate-tab-1');
+    await page.fill('#plate-name-input-1', 'Benchy plate');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => window.__platesStore.getState().plates[1]?.name === 'Benchy plate', null, { timeout: 10000 });
+    assert.equal(await page.locator('#plate-name-1').innerText(), 'Benchy plate');
+    // The active plate's number and title are printed on the bed
+    const printed = await page.evaluate(() => window.__plateScene.plateLabelGroup.children.length);
+    assert.equal(printed, 2, 'a number and a title are drawn on the bed');
+    await page.dblclick('#plate-tab-1');
+    await page.fill('#plate-name-input-1', '');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => window.__platesStore.getState().plates[1]?.name === 'Plate 2', null, { timeout: 10000 });
+    assert.equal(await page.evaluate(() => window.__plateScene.plateLabelGroup.children.length), 1, 'only the number remains for a default title');
+    console.log(`[${browserName}] Plate numbers and titles verified`);
 
     // Take screenshot of multi-plate setup
     const screenshotFile = path.join(SCREENSHOT_DIR, `plates-${browserName}.png`);
