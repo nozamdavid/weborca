@@ -2,6 +2,7 @@ import React from 'react';
 import { useAppStore } from '../store/appStore';
 import { SettingInput } from './SettingInput';
 import type { LayoutLine } from './types';
+import { getLineDocUrl } from './settingDocs';
 
 interface SettingsLineProps {
   line: LayoutLine;
@@ -20,6 +21,14 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
       return optMode === 'simple' || optMode === 'advanced';
     }
     return true; // expert shows all (simple, advanced, expert, develop)
+  };
+
+  const helpLink = (keys: Array<string | undefined>) => {
+    const url = getLineDocUrl(keys);
+    return url ? (
+      <a href={url} target="_blank" rel="noopener noreferrer" className="setting-help-link" title="Open documentation" aria-label="Open documentation"
+        style={{ marginLeft: 4, color: '#71717a', textDecoration: 'none', fontSize: 11, fontWeight: 'bold' }}>?</a>
+    ) : null;
   };
 
   if (line.type === 'option' && line.key) {
@@ -46,6 +55,7 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
           title={tooltip}
         >
           {displayLabel}
+          {helpLink([line.key])}
         </label>
         <SettingInput
           optionKey={line.key}
@@ -82,6 +92,7 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
       >
         <span className="setting-label" title={tooltip}>
           {line.label || firstDef?.label || visibleOptions[0]}
+          {helpLink(visibleOptions)}
         </span>
         <div className="multi-option-inputs">
           {visibleOptions.map((optKey) => {
