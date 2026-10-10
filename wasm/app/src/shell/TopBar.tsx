@@ -4,6 +4,7 @@ import { useInputShapingStore } from '../calibration/inputShapingStore';
 import { useOtherCalibrationStore } from '../calibration/otherCalibrationStore';
 import { useHistoryStore } from '../history';
 import { usePlateStore } from '../plate/plateStore';
+import { usePlatesStore } from '../plates/platesStore';
 import { useAppStore } from '../store/appStore';
 import { useEditOpsStore } from '../editops';
 import { CAMERA_VIEWS, setCameraView } from './cameraBridge';
@@ -294,10 +295,21 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
   const other = useOtherCalibrationStore.getState;
   const inPreview = activeTab === 'preview';
 
+  /** Empties the plate and the extra plates, like desktop's File > New project. */
+  const newProject = async () => {
+    if (!window.confirm('Close the current project? Unsaved changes are lost.')) return;
+    const plates = usePlatesStore.getState();
+    for (const plate of [...plates.plates].reverse()) if (plate.index > 0) await plates.deletePlate(plate.index, false);
+    await usePlateStore.getState().deleteAll();
+    useAppStore.setState({ modelFile: null, modelObjects: null, sliceResult: null, gcodeUrl: null });
+    void import('./autosave').then((m) => m.clearAutosave());
+  };
+
   const menus: Array<[string, Entry[]]> = [
     [
       'File',
       [
+        { label: 'New project', disabled: isBusy || !hasObjects, onClick: newProject },
         { label: 'Open project...', keys: 'Ctrl+O', disabled: isBusy, onClick: openProject },
         { label: 'Save project', keys: 'Ctrl+S', disabled: isBusy || !hasObjects, onClick: saveProject },
         { label: 'Save project as...', disabled: isBusy || !hasObjects, onClick: saveProjectAs },
