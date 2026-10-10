@@ -1134,6 +1134,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
+    // The G-code no longer matches the settings: drop a finished slice and stop one in progress.
+    if (get().isSlicing) get().cancelSlice();
+    get().invalidateSlicePreview();
+
     // Record override for this kind
     if (kind === 'print') {
       set((state) => ({ processOverrides: { ...state.processOverrides, [key]: value } }));
@@ -1199,6 +1203,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
     }
+
+    // The G-code no longer matches the settings: drop a finished slice and stop one in progress.
+    if (get().isSlicing) get().cancelSlice();
+    get().invalidateSlicePreview();
 
     // Remove from overrides
     if (kind === 'print') {
