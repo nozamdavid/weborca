@@ -52,6 +52,13 @@ export const App: React.FC = () => {
     if (sliceResult?.gcode && !isSlicing) setActiveTab('preview');
   }, [sliceResult, isSlicing]);
 
+  // Opening Preview with nothing sliced yet starts the slice, like desktop.
+  useEffect(() => {
+    if (activeTab !== 'preview') return;
+    const { sliceResult: sliced, isSlicing: busy, modelFile } = useAppStore.getState();
+    if (!sliced && !busy && modelFile) void useAppStore.getState().startSlice();
+  }, [activeTab]);
+
   // Global drag-and-drop for .3mf project files, .gcode and model files
   useEffect(() => {
     const onDragOver = (e: DragEvent) => {
