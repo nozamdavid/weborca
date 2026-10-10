@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import { ModalBackdrop } from './ModalBackdrop';
 
 // Mirrors desktop StepMeshDialog: same defaults and accepted ranges.
 const LINEAR = { def: '0.003', min: 0.001, max: 0.1 };
@@ -26,7 +27,7 @@ export const StepImportModal: React.FC = () => {
   };
 
   return (
-    <div className="modal-backdrop" data-testid="step-import-modal">
+    <ModalBackdrop onClose={() => setStepImportState(null)} dirty={linear !== LINEAR.def || angle !== ANGLE.def} dirtyWhat="import options" data-testid="step-import-modal">
       <div className="modal-content" style={{ maxWidth: '400px' }}>
         <h3>STEP Import Options</h3>
         <p>
@@ -71,6 +72,6 @@ export const StepImportModal: React.FC = () => {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

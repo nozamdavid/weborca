@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { useEditOpsStore } from './editOpsStore';
 import { usePlateStore } from '../plate/plateStore';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export const SvgDialog: React.FC = () => {
   const activeDialog = useEditOpsStore((s) => s.activeDialog);
@@ -36,7 +37,7 @@ export const SvgDialog: React.FC = () => {
   };
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-label="Add SVG" onClick={closeSvgDialog}>
+    <ModalBackdrop onClose={closeSvgDialog} role="dialog" aria-label="Add SVG">
       <div
         className="modal-content"
         id="svg-dialog"
@@ -139,6 +140,6 @@ export const SvgDialog: React.FC = () => {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

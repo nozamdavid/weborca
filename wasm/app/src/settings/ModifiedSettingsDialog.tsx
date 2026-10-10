@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { modifiedSettings } from './modifiedSettings';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 const short = (value: string) => (value.length > 40 ? `${value.slice(0, 37)}...` : value);
 
@@ -12,16 +13,11 @@ export const ModifiedSettingsDialog: React.FC<{ onClose: () => void }> = ({ onCl
   const resetOption = useAppStore((s) => s.resetOption);
   const changes = modifiedSettings(layout, currentConfig, presetConfig);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-  useEffect(() => {
     if (changes.length === 0) onClose();
   }, [changes.length, onClose]);
 
   return (
-    <div className="modal-backdrop" id="modified-dialog" role="dialog" aria-label="Modified settings">
+    <ModalBackdrop onClose={onClose} id="modified-dialog" role="dialog" aria-label="Modified settings">
       <div className="modal-content" style={{ width: 'min(680px, 94vw)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '86vh' }}>
         <h3 style={{ margin: 0 }}>Modified settings ({changes.length})</h3>
         <div style={{ overflow: 'auto', fontSize: 12 }}>
@@ -46,6 +42,6 @@ export const ModifiedSettingsDialog: React.FC<{ onClose: () => void }> = ({ onCl
           <button className="btn btn-primary" id="modified-close" onClick={onClose}>Close</button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

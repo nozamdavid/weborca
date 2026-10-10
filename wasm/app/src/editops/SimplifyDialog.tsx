@@ -1,5 +1,6 @@
 import React from 'react';
 import { useEditOpsStore } from './editOpsStore';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export const SimplifyDialog: React.FC = () => {
   const activeDialog = useEditOpsStore((s) => s.activeDialog);
@@ -21,7 +22,7 @@ export const SimplifyDialog: React.FC = () => {
   if (activeDialog !== 'simplify') return null;
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-label="Simplify Mesh" onClick={closeSimplifyDialog}>
+    <ModalBackdrop onClose={closeSimplifyDialog} role="dialog" aria-label="Simplify Mesh">
       <div
         className="modal-content"
         id="simplify-dialog"
@@ -136,6 +137,6 @@ export const SimplifyDialog: React.FC = () => {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

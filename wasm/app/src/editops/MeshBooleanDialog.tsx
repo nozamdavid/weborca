@@ -2,6 +2,7 @@ import React from 'react';
 import { useEditOpsStore } from './editOpsStore';
 import { usePlateStore } from '../plate/plateStore';
 import type { MeshBooleanMode } from './types';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export const MeshBooleanDialog: React.FC = () => {
   const activeDialog = useEditOpsStore((s) => s.activeDialog);
@@ -26,7 +27,7 @@ export const MeshBooleanDialog: React.FC = () => {
   const toolCandidates = objects.filter((o) => o.id !== booleanTargetObjectId);
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-label="Mesh Boolean" onClick={closeBooleanDialog}>
+    <ModalBackdrop onClose={closeBooleanDialog} role="dialog" aria-label="Mesh Boolean">
       <div
         className="modal-content"
         id="mesh-boolean-dialog"
@@ -127,6 +128,6 @@ export const MeshBooleanDialog: React.FC = () => {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

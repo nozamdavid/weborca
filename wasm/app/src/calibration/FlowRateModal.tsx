@@ -6,6 +6,7 @@
 import React from 'react';
 import { useCalibrationStore } from './calibrationStore';
 import type { InfillPattern } from './types';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export const FlowRateModal: React.FC = () => {
   const {
@@ -36,7 +37,7 @@ export const FlowRateModal: React.FC = () => {
   if (!isOpen) return null;
 
   return (
-    <div className="modal-backdrop" data-testid="calibration-dialog" id="calibration-dialog">
+    <ModalBackdrop onClose={closeDialog} data-testid="calibration-dialog" id="calibration-dialog">
       <div
         className="modal-box preset-modal"
         style={{
@@ -424,6 +425,6 @@ export const FlowRateModal: React.FC = () => {
           )}
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

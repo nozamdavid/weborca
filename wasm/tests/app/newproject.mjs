@@ -35,16 +35,16 @@ async function runSuite(browserType, name) {
     await page.waitForFunction(() => window.__platesStore.getState().plates.length === 2);
 
     log('declining the question keeps the project');
-    page.once('dialog', (d) => d.dismiss());
     await openFileMenu();
     await newProject().click();
+    await page.click('[data-testid=confirm-cancel]');
     await page.waitForTimeout(500);
     assert.equal(await page.evaluate(() => window.__plateStore.getState().objects.length), 1);
 
     log('accepting empties the plate and leaves one plate');
-    page.once('dialog', (d) => d.accept());
     await openFileMenu();
     await newProject().click();
+    await page.click('[data-testid=confirm-ok]');
     await page.waitForFunction(() => window.__plateStore.getState().objects.length === 0 && window.__platesStore.getState().plates.length === 1, null, { timeout: 30000 });
     log('all checks passed');
   } finally {

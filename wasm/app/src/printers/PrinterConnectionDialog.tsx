@@ -7,6 +7,7 @@ import type { DiscoveredPrinter } from './gatewayUrl';
 import { DEFAULT_LOCAL_GATEWAY, discoverPrinters, fetchGatewayStatus, parseHost } from './gatewayUrl';
 import type { HostType, PhysicalPrinter } from './types';
 import { HOST_TYPE_LABELS } from './types';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 const HOST_PLACEHOLDER: Record<HostType, string> = {
   moonraker: '192.168.0.10 or http://printer.local',
@@ -53,6 +54,7 @@ export const PrinterConnectionDialog: React.FC = () => {
   const presets = useAppStore((s) => s.printers);
   const selectedPreset = useAppStore((s) => s.selectedPrinter);
   const [draft, setDraft] = useState<PhysicalPrinter>(blank);
+  const [baseline, setBaseline] = useState('');
   const [gateway, setGateway] = useState<GatewayStatus | null | undefined>(undefined);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
@@ -60,7 +62,9 @@ export const PrinterConnectionDialog: React.FC = () => {
   useEffect(() => {
     if (!dialogOpen) return;
     const existing = printers.find((p) => p.id === editingId);
-    setDraft(existing ?? { ...blank(), preset: selectedPreset || undefined });
+    const initial = existing ?? { ...blank(), preset: selectedPreset || undefined };
+    setDraft(initial);
+    setBaseline(JSON.stringify(initial));
     setResult(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogOpen, editingId]);
@@ -137,7 +141,7 @@ export const PrinterConnectionDialog: React.FC = () => {
     : `Gateway on: ${gateway.mode === 'private' ? 'private networks only' : gateway.mode === 'cloud' ? 'cloud services only' : 'listed hosts only'}${gateway.readOnly ? ', read-only' : ''}.`;
 
   return (
-    <div className="modal-backdrop" id="printer-connection-dialog" role="dialog" aria-label="Printer connection">
+    <ModalBackdrop onClose={closeDialog} dirty={baseline !== '' && JSON.stringify(draft) !== baseline} dirtyWhat="printer changes" id="printer-connection-dialog" role="dialog" aria-label="Printer connection">
       <div className="modal-content" style={{ width: 'min(760px, 94vw)', display: 'flex', gap: 16, maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ flex: '0 0 170px', display: 'flex', flexDirection: 'column', gap: 6, borderRight: '1px solid var(--border-color, #444)', paddingRight: 12 }}>
           <strong style={{ fontSize: 12 }}>Printers</strong>
@@ -259,6 +263,6 @@ export const PrinterConnectionDialog: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

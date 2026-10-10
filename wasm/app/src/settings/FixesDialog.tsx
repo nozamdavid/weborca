@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export const FixesDialog: React.FC = () => {
   const { pendingFixes, pendingFixReason, applyFixes, closeFixesDialog } = useAppStore();
@@ -7,7 +8,7 @@ export const FixesDialog: React.FC = () => {
   if (!pendingFixes || pendingFixes.length === 0) return null;
 
   return (
-    <div className="modal-backdrop" data-testid="fixes-dialog">
+    <ModalBackdrop onClose={() => applyFixes('no')} data-testid="fixes-dialog">
       <div className="modal-box fixes-modal">
         <div className="modal-header">
           <div className="modal-title">⚙️ Setting Conflict / Recommendation</div>
@@ -59,6 +60,6 @@ export const FixesDialog: React.FC = () => {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

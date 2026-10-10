@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 /** Shared frame of the calibration dialogs: title, body, error line and Cancel / OK. */
 export function CalibrationDialogWrapper({ title, onClose, onOk, children, error, isLoading }: {
@@ -10,7 +11,7 @@ export function CalibrationDialogWrapper({ title, onClose, onOk, children, error
   isLoading?: boolean;
 }) {
   return (
-    <div className="modal-overlay" style={{ zIndex: 1000 }}>
+    <ModalBackdrop onClose={() => { if (!isLoading) onClose(); }} style={{ zIndex: 1000 }}>
       <div className="modal-content" style={{ maxWidth: '450px' }}>
         <div className="modal-header">
           <h2>{title}</h2>
@@ -27,6 +28,6 @@ export function CalibrationDialogWrapper({ title, onClose, onOk, children, error
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

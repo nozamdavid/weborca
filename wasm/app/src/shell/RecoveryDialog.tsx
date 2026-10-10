@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { clearAutosave, readAutosave, startAutosave } from './autosave';
 import type { AutosaveRecord } from './autosave';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 /** Offers the project the last session left behind, and runs the autosave timer once the engine is ready. */
 export const RecoveryDialog: React.FC = () => {
@@ -30,7 +31,7 @@ export const RecoveryDialog: React.FC = () => {
     void clearAutosave();
   };
   return (
-    <div className="modal-backdrop" id="recovery-dialog" role="dialog" aria-label="Recover project">
+    <ModalBackdrop onClose={() => {}} id="recovery-dialog" role="dialog" aria-label="Recover project">
       <div className="modal-content" style={{ width: 'min(440px, 92vw)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
         <h3 style={{ margin: 0 }}>Restore your last session?</h3>
         <p style={{ margin: 0, lineHeight: 1.5 }}>
@@ -42,6 +43,6 @@ export const RecoveryDialog: React.FC = () => {
           <button className="btn btn-primary" id="recovery-restore" onClick={() => void restore()}>Restore</button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

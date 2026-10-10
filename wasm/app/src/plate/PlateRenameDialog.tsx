@@ -1,3 +1,4 @@
+import { ModalBackdrop } from '../components/ModalBackdrop';
 import React, { useState } from 'react';
 
 /** Asks for a plate's title. An empty title goes back to the default "Plate N". */
@@ -5,11 +6,14 @@ export const PlateRenameDialog: React.FC<{ index: number; initial: string; onSub
   const [value, setValue] = useState(initial);
   const submit = () => onSubmit(value.trim());
   return (
-    <div
+    <ModalBackdrop
       id="plate-rename-dialog"
       role="dialog"
       aria-label="Rename plate"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className=""
+      onClose={onClose}
+      dirty={value !== initial}
+      dirtyWhat="plate title"
       style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0, 0, 0, 0.45)' }}
     >
       <div style={{ width: 380, padding: 20, display: 'flex', flexDirection: 'column', gap: 14, background: '#27272a', border: '1px solid #3f3f46', borderRadius: 10, boxShadow: '0 12px 32px rgba(0, 0, 0, 0.5)', color: '#f4f4f5' }}>
@@ -26,7 +30,6 @@ export const PlateRenameDialog: React.FC<{ index: number; initial: string; onSub
             onKeyDown={(e) => {
               e.stopPropagation();
               if (e.key === 'Enter') submit();
-              if (e.key === 'Escape') onClose();
             }}
             style={{ padding: '8px 10px', fontSize: 14, background: '#18181b', color: '#f4f4f5', border: '1px solid #52525b', borderRadius: 6, outline: 'none' }}
           />
@@ -37,6 +40,6 @@ export const PlateRenameDialog: React.FC<{ index: number; initial: string; onSub
           <button className="btn btn-primary" id="plate-title-ok" onClick={submit}>OK</button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

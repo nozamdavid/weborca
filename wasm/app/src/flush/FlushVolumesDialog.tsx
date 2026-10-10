@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { autoFlushMatrix, readFlushMatrix } from './flushVolume';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 const MAX = 20000;
 
@@ -13,12 +14,6 @@ export const FlushVolumesDialog: React.FC<{ onClose: () => void }> = ({ onClose 
   const colours = (currentConfig.filament_colour ?? '').split(';').map((c) => c.trim());
   const [matrix, setMatrix] = useState(() => readFlushMatrix(currentConfig.flush_volumes_matrix, count));
   const [multiplier, setMultiplier] = useState(() => parseFloat((currentConfig.flush_multiplier ?? '0.3').split(',')[0]) || 0.3);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const setCell = (k: number, text: string) => {
     const v = Math.max(0, Math.min(MAX, parseFloat(text) || 0));
     setMatrix((m) => m.map((x, i) => (i === k ? v : x)));
@@ -31,7 +26,7 @@ export const FlushVolumesDialog: React.FC<{ onClose: () => void }> = ({ onClose 
   const swatch = (i: number) => <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: colours[i] || '#888', border: '1px solid rgba(255,255,255,0.4)', verticalAlign: 'middle' }} />;
 
   return (
-    <div className="modal-backdrop" id="flush-dialog" role="dialog" aria-label="Flushing volumes">
+    <ModalBackdrop onClose={onClose} id="flush-dialog" role="dialog" aria-label="Flushing volumes">
       <div className="modal-content" style={{ width: 'min(620px, 94vw)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '90vh', overflow: 'auto' }}>
         <h3 style={{ margin: 0 }}>Flushing volumes</h3>
         <span style={{ fontSize: 12, color: 'var(--text-muted, #a0a0a0)' }}>
@@ -74,6 +69,6 @@ export const FlushVolumesDialog: React.FC<{ onClose: () => void }> = ({ onClose 
           </span>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

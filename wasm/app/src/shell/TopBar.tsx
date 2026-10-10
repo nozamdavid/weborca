@@ -1,5 +1,6 @@
 import { useCompareStore } from '../settings/ComparePresetsDialog';
 import { useWizardStore } from '../wizard';
+import { confirmDialog } from '../components/ModalBackdrop';
 import React, { useEffect, useRef, useState } from 'react';
 import { useCalibrationStore } from '../calibration/calibrationStore';
 import { useInputShapingStore } from '../calibration/inputShapingStore';
@@ -302,7 +303,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
 
   /** Empties the plate and the extra plates, like desktop's File > New project. */
   const newProject = async () => {
-    if (!window.confirm('Close the current project? Unsaved changes are lost.')) return;
+    if (!(await confirmDialog({ title: 'Close the current project?', message: 'Unsaved changes are lost.', confirmLabel: 'Close project', cancelLabel: 'Cancel' }))) return;
     const plates = usePlatesStore.getState();
     for (const plate of [...plates.plates].reverse()) if (plate.index > 0) await plates.deletePlate(plate.index, false);
     await usePlateStore.getState().deleteAll();

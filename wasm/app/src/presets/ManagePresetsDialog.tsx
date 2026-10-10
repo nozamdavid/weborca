@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore';
 import type { PresetKind, ConflictStrategy } from './types';
 import { exportPresetBundle, downloadPresetBundle, BUNDLE_BOUNDARY_NOTE } from './presetBundle';
 import { exportDesktopPresetsZip, downloadBinaryArchive } from './presetArchive';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export const ManagePresetsDialog: React.FC = () => {
   const {
@@ -255,7 +256,7 @@ export const ManagePresetsDialog: React.FC = () => {
   };
 
   return (
-    <div className="modal-backdrop" data-testid="manage-presets-dialog">
+    <ModalBackdrop onClose={closeManagePresetsDialog} data-testid="manage-presets-dialog">
       <div
         className="modal-box preset-modal"
         style={{
@@ -726,6 +727,6 @@ export const ManagePresetsDialog: React.FC = () => {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { createPrinterApi } from './api';
 import { usePrinterConnectionStore } from './connectionStore';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 /**
  * "Send to printer" after slicing, like desktop's upload dialog. Starting a print is a separate, confirmed
@@ -49,7 +50,7 @@ export const SendToPrinterDialog: React.FC<{ getGcode: () => Uint8Array | null; 
   };
 
   return (
-    <div className="modal-backdrop" id="send-to-printer-dialog" role="dialog" aria-label="Send to printer">
+    <ModalBackdrop onClose={closeSendDialog} id="send-to-printer-dialog" role="dialog" aria-label="Send to printer">
       <div className="modal-content" style={{ minWidth: 380, maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <h3 style={{ margin: 0 }}>Send to printer</h3>
         {printers.length === 0 ? (
@@ -89,6 +90,6 @@ export const SendToPrinterDialog: React.FC<{ getGcode: () => Uint8Array | null; 
           </>
         )}
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

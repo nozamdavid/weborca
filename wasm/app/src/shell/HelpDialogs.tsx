@@ -1,5 +1,6 @@
 import React from 'react';
 import { create } from 'zustand';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export const useHelpStore = create<{ dialog: 'about' | 'shortcuts' | null; open: (d: 'about' | 'shortcuts') => void; close: () => void }>((set) => ({
   dialog: null,
@@ -41,7 +42,7 @@ export const HelpDialogs: React.FC = () => {
   const { dialog, close } = useHelpStore();
   if (!dialog) return null;
   return (
-    <div className="modal-backdrop" role="dialog" aria-label={dialog === 'about' ? 'About' : 'Keyboard shortcuts'} onClick={close}>
+    <ModalBackdrop onClose={close} role="dialog" aria-label={dialog === 'about' ? 'About' : 'Keyboard shortcuts'}>
       <div className="modal-content" style={{ width: 'min(520px, 92vw)' }} onClick={(e) => e.stopPropagation()}>
         {dialog === 'about' ? (
           <>
@@ -82,6 +83,6 @@ export const HelpDialogs: React.FC = () => {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

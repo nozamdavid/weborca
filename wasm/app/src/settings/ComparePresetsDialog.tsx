@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { getPresetConfig, listPresets } from '../engine/orcaEngine';
 import { useAppStore } from '../store/appStore';
 import { modifiedSettings, type ModifiedSetting } from './modifiedSettings';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export const useCompareStore = create<{ open: boolean; setOpen: (open: boolean) => void }>((set) => ({ open: false, setOpen: (open) => set({ open }) }));
 
@@ -53,13 +54,6 @@ export const ComparePresetsDialog: React.FC = () => {
     return () => { cancelled = true; };
   }, [open, kind, left, right, layout]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, setOpen]);
-
   if (!open) return null;
   const picker = (id: string, value: string, set: (v: string) => void) => (
     <select id={id} value={value} onChange={(e) => set(e.target.value)} style={{ flex: 1, minWidth: 0 }} aria-label={id}>
@@ -68,7 +62,7 @@ export const ComparePresetsDialog: React.FC = () => {
     </select>
   );
   return (
-    <div className="modal-backdrop" id="compare-dialog" role="dialog" aria-label="Compare presets">
+    <ModalBackdrop onClose={() => setOpen(false)} id="compare-dialog" role="dialog" aria-label="Compare presets">
       <div className="modal-content" style={{ width: 'min(820px, 94vw)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '86vh' }}>
         <h3 style={{ margin: 0 }}>Compare presets</h3>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -100,6 +94,6 @@ export const ComparePresetsDialog: React.FC = () => {
           <button className="btn btn-primary" id="compare-close" onClick={() => setOpen(false)}>Close</button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

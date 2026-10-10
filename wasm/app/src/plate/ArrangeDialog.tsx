@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { usePlateStore } from './plateStore';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 /** Spacing and rotation used by Arrange (desktop's arrange settings popup). */
 export const ArrangeDialog: React.FC = () => {
@@ -15,12 +16,6 @@ export const ArrangeDialog: React.FC = () => {
     setSpacing(settings.spacing === null ? '' : String(settings.spacing));
     setRotate(settings.allowRotations);
   }, [open, settings]);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, setOpen]);
   if (!open) return null;
 
   const parsed = spacing.trim() === '' ? null : Math.max(0, parseFloat(spacing));
@@ -32,7 +27,7 @@ export const ArrangeDialog: React.FC = () => {
     if (run) void arrange(true);
   };
   return (
-    <div className="modal-backdrop" id="arrange-dialog" role="dialog" aria-label="Arrange options">
+    <ModalBackdrop onClose={() => setOpen(false)} id="arrange-dialog" role="dialog" aria-label="Arrange options">
       <div className="modal-content" style={{ width: 'min(380px, 92vw)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <h3 style={{ margin: 0 }}>Arrange options</h3>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
@@ -50,6 +45,6 @@ export const ArrangeDialog: React.FC = () => {
           <button className="btn btn-primary" id="arrange-run" disabled={!valid} onClick={() => apply(true)}>Arrange</button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

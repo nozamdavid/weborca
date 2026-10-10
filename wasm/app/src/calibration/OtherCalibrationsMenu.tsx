@@ -1,5 +1,6 @@
 
 import { useOtherCalibrationStore } from './otherCalibrationStore';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export function OtherCalibrationsMenu() {
   const { calibrationMenuOpen, closeMenu, openDialog } = useOtherCalibrationStore();
@@ -7,7 +8,7 @@ export function OtherCalibrationsMenu() {
   if (!calibrationMenuOpen) return null;
 
   return (
-    <div className="modal-overlay" style={{ zIndex: 1000 }}>
+    <ModalBackdrop onClose={closeMenu} style={{ zIndex: 1000 }}>
       <div className="modal-content" style={{ maxWidth: '300px' }}>
         <div className="modal-header">
           <h2>Other Calibrations</h2>
@@ -23,6 +24,6 @@ export function OtherCalibrationsMenu() {
           <button className="btn btn-secondary" role="menuitem" onClick={() => openDialog('retraction')}>Retraction</button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

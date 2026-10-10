@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
 import { SettingsGroup } from './SettingsGroup';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export const SettingsDialog: React.FC = () => {
   const {
@@ -33,7 +34,7 @@ export const SettingsDialog: React.FC = () => {
   const currentPage = pages.find((p) => p.title === activePageTitle) || pages[0];
 
   return (
-    <div className="modal-backdrop" data-testid={`${activeDialog}-dialog`}>
+    <ModalBackdrop onClose={closeDialog} data-testid={`${activeDialog}-dialog`}>
       <div className="modal-box settings-dialog-modal">
         <div className="modal-header">
           <div className="modal-header-left">
@@ -86,6 +87,6 @@ export const SettingsDialog: React.FC = () => {
           )}
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

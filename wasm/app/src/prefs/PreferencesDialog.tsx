@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { usePrefsStore, type PrefsTabId } from './prefsStore';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 const TABS: Array<{ id: PrefsTabId; label: string }> = [
   { id: 'general', label: 'General' },
@@ -22,27 +23,13 @@ export const PreferencesDialog: React.FC = () => {
   const setDisplayPref = usePrefsStore((s) => s.setDisplayPref);
   const resetDefaults = usePrefsStore((s) => s.resetDefaults);
 
-  useEffect(() => {
-    if (!dialogOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        close();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [dialogOpen, close]);
-
   if (!dialogOpen) return null;
 
   return (
-    <div
-      className="modal-backdrop"
+    <ModalBackdrop onClose={close}
       role="dialog"
       aria-modal="true"
       aria-labelledby="preferences-dialog-title"
-      onClick={close}
     >
       <div
         className="modal-content"
@@ -392,6 +379,6 @@ export const PreferencesDialog: React.FC = () => {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

@@ -1,3 +1,4 @@
+import { ConfirmHost } from './components/ModalBackdrop';
 import { ComparePresetsDialog } from './settings/ComparePresetsDialog';
 import { WizardDialog } from './wizard';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -188,6 +189,7 @@ export const App: React.FC = () => {
       <PrinterConnectionDialog />
       <HelpDialogs />
       <ComparePresetsDialog />
+      <ConfirmHost />
       <WizardDialog />
       <PreferencesDialog />
       <EditOpsDialogs />

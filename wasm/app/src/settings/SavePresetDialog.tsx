@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 export const SavePresetDialog: React.FC = () => {
   const {
@@ -57,7 +58,7 @@ export const SavePresetDialog: React.FC = () => {
   };
 
   return (
-    <div className="modal-backdrop" data-testid="save-preset-dialog">
+    <ModalBackdrop onClose={handleClose} dirty={name.trim() !== ''} dirtyWhat="preset name" data-testid="save-preset-dialog">
       <div className="modal-box preset-modal" style={{ minWidth: 380 }}>
         <form onSubmit={handleSubmit}>
           <div className="modal-header">
@@ -130,6 +131,6 @@ export const SavePresetDialog: React.FC = () => {
           </div>
         </form>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

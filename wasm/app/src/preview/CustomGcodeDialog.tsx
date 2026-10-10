@@ -1,3 +1,4 @@
+import { ModalBackdrop } from '../components/ModalBackdrop';
 import React, { useState, useEffect } from 'react';
 import { useLayerEventsStore } from './layerEventsStore';
 
@@ -18,19 +19,17 @@ export const CustomGcodeDialog: React.FC = () => {
 
   const { plateIndex, printZ, layer, isEditing } = dialogState;
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      closeDialog();
-    }
-  };
-
   const handleConfirm = () => {
     if (!gcode.trim()) return;
     saveCustomGcode(plateIndex, printZ, gcode.trim());
   };
 
   return (
-    <div
+    <ModalBackdrop
+      onClose={closeDialog}
+      dirty={gcode !== (dialogState.initialGcode || '')}
+      dirtyWhat="custom G-code"
+      className=""
       id="custom-gcode-dialog-backdrop"
       style={{
         position: 'fixed',
@@ -45,10 +44,6 @@ export const CustomGcodeDialog: React.FC = () => {
         justifyContent: 'center',
         zIndex: 100
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) closeDialog();
-      }}
-      onKeyDown={handleKeyDown}
     >
       <div
         id="custom-gcode-dialog"
@@ -163,6 +158,6 @@ export const CustomGcodeDialog: React.FC = () => {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };

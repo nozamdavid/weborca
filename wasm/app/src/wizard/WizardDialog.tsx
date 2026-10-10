@@ -4,6 +4,7 @@ import type { PresetItem } from '../engine/types';
 import { useAppStore } from '../store/appStore';
 import './wizard.css';
 import { useWizardStore } from './wizardStore';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 
 const FILAMENT_TYPES = [
   'PLA-CF', 'PETG-CF', 'PA-CF', 'ABS-GF', 'PETG-Metal', 'PLA+', 'PLA',
@@ -70,14 +71,6 @@ export const WizardDialog: React.FC = () => {
       }
     } catch (_) {}
   }, [isEngineReady, hasAutoChecked, setOpen]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, setOpen]);
 
   // Load printer presets whenever vendor changes in Step 1
   useEffect(() => {
@@ -241,7 +234,7 @@ export const WizardDialog: React.FC = () => {
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" id="wizard-dialog" role="dialog" aria-label="Configuration wizard">
+    <ModalBackdrop onClose={() => setOpen(false)} id="wizard-dialog" role="dialog" aria-label="Configuration wizard">
       <div className="wizard-modal">
         {/* Header */}
         <div className="wizard-header">
@@ -517,6 +510,6 @@ export const WizardDialog: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 };
