@@ -206,3 +206,105 @@
 .sidebar .setting-row { flex-wrap: nowrap; }
 .sidebar .setting-control-wrapper { flex: 0 1 46%; min-width: 0; justify-content: flex-end; }
 .sidebar .setting-control-wrapper input, .sidebar .setting-control-wrapper select { min-width: 0; max-width: 100%; }
+
+
+/* Submenu styles */
+.menu-submenu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.menu-submenu > .menu-subpopup {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 100%;
+  min-width: 200px;
+  max-width: 320px;
+  padding: 4px 0;
+  background: var(--panel-header-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 1002;
+}
+.menu-submenu:hover > .menu-subpopup {
+  display: block;
+}
+.submenu-arrow {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.menu-subpopup .menu-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Toast Notifications */
+.toast-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9999;
+  pointer-events: none;
+}
+.toast-item {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 240px;
+  max-width: 420px;
+  padding: 10px 16px;
+  background: var(--panel-header-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-color);
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  animation: toast-in 0.2s ease-out;
+}
+.toast-item.toast-success {
+  border-left: 4px solid var(--accent-color);
+}
+.toast-item.toast-error {
+  border-left: 4px solid var(--danger-color);
+}
+.toast-item.toast-info {
+  border-left: 4px solid var(--text-muted);
+}
+.toast-icon {
+  font-weight: bold;
+  font-size: 14px;
+}
+.toast-success .toast-icon {
+  color: var(--accent-color);
+}
+.toast-error .toast-icon {
+  color: var(--danger-color);
+}
+.toast-info .toast-icon {
+  color: var(--text-muted);
+}
+.toast-message {
+  flex: 1;
+  word-break: break-word;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

@@ -12,6 +12,7 @@ import { useHistoryStore } from '../history';
 import { TextPanel, useTextStore } from '../text';
 import { CutPanel, useCutStore } from '../cut';
 import { RepairBadge, useRepairStore } from '../repair';
+import { useEditOpsStore, FlattenPanel, BrimEarsPanel } from '../editops';
 import { CanvasToolbar, ViewButtons } from '../shell/CanvasToolbar';
 import type { CanvasTool } from '../shell/CanvasToolbar';
 import { registerCameraHandler, setCameraView } from '../shell/cameraBridge';
@@ -72,6 +73,12 @@ export const PlateView: React.FC = () => {
   const isCutActive = useCutStore((s) => s.isCutActive);
   const isCutting = useCutStore((s) => s.isCutting);
   const isRepairing = useRepairStore((s) => s.isRepairing);
+
+  // Edit Ops Store
+  const activeEditTool = useEditOpsStore((s) => s.activeTool);
+  const activeEditDialog = useEditOpsStore((s) => s.activeDialog);
+  const isOperatingEdit = useEditOpsStore((s) => s.isOperating);
+
   const strokeCollector = useRef<StrokeCollector | null>(null);
   if (!strokeCollector.current) strokeCollector.current = new StrokeCollector();
   const [meshRevision, setMeshRevision] = useState(0);
@@ -88,14 +95,19 @@ export const PlateView: React.FC = () => {
 
   const [isDragOver, setIsDragOver] = useState(false);
 
-  // Initialize bed config from printer config when available
+  // Initialize Bed Config on Mount
   useEffect(() => {
-    if (currentConfig?.printable_area || currentConfig?.printable_height) {
-      initBedConfig(currentConfig.printable_area, currentConfig.printable_height);
-    }
-  }, [currentConfig?.printable_area, currentConfig?.printable_height, initBedConfig]);
+    initBedConfig();
+  }, [initBedConfig]);
 
-  // Mount 3D Scene
+  // Sync Bed Dimensions when active printer config changes
+  useEffect(() => {
+    if (currentConfig) {
+      initBedConfig();
+    }
+  }, [currentConfig, initBedConfig]);
+
+  // Initialize Three.js Scene
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -133,7 +145,18 @@ export const PlateView: React.FC = () => {
         collector.addPoint(hit, facet);
       },
       onToolPaintPoint: (hit, facet) => strokeCollector.current?.addPoint(hit, facet),
-      onToolPaintEnd: () => { void strokeCollector.current?.endStroke(); }
+      onToolPaintEnd: () => { void strokeCollector.current?.endStroke(); },
+      onFlattenFacetClick: (facetIndex) => {
+        void useEditOpsStore.getState().applyPlaceOnFace(facetIndex);
+      },
+      onBrimEarClick: (position, clickedEarIndex) => {
+        const store = useEditOpsStore.getState();
+        if (typeof clickedEarIndex === 'number') {
+          void store.removeBrimEar(clickedEarIndex);
+        } else {
+          void store.addBrimEar(position);
+        }
+      }
     });
 
     sceneRef.current = scene;
@@ -153,6 +176,8 @@ export const PlateView: React.FC = () => {
       strokeCollector.current?.cancelStroke();
       usePaintToolsStore.getState().stopPainting();
       useCutStore.getState().closeCut();
+      useEditOpsStore.getState().stopFlatten();
+      useEditOpsStore.getState().stopBrimEars();
     };
   }, []);
 
@@ -162,6 +187,19 @@ export const PlateView: React.FC = () => {
       sceneRef.current.updateBedConfig(bedConfig);
     }
   }, [bedConfig]);
+
+  // Sync active edit tool with scene overlays
+  useEffect(() => {
+    if (sceneRef.current) {
+      sceneRef.current.setBrimEarsActive(activeEditTool === 'brimears');
+      if (activeEditTool !== 'flatten') {
+        sceneRef.current.clearFlattenClusters();
+      }
+      if (activeEditTool !== 'brimears') {
+        sceneRef.current.clearBrimEarsOverlay();
+      }
+    }
+  }, [activeEditTool]);
 
   // Update scene objects when objects change
   useEffect(() => {
@@ -221,6 +259,10 @@ export const PlateView: React.FC = () => {
       if (useCutStore.getState().isCutActive) {
         useCutStore.getState().closeCut();
       }
+      if (useEditOpsStore.getState().activeTool) {
+        useEditOpsStore.getState().stopFlatten();
+        useEditOpsStore.getState().stopBrimEars();
+      }
     }
   }, [isSlicing]);
 
@@ -271,6 +313,8 @@ export const PlateView: React.FC = () => {
         usePaintToolsStore.getState().stopPainting();
         void useTextStore.getState().close();
         useRepairStore.getState().reset();
+        useEditOpsStore.getState().stopFlatten();
+        useEditOpsStore.getState().stopBrimEars();
       }
     });
     strokeCollector.current?.setOptions({
@@ -297,6 +341,8 @@ export const PlateView: React.FC = () => {
       useCutStore.getState().closeCut();
       useLayersStore.getState().stopEditing();
       void useTextStore.getState().close();
+      useEditOpsStore.getState().stopFlatten();
+      useEditOpsStore.getState().stopBrimEars();
       usePaintToolsStore.getState().setLayer('support');
       const volume = sceneRef.current?.getMeshVolumes(selectedObjectId)?.[0]?.volumeId;
       void usePaintToolsStore.getState().startPainting(selectedObjectId, volume, selectedInstanceId);
@@ -307,6 +353,15 @@ export const PlateView: React.FC = () => {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        const editOps = useEditOpsStore.getState();
+        if (editOps.activeTool === 'flatten') {
+          editOps.stopFlatten();
+          return;
+        }
+        if (editOps.activeTool === 'brimears') {
+          editOps.stopBrimEars();
+          return;
+        }
         if (isPaintingActive) {
           strokeCollector.current?.cancelStroke();
           stopPainting();
@@ -334,7 +389,7 @@ export const PlateView: React.FC = () => {
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'z' || e.key === 'Z') {
           e.preventDefault();
-          if (isCutting || isRepairing) return;
+          if (isCutting || isRepairing || isOperatingEdit) return;
           if (e.shiftKey) {
             redo();
           } else {
@@ -344,7 +399,7 @@ export const PlateView: React.FC = () => {
         }
         if (e.key === 'y' || e.key === 'Y') {
           e.preventDefault();
-          if (isCutting || isRepairing) return;
+          if (isCutting || isRepairing || isOperatingEdit) return;
           redo();
           return;
         }
@@ -366,7 +421,7 @@ export const PlateView: React.FC = () => {
           break;
         case 'c':
         case 'C':
-          if (selectedObjectId && !isPaintingActive && !isTextActive && !isLayersActive && !isCutting && !isRepairing) {
+          if (selectedObjectId && !isPaintingActive && !isTextActive && !isLayersActive && !isCutting && !isRepairing && !isOperatingEdit) {
             const cutStore = useCutStore.getState();
             if (cutStore.isCutActive) {
               cutStore.closeCut();
@@ -379,23 +434,44 @@ export const PlateView: React.FC = () => {
           break;
         case 'm':
         case 'M':
-          if (!isPaintingActive) setGizmoMode('translate');
+          if (!isPaintingActive && !isOperatingEdit) setGizmoMode('translate');
           break;
         case 'r':
         case 'R':
-          if (!isPaintingActive) setGizmoMode('rotate');
+          if (!isPaintingActive && !isOperatingEdit) setGizmoMode('rotate');
           break;
         case 's':
         case 'S':
-          if (!isPaintingActive) setGizmoMode('scale');
+          if (!isPaintingActive && !isOperatingEdit) setGizmoMode('scale');
           break;
         case 'a':
         case 'A':
-          if (!isPaintingActive) arrange(true);
+          if (!isPaintingActive && !isCutting && !isTextActive && !isOperatingEdit) {
+            if (e.shiftKey || !selectedObjectId) {
+              arrange(true);
+            } else {
+              void useEditOpsStore.getState().autoOrient();
+            }
+          }
+          break;
+        case 'f':
+        case 'F':
+          if (!isPaintingActive && !isCutting && !isTextActive && !isOperatingEdit && selectedObjectId) {
+            const editOps = useEditOpsStore.getState();
+            if (editOps.activeTool === 'flatten') {
+              editOps.stopFlatten();
+            } else {
+              stopPainting();
+              useLayersStore.getState().stopEditing();
+              useCutStore.getState().closeCut();
+              void useTextStore.getState().close();
+              void editOps.startFlatten(selectedObjectId);
+            }
+          }
           break;
         case 'Delete':
         case 'Backspace':
-          if (!isPaintingActive) deleteSelected();
+          if (!isPaintingActive && !isOperatingEdit) deleteSelected();
           break;
         case '0': case '1': case '2': case '3': case '4': case '5': case '6':
           setCameraView(Number(e.key) as CameraView);
@@ -406,7 +482,7 @@ export const PlateView: React.FC = () => {
           break;
       }
     },
-    [objects, selectObject, setGizmoMode, arrange, deleteSelected, isPaintingActive, isTextActive, isLayersActive, isCutting, isRepairing, selectedObjectId, handleTogglePainting, stopPainting, undo, redo]
+    [objects, selectObject, setGizmoMode, arrange, deleteSelected, isPaintingActive, isTextActive, isLayersActive, isCutting, isRepairing, isOperatingEdit, activeEditTool, selectedObjectId, handleTogglePainting, stopPainting, undo, redo]
   );
 
   useEffect(() => registerCameraHandler((view) => sceneRef.current?.setCameraView(view)), []);
@@ -455,24 +531,58 @@ export const PlateView: React.FC = () => {
     [
       {
         id: 'tool-undo-btn', testId: 'tool-undo-btn', label: 'Undo', shortcut: 'Ctrl+Z', icon: <UndoIcon />,
-        disabled: !canUndo || isRestoring || isSlicing || isCutting || isRepairing, data: { 'can-undo': canUndo, 'is-restoring': isRestoring }, onClick: () => undo()
+        disabled: !canUndo || isRestoring || isSlicing || isCutting || isRepairing || isOperatingEdit, data: { 'can-undo': canUndo, 'is-restoring': isRestoring }, onClick: () => undo()
       },
       {
         id: 'tool-redo-btn', testId: 'tool-redo-btn', label: 'Redo', shortcut: 'Ctrl+Shift+Z', icon: <RedoIcon />,
-        disabled: !canRedo || isRestoring || isSlicing || isCutting || isRepairing, data: { 'can-redo': canRedo, 'is-restoring': isRestoring }, onClick: () => redo()
+        disabled: !canRedo || isRestoring || isSlicing || isCutting || isRepairing || isOperatingEdit, data: { 'can-redo': canRedo, 'is-restoring': isRestoring }, onClick: () => redo()
       }
     ],
     [
       ...([['translate', 'move', 'Move', 'M'], ['rotate', 'rotate', 'Rotate', 'R'], ['scale', 'scale', 'Scale', 'S']] as const).map(([mode, key, label, shortcut]): CanvasTool => ({
-        id: `tool-${key}-btn`, label, shortcut, icon: `toolbar_${key}`, active: gizmoMode === mode && !isPaintingActive, disabled: busy,
+        id: `tool-${key}-btn`, label, shortcut, icon: `toolbar_${key}`, active: gizmoMode === mode && !isPaintingActive && !activeEditTool, disabled: busy || isOperatingEdit,
         onClick: () => {
           if (isPaintingActive) stopPainting();
+          if (activeEditTool === 'flatten') useEditOpsStore.getState().stopFlatten();
+          if (activeEditTool === 'brimears') useEditOpsStore.getState().stopBrimEars();
           setGizmoMode(mode);
         }
-      }))
+      })),
+      {
+        id: 'tool-orient-btn',
+        testId: 'tool-orient-btn',
+        label: 'Auto-orient',
+        shortcut: 'A',
+        icon: 'toolbar_orient',
+        disabled: !selectedObject || busy || isOperatingEdit,
+        onClick: () => {
+          void useEditOpsStore.getState().autoOrient();
+        }
+      },
+      {
+        id: 'tool-flatten-btn',
+        testId: 'tool-flatten-btn',
+        label: 'Place on face',
+        shortcut: 'F',
+        icon: 'toolbar_flatten',
+        active: activeEditTool === 'flatten',
+        disabled: !selectedObject || busy || isOperatingEdit,
+        onClick: () => {
+          const editOps = useEditOpsStore.getState();
+          if (editOps.activeTool === 'flatten') {
+            editOps.stopFlatten();
+          } else if (selectedObjectId) {
+            stopPainting();
+            useLayersStore.getState().stopEditing();
+            useCutStore.getState().closeCut();
+            void useTextStore.getState().close();
+            void editOps.startFlatten(selectedObjectId);
+          }
+        }
+      }
     ],
     [
-      { id: 'tool-cut-btn', testId: 'tool-cut-btn', label: 'Cut', shortcut: 'C', icon: 'toolbar_cut', active: isCutActive, disabled: !selectedObject || busy || isCutting || isRepairing,
+      { id: 'tool-cut-btn', testId: 'tool-cut-btn', label: 'Cut', shortcut: 'C', icon: 'toolbar_cut', active: isCutActive, disabled: !selectedObject || busy || isCutting || isRepairing || isOperatingEdit,
         onClick: () => {
           const cutStore = useCutStore.getState();
           if (cutStore.isCutActive) {
@@ -481,11 +591,40 @@ export const PlateView: React.FC = () => {
             stopPainting();
             useLayersStore.getState().stopEditing();
             void useTextStore.getState().close();
+            if (activeEditTool) {
+              useEditOpsStore.getState().stopFlatten();
+              useEditOpsStore.getState().stopBrimEars();
+            }
             const height = selectedObject?.size?.[2] ?? 20.0;
             cutStore.openCut(selectedObjectId, 0, height, height / 2);
           }
         } },
-      { id: 'tool-text-btn', testId: 'tool-text-btn', label: 'Text', icon: 'toolbar_text', active: isTextActive, disabled: busy,
+      { id: 'tool-meshboolean-btn', testId: 'tool-meshboolean-btn', label: 'Mesh boolean', icon: 'toolbar_meshboolean', active: activeEditDialog === 'boolean', disabled: objects.length < 2 || busy || isOperatingEdit,
+        onClick: () => {
+          stopPainting();
+          useLayersStore.getState().stopEditing();
+          useCutStore.getState().closeCut();
+          void useTextStore.getState().close();
+          if (activeEditTool) {
+            useEditOpsStore.getState().stopFlatten();
+            useEditOpsStore.getState().stopBrimEars();
+          }
+          useEditOpsStore.getState().openBooleanDialog();
+        } },
+      { id: 'tool-brimears-btn', testId: 'tool-brimears-btn', label: 'Brim ears', icon: 'toolbar_brimears', active: activeEditTool === 'brimears', disabled: !selectedObject || busy || isOperatingEdit,
+        onClick: () => {
+          const editOps = useEditOpsStore.getState();
+          if (editOps.activeTool === 'brimears') {
+            editOps.stopBrimEars();
+          } else if (selectedObjectId) {
+            stopPainting();
+            useLayersStore.getState().stopEditing();
+            useCutStore.getState().closeCut();
+            void useTextStore.getState().close();
+            void editOps.startBrimEars(selectedObjectId);
+          }
+        } },
+      { id: 'tool-text-btn', testId: 'tool-text-btn', label: 'Text', icon: 'toolbar_text', active: isTextActive, disabled: busy || isOperatingEdit,
         onClick: () => {
           const textStore = useTextStore.getState();
           if (textStore.isOpen) {
@@ -494,26 +633,50 @@ export const PlateView: React.FC = () => {
             stopPainting();
             useLayersStore.getState().stopEditing();
             useCutStore.getState().closeCut();
+            if (activeEditTool) {
+              useEditOpsStore.getState().stopFlatten();
+              useEditOpsStore.getState().stopBrimEars();
+            }
             textStore.openForAdd(selectedObjectId);
           }
         } },
-      { id: 'tool-varlayer-btn', label: 'Variable layer height', icon: 'toolbar_variable_layer_height', active: isLayersActive, disabled: !selectedObject || busy,
+      { id: 'tool-svg-btn', testId: 'tool-svg-btn', label: 'Add SVG', icon: 'toolbar_svg', active: activeEditDialog === 'svg', disabled: busy || isOperatingEdit,
+        onClick: () => {
+          stopPainting();
+          useLayersStore.getState().stopEditing();
+          useCutStore.getState().closeCut();
+          void useTextStore.getState().close();
+          if (activeEditTool) {
+            useEditOpsStore.getState().stopFlatten();
+            useEditOpsStore.getState().stopBrimEars();
+          }
+          useEditOpsStore.getState().openSvgDialog();
+        } },
+      { id: 'tool-varlayer-btn', label: 'Variable layer height', icon: 'toolbar_variable_layer_height', active: isLayersActive, disabled: !selectedObject || busy || isOperatingEdit,
         onClick: () => {
           stopPainting();
           void useTextStore.getState().close();
           useCutStore.getState().closeCut();
+          if (activeEditTool) {
+            useEditOpsStore.getState().stopFlatten();
+            useEditOpsStore.getState().stopBrimEars();
+          }
           if (isLayersActive) useLayersStore.getState().stopEditing();
           else void useLayersStore.getState().startEditing(selectedObjectId!);
         } }
     ],
     [
-      { id: 'tool-paint-btn', label: 'Support painting', shortcut: 'P', icon: 'toolbar_support', active: isPaintingActive && paintLayer === 'support', disabled: !selectedObject || busy, onClick: handleTogglePainting },
+      { id: 'tool-paint-btn', label: 'Support painting', shortcut: 'P', icon: 'toolbar_support', active: isPaintingActive && paintLayer === 'support', disabled: !selectedObject || busy || isOperatingEdit, onClick: handleTogglePainting },
       ...([['seam', 'toolbar_seam', 'Seam painting'], ['color', 'mmu_segmentation', 'Color painting'], ['fuzzy', 'toolbar_fuzzy_skin_paint', 'Fuzzy skin painting']] as const).map(([layer, icon, label]): CanvasTool => ({
-        id: `tool-${layer}-paint-btn`, label, icon, active: isPaintingActive && paintLayer === layer, disabled: !selectedObject || busy,
+        id: `tool-${layer}-paint-btn`, label, icon, active: isPaintingActive && paintLayer === layer, disabled: !selectedObject || busy || isOperatingEdit,
         onClick: () => {
           useCutStore.getState().closeCut();
           void useTextStore.getState().close();
           useLayersStore.getState().stopEditing();
+          if (activeEditTool) {
+            useEditOpsStore.getState().stopFlatten();
+            useEditOpsStore.getState().stopBrimEars();
+          }
           usePaintToolsStore.getState().setLayer(layer);
           const volume = sceneRef.current?.getMeshVolumes(selectedObjectId!)?.[0]?.volumeId;
           void usePaintToolsStore.getState().startPainting(selectedObjectId!, volume, selectedInstanceId);
@@ -521,8 +684,8 @@ export const PlateView: React.FC = () => {
       }))
     ],
     [
-      { id: 'tool-arrange-btn', label: 'Arrange', shortcut: 'A', icon: 'toolbar_arrange', disabled: busy, onClick: () => arrange(true) },
-      { id: 'tool-delete-btn', label: 'Delete', shortcut: 'Del', icon: 'delete', danger: true, disabled: !selectedObject || busy, onClick: () => deleteSelected() }
+      { id: 'tool-arrange-btn', label: 'Arrange', shortcut: 'A', icon: 'toolbar_arrange', disabled: busy || isOperatingEdit, onClick: () => arrange(true) },
+      { id: 'tool-delete-btn', label: 'Delete', shortcut: 'Del', icon: 'delete', danger: true, disabled: !selectedObject || busy || isOperatingEdit, onClick: () => deleteSelected() }
     ]
   ];
 
@@ -549,6 +712,8 @@ export const PlateView: React.FC = () => {
       <LayerHeightPanel objectMeshes={sceneRef.current?.getObjectMeshes()} />
       <TextPanel />
       <CutPanel />
+      <FlattenPanel />
+      <BrimEarsPanel />
 
       {/* Selection Info Panel (shown when not in painting mode) */}
       {selectedObject && !isPaintingActive && (
@@ -557,7 +722,7 @@ export const PlateView: React.FC = () => {
           style={{
             position: 'absolute',
             bottom: 64,
-            left: 24,
+            right: 24,
             background: 'rgba(24, 24, 27, 0.9)',
             backdropFilter: 'blur(10px)',
             border: '1px solid rgba(255, 255, 255, 0.12)',

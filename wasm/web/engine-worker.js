@@ -175,6 +175,14 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'readFile': {
+        if (!core) throw new Error('Engine not initialized');
+        const { path: filePath } = args || {};
+        const bytes = core.readFile(filePath);
+        postMessage({ id, ok: true, result: { buffer: bytes } }, [bytes.buffer]);
+        break;
+      }
+
       case 'writeFile': {
         if (!core) throw new Error('Engine not initialized');
         const { path: filePath, bytes } = args;

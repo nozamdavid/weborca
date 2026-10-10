@@ -19,6 +19,9 @@ import { CalibrationPage } from './shell/CalibrationPage';
 import { HelpDialogs } from './shell/HelpDialogs';
 import { PrepareSidebar } from './shell/PrepareSidebar';
 import { TopBar } from './shell/TopBar';
+import { ToastContainer } from './shell/Toast';
+import { showToast } from './shell/toastStore';
+import { EditOpsDialogs } from './editops';
 import type { TabId } from './shell/TopBar';
 
 export const App: React.FC = () => {
@@ -42,10 +45,51 @@ export const App: React.FC = () => {
     if (sliceResult?.gcode && !isSlicing) setActiveTab('preview');
   }, [sliceResult, isSlicing]);
 
+  // Global drag-and-drop for .3mf project files, .gcode and model files
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    const onDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (ext === '3mf') {
+        await useAppStore.getState().openProjectFile(file);
+      } else if (ext === 'gcode') {
+        await useAppStore.getState().openGcodeFile(file);
+      } else if (['stl', 'obj', 'amf', 'step', 'stp', 'svg'].includes(ext || '')) {
+        useAppStore.getState().requestImportFile(file);
+      } else {
+        showToast(`Unsupported file type: .${ext}`, 'error');
+      }
+    };
+
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, []);
+
   if (!isIsolated) return <IsolationNotice />;
 
   return (
-    <div className="orca-app" style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', overflow: 'hidden' }}>
+    <div
+      className="orca-app"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        width: '100vw',
+        overflow: 'hidden'
+      }}
+    >
       <ErrorBanner />
       <TopBar activeTab={activeTab} setActiveTab={setActiveTab} />
       <StepImportModal />
@@ -87,6 +131,8 @@ export const App: React.FC = () => {
       <OtherCalibrationsDialogs />
       <PrinterConnectionDialog />
       <HelpDialogs />
+      <EditOpsDialogs />
+      <ToastContainer />
     </div>
   );
 };

@@ -6,6 +6,7 @@ import { useTextStore } from '../text';
 import { useLayersStore } from '../layers';
 import { useCutStore } from '../cut';
 import { useRepairStore } from '../repair';
+import { useEditOpsStore } from '../editops';
 
 export interface ContextMenuProps {
   x: number;
@@ -212,6 +213,60 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             🔧 Repair Non-Manifold
           </div>
 
+          <div
+            id="menu-action-split-objects"
+            data-testid="menu-action-split-objects"
+            onClick={() => {
+              void useEditOpsStore.getState().splitSelectedObject(objectId);
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            Split to Objects
+          </div>
+
+          <div
+            id="menu-action-split-parts"
+            data-testid="menu-action-split-parts"
+            onClick={() => {
+              void useEditOpsStore.getState().splitSelectedVolume(objectId);
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            Split to Parts
+          </div>
+
+          <div
+            id="menu-action-simplify"
+            data-testid="menu-action-simplify"
+            onClick={() => {
+              void useEditOpsStore.getState().openSimplifyDialog(objectId);
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            Simplify...
+          </div>
+
           <div style={{ height: 1, background: '#3f3f46', margin: '4px 0' }} />
 
           <div
@@ -309,6 +364,42 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               🔤 Edit 3D Text
             </div>
           )}
+
+          <div
+            id="menu-action-split-parts"
+            data-testid="menu-action-split-parts"
+            onClick={() => {
+              void useEditOpsStore.getState().splitSelectedVolume(objectId, volumeId);
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            Split to Parts
+          </div>
+
+          <div
+            id="menu-action-simplify"
+            data-testid="menu-action-simplify"
+            onClick={() => {
+              void useEditOpsStore.getState().openSimplifyDialog(objectId, volumeId);
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            Simplify...
+          </div>
 
           {onSetExtruder && (
             <div

@@ -26,6 +26,8 @@ export interface PlateSceneCallbacks {
   onToolPaintBegin?: (hit: [number, number, number], facet: number, button: number, erase: boolean, cameraPos: [number, number, number]) => void;
   onToolPaintPoint?: (hit: [number, number, number], facet: number) => void;
   onToolPaintEnd?: () => void;
+  onFlattenFacetClick?: (facetIndex: number) => void;
+  onBrimEarClick?: (position: [number, number, number], clickedEarIndex?: number) => void;
 }
 
 export class PlateScene {
@@ -37,8 +39,12 @@ export class PlateScene {
   private transformControls: TransformControls;
 
   private bedGroup: THREE.Group;
-  private bedFloorMaterial: THREE.MeshBasicMaterial | null = null;
-  private objectsGroup: THREE.Group;
+    private objectsGroup: THREE.Group;
+
+  private flattenClusters: Array<{ normal: [number, number, number]; center: [number, number, number]; area: number; outline: Array<[number, number, number]> }> = [];
+  private flattenGroup: THREE.Group;
+  private brimEarsGroup: THREE.Group;
+    private brimEarsActive = false;
 
   private objectMeshes: Map<string, THREE.Mesh> = new Map();
   private overlayMeshes: Map<string, THREE.Mesh> = new Map();
@@ -51,6 +57,8 @@ export class PlateScene {
   private bedConfig: BedConfig;
   private callbacks: PlateSceneCallbacks;
 
+  public bedFloorMaterial: THREE.MeshBasicMaterial | null = null;
+  public brimEarPoints: Array<{ position: [number, number, number]; radius: number }> = [];
   private isPaintingActive = false;
   private paintingVolumeId: number | null = null;
   private isPaintingStroke = false;
@@ -149,8 +157,12 @@ export class PlateScene {
     // 7. Groups
     this.bedGroup = new THREE.Group();
     this.objectsGroup = new THREE.Group();
+    this.flattenGroup = new THREE.Group();
+    this.brimEarsGroup = new THREE.Group();
     this.scene.add(this.bedGroup);
     this.scene.add(this.objectsGroup);
+    this.scene.add(this.flattenGroup);
+    this.scene.add(this.brimEarsGroup);
 
     // 8. Materials
     this.defaultMaterial = new THREE.MeshStandardMaterial({
@@ -184,19 +196,44 @@ export class PlateScene {
   }
 
   private buildBed(): void {
+    // Clear existing bed
     while (this.bedGroup.children.length > 0) {
-      const child = this.bedGroup.children[0];
+      const child = this.bedGroup.children[0] as THREE.Mesh;
+      if (child.geometry) child.geometry.dispose();
       this.bedGroup.remove(child);
     }
 
-    const { width, depth, height, center, points } = this.bedConfig;
-    const [cx, cy] = center;
+    const { width, depth, height, center } = this.bedConfig;
+    const shape = (this.bedConfig as any).shape;
+    const cx = center[0];
+    const cy = center[1];
 
-    // 1. Bed subtle floor plate
-    const floorGeo = new THREE.PlaneGeometry(width, depth);
-    // Becomes see-through when the camera is below the bed (see animate), so parts stay visible from underneath.
+    let floorGeo: THREE.BufferGeometry;
+    let points: Array<[number, number]> = [];
+
+    if (shape === 'circle') {
+      const radius = width / 2;
+      floorGeo = new THREE.CircleGeometry(radius, 64);
+      for (let i = 0; i < 64; i++) {
+        const theta = (i / 64) * Math.PI * 2;
+        points.push([cx + radius * Math.cos(theta), cy + radius * Math.sin(theta)]);
+      }
+    } else {
+      // Default rectangle
+      floorGeo = new THREE.PlaneGeometry(width, depth);
+      const halfW = width / 2;
+      const halfD = depth / 2;
+      points = [
+        [cx - halfW, cy - halfD],
+        [cx + halfW, cy - halfD],
+        [cx + halfW, cy + halfD],
+        [cx - halfW, cy + halfD]
+      ];
+    }
+
+    // 1. Bed Floor Mesh (slightly below Z=0 to prevent z-fighting with models)
     const floorMat = new THREE.MeshBasicMaterial({
-      color: 0x27272a,
+      color: 0x24242b,
       side: THREE.DoubleSide,
       transparent: true,
       depthWrite: false
@@ -478,6 +515,80 @@ export class PlateScene {
     return null;
   }
 
+  public showFlattenClusters(clusters: Array<{ normal: [number, number, number]; center: [number, number, number]; area: number; outline: Array<[number, number, number]> }>): void {
+    this.clearFlattenClusters();
+    this.flattenClusters = clusters;
+    const mesh = this.getSelectedMesh();
+    if (!mesh) return;
+
+    for (let i = 0; i < clusters.length; i++) {
+      const c = clusters[i];
+      if (c.outline && c.outline.length >= 3) {
+        const pts: THREE.Vector3[] = [];
+        const norm = new THREE.Vector3(...c.normal).normalize().applyQuaternion(mesh.quaternion);
+        for (const pt of c.outline) {
+          const v = new THREE.Vector3(pt[0], pt[1], pt[2]);
+          v.applyMatrix4(mesh.matrixWorld);
+          v.addScaledVector(norm, 0.2);
+          pts.push(v);
+        }
+        pts.push(pts[0].clone());
+        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE.LineBasicMaterial({ color: 0x00e676, linewidth: 2 });
+        const line = new THREE.Line(geo, mat);
+        line.userData = { clusterIndex: i };
+        this.flattenGroup.add(line);
+      }
+    }
+  }
+
+  public clearFlattenClusters(): void {
+    while (this.flattenGroup.children.length > 0) {
+      const child = this.flattenGroup.children[0] as THREE.Line;
+      child.geometry.dispose();
+      if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+      else child.material.dispose();
+      this.flattenGroup.remove(child);
+    }
+    this.flattenClusters = [];
+  }
+
+  public setBrimEarsActive(active: boolean): void {
+    this.brimEarsActive = active;
+  }
+
+  public showBrimEars(points: Array<{ position: [number, number, number]; radius: number }>): void {
+    this.clearBrimEarsOverlay();
+    this.brimEarPoints = points;
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const geo = new THREE.CircleGeometry(p.radius, 32);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x00bcd4, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+      const disc = new THREE.Mesh(geo, mat);
+      disc.position.set(p.position[0], p.position[1], 0.2);
+      disc.userData = { brimEarIndex: i };
+      this.brimEarsGroup.add(disc);
+
+      const edgeGeo = new THREE.RingGeometry(Math.max(0.1, p.radius - 0.4), p.radius, 32);
+      const edgeMat = new THREE.MeshBasicMaterial({ color: 0x00838f, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(edgeGeo, edgeMat);
+      ring.position.set(p.position[0], p.position[1], 0.25);
+      ring.userData = { brimEarIndex: i };
+      this.brimEarsGroup.add(ring);
+    }
+  }
+
+  public clearBrimEarsOverlay(): void {
+    while (this.brimEarsGroup.children.length > 0) {
+      const child = this.brimEarsGroup.children[0] as THREE.Mesh;
+      child.geometry.dispose();
+      if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+      else child.material.dispose();
+      this.brimEarsGroup.remove(child);
+    }
+    this.brimEarPoints = [];
+  }
+
   /**
    * Calculates viewport screen coordinates (pixels) for a facet's centroid.
    * Useful for deterministic testing with actual browser pointer events.
@@ -507,7 +618,6 @@ export class PlateScene {
     }
 
     if (mergedFacet < 0 || mergedFacet * 3 + 2 >= indices.length) return null;
-
 
     const i0 = indices[mergedFacet * 3];
     const i1 = indices[mergedFacet * 3 + 1];
@@ -558,46 +668,25 @@ export class PlateScene {
     const partitions = this.meshVolumes.get(objectId);
 
     // Never assume volume zero; missing metadata disables overlay safely
-    if (!partitions || partitions.length === 0 || typeof volId !== 'number') {
-      for (const [key, mesh] of this.objectMeshes.entries()) {
-        if (mesh.userData.objectId !== objectId) continue;
-        const overlayKey = typeof volId === 'number' ? `${key}_vol_${volId}` : key;
-        const overlay = this.overlayMeshes.get(overlayKey);
+    if (!partitions || partitions.length === 0 || volId === null || volId === undefined) {
+      return;
+    }
+
+    const partition = partitions.find((p) => p.volumeId === volId);
+    if (!partition) return;
+
+    for (const [key, mesh] of this.objectMeshes.entries()) {
+      if (mesh.userData.objectId !== objectId) continue;
+
+      const overlayKey = `${key}_support_${volId}`;
+      let overlay = this.overlayMeshes.get(overlayKey);
+
+      if (!paintingData || (!paintingData.blockers.length && !paintingData.enforcers.length)) {
         if (overlay) {
           mesh.remove(overlay);
           overlay.geometry.dispose();
           if (Array.isArray(overlay.material)) overlay.material.forEach((m) => m.dispose());
           else overlay.material.dispose();
-          this.overlayMeshes.delete(overlayKey);
-        }
-      }
-      return;
-    }
-
-    const partition = partitions.find((p) => p.volumeId === volId);
-    if (!partition) {
-      return;
-    }
-
-    const enforcers = paintingData?.enforcers || [];
-    const blockers = paintingData?.blockers || [];
-    const totalPainted = enforcers.length + blockers.length;
-
-    for (const [key, mesh] of this.objectMeshes.entries()) {
-      if (mesh.userData.objectId !== objectId) continue;
-
-      const overlayKey = `${key}_vol_${volId}`;
-      let overlayMesh = this.overlayMeshes.get(overlayKey);
-
-      if (totalPainted === 0) {
-        if (overlayMesh) {
-          mesh.remove(overlayMesh);
-          overlayMesh.geometry.dispose();
-          if (Array.isArray(overlayMesh.material)) {
-            overlayMesh.material.forEach((m) => m.dispose());
-          } else {
-            overlayMesh.material.dispose();
-          }
           this.overlayMeshes.delete(overlayKey);
         }
         continue;
@@ -609,101 +698,70 @@ export class PlateScene {
       const indices = baseGeo.index.array;
       const positions = baseGeo.attributes.position.array;
 
-      const overlayGeo = new THREE.BufferGeometry();
-      const posArray = new Float32Array(totalPainted * 9);
-      const colArray = new Float32Array(totalPainted * 9);
+      const overlayIndices: number[] = [];
+      const colors: number[] = [];
 
-      let vertexOffset = 0;
+      const addFacet = (localIndex: number, colorHex: number) => {
+        const mergedIndex = partition.firstFacet + localIndex;
+        if (mergedIndex < partition.firstFacet || mergedIndex >= partition.firstFacet + partition.facetCount) {
+          return;
+        }
 
-      // Enforcer: Green #22c55e -> (0.133, 0.773, 0.369)
-      const enfR = 0.133, enfG = 0.773, enfB = 0.369;
-      // Blocker: Red #ef4444 -> (0.937, 0.267, 0.267)
-      const blkR = 0.937, blkG = 0.267, blkB = 0.267;
+        const i0 = indices[mergedIndex * 3];
+        const i1 = indices[mergedIndex * 3 + 1];
+        const i2 = indices[mergedIndex * 3 + 2];
 
-      const addFacet = (localFacetId: number, r: number, g: number, b: number) => {
-        // Validate local index within volume partition
-        if (localFacetId < 0 || localFacetId >= partition.facetCount) return;
-
-        // Overlay local IDs offset to corresponding merged indices
-        const mergedFacetIndex = partition.firstFacet + localFacetId;
-        if (mergedFacetIndex < 0 || mergedFacetIndex * 3 + 2 >= indices.length) return;
-
-        const i0 = indices[mergedFacetIndex * 3];
-        const i1 = indices[mergedFacetIndex * 3 + 1];
-        const i2 = indices[mergedFacetIndex * 3 + 2];
-
-        // Vertex 0
-        posArray[vertexOffset * 3] = positions[i0 * 3];
-        posArray[vertexOffset * 3 + 1] = positions[i0 * 3 + 1];
-        posArray[vertexOffset * 3 + 2] = positions[i0 * 3 + 2];
-        colArray[vertexOffset * 3] = r;
-        colArray[vertexOffset * 3 + 1] = g;
-        colArray[vertexOffset * 3 + 2] = b;
-        vertexOffset++;
-
-        // Vertex 1
-        posArray[vertexOffset * 3] = positions[i1 * 3];
-        posArray[vertexOffset * 3 + 1] = positions[i1 * 3 + 1];
-        posArray[vertexOffset * 3 + 2] = positions[i1 * 3 + 2];
-        colArray[vertexOffset * 3] = r;
-        colArray[vertexOffset * 3 + 1] = g;
-        colArray[vertexOffset * 3 + 2] = b;
-        vertexOffset++;
-
-        // Vertex 2
-        posArray[vertexOffset * 3] = positions[i2 * 3];
-        posArray[vertexOffset * 3 + 1] = positions[i2 * 3 + 1];
-        posArray[vertexOffset * 3 + 2] = positions[i2 * 3 + 2];
-        colArray[vertexOffset * 3] = r;
-        colArray[vertexOffset * 3 + 1] = g;
-        colArray[vertexOffset * 3 + 2] = b;
-        vertexOffset++;
+        overlayIndices.push(i0, i1, i2);
+        const color = new THREE.Color(colorHex);
+        for (let j = 0; j < 3; j++) {
+          colors.push(color.r, color.g, color.b);
+        }
       };
 
-      for (const f of enforcers) {
-        addFacet(f, enfR, enfG, enfB);
+      for (const facet of paintingData.blockers) {
+        addFacet(facet, 0xef4444); // Red for blockers
       }
-      for (const f of blockers) {
-        addFacet(f, blkR, blkG, blkB);
+      for (const facet of paintingData.enforcers) {
+        addFacet(facet, 0x3b82f6); // Blue for enforcers
       }
 
-      overlayGeo.setAttribute('position', new THREE.BufferAttribute(posArray.subarray(0, vertexOffset * 3), 3));
-      overlayGeo.setAttribute('color', new THREE.BufferAttribute(colArray.subarray(0, vertexOffset * 3), 3));
+      if (overlayIndices.length === 0) continue;
+
+      const overlayGeo = new THREE.BufferGeometry();
+      overlayGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      overlayGeo.setIndex(overlayIndices);
+      overlayGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
       overlayGeo.computeVertexNormals();
 
-      if (!overlayMesh) {
-        const overlayMat = new THREE.MeshStandardMaterial({
+      if (!overlay) {
+        const overlayMat = new THREE.MeshBasicMaterial({
           vertexColors: true,
-          roughness: 0.35,
-          metalness: 0.1,
           side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.85,
+          depthTest: true,
+          depthWrite: false,
           polygonOffset: true,
-          polygonOffsetFactor: -1.0,
-          polygonOffsetUnits: -1.0
+          polygonOffsetFactor: -2,
+          polygonOffsetUnits: -2
         });
-        overlayMesh = new THREE.Mesh(overlayGeo, overlayMat);
-        overlayMesh.raycast = () => {}; // Never intercept raycasting!
-        mesh.add(overlayMesh);
-        this.overlayMeshes.set(overlayKey, overlayMesh);
+
+        overlay = new THREE.Mesh(overlayGeo, overlayMat);
+        mesh.add(overlay);
+        this.overlayMeshes.set(overlayKey, overlay);
       } else {
-        overlayMesh.geometry.dispose();
-        overlayMesh.geometry = overlayGeo;
+        overlay.geometry.dispose();
+        overlay.geometry = overlayGeo;
       }
     }
   }
 
   private raycastSelectedMesh(e: PointerEvent): { faceIndex: number; hit: [number, number, number]; normal: THREE.Vector3 } | null {
     const selectedMesh = this.getSelectedMesh();
-    if (!selectedMesh) return null;
+    if (!selectedMesh || this.selectedObjectId === null) return null;
 
-    const objId = selectedMesh.userData?.objectId;
-    if (typeof objId !== 'number') return null;
-
-    // Never assume volume zero; missing metadata must disable painting safely with clear reason
-    const partitions = this.meshVolumes.get(objId);
-    if (!partitions || partitions.length === 0 || this.paintingVolumeId === null) {
-      return null;
-    }
+    const partitions = this.meshVolumes.get(this.selectedObjectId);
+    if (!partitions) return null;
 
     const rect = this.renderer.domElement.getBoundingClientRect();
     const mouse = new THREE.Vector2(
@@ -795,6 +853,66 @@ export class PlateScene {
     // Check if clicking inside TransformControls gizmo
     if (this.transformControls.dragging) return;
 
+    if (this.flattenClusters.length > 0) {
+      const selectedMesh = this.getSelectedMesh();
+      if (selectedMesh) {
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        const mouse = new THREE.Vector2(
+          ((e.clientX - rect.left) / rect.width) * 2 - 1,
+          -((e.clientY - rect.top) / rect.height) * 2 + 1
+        );
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, this.camera);
+        const hits = raycaster.intersectObject(selectedMesh, false);
+        if (hits.length > 0 && hits[0].face) {
+          const hitPoint = hits[0].point;
+          const hitNormal = hits[0].face.normal.clone().transformDirection(selectedMesh.matrixWorld);
+          let bestIdx = -1;
+          let bestDist = Infinity;
+          for (let i = 0; i < this.flattenClusters.length; i++) {
+            const cl = this.flattenClusters[i];
+            const cNorm = new THREE.Vector3(...cl.normal).normalize().applyQuaternion(selectedMesh.quaternion);
+            if (hitNormal.dot(cNorm) > 0.8) {
+              const cCenter = new THREE.Vector3(...cl.center).applyMatrix4(selectedMesh.matrixWorld);
+              const dist = hitPoint.distanceTo(cCenter);
+              if (dist < bestDist) {
+                bestDist = dist;
+                bestIdx = i;
+              }
+            }
+          }
+          if (bestIdx >= 0) {
+            this.callbacks.onFlattenFacetClick?.(bestIdx);
+            return;
+          }
+        }
+      }
+    }
+
+    if (this.brimEarsActive) {
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, this.camera);
+      const earHits = raycaster.intersectObjects(this.brimEarsGroup.children, false);
+      if (earHits.length > 0 && typeof earHits[0].object.userData?.brimEarIndex === 'number') {
+        this.callbacks.onBrimEarClick?.(
+          [earHits[0].point.x, earHits[0].point.y, 0],
+          earHits[0].object.userData.brimEarIndex
+        );
+        return;
+      }
+      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+      const hitPoint = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(groundPlane, hitPoint)) {
+        this.callbacks.onBrimEarClick?.([hitPoint.x, hitPoint.y, 0]);
+        return;
+      }
+    }
+
     if (!this.isPaintingActive) {
       const rect = this.renderer.domElement.getBoundingClientRect();
       const mouse = new THREE.Vector2(
@@ -838,8 +956,8 @@ export class PlateScene {
 
   private onWindowResize = (): void => {
     if (!this.container || this.isDestroyed) return;
-    const width = this.container.clientWidth || 800;
-    const height = this.container.clientHeight || 600;
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
 
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
@@ -851,41 +969,47 @@ export class PlateScene {
     this.animationFrameId = requestAnimationFrame(this.animate);
 
     this.orbitControls.update();
-    if (this.bedFloorMaterial) this.bedFloorMaterial.opacity = this.camera.position.z < 0 ? 0.25 : 1;
     this.renderer.render(this.scene, this.camera);
   };
 
-
-  public setCameraView(view: number | 'Z'): void {
-    const cx = this.bedConfig.center[0];
-    const cy = this.bedConfig.center[1];
-    const span = Math.max(this.bedConfig.width, this.bedConfig.depth);
-    const d = span * 1.5;
+  public setCameraView(view: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 'Z'): void {
+    const selectedMesh = this.getSelectedMesh();
+    let center = new THREE.Vector3(this.bedConfig.center[0], this.bedConfig.center[1], 0);
+    let maxDim = Math.max(this.bedConfig.width, this.bedConfig.depth);
 
     if (view === 'Z') {
-      const mesh = this.getSelectedMesh();
-      if (mesh) {
-        const box = new THREE.Box3().setFromObject(mesh);
-        const center = box.getCenter(new THREE.Vector3());
+      if (selectedMesh) {
+        const box = new THREE.Box3().setFromObject(selectedMesh);
+        box.getCenter(center);
         const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z);
+        maxDim = Math.max(size.x, size.y, size.z);
         this.orbitControls.target.copy(center);
         this.camera.position.set(center.x, center.y - maxDim * 1.5, center.z + maxDim);
       } else {
+        const cx = this.bedConfig.center[0];
+        const cy = this.bedConfig.center[1];
+        const span = Math.max(this.bedConfig.width, this.bedConfig.depth);
         this.orbitControls.target.set(cx, cy, 0);
         this.camera.position.set(cx, cy - span * 1.5, span * 1.2);
       }
-    } else {
-      this.orbitControls.target.set(cx, cy, 0);
-      switch (view) {
-        case 1: this.camera.position.set(cx, cy, d); break; // Top
-        case 2: this.camera.position.set(cx, cy, -d); break; // Bottom
-        case 3: this.camera.position.set(cx, cy - d, 0); break; // Front
-        case 4: this.camera.position.set(cx, cy + d, 0); break; // Back
-        case 5: this.camera.position.set(cx - d, cy, 0); break; // Left
-        case 6: this.camera.position.set(cx + d, cy, 0); break; // Right
-        case 0: this.camera.position.set(cx - span, cy - d, span * 1.2); break; // Iso
-      }
+      this.orbitControls.update();
+      return;
+    }
+
+    const cx = this.bedConfig.center[0];
+    const cy = this.bedConfig.center[1];
+    const span = Math.max(this.bedConfig.width, this.bedConfig.depth);
+    this.orbitControls.target.set(cx, cy, 0);
+
+    const d = span * 1.8;
+    switch (view) {
+      case 1: this.camera.position.set(cx, cy, d); break; // Top
+      case 2: this.camera.position.set(cx, cy, -d); break; // Bottom
+      case 3: this.camera.position.set(cx, cy - d, 0); break; // Front
+      case 4: this.camera.position.set(cx, cy + d, 0); break; // Back
+      case 5: this.camera.position.set(cx - d, cy, 0); break; // Left
+      case 6: this.camera.position.set(cx + d, cy, 0); break; // Right
+      case 0: this.camera.position.set(cx - span, cy - d, span * 1.2); break; // Iso
     }
     this.orbitControls.update();
   }
@@ -907,6 +1031,11 @@ export class PlateScene {
     this.transformControls.dispose();
     this.orbitControls.dispose();
     this.paintCursor.dispose();
+
+    this.clearFlattenClusters();
+    this.clearBrimEarsOverlay();
+    this.scene.remove(this.flattenGroup);
+    this.scene.remove(this.brimEarsGroup);
 
     for (const overlay of this.overlayMeshes.values()) {
       overlay.geometry.dispose();

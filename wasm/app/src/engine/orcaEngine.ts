@@ -59,6 +59,9 @@ export async function getEngine(): Promise<OrcaEngine> {
       });
 
       engineInstance = engine;
+      if (typeof window !== 'undefined') {
+        (window as any).__orcaEngine = engine;
+      }
       return engine;
     } catch (err) {
       initPromise = null;
@@ -297,6 +300,29 @@ export async function slice(options?: {
   const engine = await getEngine();
   const res = await engine.slice(options);
   return res as SliceResult;
+}
+
+export async function readFile(path: string): Promise<Uint8Array> {
+  const engine = await getEngine();
+  return await engine.readFile(path);
+}
+
+export async function writeFile(path: string, bytes: Uint8Array | ArrayBuffer): Promise<void> {
+  const engine = await getEngine();
+  await engine.writeFile(path, bytes);
+}
+
+export async function saveProject(path: string = '/out/saved_project.3mf'): Promise<Uint8Array> {
+  const engine = await getEngine();
+  await engine.call('saveProject', { path });
+  return await engine.readFile(path);
+}
+
+export async function openProject(fileName: string, bytes: Uint8Array | ArrayBuffer): Promise<any> {
+  const engine = await getEngine();
+  const path = "/models/" + fileName;
+  await engine.writeFile(path, bytes);
+  return await engine.call('openProject', { path });
 }
 
 export function disposeEngine(): void {

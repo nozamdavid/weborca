@@ -309,6 +309,16 @@ export class OrcaEngine {
    * @param {string} path
    * @param {Uint8Array|ArrayBuffer} bytes
    */
+  /**
+   * Reads a file from the engine's MEMFS.
+   * @param {string} path
+   * @returns {Promise<Uint8Array>}
+   */
+  async readFile(path) {
+    const res = await this._call('readFile', { path });
+    return res.buffer;
+  }
+
   async writeFile(path, bytes) {
     let payload = bytes;
     let transfer = [];

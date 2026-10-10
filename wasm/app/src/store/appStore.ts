@@ -1,3 +1,5 @@
+import { showToast } from '../shell/toastStore';
+import { storeRecentFile } from '../shell/recentFiles';
 /**
  * @file appStore.ts
  * Zustand state store for OrcaSlicer Web.
@@ -141,6 +143,9 @@ export interface AppState {
   setStepImportState: (state: { file: File } | null) => void;
   requestImportFile: (file: File) => void;
   importModelFile: (file: File, options?: StepImportOptions) => Promise<void>;
+  openProjectFile: (file: File) => Promise<void>;
+  saveProjectFile: (fileName?: string) => Promise<Uint8Array | null>;
+  openGcodeFile: (file: File) => Promise<void>;
   startSlice: () => Promise<void>;
   cancelSlice: () => void;
   invalidateSlicePreview: () => void;
@@ -598,6 +603,147 @@ export const useAppStore = create<AppState>((set, get) => ({
       get().importModelFile(file);
     }
   },
+  openProjectFile: async (file: File) => {
+    if (!file) return;
+    set({
+      isModelLoading: true,
+      engineError: null,
+      sliceResult: null,
+      sliceStatusText: `Opening project ${file.name}...`
+    });
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      const engine = await getEngine();
+      const vfsPath = `/models/${file.name}`;
+      await engine.writeFile(vfsPath, bytes);
+      const res = await engine.call('openProject', { path: vfsPath });
+
+      if (res.selectedPresets) {
+        const { printer, process, filaments } = res.selectedPresets;
+        set((state) => ({
+          selectedPrinter: printer || state.selectedPrinter,
+          selectedProcess: process || state.selectedProcess,
+          selectedFilament: Array.isArray(filaments) && filaments.length > 0
+            ? filaments[0]
+            : (filaments || state.selectedFilament)
+        }));
+        try {
+          const cfg = await getConfig(); set({ currentConfig: cfg });
+        } catch (_) {}
+      }
+
+      try {
+        const { usePlateStore } = await import('../plate/plateStore');
+        await usePlateStore.getState().refreshObjects();
+      } catch (_) {}
+      try {
+        const { useObjectListStore } = await import('../objectlist/objectListStore');
+        await useObjectListStore.getState().refreshTree();
+      } catch (_) {}
+      try {
+        const { usePlatesStore } = await import('../plates/platesStore');
+        await usePlatesStore.getState().fetchPlates();
+      } catch (_) {}
+
+      set({
+        modelFile: { name: file.name, size: file.size },
+        modelObjects: res.objects,
+        isModelLoading: false,
+        sliceStatusText: `Opened project ${file.name}`
+      });
+
+      try {
+        const { useHistoryStore } = await import('../history');
+        await useHistoryStore.getState().commitTransaction(`Open project ${file.name}`);
+      } catch (_) {}
+
+      showToast(`Opened project: ${file.name}`, 'success');
+      try {
+        await storeRecentFile(file.name, bytes, 'project');
+      } catch (_) {}
+    } catch (err: any) {
+      set({
+        isModelLoading: false,
+        engineError: `Failed to open project '${file.name}': ${err.message || String(err)}`,
+        sliceStatusText: 'Project loading failed'
+      });
+      showToast(`Failed to open project: ${err.message || String(err)}`, 'error');
+    }
+  },
+
+  saveProjectFile: async (fileName?: string) => {
+    const { modelFile } = get();
+    try {
+      const engine = await getEngine();
+      const defaultName = modelFile?.name
+        ? (modelFile.name.toLowerCase().endsWith('.3mf')
+            ? modelFile.name
+            : `${modelFile.name.substring(0, modelFile.name.lastIndexOf('.')) || modelFile.name}.3mf`)
+        : 'project.3mf';
+      const outName = fileName || defaultName;
+      const vfsPath = `/out/${outName}`;
+
+      await engine.call('saveProject', { path: vfsPath });
+      const bytes = await engine.readFile(vfsPath);
+
+      const blob = new Blob([bytes as any], {
+        type: 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml'
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = outName;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      showToast(`Saved project: ${outName}`, 'success');
+      try {
+        await storeRecentFile(outName, bytes, 'project');
+      } catch (_) {}
+      return bytes;
+    } catch (err: any) {
+      showToast(`Failed to save project: ${err.message || String(err)}`, 'error');
+      throw err;
+    }
+  },
+
+  openGcodeFile: async (file: File) => {
+    if (!file) return;
+    try {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+
+      const { usePreviewStore } = await import('../preview/previewStore');
+      let stats: any;
+      try {
+        stats = await usePreviewStore.getState().loadGcodeBytes(bytes, file.name);
+      } catch (_) {}
+
+      set({
+        sliceResult: {
+          gcode: bytes,
+          gcodePath: file.name,
+          gcodeBytes: bytes.byteLength,
+          layers: stats?.layers || 0,
+          printTimeS: stats?.printTimeS || 0,
+          filamentMm: stats?.filamentMm || 0,
+          filamentG: stats?.filamentG || 0,
+          warnings: []
+        },
+        modelFile: { name: file.name, size: file.size }
+      });
+
+      showToast(`Loaded G-code: ${file.name}`, 'success');
+      try {
+        await storeRecentFile(file.name, bytes, 'gcode');
+      } catch (_) {}
+    } catch (err: any) {
+      showToast(`Failed to load G-code: ${err.message || String(err)}`, 'error');
+    }
+  },
+
   importModelFile: async (file: File, options?: StepImportOptions) => {
     if (!file) return;
     set({
@@ -608,11 +754,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     try {
-      const buffer = await file.arrayBuffer();
-      const res = await addModel(file.name, new Uint8Array(buffer), options);
-      await arrange();
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      let res: any;
+      if (ext === 'svg') {
+        const text = await file.text();
+        const engine = await getEngine();
+        await engine.call('addSvg', { svgText: text, name: file.name });
+        await arrange();
+        const objs = await engine.listObjects();
+        res = { objects: objs };
+      } else {
+        const buffer = await file.arrayBuffer();
+        res = await addModel(file.name, new Uint8Array(buffer), options);
+        await arrange();
+      }
+
       try {
-        const { usePlateStore } = await import("../plate/plateStore");
+        const { usePlateStore } = await import('../plate/plateStore');
         await usePlateStore.getState().refreshObjects();
       } catch (_) {}
 
@@ -626,13 +784,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         const { useHistoryStore } = await import('../history');
         await useHistoryStore.getState().commitTransaction(`Import ${file.name}`);
       } catch (_) {}
+
+      showToast(`Imported ${file.name}`, 'success');
+      try {
+        const buffer = await file.arrayBuffer();
+        await storeRecentFile(file.name, new Uint8Array(buffer), 'model');
+      } catch (_) {}
     } catch (err: any) {
-      // The engine rejects a bad file without touching the existing project, so keep its model state.
       set({
         isModelLoading: false,
         engineError: `Failed to load model '${file.name}': ${err.message || String(err)}`,
         sliceStatusText: 'Model loading failed'
       });
+      showToast(`Failed to load model '${file.name}': ${err.message || String(err)}`, 'error');
     }
   },
 
