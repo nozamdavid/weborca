@@ -15,6 +15,8 @@ import { useObjectListStore } from './objectListStore';
 import { useAppStore } from '../store/appStore';
 import type { ObjectTreeNode, VolumeTreeNode, VolumeType, PrimitiveShape } from './types';
 
+const DRAG_TYPE = 'application/x-orca-object';
+
 interface ObjectTreeItemProps {
   object: ObjectTreeNode;
 }
@@ -27,6 +29,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
     addVolume,
     deleteVolume,
     deleteObject,
+    moveObject,
     renameObject,
     renameVolume,
     setVolumeExtruder,
@@ -38,6 +41,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
   const defaultColors = ['#16417C', '#58B957', '#F5D130', '#E53935', '#8E24AA', '#00ACC1', '#FB8C00', '#D81B60'];
 
   const [isExpanded, setIsExpanded] = useState(true);
+  const [dropEdge, setDropEdge] = useState<'above' | 'below' | null>(null);
   const [renamingTarget, setRenamingTarget] = useState<'object' | number | null>(null);
   const [editName, setEditName] = useState('');
 
@@ -110,7 +114,29 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object }) => {
         data-testid={`object-row-${object.id}`}
         onClick={() => selectItem(object.id, null)}
         onContextMenu={(e) => handleContextMenu(e, true)}
+        draggable={renamingTarget === null}
+        onDragStart={(e) => {
+          e.dataTransfer.setData(DRAG_TYPE, String(object.id));
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
+          e.preventDefault();
+          const box = e.currentTarget.getBoundingClientRect();
+          setDropEdge(e.clientY < box.top + box.height / 2 ? 'above' : 'below');
+        }}
+        onDragLeave={() => setDropEdge(null)}
+        onDrop={(e) => {
+          const edge = dropEdge;
+          setDropEdge(null);
+          const dragged = Number(e.dataTransfer.getData(DRAG_TYPE));
+          if (!e.dataTransfer.types.includes(DRAG_TYPE) || !edge || dragged === object.id) return;
+          e.preventDefault();
+          const order = useObjectListStore.getState().objects.map((o) => o.id).filter((id) => id !== dragged);
+          void moveObject(dragged, order.indexOf(object.id) + (edge === 'below' ? 1 : 0));
+        }}
         style={{
+          boxShadow: dropEdge === 'above' ? '0 -2px 0 0 #009688' : dropEdge === 'below' ? '0 2px 0 0 #009688' : undefined,
           display: 'flex',
           alignItems: 'center',
           gap: 6,

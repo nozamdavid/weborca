@@ -165,6 +165,12 @@ Removes an object and all of its volumes and instances from the model.
 
 ---
 
+### `moveObject`
+
+Moves an object to another position in the object list, which is the order `listObjects` returns and the order objects print in with `print_sequence` "by object".
+
+Args: `{ "objectId": number, "toIndex": number }`; `toIndex` is the position the object ends up at and is clamped to the list. Result: `{ "index": number }`, the position it got. Unknown ids are an error. Object ids do not change.
+
 ### `duplicateInstance`
 Duplicates an existing instance of an object, generating a new unique stable instance ID.
 

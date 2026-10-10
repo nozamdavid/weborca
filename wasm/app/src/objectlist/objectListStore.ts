@@ -18,6 +18,7 @@ export interface ObjectListState {
   deleteVolume: (objectId: number, volumeId: number) => Promise<void>;
   deleteObject: (objectId: number) => Promise<void>;
   renameObject: (objectId: number, name: string) => Promise<void>;
+  moveObject: (objectId: number, toIndex: number) => Promise<void>;
   renameVolume: (objectId: number, volumeId: number, name: string) => Promise<void>;
   setObjectConfig: (
     objectId: number,
@@ -147,6 +148,16 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
       set({ isLoading: false, error: err.message || 'Failed to delete object' });
       throw err;
     }
+  },
+
+  moveObject: async (objectId: number, toIndex: number) => {
+    const engine = await getEngine();
+    await engine.call('moveObject', { objectId, toIndex });
+    await usePlateStore.getState().refreshObjects();
+    await get().refreshTree();
+    try {
+      await useHistoryStore.getState().commitTransaction('Reorder objects');
+    } catch (_) {}
   },
 
   renameObject: async (objectId: number, name: string) => {

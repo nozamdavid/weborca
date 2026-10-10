@@ -221,6 +221,7 @@ private:
     json op_getMesh(const json& args);
     json op_setInstanceTransform(const json& args);
     json op_deleteObject(const json& args);
+    json op_moveObject(const json& args);
     json op_duplicateInstance(const json& args);
     json op_mirrorInstance(const json& args);
     json op_cloneObject(const json& args);
@@ -458,6 +459,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_setInstanceTransform(args);
         } else if (op == "deleteObject") {
             result_data = op_deleteObject(args);
+        } else if (op == "moveObject") {
+            result_data = op_moveObject(args);
         } else if (op == "duplicateInstance") {
             result_data = op_duplicateInstance(args);
         } else if (op == "mirrorInstance") {
@@ -1576,6 +1579,22 @@ json Engine::Impl::op_deleteObject(const json& args) {
         throw Slic3r::RuntimeError("Object not found: " + std::to_string(object_id));
     }
     return json::object();
+}
+
+// Moves an object to another position in the model's object list (the order of the Objects list and of by-object printing).
+json Engine::Impl::op_moveObject(const json& args) {
+    const size_t object_id = args.at("objectId").get<size_t>();
+    const int to_index = args.at("toIndex").get<int>();
+
+    auto& objects = m_model.objects;
+    auto it = std::find_if(objects.begin(), objects.end(), [&](const Slic3r::ModelObject* o) { return o && o->id().id == object_id; });
+    if (it == objects.end()) throw Slic3r::RuntimeError("Object not found: " + std::to_string(object_id));
+
+    Slic3r::ModelObject* obj = *it;
+    objects.erase(it);
+    const size_t target = static_cast<size_t>(std::clamp(to_index, 0, static_cast<int>(objects.size())));
+    objects.insert(objects.begin() + target, obj);
+    return {{"index", target}};
 }
 
 json Engine::Impl::op_duplicateInstance(const json& args) {

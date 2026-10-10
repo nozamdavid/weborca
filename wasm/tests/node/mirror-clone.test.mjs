@@ -166,4 +166,16 @@ describe('Orca WASM engine: mirror, clone and arrange', () => {
     assert.ok(wide > tight + 20, `a 40 mm spacing leaves a larger gap (${wide}) than 1 mm (${tight})`);
     assert.ok(wide >= 39, `the gap is at least the requested spacing (${wide})`);
   });
+
+  test('moveObject reorders the list and keeps ids', async () => {
+    const ids = async () => (await core.call('listObjects', {})).map((o) => o.id);
+    for (let i = 0; i < 3; i++) await core.call('addModel', { path: '/models/wedge.obj' });
+    const [a, b, c] = (await ids()).slice(-3);
+    assert.deepEqual((await ids()).slice(-3), [a, b, c]);
+    assert.equal((await core.call('moveObject', { objectId: c, toIndex: (await ids()).indexOf(a) })).index, (await ids()).indexOf(c));
+    assert.deepEqual((await ids()).slice(-3), [c, a, b]);
+    await core.call('moveObject', { objectId: c, toIndex: 999 });
+    assert.deepEqual((await ids()).slice(-3), [a, b, c]);
+    await assert.rejects(core.call('moveObject', { objectId: 123456789, toIndex: 0 }), /Object not found/);
+  });
 });
