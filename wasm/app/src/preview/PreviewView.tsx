@@ -5,7 +5,7 @@
  * vertical layer slider, horizontal move slider, legend, and statistics.
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
 import { usePreviewStore } from './previewStore';
 import * as previewModule from './orcaPreviewModule';
@@ -16,6 +16,8 @@ import { SliceStatsPanel } from './SliceStatsPanel';
 import { CustomGcodeDialog } from './CustomGcodeDialog';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
 import { GCodeWindow } from './GCodeWindow';
+import { resolveBedAssets } from '../plate/bedAssets';
+import { displayBedOutline, loadBedModelOutline } from '../plate/bedModelOutline';
 import { useTranslation } from "../i18n";
 
 export const PreviewView: React.FC = () => {
@@ -26,6 +28,11 @@ export const PreviewView: React.FC = () => {
   // App store slice result
   const sliceResult = useAppStore((s) => s.sliceResult);
   const currentConfig = useAppStore((s) => s.currentConfig);
+  const vendor = useAppStore((s) => s.selectedVendor);
+  const printer = useAppStore((s) => s.selectedPrinter);
+  const userPresets = useAppStore((s) => s.userPresets);
+  const bedConfigLoading = useAppStore((s) => !s.isEngineReady || s.isSelectingPreset || s.isModelLoading);
+  const [bedReady, setBedReady] = useState(false);
   const isSlicing = useAppStore((s) => s.isSlicing);
   const startSlice = useAppStore((s) => s.startSlice);
 
@@ -96,16 +103,32 @@ export const PreviewView: React.FC = () => {
     };
   }, [setInitialized, updateCanvasSize]);
 
-  // Update printable bed polygon from config
+  // Resolve the same decorative footprint as Prepare before showing the bed.
+  useLayoutEffect(() => {
+    setBedReady(false);
+  }, [bedConfigLoading, isInitialized, vendor, printer, userPresets, currentConfig?.printable_area, currentConfig?.bed_custom_model]);
   useEffect(() => {
-    if (!isInitialized || !currentConfig?.printable_area) return;
-    const pairs = currentConfig.printable_area.split(',').map((pt: string) =>
+    if (bedConfigLoading || !isInitialized || !currentConfig?.printable_area) return;
+    let cancelled = false;
+    setBedReady(false);
+    const points = currentConfig.printable_area.split(',').map((pt: string) =>
       pt.trim().split('x').map(Number) as [number, number]);
-    if (pairs.length >= 3 && pairs.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))) {
-      previewModule.setBedPolygon(pairs);
+    if (points.length < 3 || !points.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))) return;
+    const systemPrinter = userPresets.find(p => p.kind === 'printer' && p.name === printer)?.inherits || printer;
+    async function updateBed() {
+      let outline = points;
+      try {
+        const assets = await resolveBedAssets(vendor, systemPrinter, { model: currentConfig.bed_custom_model || undefined });
+        if (assets.model) outline = displayBedOutline(points, await loadBedModelOutline(assets.model));
+      } catch (error) { console.warn('[Bed assets]', error); }
+      if (cancelled) return;
+      previewModule.setBedPolygon(outline);
       previewModule.render();
+      setBedReady(true);
     }
-  }, [isInitialized, currentConfig?.printable_area]);
+    void updateBed();
+    return () => { cancelled = true; };
+  }, [bedConfigLoading, isInitialized, vendor, printer, userPresets, currentConfig?.printable_area, currentConfig?.bed_custom_model]);
 
   // 2. Load G-code when slice result is available
   useEffect(() => {
@@ -257,6 +280,7 @@ export const PreviewView: React.FC = () => {
           height: '100%',
           display: 'block',
           outline: 'none',
+          visibility: bedReady ? 'visible' : 'hidden',
           cursor: 'grab',
           touchAction: 'none'
         }}

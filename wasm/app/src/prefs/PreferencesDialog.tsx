@@ -53,7 +53,7 @@ export const PreferencesDialog: React.FC = () => {
             aria-label={t("Close Preferences")}
             onClick={close}
           >
-            {t("&times;")}</button>
+            ×</button>
         </div>
 
         {/* Tab navigation */}

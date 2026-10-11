@@ -37,4 +37,4 @@ export interface BedConfig {
   center: [number, number];
 }
 
-export type GizmoMode = 'translate' | 'rotate' | 'scale';
+export type GizmoMode = 'translate' | 'rotate' | 'scale' | null;

@@ -75,7 +75,7 @@ async function runSuite(browserType, name) {
 
     log('copy and paste make an independent object of each copied one');
     await page.keyboard.press('Control+c');
-    assert.equal((await state()).clipboard, 2);
+    await page.waitForFunction(() => window.__plateStore.getState().clipboard.length === 2);
     await page.keyboard.press('Control+v');
     await page.waitForFunction(() => window.__plateStore.getState().objects.length === 4, null, { timeout: 30000 });
     assert.equal(await page.evaluate(() => window.__plateStore.getState().extraSelection.length >= 1), true, 'the pasted objects are selected');
@@ -88,6 +88,47 @@ async function runSuite(browserType, name) {
     await addCube(1);
     await page.keyboard.press('Control+d');
     await page.waitForFunction(() => window.__plateStore.getState().objects.length === 0, null, { timeout: 30000 });
+    log('Delete removes the selected copy and retains its sibling');
+    await addCube(1);
+    await page.keyboard.press('Control+a');
+    await page.waitForFunction(() => window.__plateStore.getState().selectedInstanceId !== null);
+    await page.keyboard.press('Control+k');
+    await page.waitForFunction(() => window.__plateStore.getState().objects[0].instances.length === 2);
+    await page.keyboard.press('Delete');
+    await page.waitForFunction(() => window.__plateStore.getState().objects.length === 1 && window.__plateStore.getState().objects[0].instances.length === 1);
+    await page.keyboard.press('Control+d');
+    await page.waitForFunction(() => window.__plateStore.getState().objects.length === 0);
+    log('Copy retains only the selected instance after deleting its source');
+    await addCube(1);
+    await page.evaluate(async () => {
+      const store = window.__plateStore.getState();
+      const object = store.objects[0];
+      store.selectObject(object.id, object.instances[0].id);
+      await store.duplicateSelected();
+      await window.__plateStore.getState().copySelected();
+      await window.__plateStore.getState().deleteAll();
+      await window.__plateStore.getState().pasteClipboard();
+    });
+    assert.equal(await page.evaluate(() => window.__plateStore.getState().objects[0].instances.length), 1);
+    log('Cut removes the selected source and permits repeated paste');
+    await page.keyboard.press('Control+x');
+    await page.waitForFunction(() => window.__plateStore.getState().objects.length === 0);
+    await page.keyboard.press('Control+v');
+    await page.waitForFunction(() => window.__plateStore.getState().objects.length === 1);
+    await page.keyboard.press('Control+v');
+    await page.waitForFunction(() => window.__plateStore.getState().objects.length === 2);
+    log('Duplicate Current Plate copies objects and undo restores the original plate count');
+    const originalPlateCount = await page.evaluate(() => window.__platesStore.getState().plates.length);
+    const originalObjectCount = await page.evaluate(() => window.__plateStore.getState().objects.length);
+    await page.evaluate(async () => {
+      await window.__platesStore.getState().fetchPlates();
+      await window.__platesStore.getState().duplicatePlate(window.__platesStore.getState().activePlateIndex);
+    });
+    assert.equal(await page.evaluate(() => window.__platesStore.getState().error), null);
+    assert.equal(await page.evaluate(() => window.__platesStore.getState().plates.length), originalPlateCount + 1);
+    assert.equal(await page.evaluate(() => window.__plateStore.getState().objects.length), originalObjectCount * 2);
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction((count) => window.__platesStore.getState().plates.length === count, originalPlateCount);
     log('all checks passed');
   } finally {
     await browser.close();

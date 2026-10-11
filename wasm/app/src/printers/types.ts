@@ -1,4 +1,4 @@
-export type HostType = 'moonraker' | 'octoprint' | 'prusalink' | 'prusaconnect' | 'bambu' | 'flashforge';
+export type HostType = 'moonraker' | 'octoprint' | 'prusalink' | 'prusaconnect' | 'bambu' | 'bambu-cloud' | 'creality-cloud' | 'flashforge';
 
 export const HOST_TYPE_LABELS: Record<HostType, string> = {
   moonraker: 'Klipper (Moonraker)',
@@ -6,6 +6,8 @@ export const HOST_TYPE_LABELS: Record<HostType, string> = {
   prusaconnect: 'Prusa Connect (cloud)',
   octoprint: 'OctoPrint',
   bambu: 'Bambu Lab (LAN mode)',
+  'bambu-cloud': 'Bambu Cloud',
+  'creality-cloud': 'Creality Cloud',
   flashforge: 'Flashforge'
 };
 
@@ -30,6 +32,11 @@ export interface PhysicalPrinter {
   /** PrusaLink / HTTP digest credentials. */
   printhost_user?: string;
   printhost_password?: string;
+  /** Cloud login email, separate from the account's MQTT username or user ID. */
+  cloud_account?: string;
+  cloud_region?: 'global' | 'china';
+  /** Cloud telemetry identifier, separate from the printer's device name/serial. */
+  cloud_device_id?: string;
   /** Bambu device serial number. */
   serial?: string;
   /** Go through the app server's printer gateway. Needed unless the printer allows this origin. */
@@ -74,6 +81,8 @@ export interface PrinterFilament {
   material: string;
   color?: string;
   presetId?: string;
+  /** Physical tool index, when the printer reports a sparse tool map. */
+  slotIndex?: number;
 }
 
 export interface PrinterState {

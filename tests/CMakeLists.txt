@@ -105,7 +105,7 @@ endfunction()
 
 add_subdirectory(libnest2d)
 add_subdirectory(libslic3r)
-if (NOT EMSCRIPTEN)
+if (NOT EMSCRIPTEN AND SLIC3R_GUI)
 add_subdirectory(slic3rutils)
 endif ()
 add_subdirectory(fff_print)

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
+import { isNoRuleFix } from '../engine/ruleFixes';
 import { ModalBackdrop } from '../components/ModalBackdrop';
 import { useTranslation } from "../i18n";
 
@@ -33,7 +34,7 @@ export const FixesDialog: React.FC = () => {
             <h4>{t("Proposed adjustments:")}</h4>
             <ul>
               {pendingFixes
-                .filter((f) => !f.reason.includes('[No:'))
+                .filter((f) => !isNoRuleFix(f))
                 .map((f) => (
                   <li key={f.key}>
                     <strong>{f.key}</strong>: <code>{f.value}</code>

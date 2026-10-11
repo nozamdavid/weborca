@@ -20,6 +20,7 @@ export const ManagePresetsDialog: React.FC = () => {
     selectedProcess,
     selectedFilament,
     selectedPrinter,
+    isSelectingPreset,
     duplicateUserPresetAction,
     renameUserPresetAction,
     deleteUserPresetAction,
@@ -296,6 +297,7 @@ export const ManagePresetsDialog: React.FC = () => {
               key={k}
               type="button"
               data-testid={`manage-tab-${k}`}
+              disabled={isSelectingPreset}
               onClick={() => handleKindChange(k)}
               style={{
                 flex: 1,
@@ -367,6 +369,7 @@ export const ManagePresetsDialog: React.FC = () => {
             <select
               id="manage-preset-target-select"
               data-testid="manage-preset-select"
+              disabled={isSelectingPreset}
               className="form-control"
               value={selectedPreset}
               onChange={(e) => {
@@ -432,6 +435,7 @@ export const ManagePresetsDialog: React.FC = () => {
               <input
                 type="text"
                 data-testid="duplicate-preset-input"
+                disabled={isSelectingPreset}
                 className="form-control"
                 placeholder={t("Name for duplicate copy...")}
                 value={duplicateName}
@@ -454,7 +458,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 type="button"
                 className="btn btn-primary"
                 data-testid="duplicate-preset-confirm-btn"
-                disabled={!duplicateName.trim()}
+                disabled={isSelectingPreset || !duplicateName.trim()}
                 onClick={handleDuplicate}
                 style={{ whiteSpace: 'nowrap' }}
               >
@@ -483,6 +487,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 <input
                   type="text"
                   data-testid="rename-preset-input"
+                  disabled={isSelectingPreset}
                   className="form-control"
                   placeholder={t("New preset name...")}
                   value={renameName}
@@ -505,7 +510,7 @@ export const ManagePresetsDialog: React.FC = () => {
                   type="button"
                   className="btn btn-secondary"
                   data-testid="rename-preset-confirm-btn"
-                  disabled={!renameName.trim() || renameName.trim() === selectedPreset}
+                  disabled={isSelectingPreset || !renameName.trim() || renameName.trim() === selectedPreset}
                   onClick={handleRename}
                   style={{ whiteSpace: 'nowrap' }}
                 >
@@ -533,6 +538,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 type="button"
                 className="btn btn-danger"
                 data-testid="delete-preset-confirm-btn"
+                disabled={isSelectingPreset}
                 onClick={handleDelete}
                 style={{ fontSize: '0.82rem', padding: '4px 10px' }}
               >
@@ -560,6 +566,7 @@ export const ManagePresetsDialog: React.FC = () => {
                   type="button"
                   className="btn btn-secondary"
                   data-testid="export-bundle-btn"
+                  disabled={isSelectingPreset}
                   onClick={handleExportBundle}
                   style={{ fontSize: '0.78rem', padding: '4px 8px' }}
                   aria-label={t("Export all user presets to bundle JSON")}
@@ -570,7 +577,7 @@ export const ManagePresetsDialog: React.FC = () => {
                   className="btn btn-secondary"
                   data-testid="export-desktop-printer-btn"
                   onClick={() => handleExportArchive('printer')}
-                  disabled={activeKind !== 'printer' || !isSelectedUserPreset}
+                  disabled={isSelectingPreset || activeKind !== 'printer' || !isSelectedUserPreset}
                   style={{ fontSize: '0.78rem', padding: '4px 8px' }}
                   aria-label={t("Export printer preset archive")}
                 >
@@ -580,7 +587,7 @@ export const ManagePresetsDialog: React.FC = () => {
                   className="btn btn-secondary"
                   data-testid="export-desktop-filament-btn"
                   onClick={() => handleExportArchive('filament')}
-                  disabled={activeKind !== 'filament' || !isSelectedUserPreset}
+                  disabled={isSelectingPreset || activeKind !== 'filament' || !isSelectedUserPreset}
                   style={{ fontSize: '0.78rem', padding: '4px 8px' }}
                   aria-label={t("Export filament preset archive")}
                 >
@@ -589,6 +596,7 @@ export const ManagePresetsDialog: React.FC = () => {
                   type="button"
                   className="btn btn-secondary"
                   data-testid="export-desktop-zip-btn"
+                  disabled={isSelectingPreset}
                   onClick={handleExportZipArchive}
                   style={{ fontSize: '0.78rem', padding: '4px 8px' }}
                   aria-label={t("Export all presets as zip archive")}
@@ -609,6 +617,7 @@ export const ManagePresetsDialog: React.FC = () => {
               <select
                 id="bundle-conflict-strategy"
                 data-testid="bundle-conflict-strategy"
+                disabled={isSelectingPreset}
                 className="form-control"
                 value={conflictStrategy}
                 onChange={(e) => setConflictStrategy(e.target.value as ConflictStrategy)}
@@ -634,6 +643,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 ref={fileInputRef}
                 id="bundle-file-input"
                 data-testid="bundle-file-input"
+                disabled={isSelectingPreset}
                 accept=".json,.ini,.zip,.orca_printer,.orca_filament,.orca_bundle,application/json"
                 onChange={handleFileImport}
                 aria-label={t("Import preset bundle file")}
@@ -643,6 +653,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 type="button"
                 className="btn btn-primary"
                 data-testid="import-bundle-btn"
+                disabled={isSelectingPreset}
                 onClick={() => fileInputRef.current?.click()}
                 style={{ fontSize: '0.85rem', padding: '6px 12px' }}
                 aria-label={t("Choose preset bundle or archive file to import")}
@@ -659,6 +670,7 @@ export const ManagePresetsDialog: React.FC = () => {
               <textarea
                 id="bundle-json-textarea"
                 data-testid="bundle-json-textarea"
+                disabled={isSelectingPreset}
                 aria-label={t("Paste bundle JSON or INI content")}
                 placeholder={t("{\"format\":\"orcaslicer-web-preset-bundle\",\"version\":1,\"presets\":[...]} or preset JSON / INI")}
                 value={bundleJsonText}
@@ -686,7 +698,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 type="button"
                 className="btn btn-secondary"
                 data-testid="import-bundle-json-btn"
-                disabled={!bundleJsonText.trim()}
+                disabled={isSelectingPreset || !bundleJsonText.trim()}
                 onClick={handleJsonImport}
                 style={{ alignSelf: 'flex-start', fontSize: '0.8rem', padding: '4px 10px' }}
               >

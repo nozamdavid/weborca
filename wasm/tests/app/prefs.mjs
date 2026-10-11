@@ -98,6 +98,11 @@ async function runSuite(browserType, name) {
     assert.equal(sceneAfterToggle.showGrid, false, 'scene showGrid updated to false');
     assert.equal(sceneAfterToggle.showLabels, true, 'scene showLabels updated to true');
 
+    assert.equal(await dialog.locator('.close-btn').innerText(), '×');
+    await page.evaluate(() => window.__prefsStore.getState().setCameraPref('defaultCameraType', 'orthographic'));
+    assert.equal(await page.evaluate(() => window.__plateScene.cameraType), 'orthographic', 'default camera selection applies to the scene');
+    await page.evaluate(() => window.__prefsStore.getState().setCameraPref('defaultCameraType', 'perspective'));
+
     // Close Preferences dialog
     await dialog.locator('#pref-close-btn').click();
     await page.waitForSelector('.modal-content', { state: 'detached' });
@@ -151,7 +156,8 @@ async function runSuite(browserType, name) {
     assert.ok(diffNormal * diffInverted < 0, 'wheel inversion successfully flipped the zoom direction');
 
     log('Step 8: Testing preferences persistence across reload...');
-    // Reload page
+    // A newly chosen default projection also survives startup.
+    await page.evaluate(() => window.__prefsStore.getState().setCameraPref('defaultCameraType', 'orthographic'));
     await page.reload();
     await page.waitForFunction(
       () => window.__appStore?.getState().isEngineReady && window.__plateScene,
@@ -159,6 +165,7 @@ async function runSuite(browserType, name) {
       { timeout: 90000 }
     );
 
+    assert.equal(await page.evaluate(() => window.__plateScene.cameraType), 'orthographic');
     const reloadedState = await page.evaluate(() => {
       const s = window.__plateScene;
       const p = window.__prefsStore.getState();

@@ -516,15 +516,17 @@ static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator& p
                         }
                     }
 
-                    // Prefer non-overhang point as a starting point.
-                    for (const std::pair<Point, PointInfo> pt : point_occurrence)
-                        if (pt.second.occurrence == 1) {
-                            start_point = pt.first;
-                            if (!pt.second.is_overhang) {
-                                start_point = pt.first;
-                                break;
-                            }
-                        }
+                    // Hash iteration differs across standard libraries. Prefer a supported endpoint,
+                    // then use coordinate order so open walls keep the same direction on every platform.
+                    auto best_endpoint = point_occurrence.cend();
+                    for (auto it = point_occurrence.cbegin(); it != point_occurrence.cend(); ++it)
+                        if (it->second.occurrence == 1 &&
+                            (best_endpoint == point_occurrence.cend() ||
+                             (!it->second.is_overhang && best_endpoint->second.is_overhang) ||
+                             (it->second.is_overhang == best_endpoint->second.is_overhang && it->first < best_endpoint->first)))
+                            best_endpoint = it;
+                    if (best_endpoint != point_occurrence.cend())
+                        start_point = best_endpoint->first;
                 }
 
                 chain_and_reorder_extrusion_paths(paths, &start_point);

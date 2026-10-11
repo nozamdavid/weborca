@@ -299,4 +299,176 @@ describe('Orca WASM Engine Object List & Modifiers Test Suite', () => {
     for (const id of ids) await core.call('deleteVolume', { objectId, volumeId: id });
   });
 
+  test('native STL export excludes modifiers and preserves mirrored instance bounds', async () => {
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    const object = (await core.call('listObjects', {}))[0];
+    await core.call('addVolume', { objectId: object.id, type: 'modifier', shape: 'cube', size: [50, 50, 50] });
+    await core.call('setInstanceTransform', { objectId: object.id, instanceId: object.instances[0].id, offset: [35, 50, 0], scale: [2, 1, 1] });
+    await core.call('mirrorInstance', { objectId: object.id, instanceId: object.instances[0].id, axis: 0 });
+    const before = await core.call('listObjects', {});
+    await core.call('exportModel', { path: '/out/native.stl', format: 'stl' });
+    const bytes = core.readFile('/out/native.stl');
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    assert.equal(view.getUint32(80, true), 12, 'modifier must not be exported');
+    const bounds = [[], [], []];
+    for (let face = 0; face < 12; face++)
+      for (let vertex = 0; vertex < 3; vertex++)
+        for (let axis = 0; axis < 3; axis++) bounds[axis].push(view.getFloat32(84 + face * 50 + 12 + vertex * 12 + axis * 4, true));
+    assert.deepEqual(bounds.map(values => Math.max(...values) - Math.min(...values)), [40, 20, 20]);
+    assert.deepEqual(bounds.slice(0, 2).map(values => (Math.max(...values) + Math.min(...values)) / 2), [15, 60]);
+    assert.deepEqual(await core.call('listObjects', {}), before, 'export is read-only');
+    await core.call('exportModel', { path: '/out/generic.3mf', format: '3mf' });
+    const generic = core.readFile('/out/generic.3mf');
+    assert.ok(generic.byteLength > 100);
+    await core.call('openProject', { path: '/out/generic.3mf' });
+    assert.equal((await core.call('listObjects', {})).length, 1, 'generic 3MF opens as geometry');
+  });
+  test('placing an imported group preserves existing objects and places it on the requested plate', async () => {
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    const original = (await core.call('listObjects'))[0];
+    await core.call('setInstanceTransform', { objectId: original.id, instanceId: original.instances[0].id, offset: [50, 65, 10] });
+    const before = (await core.call('listObjects'))[0];
+    const added = await core.call('addModel', { path: '/models/cube.obj' });
+    await core.call('placeObjects', { objectIds: added.objects.map(o => o.id), plateIndex: 0 });
+    const objects = await core.call('listObjects');
+    assert.deepEqual(objects.find(o => o.id === original.id), before);
+    const placed = objects.find(o => o.id === added.objects[0].id);
+    assert.equal(placed.instances[0].offset[0], 150);
+    assert.equal(placed.instances[0].offset[1], 150);
+    assert.equal(placed.instances[0].offset[2], 10);
+    await assert.rejects(core.call('placeObjects', { objectIds: [placed.id], plateIndex: 100 }), /Invalid plate/);
+  });
+
+  test('clipboard snapshots selected instances and retains settings after cut and deletion', async () => {
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    const original = (await core.call('listObjects'))[0];
+    await core.call('setObjectConfig', { objectId: original.id, options: { layer_height: '0.12' } });
+    await core.call('duplicateInstance', { objectId: original.id, instanceId: original.instances[0].id });
+    await core.call('copySelection', { instances: [{ objectId: original.id, instanceId: original.instances[0].id }], cut: true });
+    assert.equal((await core.call('listObjects'))[0].instances.length, 1);
+    await core.call('deleteObject', { objectId: original.id });
+    const first = await core.call('pasteSelection', { offset: [10, 20, 0] });
+    const second = await core.call('pasteSelection');
+    assert.notEqual(first.objectIds[0], second.objectIds[0]);
+    const objects = await core.call('listObjects');
+    assert.equal(objects.length, 2);
+    assert.ok(objects.every(o => o.instances.length === 1));
+    const tree = await core.call('getObjectTree');
+    assert.equal(tree.objects.find(o => o.id === first.objectIds[0]).config.layer_height, '0.12');
+  });
+
+  test('deleting selected instances retains siblings and the independent clipboard', async () => {
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    const original = (await core.call('listObjects'))[0];
+    await core.call('duplicateInstance', { objectId: original.id, instanceId: original.instances[0].id });
+    const refs = (await core.call('listObjects'))[0].instances.map(instance => ({ objectId: original.id, instanceId: instance.id }));
+    await core.call('copySelection', { instances: [refs[0]] });
+    await assert.rejects(core.call('deleteInstances', { instances: [refs[0], { objectId: original.id, instanceId: 999999999 }] }), /instance not found/);
+    assert.equal((await core.call('listObjects'))[0].instances.length, 2, 'invalid selections must not partially delete');
+    await core.call('deleteInstances', { instances: [refs[1], refs[1]] });
+    assert.deepEqual((await core.call('listObjects'))[0].instances.map(instance => instance.id), [refs[0].instanceId]);
+    await core.call('deleteInstances', { instances: [refs[0]] });
+    assert.equal((await core.call('listObjects')).length, 0);
+    await core.call('pasteSelection');
+    assert.equal((await core.call('listObjects'))[0].instances.length, 1, 'Delete must preserve the earlier clipboard');
+  });
+
+  test('indexed option edits retain sibling slots and project native serialized values', async () => {
+    await core.call('selectPresets', { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: ['Generic PLA @System', 'Generic PLA @System'] });
+    await core.call('setOptions', { options: { nozzle_temperature: '210,240', filament_retraction_length: '1,2,3,4' } });
+    assert.equal((await core.call('setOption', { key: 'nozzle_temperature', value: '245', filamentIndex: 1 })).success, true);
+    assert.equal((await core.call('getConfig')).nozzle_temperature, '210,245');
+    assert.deepEqual(await core.call('getOption', { key: 'nozzle_temperature', filamentIndex: 1 }), { value: '245' });
+    assert.deepEqual(await core.call('getOption', { key: 'nozzle_temperature', filamentIndex: 1, serializedValue: '210,240' }), { value: '240' });
+    const text = 'M900 K0.05\n; comment with "quotes"';
+    await core.call('setOption', { key: 'filament_start_gcode', value: text, filamentIndex: 1 });
+    assert.equal((await core.call('getOption', { key: 'filament_start_gcode', filamentIndex: 1 })).value, text);
+    assert.equal((await core.call('getOption', { key: 'filament_retraction_length', filamentIndex: 1, layoutIndex: 1 })).value, '4');
+    await core.call('setOption', { key: 'filament_retraction_length', value: '9', filamentIndex: 1, layoutIndex: 1 });
+    assert.equal((await core.call('getConfig')).filament_retraction_length, '1,2,3,9');
+    const before = await core.call('getConfig');
+    for (const value of ['invalid', '240junk', '240.5', '2147483648', '', '240,', '240,241']) {
+      assert.equal((await core.call('setOption', { key: 'nozzle_temperature', value, filamentIndex: 0 })).success, false, value);
+    }
+    for (const value of ['NaN', 'Infinity', '1.2junk']) {
+      assert.equal((await core.call('setOption', { key: 'filament_retraction_length', value, filamentIndex: 0, layoutIndex: 0 })).success, false, value);
+    }
+    for (const op of ['getOption', 'setOption']) {
+      for (const filamentIndex of [-1, 2, 1.5]) await assert.rejects(core.call(op, { key: 'nozzle_temperature', value: '250', filamentIndex }), /Invalid filament index/);
+      await assert.rejects(core.call(op, { key: 'nozzle_temperature', value: '250', filamentIndex: 0, layoutIndex: 1.5 }), /Invalid layout index/);
+      await assert.rejects(core.call(op, { key: 'layer_height', value: '0.2', filamentIndex: 1 }), /Not a filament key/);
+    }
+    for (const filamentIndex of [-1, 2, 1.5]) {
+      await assert.rejects(core.call('resetOptions', { overrides: { nozzle_temperature: '240' }, filamentIndex }), /Invalid filament index/);
+      await assert.rejects(core.call('resetOptions', { key: 'nozzle_temperature', filamentIndex }), /Invalid filament index/);
+    }
+    await assert.rejects(core.call('resetOptions', { overrides: { nozzle_temperature: '240' }, filamentIndex: null }), /Invalid filament index/);
+    await assert.rejects(core.call('resetOptions', { key: 'nozzle_temperature', filamentIndex: 0, layoutIndex: 1.5 }), /Invalid layout index/);
+    await assert.rejects(core.call('resetOptions', { key: 'nozzle_temperature', filamentIndex: 0, layoutIndex: 99 }), /Invalid layout index/);
+    await assert.rejects(core.call('getOption', { key: 'nozzle_temperature', serializedValue: 'invalid' }), /Invalid serialized/);
+    assert.deepEqual(await core.call('getConfig'), before, 'rejected edits must preserve configuration');
+  });
+
+  test('literal scalar text preserves newlines, backslashes and quotes through native serialization', async () => {
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    const notes = 'First line\nC:\\new\\test; "quoted"';
+    assert.equal((await core.call('setOption', { key: 'notes', value: notes })).success, true);
+    assert.equal((await core.call('getOption', { key: 'notes' })).value, notes);
+    const serialized = (await core.call('getConfig')).notes;
+    assert.equal((await core.call('getOption', { key: 'notes', serializedValue: serialized })).value, notes);
+    await core.call('saveProject', { path: '/out/literal-notes.3mf' });
+    fs.writeFileSync(path.join(scratchDir, 'literal-notes.3mf'), core.readFile('/out/literal-notes.3mf'));
+    await core.call('setOption', { key: 'notes', value: 'Other notes' });
+    await core.call('openProject', { path: '/out/literal-notes.3mf' });
+    assert.equal((await core.call('getOption', { key: 'notes' })).value, notes);
+  });
+
+  test('desktop filament merge preserves independent slot values and 3MF overrides', async () => {
+    await core.call('selectPresets', { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: ['Generic PLA @System', 'Generic PLA @System'] });
+    const before = await core.call('getConfig');
+    const slots = [
+      { preset: 'Generic PLA @System', values: { nozzle_temperature: '210', filament_type: 'PLA', filament_colour: '#FF0000' } },
+      { preset: 'Generic PLA @System', values: { nozzle_temperature: '240', filament_type: 'PETG', filament_colour: '#00FF00' } }
+    ];
+    const merged = await core.call('mergeFilamentPresets', { slots });
+    assert.equal(merged.nozzle_temperature, '210,240');
+    assert.equal(merged.filament_type, 'PLA;PETG');
+    assert.equal(merged.filament_colour, '#FF0000;#00FF00');
+    assert.deepEqual(await core.call('getConfig'), before, 'merging must not change active presets');
+    await assert.rejects(core.call('mergeFilamentPresets', { slots: [{ preset: 'Generic PLA @System', values: { layer_height: '0.3' } }] }), /Not a filament option/);
+    await core.call('setOptions', { options: merged });
+    const slot0 = await core.call('getConfig', { filamentIndex: 0, keys: ['nozzle_temperature', 'filament_type', 'filament_colour'] });
+    const slot1 = await core.call('getConfig', { filamentIndex: 1, keys: ['nozzle_temperature', 'filament_type', 'filament_colour'] });
+    assert.deepEqual(slot0, { nozzle_temperature: '210', filament_type: 'PLA', filament_colour: '#FF0000' });
+    assert.deepEqual(slot1, { nozzle_temperature: '240', filament_type: 'PETG', filament_colour: '#00FF00' });
+    await assert.rejects(core.call('getConfig', { filamentIndex: 2 }), /Invalid filament index/);
+    await core.call('saveProject', { path: '/out/filament-slots.3mf' });
+    await core.call('openProject', { path: '/out/filament-slots.3mf' });
+    const restored = await core.call('getConfig');
+    assert.equal(restored.nozzle_temperature, '210,240');
+    assert.equal(restored.filament_type, 'PLA;PETG');
+
+    // Single slot override merges with per-slot native defaults
+    const singleOverrideSlots = [
+      { preset: 'Generic PLA @System', values: {} },
+      { preset: 'Generic PLA @System', values: { nozzle_temperature: '250' } }
+    ];
+    const singleOverrideMerged = await core.call('mergeFilamentPresets', { slots: singleOverrideSlots });
+    assert.equal(singleOverrideMerged.nozzle_temperature, '210,250');
+
+    // Valid resetOptions with per-slot overrides computes remaining overrides correctly
+    const remaining = await core.call('resetOptions', {
+      overrides: { nozzle_temperature: '210,240', filament_colour: '#FF0000;#00FF00' },
+      filamentIndex: 1
+    });
+    assert.ok(remaining.filamentOverrides !== undefined);
+    const savedBaseline = await core.call('resetOptions', {
+      filamentIndex: 1,
+      overrides: { nozzle_temperature: '211,240', flush_volumes_matrix: '0,500,350,0' },
+      baseline: { nozzle_temperature: '220,237' }
+    });
+    assert.equal(savedBaseline.filamentOverrides.nozzle_temperature, '211,237');
+    assert.equal(savedBaseline.filamentOverrides.flush_volumes_matrix, '0,500,350,0');
+  });
+
 });

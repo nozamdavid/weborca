@@ -27,6 +27,7 @@
 
 #include <set>
 #include <sstream>
+#include <string>
 #include <vector>
 #include <utility>
 #include <catch2/matchers/catch_matchers_vector.hpp>
@@ -680,6 +681,28 @@ SCENARIO("update_non_diff_values_to_base_config keeps a project's changed values
 //         }
 //     }
 // }
+
+TEST_CASE("JSON scalar strings preserve literal escapes and bed paths", "[Config]") {
+    ScopedTemporaryFile tmp(".json");
+    const std::string text = "First line\nC:\\new\\test; \"quoted\"\nLiteral \\n and \\r, trailing \\";
+    const std::vector<std::string> keys = {"notes", "machine_start_gcode", "bed_custom_texture", "bed_custom_model"};
+    std::unique_ptr<DynamicPrintConfig> config(DynamicPrintConfig::new_from_defaults_keys(keys));
+    for (const std::string &key : keys)
+        config->option<ConfigOptionString>(key, true)->value = text;
+    config->save_to_json(tmp.string(), "test_preset", "User", "1.0.0.0");
+
+    DynamicPrintConfig reloaded;
+    ConfigSubstitutionContext substitutions(ForwardCompatibilitySubstitutionRule::Disable);
+    std::map<std::string, std::string> key_values;
+    std::string reason;
+    REQUIRE(reloaded.load_from_json(tmp.string(), substitutions, true, key_values, reason) == 0);
+    CHECK(reason.empty());
+    for (const std::string &key : keys) {
+        CAPTURE(key);
+        REQUIRE(reloaded.option<ConfigOptionString>(key) != nullptr);
+        CHECK(reloaded.option<ConfigOptionString>(key)->value == text);
+    }
+}
 
 TEST_CASE("save_to_json round-trips plugin capability references as strings", "[Config][plugins]") {
     ScopedTemporaryFile tmp(".json");

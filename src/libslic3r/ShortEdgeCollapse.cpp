@@ -1,4 +1,5 @@
 #include "ShortEdgeCollapse.hpp"
+#include "Random.hpp"
 #include "Point.hpp"
 #include "TriangleMesh.hpp"
 #include "libslic3r/NormalUtils.hpp"
@@ -100,7 +101,7 @@ void its_short_edge_collpase(indexed_triangle_set &mesh, size_t target_triangle_
         float max_edge_len_squared = edge_len * edge_len;
 
         //shuffle the faces and traverse in random order, this MASSIVELY improves the quality of the result
-        std::shuffle(face_indices.begin(), face_indices.end(), generator);
+        Random::shuffle(face_indices.begin(), face_indices.end(), generator);
         
         int allowed_face_removals = int(face_indices.size()) - int(target_triangle_count);
         for (const size_t &face_idx : face_indices) {

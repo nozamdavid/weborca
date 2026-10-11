@@ -62,9 +62,9 @@ summarize_file() {
     local norm="$2"
 
     local lc
-    lc=$(grep -c '^[[:space:]]*;LAYER_CHANGE' "$orig" 2>/dev/null || true)
+    lc=$(grep -Ec '^[[:space:]]*;[[:space:]]*(LAYER_CHANGE|CHANGE_LAYER)([[:space:]]|$)' "$orig" 2>/dev/null || true)
     if [ "$lc" -eq 0 ]; then
-        lc=$(grep -c '^[[:space:]]*;Z:' "$orig" 2>/dev/null || true)
+        lc=$(grep -c '^[[:space:]]*;[[:space:]]*Z:' "$orig" 2>/dev/null || true)
     fi
 
     awk -v file="$orig" -v layers="$lc" '

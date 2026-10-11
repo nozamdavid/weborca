@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { BedAssetsSettings } from '../plate/BedAssetsSettings';
 import { SettingsGroup } from './SettingsGroup';
+import { isLineVisible } from './visibility';
 import { ModalBackdrop, confirmDialog } from '../components/ModalBackdrop';
 import { useTranslation } from "../i18n";
 
@@ -9,10 +10,16 @@ export const SettingsDialog: React.FC = () => {
     const { t } = useTranslation();
   const {
     activeDialog,
+    settingsMode,
+    configDefs,
+    rulesState,
     closeDialog,
+    openDialog,
     layout,
     selectedPrinter,
     selectedFilament,
+    selectedFilaments,
+    activeFilamentSlot,
     activePrinterPage,
     setActivePrinterPage,
     activeFilamentPage,
@@ -41,7 +48,7 @@ export const SettingsDialog: React.FC = () => {
   const tabId = isPrinter ? 'printer' : 'filament';
   const title = isPrinter
     ? `${t('Printer Settings')} - ${selectedPrinter || t('Default')}`
-    : `${t('Filament Settings')} - ${selectedFilament || t('Default')}`;
+    : `${t('Filament Settings')} - ${selectedFilaments[activeFilamentSlot || 0] || selectedFilament || t('Default')}`;
 
   const tabLayout = layout?.tabs.find((t) => t.id === tabId);
   const pages = tabLayout?.pages || [];
@@ -78,6 +85,37 @@ export const SettingsDialog: React.FC = () => {
           </div>
         </div>
 
+        {/* Filament Slot navigation (multi-material setups) */}
+        {!isPrinter && selectedFilaments.length > 1 && (
+          <div
+            className="settings-dialog-slots"
+            style={{
+              display: 'flex',
+              gap: '8px',
+              padding: '8px 16px',
+              backgroundColor: 'var(--panel-bg, #1a1a1e)',
+              borderBottom: '1px solid var(--border-color, #2a2a2e)',
+              alignItems: 'center',
+              overflowX: 'auto'
+            }}
+          >
+            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted, #888)' }}>
+              {t('Slot')}:
+            </span>
+            {selectedFilaments.map((fName, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className={`btn btn-sm ${activeFilamentSlot === idx ? 'btn-primary' : 'btn-secondary'}`}
+                data-testid={`dialog-filament-slot-${idx}`}
+                onClick={() => openDialog('filament', idx)}
+              >
+                {t('Slot {{num}}', { num: idx + 1 })}: {fName}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Tab navigation */}
         <div className="settings-dialog-tabs">
           {pages.map((page) => (
@@ -97,9 +135,9 @@ export const SettingsDialog: React.FC = () => {
         <div className="settings-dialog-content">
           {isPrinter && currentPage === pages[0] && <BedAssetsSettings />}
           {currentPage && currentPage.groups.length > 0 ? (
-            currentPage.groups.map((group) => (
-              <SettingsGroup key={group.title} group={group} kind={tabId} />
-            ))
+            currentPage.groups.some(group => group.lines.some(line => isLineVisible(line, settingsMode, configDefs, rulesState.fields)))
+              ? currentPage.groups.map((group) => <SettingsGroup key={group.title} group={group} kind={tabId} />)
+              : <div className="empty-groups-notice">{t("No settings available in this mode.")}</div>
           ) : (
             <div className="empty-groups-notice">{t("No settings defined for this page.")}</div>
           )}

@@ -7,7 +7,7 @@ const RPC_TIMEOUT_MS = 10_000;
 const RECONNECT_MS = [1000, 3000, 8000, 15000];
 
 /** Objects worth subscribing to: everything that feeds the dashboard. */
-const SUBSCRIBED = /^(mmu|webhooks|print_stats|virtual_sdcard|display_status|toolhead|gcode_move|idle_timeout|toolchanger|fan|heater_bed|extruder\d*|heater_generic .+|temperature_sensor .*chamber.*|temperature_fan .+|fan_generic .+|heater_fan .+|controller_fan .+)$/i;
+const SUBSCRIBED = /^(mmu|filament_detect|print_task_config|filament_feed .+|webhooks|print_stats|virtual_sdcard|display_status|toolhead|gcode_move|idle_timeout|toolchanger|fan|heater_bed|extruder\d*|heater_generic .+|temperature_sensor .*chamber.*|temperature_fan .+|fan_generic .+|heater_fan .+|controller_fan .+)$/i;
 
 const isChamberName = (name: string) => /chamber/i.test(name);
 const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -39,13 +39,42 @@ export function deriveHappyHareFilaments(mmu: Record<string, any> | undefined): 
     const material = mmu.gate_material[gate];
     if (typeof material !== 'string' || !material.trim() || mmu.gate_status?.[gate] === 0) return [];
     const hex = String(mmu.gate_color?.[gate] || '').replace(/^#/, '');
-    return [{ id: `mmu:tool:${tool}:gate:${gate}`, label: `T${tool} / Gate ${gate + 1}`, material,
+    return [{ id: `mmu:tool:${tool}:gate:${gate}`, slotIndex: tool, label: `T${tool} / Gate ${gate + 1}`, material,
       color: /^[0-9a-f]{6}$/i.test(hex) ? `#${hex}` : undefined }];
   });
 }
 
+/** U1's effective configuration includes manual assignments that RFID status cannot report. */
+export function deriveSnapmakerFilaments(status: Status): PrinterFilament[] {
+  const info = Array.isArray(status.filament_detect?.info) ? status.filament_detect.info : [];
+  const config = status.print_task_config ?? {};
+  const materials = Array.isArray(config.filament_type) ? config.filament_type : [];
+  const feeds = Object.entries(status).filter(([name]) => name.startsWith('filament_feed ')).map(([, feed]) => feed);
+  return Array.from({ length: Math.max(info.length, materials.length) }, (_, tool) => tool).flatMap((tool): PrinterFilament[] => {
+    const item = info[tool];
+    const feeder = feeds.find(feed => feed[`extruder${tool}`])?.[`extruder${tool}`];
+    if (feeder?.filament_detected === false || feeder?.module_exist === false || config.filament_exist?.[tool] === false) return [];
+    const configured = typeof materials[tool] === 'string' && materials[tool].trim() && materials[tool] !== 'NONE';
+    const material = configured ? materials[tool].trim() : typeof item?.MAIN_TYPE === 'string' && item.MAIN_TYPE !== 'NONE' ? item.MAIN_TYPE.trim() : '';
+    if (!material && !feeder?.filament_detected && config.filament_exist?.[tool] !== true) return [];
+    const details = configured ? [config.filament_vendor?.[tool], config.filament_sub_type?.[tool]] : [item?.VENDOR, item?.SUB_TYPE];
+    const label = details.filter(v => typeof v === 'string' && v && v !== 'NONE').join(' ');
+    const rgb = configured ? config.filament_color?.[tool] : item?.ARGB_COLOR;
+    return [{ id: `snapmaker:tool:${tool}`, slotIndex: tool, label: `T${tool}${label ? ` / ${label}` : ''}`, material,
+      color: material && Number.isInteger(rgb) && rgb >= 0 && rgb <= 0xffffffff ? `#${(rgb & 0xffffff).toString(16).padStart(6, '0').toUpperCase()}` : undefined }];
+  });
+}
+
+export function deriveSpoolmanFilament(spool: any): PrinterFilament[] {
+  const material = spool?.filament?.material;
+  if (typeof material !== 'string' || !material.trim() || spool.archived) return [];
+  const color = typeof spool.filament.color_hex === 'string' ? spool.filament.color_hex.replace(/^#/, '') : undefined;
+  return [{ id: `spoolman:${spool.id}`, slotIndex: 0, label: `Spool ${spool.id}${spool.filament.name ? ` / ${spool.filament.name}` : ''}`, material: material.trim(),
+    color: typeof color === 'string' && /^[a-f0-9]{6}$/i.test(color) ? `#${color.toUpperCase()}` : undefined }];
+}
+
 /** Builds the dashboard state from the merged Klipper object model. */
-export function deriveMoonrakerState(status: Status, extra: { webcams?: Webcam[]; files?: PrinterFile[]; software?: string }): PrinterState {
+export function deriveMoonrakerState(status: Status, extra: { webcams?: Webcam[]; files?: PrinterFile[]; software?: string; filaments?: PrinterFilament[] }): PrinterState {
   const { state, message } = mapState(status);
   const printStats = status.print_stats ?? {};
   const active = state === 'printing' || state === 'paused' || state === 'complete';
@@ -95,7 +124,7 @@ export function deriveMoonrakerState(status: Status, extra: { webcams?: Webcam[]
     software: extra.software,
     webcams: extra.webcams,
     files: extra.files,
-    filaments: deriveHappyHareFilaments(status.mmu)
+    filaments: status.filament_detect || Array.isArray(status.print_task_config?.filament_type) ? deriveSnapmakerFilaments(status) : status.mmu ? deriveHappyHareFilaments(status.mmu) : extra.filaments ?? []
   };
 }
 
@@ -138,7 +167,7 @@ export class MoonrakerApi implements PrinterApi {
 
     const open = () => {
       const status: Status = {};
-      const extra: { webcams?: Webcam[]; files?: PrinterFile[]; software?: string } = {};
+      const extra: { webcams?: Webcam[]; files?: PrinterFile[]; software?: string; filaments?: PrinterFilament[] } = {};
       const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
       let nextId = 1;
       const socket = (ws = new WebSocket(wsUrl(this.printer, '/websocket')));
@@ -154,6 +183,22 @@ export class MoonrakerApi implements PrinterApi {
           socket.send(JSON.stringify({ jsonrpc: '2.0', method, params, id }));
         });
       const publish = () => onState(deriveMoonrakerState(status, extra));
+      let spoolRevision = 0;
+      const refreshSpool = async () => {
+        const revision = ++spoolRevision;
+        try {
+          const active = await call('server.spoolman.get_spool_id');
+          let filaments: PrinterFilament[] = [];
+          if (Number.isInteger(active.spool_id) && active.spool_id > 0) {
+            const result = await call('server.spoolman.proxy', { request_method: 'GET', path: `/v1/spool/${active.spool_id}`, use_v2_response: true });
+            if (result.error) throw new Error(result.error.message || 'Spoolman unavailable');
+            filaments = deriveSpoolmanFilament(result.response ?? result);
+          }
+          if (!stopped && ws === socket && revision === spoolRevision) { extra.filaments = filaments; publish(); }
+        } catch {
+          if (!stopped && ws === socket && revision === spoolRevision) { extra.filaments = []; publish(); }
+        }
+      };
 
       socket.onopen = async () => {
         attempt = 0;
@@ -166,10 +211,11 @@ export class MoonrakerApi implements PrinterApi {
           mergeStatus(status, subscribed.status);
           publish();
 
-          const [webcams, files, info] = await Promise.allSettled([
+          const [webcams, files, info, serverInfo] = await Promise.allSettled([
             call('server.webcams.list'),
             call('server.files.list', { root: 'gcodes' }),
-            call('printer.info')
+            call('printer.info'),
+            call('server.info')
           ]);
           if (webcams.status === 'fulfilled') {
             // An <img> can show MJPEG streams and snapshots; iframe and WebRTC cameras are left to the web UI pane.
@@ -185,6 +231,7 @@ export class MoonrakerApi implements PrinterApi {
           }
           if (info.status === 'fulfilled') extra.software = `Klipper ${info.value.software_version ?? ''}`.trim();
           publish();
+          if (serverInfo.status === 'fulfilled' && serverInfo.value.components?.includes('spoolman')) void refreshSpool();
         } catch (error) {
           onError(error instanceof Error ? error : new Error(String(error)));
         }
@@ -206,6 +253,8 @@ export class MoonrakerApi implements PrinterApi {
         } else if (message.method === 'notify_status_update' && message.params?.[0]) {
           mergeStatus(status, message.params[0]);
           publish();
+        } else if (message.method === 'notify_active_spool_set' || message.method === 'notify_spoolman_status_changed') {
+          void refreshSpool();
         } else if (message.method === 'notify_klippy_disconnected' || message.method === 'notify_klippy_shutdown') {
           onError(new Error('Klipper disconnected'));
         }

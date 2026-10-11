@@ -20,7 +20,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
-import { unzipSync } from '../../app/node_modules/fflate/esm/index.mjs';
+import draco3d from '../../app/node_modules/draco3d/draco3d.js';
+import { unzipSync, zipSync } from '../../app/node_modules/fflate/esm/index.mjs';
 import { startServer, stopServer } from './lib/dist.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -100,7 +101,6 @@ async function runSuite(browserType, name) {
     assert.equal(stlTriangleCount, 12, 'STL header triangle count must equal 12');
     log(`STL export verified: ${stlBuffer.length} bytes, ${stlTriangleCount} triangles`);
 
-
     log('Setting custom bed texture before saving...');
     await page.evaluate(() => window.__appStore.getState().applyOptionChange('bed_custom_texture', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==', 'printer'));
     log('5. Save project (.3mf) and download archive...');
@@ -138,20 +138,8 @@ async function runSuite(browserType, name) {
       await page.waitForFunction(() => window.__plateStore?.getState().objects.length >= 1, null, { timeout: 30000 });
       const restoredNames = await objectNames();
 
-
-      
-      
-      
-      
       assert.equal(restoredNames.length, 1, 'Project must restore 1 object');
-      // The parent already fixed the engine to load custom bed assets. Let's assert against currentConfig.
-      // We will wait until it's loaded as we don't know exactly when it applies.
-      await page.waitForFunction(() => window.__appStore.getState().currentConfig.bed_custom_texture !== undefined, null, { timeout: 15000 }).catch(() => {});
       assert.equal(await page.evaluate(() => window.__appStore.getState().currentConfig.bed_custom_texture), 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==', 'Custom bed asset persisted in project');
-
-
-
-
 
       assert.match(restoredNames[0], /20mm_cube/, `Restored object name must match original: ${restoredNames[0]}`);
       log('Project round-trip verified successfully!');
@@ -271,6 +259,121 @@ G1 X100 Y100 E1.0 F1800\
     assert.equal(await recentSubmenu.count(), 1, 'Recent files submenu must exist');
     await closeMenu();
 
+    log('12. ZIP import preserves existing transforms with auto-arrangement disabled...');
+    await page.evaluate(async () => {
+      window.__prefsStore.getState().setGeneralPref('autoArrangeOnImport', false);
+    });
+    const beforeZip = await page.evaluate(() => window.__plateStore.getState().objects);
+    const modelArchive = Buffer.from(zipSync({ 'nested/one.obj': new Uint8Array(CUBE), 'two.obj': new Uint8Array(CUBE), 'README.txt': new TextEncoder().encode('ignored') }));
+    await page.setInputFiles('#model-file', { name: 'models.zip', mimeType: 'application/zip', buffer: modelArchive });
+    await page.waitForFunction((count) => !window.__appStore.getState().isModelLoading && window.__plateStore.getState().objects.length === count + 2, beforeZip.length, { timeout: 30000 });
+    const afterZip = await page.evaluate(() => window.__plateStore.getState().objects);
+    for (const original of beforeZip) assert.deepEqual(afterZip.find(o => o.id === original.id).instances, original.instances);
+
+    const downloadMenu = async (label) => {
+      await openFileMenu();
+      const [file] = await Promise.all([page.waitForEvent('download'), getMenuItem(label).click()]);
+      const chunks = [];
+      for await (const chunk of await file.createReadStream()) chunks.push(chunk);
+      return Buffer.concat(chunks);
+    };
+    log('13. Export individual STL archive and generic 3MF...');
+    const separate = unzipSync(await downloadMenu('Export objects as STLs...'));
+    assert.equal(Object.keys(separate).length, afterZip.length);
+    for (const bytes of Object.values(separate)) {
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+      assert.equal(bytes.length, 84 + view.getUint32(80, true) * 50);
+    }
+    const generic = unzipSync(await downloadMenu('Export Generic 3MF...'));
+    assert.ok(generic['3D/3dmodel.model']);
+    assert.equal(generic['Metadata/project_settings.config'], undefined);
+
+    log('14. Decode exported Draco mesh and compare face count...');
+    const nativeStl = await downloadMenu('Export all objects as one STL...');
+    const drc = await downloadMenu('Export all objects as one DRC...');
+    const decoderModule = await draco3d.createDecoderModule({});
+    const decoder = new decoderModule.Decoder();
+    const mesh = new decoderModule.Mesh();
+    const buffer = new decoderModule.DecoderBuffer();
+    buffer.Init(new Int8Array(drc), drc.length);
+    const status = decoder.DecodeBufferToMesh(buffer, mesh);
+    try {
+      assert.ok(status.ok(), status.error_msg());
+      assert.equal(mesh.num_faces(), afterZip.reduce((sum, o) => sum + o.instances.length * 12, 0));
+      const positions = new decoderModule.DracoFloat32Array();
+      try {
+        const attribute = decoder.GetAttribute(mesh, decoder.GetAttributeId(mesh, decoderModule.POSITION));
+        assert.ok(decoder.GetAttributeFloatForAllPoints(mesh, attribute, positions));
+        const stlBounds = [[Infinity, -Infinity], [Infinity, -Infinity], [Infinity, -Infinity]];
+        const drcBounds = [[Infinity, -Infinity], [Infinity, -Infinity], [Infinity, -Infinity]];
+        for (let face = 0; face < nativeStl.readUInt32LE(80); face++) {
+          for (let coordinate = 0; coordinate < 9; coordinate++) {
+            const axis = coordinate % 3;
+            const value = nativeStl.readFloatLE(84 + face * 50 + 12 + coordinate * 4);
+            stlBounds[axis][0] = Math.min(stlBounds[axis][0], value);
+            stlBounds[axis][1] = Math.max(stlBounds[axis][1], value);
+          }
+        }
+        for (let coordinate = 0; coordinate < positions.size(); coordinate++) {
+          const axis = coordinate % 3;
+          const value = positions.GetValue(coordinate);
+          drcBounds[axis][0] = Math.min(drcBounds[axis][0], value);
+          drcBounds[axis][1] = Math.max(drcBounds[axis][1], value);
+        }
+        const tolerance = Math.max(...stlBounds.map(([min, max]) => max - min)) / 16383 * 2 + 0.001;
+        for (let axis = 0; axis < 3; axis++) {
+          for (let side = 0; side < 2; side++) assert.ok(Math.abs(stlBounds[axis][side] - drcBounds[axis][side]) <= tolerance);
+        }
+      } finally { decoderModule.destroy(positions); }
+
+    } finally {
+      decoderModule.destroy(status);
+      decoderModule.destroy(buffer);
+      decoderModule.destroy(mesh);
+      decoderModule.destroy(decoder);
+    }
+
+    log('15. Sliced package uses the actual plate index and edits invalidate stale G-code...');
+    await page.evaluate(async () => {
+      await window.__platesStore.getState().addPlate('Second plate');
+      const plate = window.__platesStore.getState().plates[1];
+      const object = window.__plateStore.getState().objects.at(-1);
+      await window.__plateStore.getState().setInstanceTransform(object.id, object.instances[0].id, { offset: [plate.origin[0] + 150, plate.origin[1] + 150, 10] });
+      await window.__platesStore.getState().fetchPlates();
+      await window.__platesStore.getState().slicePlate(1);
+    });
+    assert.equal(await page.evaluate(() => window.__appStore.getState().sliceResult?.plateIndex), 1);
+    const secondPackage = unzipSync(await downloadMenu('Export plate sliced file'));
+    assert.ok(secondPackage['Metadata/plate_2.gcode']);
+    assert.equal(secondPackage['Metadata/plate_1.gcode'], undefined);
+    await page.evaluate(() => window.__platesStore.getState().setActivePlate(0));
+    await openFileMenu();
+    assert.equal(await getMenuItem('Export plate sliced file').isDisabled(), true);
+    await closeMenu();
+    await page.evaluate(async () => {
+      const object = window.__plateStore.getState().objects[0];
+      await window.__plateStore.getState().setInstanceTransform(object.id, object.instances[0].id, { offset: [70, 80, 10] });
+    });
+    assert.equal(await page.evaluate(() => window.__appStore.getState().sliceResult), null);
+
+    log('16. All-plate export can be canceled from Prepare without downloading a partial package...');
+    await page.click('#tab-prepare');
+    const canceledDownloads = [];
+    const recordCanceledDownload = (download) => canceledDownloads.push(download);
+    page.on('download', recordCanceledDownload);
+    await openFileMenu();
+    await getMenuItem('Export all plates sliced file...').click();
+    await page.locator('#preview-cancel-btn').click({ timeout: 10000 });
+    await page.waitForFunction(() => !window.__appStore.getState().isSlicing && !window.__appStore.getState().isModelLoading);
+    assert.equal(await page.evaluate(() => window.__appStore.getState().sliceStatusText), 'Slicing canceled');
+    assert.equal(canceledDownloads.length, 0, 'canceling must not export a partial archive');
+    page.off('download', recordCanceledDownload);
+
+    log('17. All-plate sliced export contains freshly generated G-code for each occupied plate...');
+    const allPlatesPackage = unzipSync(await downloadMenu('Export all plates sliced file...'));
+    assert.ok(allPlatesPackage['Metadata/plate_1.gcode']);
+    assert.ok(allPlatesPackage['Metadata/plate_2.gcode']);
+    assert.notDeepEqual(allPlatesPackage['Metadata/plate_1.gcode'], allPlatesPackage['Metadata/plate_2.gcode']);
     log('All checks passed successfully!');
   } finally {
     await browser.close();

@@ -1,8 +1,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
+import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { createBedGeometry } from './bedGeometry';
+import { displayBedOutline, loadBedModelOutline } from './bedModelOutline';
 import { plateTitle } from '../plates/plateName';
+import { usePlatesStore } from '../plates/platesStore';
 import type { PlateObject, BedConfig, GizmoMode, MeshBufferData, MeshVolumePartition } from './types';
 import type { SupportPaintingData } from '../painting/types';
 import { renderPaintOverlay, clearPaintOverlay } from '../paint-tools/overlayRenderer';
@@ -11,9 +16,12 @@ import type { PaintTool } from '../paint-tools/types';
 import { createPaintCursor, type PaintCursor } from '../paint-tools/paintCursor';
 import { usePrefsStore } from '../prefs/prefsStore';
 import type { CameraView } from '../shell/cameraBridge';
+import { encodeQoi, bytesToBase64 } from '../shell/gcodeThumbnails';
+import { useObjectListStore } from '../objectlist/objectListStore';
 
 export interface PlateSceneCallbacks {
-  onSelect: (objectId: number | null, instanceId: number | null, additive?: boolean) => void;
+  canMoveObjects?: () => boolean;
+  onSelect: (objectId: number | null, instanceId: number | null, additive?: boolean, volumeId?: number) => void;
   /** The whole selection moved together: absolute transforms of the primary and every other selected instance. */
   onTransformMany?: (
     entries: { objectId: number; instanceId: number; offset: [number, number, number]; rotation: [number, number, number]; scale: [number, number, number] }[]
@@ -49,13 +57,25 @@ export class PlateScene {
   private orbitControls: OrbitControls;
   private transformControls: TransformControls;
 
+  /** Short white bounding-box corners for the current selection, independent of transform tools. */
+  // Viewer-only lines: never added to objectMeshes, the engine, or exported model data.
+  public selectionOutline = new LineSegments2(
+    new LineSegmentsGeometry(),
+    // Let the scene depth hide corners behind the model as the camera orbits.
+    new LineMaterial({ color: 0xffffff, linewidth: 2.5, depthTest: true, depthWrite: false, toneMapped: false })
+  );
+  private selectionBounds = new THREE.Box3();
+  private outlineBounds = new THREE.Box3();
+  private meshBounds = new THREE.Box3();
+  private outlineSize = new THREE.Vector3();
+
   private bedGroup: THREE.Group;
   private towerPreview: THREE.Mesh | null = null;
   private bedAssetRevision = 0;
-  private customBedModel: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null = null;
   private bedTexture: THREE.Texture | null = null;
+  private bedModelPoints: [number, number][] | null = null;
   private objectsGroup: THREE.Group;
-  private bedGridHelper: THREE.GridHelper | null = null;
+  private bedGridHelper: THREE.LineSegments | null = null;
   private axesHelper: THREE.AxesHelper | null = null;
   private buildVolumeHelper: THREE.LineSegments | null = null;
   private labelsGroup: THREE.Group;
@@ -87,8 +107,13 @@ export class PlateScene {
   /** `objectId_instanceId` of the other selected instances; they follow the primary while it is dragged. */
   private extraKeys = new Set<string>();
   private dragStart: { primary: THREE.Vector3; extras: Map<THREE.Mesh, THREE.Vector3> } | null = null;
+  private planeDrag: {
+    pointerId: number; target: THREE.Mesh; plane: THREE.Plane; start: THREE.Vector3;
+    origins: Map<THREE.Mesh, THREE.Vector3>; moved: boolean;
+    orbitEnabled: boolean; transformEnabled: boolean;
+  } | null = null;
   private selectedInstanceId: number | null = null;
-  private gizmoMode: GizmoMode = 'translate';
+  private gizmoMode: GizmoMode = null;
   private bedConfig: BedConfig;
   private callbacks: PlateSceneCallbacks;
 
@@ -108,6 +133,7 @@ export class PlateScene {
   // Materials
   private defaultMaterial: THREE.MeshLambertMaterial;
   private selectedMaterial: THREE.MeshLambertMaterial;
+  private overhangHighlight = { value: false };
 
   // Scene view & camera preferences
   public showGrid = true;
@@ -116,6 +142,7 @@ export class PlateScene {
   public showBuildVolume = true;
   public showWireframe = false;
   public cameraType: 'perspective' | 'orthographic' = 'perspective';
+  private perspectiveOnOrbit = false;
   public invertMouseWheelZoom = false;
   public invertOrbitHorizontal = false;
   public invertOrbitVertical = false;
@@ -123,6 +150,7 @@ export class PlateScene {
   public zoomSpeed = 1.0;
 
   private unsubscribePrefs: (() => void) | null = null;
+  private resizeObserver: ResizeObserver;
 
   constructor(container: HTMLElement, bedConfig: BedConfig, callbacks: PlateSceneCallbacks) {
     this.container = container;
@@ -212,6 +240,11 @@ export class PlateScene {
 
     const origRotate = (this.orbitControls as any)._handleMouseMoveRotate.bind(this.orbitControls);
     (this.orbitControls as any)._handleMouseMoveRotate = (event: any) => {
+      if (this.perspectiveOnOrbit && usePrefsStore.getState().display.autoPerspective) {
+        this.setCameraType('perspective');
+        usePrefsStore.getState().setDisplayPref('cameraType', 'perspective');
+        this.perspectiveOnOrbit = false;
+      }
       if (!this.invertOrbitHorizontal && !this.invertOrbitVertical) {
         origRotate(event);
         return;
@@ -232,7 +265,6 @@ export class PlateScene {
 
     // 5. TransformControls
     this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
-    this.transformControls.setMode(this.gizmoMode);
     this.scene.add(this.transformControls.getHelper());
 
     this.transformControls.addEventListener('objectChange', () => {
@@ -254,25 +286,7 @@ export class PlateScene {
         const target = this.transformControls.object;
         const drag = this.dragStart;
         this.dragStart = null;
-        if (target && drag && drag.extras.size > 0 && this.callbacks.onTransformMany) {
-          const entry = (m: THREE.Object3D) => ({
-            objectId: m.userData.objectId as number, instanceId: m.userData.instanceId as number,
-            offset: [m.position.x, m.position.y, m.position.z] as [number, number, number],
-            rotation: [m.rotation.x, m.rotation.y, m.rotation.z] as [number, number, number],
-            scale: [Math.abs(m.scale.x), Math.abs(m.scale.y), Math.abs(m.scale.z)] as [number, number, number]
-          });
-          this.callbacks.onTransformMany([entry(target), ...[...drag.extras.keys()].map(entry)]);
-        } else if (target && target.userData) {
-          const { objectId, instanceId } = target.userData;
-          const pos: [number, number, number] = [target.position.x, target.position.y, target.position.z];
-          const rot: [number, number, number] = [target.rotation.x, target.rotation.y, target.rotation.z];
-          const sc: [number, number, number] = [Math.abs(target.scale.x), Math.abs(target.scale.y), Math.abs(target.scale.z)];
-          this.callbacks.onTransformChange(objectId, instanceId, {
-            offset: pos,
-            rotation: rot,
-            scale: sc
-          });
-        }
+        if (target) this.commitMeshTransforms([target, ...(drag?.extras.keys() ?? [])]);
       }
     });
 
@@ -298,12 +312,19 @@ export class PlateScene {
 
     this.scene.add(this.bedGroup);
     this.scene.add(this.objectsGroup);
+    this.selectionOutline.name = 'selection-outline';
+    this.selectionOutline.visible = false;
+    this.selectionOutline.renderOrder = 1000;
+    this.selectionOutline.frustumCulled = false;
+    this.selectionOutline.geometry.setPositions(new Float32Array(8 * 3 * 2 * 3));
+    this.scene.add(this.selectionOutline);
     this.scene.add(this.flattenGroup);
     this.scene.add(this.brimEarsGroup);
     this.scene.add(this.measureGroup);
     this.scene.add(this.labelsGroup);
     this.scene.add(this.plateLabelGroup);
     this.scene.add(this.extraBedsGroup);
+    this.setBedLoading(true);
     this.rebuildPlates();
 
     // 8. Materials
@@ -318,11 +339,30 @@ export class PlateScene {
     this.selectedMaterial = new THREE.MeshLambertMaterial({
       color: 0xffffff,
       vertexColors: true,
-      emissive: 0x10b981,
-      emissiveIntensity: 0.3,
       flatShading: true,
       wireframe: this.showWireframe
     });
+
+    // Evaluate the flat face normal in view space against world Z. This follows
+    // instance rotation and nonuniform scale without changing mesh/painter colours.
+    this.overhangHighlight.value = prefs.display.showOverhang;
+    for (const material of [this.defaultMaterial, this.selectedMaterial]) {
+      material.onBeforeCompile = shader => {
+        shader.uniforms.orcaShowOverhang = this.overhangHighlight;
+        const varyings = 'varying vec3 orcaWorldUp; varying float orcaWorldHeight;\n';
+        shader.vertexShader = varyings + shader.vertexShader.replace('#include <project_vertex>',
+          '#include <project_vertex>\n' +
+          'orcaWorldUp = mat3(viewMatrix) * vec3(0.0, 0.0, 1.0);\n' +
+          'orcaWorldHeight = (modelMatrix * vec4(transformed, 1.0)).z;');
+        shader.fragmentShader = 'uniform bool orcaShowOverhang;\n' + varyings +
+          shader.fragmentShader.replace('#include <normal_fragment_begin>',
+            '#include <normal_fragment_begin>\n' +
+            'if (orcaShowOverhang && dot(normal, normalize(orcaWorldUp)) < -0.70710678 && orcaWorldHeight > 0.15) {\n' +
+            '  diffuseColor.rgb = vec3(1.0, 0.22, 0.12);\n' +
+            '}');
+      };
+      material.customProgramCacheKey = () => 'orca-overhang';
+    }
 
     // Build bed
     this.buildBed();
@@ -344,7 +384,11 @@ export class PlateScene {
       if (state.display.showWireframe !== prevState.display.showWireframe) {
         this.setShowWireframe(state.display.showWireframe);
       }
+      if (state.display.showOverhang !== prevState.display.showOverhang) {
+        this.overhangHighlight.value = state.display.showOverhang;
+      }
       if (state.display.cameraType !== prevState.display.cameraType) {
+        this.perspectiveOnOrbit = false;
         this.setCameraType(state.display.cameraType);
       }
       if (state.camera.invertMouseWheelZoom !== prevState.camera.invertMouseWheelZoom) {
@@ -367,13 +411,16 @@ export class PlateScene {
     });
 
     // Event listeners
-    this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
+    this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown, true);
     this.renderer.domElement.addEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.addEventListener('pointerup', this.onPointerUp);
     this.renderer.domElement.addEventListener('pointerleave', this.onPointerLeave);
-    this.renderer.domElement.addEventListener('pointercancel', this.onPointerLeave);
+    this.renderer.domElement.addEventListener('pointercancel', this.onPointerCancel);
+    this.renderer.domElement.addEventListener('lostpointercapture', this.onPointerCancel);
     this.renderer.domElement.addEventListener('contextmenu', this.onContextMenu);
     window.addEventListener('resize', this.onWindowResize);
+    this.resizeObserver = new ResizeObserver(this.onWindowResize);
+    this.resizeObserver.observe(container);
 
     // Start render loop
     this.animate();
@@ -381,45 +428,22 @@ export class PlateScene {
 
   private buildBed(): void {
     // Clear existing bed
-    while (this.bedGroup.children.length > 0) {
-      const child = this.bedGroup.children[0] as THREE.Mesh;
-      if (child.geometry) child.geometry.dispose();
-      this.bedGroup.remove(child);
-    }
+    this.disposeChildren(this.bedGroup);
+    this.bedFloorMaterial?.dispose();
     this.bedGridHelper = null;
     this.axesHelper = null;
     this.buildVolumeHelper = null;
 
     const { width, depth, height, center } = this.bedConfig;
-    const shape = (this.bedConfig as any).shape;
     const cx = center[0];
     const cy = center[1];
-
-    let floorGeo: THREE.BufferGeometry;
-    let points: Array<[number, number]> = [];
-
-    if (shape === 'circle') {
-      const radius = width / 2;
-      floorGeo = new THREE.CircleGeometry(radius, 64);
-      for (let i = 0; i < 64; i++) {
-        const theta = (i / 64) * Math.PI * 2;
-        points.push([cx + radius * Math.cos(theta), cy + radius * Math.sin(theta)]);
-      }
-    } else {
-      floorGeo = new THREE.PlaneGeometry(width, depth);
-      const halfW = width / 2;
-      const halfD = depth / 2;
-      points = [
-        [cx - halfW, cy - halfD],
-        [cx + halfW, cy - halfD],
-        [cx + halfW, cy + halfD],
-        [cx - halfW, cy + halfD]
-      ];
-    }
+    const points = this.bedOutline();
+    const { floor: floorGeo, grid: gridGeo } = createBedGeometry(this.bedConfig, points);
 
     // 1. Bed Floor Mesh (slightly below Z=0 to prevent z-fighting with models)
     const floorMat = new THREE.MeshBasicMaterial({
-      color: 0x24242b,
+      color: this.bedTexture ? 0xffffff : 0x24242b,
+      map: this.bedTexture,
       side: THREE.DoubleSide,
       transparent: true,
       depthWrite: false
@@ -430,10 +454,7 @@ export class PlateScene {
     this.bedGroup.add(floorMesh);
 
     // 2. Bed Grid (in XY plane at Z=0)
-    const gridSize = Math.max(width, depth);
-    const gridDivisions = Math.round(gridSize / 10);
-    const grid = new THREE.GridHelper(gridSize, gridDivisions, 0x475569, 0x334155);
-    grid.rotation.x = Math.PI / 2;
+    const grid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x334155 }));
     grid.position.set(cx, cy, 0);
     grid.visible = this.showGrid;
     this.bedGridHelper = grid;
@@ -480,7 +501,7 @@ export class PlateScene {
     }
     if (!tower.enabled || !tower.width || !tower.depth || !tower.height) return;
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(tower.width, tower.depth, tower.height),
-      new THREE.MeshBasicMaterial({ color: 0x009688, transparent: true, opacity: 0.35, depthWrite: false }));
+      new THREE.MeshLambertMaterial({ color: 0x009688, flatShading: true }));
     const rotation = (tower.rotation || 0) * Math.PI / 180;
     const localCenter = new THREE.Vector3(tower.width / 2, tower.depth / 2, tower.height / 2).applyAxisAngle(new THREE.Vector3(0, 0, 1), rotation);
     mesh.position.set(origin[0] + (tower.x || 0) + localCenter.x, origin[1] + (tower.y || 0) + localCenter.y, origin[2] + localCenter.z);
@@ -490,43 +511,65 @@ export class PlateScene {
     this.scene.add(mesh);
   }
 
+  /** Hide every plate surface until its outline and artwork are ready together. */
+  public setBedLoading(loading: boolean): void {
+    if (loading) this.bedAssetRevision++;
+    this.bedGroup.visible = !loading;
+    this.extraBedsGroup.visible = !loading;
+    this.plateLabelGroup.visible = !loading;
+  }
+
   /** Decorative bed assets are kept outside object picking and never enter the slicing model. */
   public async setBedAssets(assets: { model?: string; texture?: string }): Promise<void> {
-    const revision = ++this.bedAssetRevision;
+    this.setBedLoading(true);
+    const revision = this.bedAssetRevision;
     delete this.scene.userData.lightTheme;
-    if (this.customBedModel) {
-      this.scene.remove(this.customBedModel);
-      this.customBedModel.geometry.dispose();
-      this.customBedModel.material.dispose();
-      this.customBedModel = null;
-    }
     this.bedTexture?.dispose();
     this.bedTexture = null;
+    this.bedModelPoints = null;
+    this.buildBed();
+    this.rebuildPlates();
     if (this.bedFloorMaterial) { this.bedFloorMaterial.map = null; this.bedFloorMaterial.needsUpdate = true; }
     const tasks: Promise<void>[] = [];
     if (assets.texture) tasks.push(new THREE.TextureLoader().loadAsync(assets.texture).then((texture) => {
       if (revision !== this.bedAssetRevision || this.isDestroyed) { texture.dispose(); return; }
-      texture.colorSpace = THREE.SRGBColorSpace;
-      this.bedTexture = texture;
-      if (this.bedFloorMaterial) { this.bedFloorMaterial.map = texture; this.bedFloorMaterial.color.setHex(0xffffff); this.bedFloorMaterial.needsUpdate = true; }
+      // Rasterize image textures before uploading: SVG images without explicit dimensions
+      // can decode correctly yet fail WebGL's immutable texture upload in Chromium.
+      const image = texture.image as HTMLImageElement;
+      const canvas = document.createElement('canvas');
+      const scale = Math.min(1, 4096 / Math.max(image.naturalWidth, image.naturalHeight));
+      canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext('2d');
+      if (!context) { texture.dispose(); throw new Error('Cannot render the bed texture.'); }
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      texture.dispose();
+      const bedTexture = new THREE.CanvasTexture(canvas);
+      bedTexture.colorSpace = THREE.SRGBColorSpace;
+      this.bedTexture = bedTexture;
+      if (this.bedFloorMaterial) { this.bedFloorMaterial.map = bedTexture; this.bedFloorMaterial.color.setHex(0xffffff); this.bedFloorMaterial.needsUpdate = true; }
     }));
-    if (assets.model) tasks.push(new STLLoader().loadAsync(assets.model).then((geometry) => {
-      if (revision !== this.bedAssetRevision || this.isDestroyed) { geometry.dispose(); return; }
-      geometry.computeBoundingBox();
-      const bounds = geometry.boundingBox!;
-      const center = bounds.getCenter(new THREE.Vector3());
-      const model = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: 0x777c84, side: THREE.DoubleSide, transparent: true, depthWrite: false }));
-      model.position.set(this.bedConfig.center[0] - center.x, this.bedConfig.center[1] - center.y, -bounds.max.z - 0.15);
-      this.customBedModel = model;
-      this.scene.add(model);
+    if (assets.model) tasks.push(loadBedModelOutline(assets.model).then((points) => {
+      if (revision !== this.bedAssetRevision || this.isDestroyed) return;
+      this.bedModelPoints = points;
+      this.buildBed();
+      this.rebuildPlates();
     }));
     for (const result of await Promise.allSettled(tasks)) if (result.status === 'rejected') console.warn('[Bed assets]', result.reason);
+    if (revision === this.bedAssetRevision && !this.isDestroyed) this.setBedLoading(false);
+  }
+
+  private bedOutline(): [number, number][] {
+    return displayBedOutline(this.bedConfig.points, this.bedModelPoints);
   }
 
   public setShowGrid(visible: boolean): void {
     this.showGrid = visible;
     if (this.bedGridHelper) {
       this.bedGridHelper.visible = visible;
+    }
+    for (const child of this.extraBedsGroup.children) {
+      if (child.userData.bedGrid) child.visible = visible;
     }
   }
   public getShowGrid(): boolean {
@@ -599,7 +642,8 @@ export class PlateScene {
       const material = child.material as THREE.Material | THREE.Material[] | undefined;
       for (const m of Array.isArray(material) ? material : material ? [material] : []) {
         if (m !== this.bedFloorMaterial) {
-          (m as THREE.MeshBasicMaterial).map?.dispose();
+          const map = (m as THREE.MeshBasicMaterial).map;
+          if (map !== this.bedTexture) map?.dispose();
           m.dispose();
         }
       }
@@ -609,9 +653,15 @@ export class PlateScene {
   private rebuildPlates(): void {
     this.disposeChildren(this.plateLabelGroup);
     this.disposeChildren(this.extraBedsGroup);
-    const { width, depth, center, points } = this.bedConfig;
+    const { width, depth, center } = this.bedConfig;
+    const points = this.bedOutline();
     const [cx, cy] = center;
     const size = Math.min(width, depth);
+    const minX = Math.min(...points.map(p => p[0]));
+    const maxX = Math.max(...points.map(p => p[0]));
+    const minY = Math.min(...points.map(p => p[1]));
+    const maxY = Math.max(...points.map(p => p[1]));
+    const labelGap = size * 0.025;
 
     // Flat text lying on the ground plane; `pencil` adds the small edit mark desktop shows after a plate's title.
     const text = (value: string, font: string, height: number, color: string, align: 'left' | 'right', x: number, y: number, pencil = false) => {
@@ -657,25 +707,26 @@ export class PlateScene {
       const [ox, oy, oz] = plate.origin;
       const active = plate.index === this.activePlateIndex;
       // Like desktop: the two-digit number below the bed's front-right corner, the title above its back-left corner.
-      const number = text(String(plate.index + 1).padStart(2, '0'), 'bold 96px sans-serif', size * 0.1, orange(active), 'right', ox + cx + width / 2, oy + cy - depth / 2 - size * 0.07);
+      const number = text(String(plate.index + 1).padStart(2, '0'), 'bold 96px sans-serif', size * 0.1, orange(active), 'right', ox + maxX, oy + minY - size * 0.05 - labelGap);
       number.position.z = oz + 0.05;
       this.plateLabelGroup.add(number);
       const title = plateTitle(plate.name, plate.index);
       const shown = title.length > 40 ? `${title.slice(0, 38)}...` : title;
-      const label = text(shown, 'bold 64px sans-serif', size * 0.075, orange(active), 'left', ox + cx - width / 2, oy + cy + depth / 2 + size * 0.06, true);
+      const label = text(shown, 'bold 64px sans-serif', size * 0.075, orange(active), 'left', ox + minX, oy + maxY + size * 0.0375 + labelGap, true);
       label.name = 'plate-title';
       label.userData.plateIndex = plate.index;
       label.position.z = oz + 0.05;
       this.plateLabelGroup.add(label);
 
       if (plate.index === 0) continue; // the main bed has its own, richer drawing
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(width, depth), this.bedFloorMaterial ?? new THREE.MeshBasicMaterial({ color: 0x24242b, side: THREE.DoubleSide }));
+      const bedGeometry = createBedGeometry(this.bedConfig, points);
+      const floor = new THREE.Mesh(bedGeometry.floor, this.bedFloorMaterial ?? new THREE.MeshBasicMaterial({ color: 0x24242b, side: THREE.DoubleSide }));
       floor.position.set(ox + cx, oy + cy, oz - 0.1);
       this.extraBedsGroup.add(floor);
-      const gridSize = Math.max(width, depth);
-      const grid = new THREE.GridHelper(gridSize, Math.round(gridSize / 10), 0x475569, 0x334155);
-      grid.rotation.x = Math.PI / 2;
+      const grid = new THREE.LineSegments(bedGeometry.grid, new THREE.LineBasicMaterial({ color: 0x334155 }));
       grid.position.set(ox + cx, oy + cy, oz);
+      grid.visible = this.showGrid;
+      grid.userData.bedGrid = true;
       this.extraBedsGroup.add(grid);
       const outline: THREE.Vector3[] = (points.length >= 3 ? points : [[cx - width / 2, cy - depth / 2], [cx + width / 2, cy - depth / 2], [cx + width / 2, cy + depth / 2], [cx - width / 2, cy + depth / 2]])
         .map(([x, y]) => new THREE.Vector3(ox + x, oy + y, oz + 0.2));
@@ -761,6 +812,7 @@ export class PlateScene {
   }
 
   public toggleCameraType(): void {
+    this.perspectiveOnOrbit = false;
     const next = this.cameraType === 'perspective' ? 'orthographic' : 'perspective';
     this.setCameraType(next);
     usePrefsStore.getState().setDisplayPref('cameraType', next);
@@ -998,9 +1050,6 @@ export class PlateScene {
         const mirror = inst.mirror ?? [1, 1, 1];
         mesh.scale.set(inst.scale[0] * mirror[0], inst.scale[1] * mirror[1], inst.scale[2] * mirror[2]);
 
-        if (isPrimary && !this.isPaintingActive && !this.measureActive && !this.explodeActive) {
-          this.transformControls.attach(mesh);
-        }
       }
     }
 
@@ -1029,6 +1078,8 @@ export class PlateScene {
       this.applyExplode(this.explodeFactor);
     }
     this.updateLabels();
+    this.updateTransformControls();
+    this.updateSelectionOutline();
   }
 
   public setSelection(objectId: number | null, instanceId: number | null, extras: { objectId: number; instanceId: number }[] = []): void {
@@ -1036,7 +1087,6 @@ export class PlateScene {
     this.selectedInstanceId = instanceId;
     this.extraKeys = new Set(extras.map((e) => `${e.objectId}_${e.instanceId}`));
 
-    let selectedMesh: THREE.Mesh | null = null;
     for (const mesh of this.objectMeshes.values()) {
       const isSelected =
         objectId !== null &&
@@ -1045,40 +1095,68 @@ export class PlateScene {
         mesh.userData.instanceId === instanceId;
 
       mesh.material = isSelected || this.extraKeys.has(`${mesh.userData.objectId}_${mesh.userData.instanceId}`) ? this.selectedMaterial : this.defaultMaterial;
-      if (isSelected) {
-        selectedMesh = mesh;
-      }
     }
 
-    // The other selected instances only follow a move, so rotating or scaling is for a single selection.
-    if (selectedMesh && !this.isPaintingActive && !this.measureActive && !this.explodeActive && (this.extraKeys.size === 0 || this.gizmoMode === 'translate')) {
-      this.transformControls.attach(selectedMesh);
+    this.updateTransformControls();
+    this.updateSelectionOutline();
+  }
+
+  private updateTransformControls(): void {
+    const selected = this.getSelectedMesh();
+    // Other selected instances follow translation; rotate and scale apply to a single selection.
+    if (this.gizmoMode !== null && selected && !this.isPaintingActive && !this.measureActive && !this.explodeActive &&
+        (this.extraKeys.size === 0 || this.gizmoMode === 'translate')) {
+      this.transformControls.attach(selected);
     } else {
       this.transformControls.detach();
+      this.transformControls.axis = null;
     }
+  }
+
+  private updateSelectionOutline(): void {
+    const bounds = this.selectionBounds.makeEmpty();
+    const selected = this.getSelectedMesh();
+    if (!selected && this.extraKeys.size === 0) { this.selectionOutline.visible = false; this.outlineBounds.makeEmpty(); return; }
+    for (const [key, mesh] of this.objectMeshes) {
+      if (!mesh.visible || (mesh !== selected && !this.extraKeys.has(key))) continue;
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      if (!mesh.geometry.boundingBox) continue;
+      mesh.updateMatrixWorld(true);
+      bounds.union(this.meshBounds.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld));
+    }
+    this.selectionOutline.visible = !bounds.isEmpty();
+    if (bounds.isEmpty()) { this.outlineBounds.makeEmpty(); return; }
+    // Keep the markers clear of the surface on large models as well as small ones.
+    const size = bounds.getSize(this.outlineSize);
+    bounds.expandByScalar(Math.max(1, Math.min(size.x, size.y, size.z) * 0.035));
+    if (bounds.equals(this.outlineBounds)) return;
+    this.outlineBounds.copy(bounds);
+    const min = bounds.min.toArray();
+    const max = bounds.max.toArray();
+    const positions = new Float32Array(8 * 3 * 2 * 3);
+    let vertex = 0;
+    for (let corner = 0; corner < 8; corner++) {
+      const point = min.map((value, axis) => corner & (1 << axis) ? max[axis] : value);
+      for (let axis = 0; axis < 3; axis++) {
+        positions.set(point, vertex++ * 3);
+        const end = [...point];
+        end[axis] += (corner & (1 << axis) ? -1 : 1) * (max[axis] - min[axis]) * 0.18;
+        positions.set(end, vertex++ * 3);
+      }
+    }
+    this.selectionOutline.geometry.setPositions(positions);
   }
 
   public setGizmoMode(mode: GizmoMode): void {
     this.gizmoMode = mode;
-    this.transformControls.setMode(mode);
-    if (this.extraKeys.size > 0) {
-      const selected = this.getSelectedMesh();
-      if (mode === 'translate' && selected && !this.isPaintingActive && !this.measureActive && !this.explodeActive) this.transformControls.attach(selected);
-      else this.transformControls.detach();
-    }
+    if (mode !== null) this.transformControls.setMode(mode);
+    this.updateTransformControls();
   }
 
   public setPaintingActive(active: boolean, volumeId?: number | null): void {
     this.isPaintingActive = active;
     this.paintingVolumeId = active ? (volumeId ?? null) : null;
-    if (active) {
-      this.transformControls.detach();
-    } else {
-      const selectedMesh = this.getSelectedMesh();
-      if (selectedMesh) {
-        this.transformControls.attach(selectedMesh);
-      }
-    }
+    this.updateTransformControls();
   }
 
   public setAdvancedPainting(active: boolean, volumeId?: number | null): void {
@@ -1092,13 +1170,48 @@ export class PlateScene {
     this.cursorTool = tool;
   }
 
-  /** True when an object lies under the given client position, so a right-click there is not on empty plate. */
-  public isObjectAt(clientX: number, clientY: number): boolean {
+  public hitTest(clientX: number, clientY: number): {
+    objectId: number;
+    instanceId: number;
+    volumeId?: number;
+    mesh: THREE.Mesh;
+    faceIndex?: number;
+  } | null {
+    if (!this.container || this.isDestroyed) return null;
     const rect = this.renderer.domElement.getBoundingClientRect();
-    const mouse = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+    const mouse = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, this.camera);
-    return raycaster.intersectObjects(Array.from(this.objectMeshes.values()), false).length > 0;
+    const intersects = raycaster.intersectObjects(Array.from(this.objectMeshes.values()).filter(mesh => mesh.visible), false);
+    if (intersects.length === 0) return null;
+
+    const hit = intersects[0];
+    const mesh = hit.object as THREE.Mesh;
+    const objectId = mesh.userData?.objectId;
+    const instanceId = mesh.userData?.instanceId;
+    if (typeof objectId !== 'number') return null;
+
+    let volumeId: number | undefined;
+    const partitions = this.meshVolumes.get(objectId);
+    if (partitions && partitions.length > 0 && typeof hit.faceIndex === 'number') {
+      const faceIndex = hit.faceIndex;
+      const partition = partitions.find(
+        (p) => faceIndex >= p.firstFacet && faceIndex < p.firstFacet + p.facetCount
+      );
+      if (partition) {
+        volumeId = partition.volumeId;
+      }
+    }
+
+    return { objectId, instanceId, volumeId, mesh, faceIndex: hit.faceIndex ?? undefined };
+  }
+
+  /** True when an object lies under the given client position, so a right-click there is not on empty plate. */
+  public isObjectAt(clientX: number, clientY: number): boolean {
+    return this.hitTest(clientX, clientY) !== null;
   }
 
   public getObjectMeshes(): Map<string, THREE.Mesh> {
@@ -1573,6 +1686,32 @@ export class PlateScene {
   private onPointerDown = (e: PointerEvent): void => {
     this.pointerDownPos = { x: e.clientX, y: e.clientY };
 
+    // Body dragging translates in XY independently of the active gizmo mode.
+    // Tool handles and tools that operate on the surface retain their own gestures.
+    if (e.button === 0 && !e.shiftKey && !e.ctrlKey && !e.metaKey && !this.isPaintingActive &&
+        !this.measureActive && !this.explodeActive && !this.brimEarsActive && !this.flattenClusters.length &&
+        !this.transformControls.dragging && !this.transformControls.axis && this.callbacks.canMoveObjects?.() !== false) {
+      const raycaster = this.pointerRay(e);
+      const hit = raycaster.intersectObjects([...this.objectMeshes.values()].filter(mesh => mesh.visible), false)[0];
+      if (hit) {
+        const target = hit.object as THREE.Mesh;
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -hit.point.z);
+        const selected = target.userData.objectId === this.selectedObjectId && target.userData.instanceId === this.selectedInstanceId ||
+          this.extraKeys.has(`${target.userData.objectId}_${target.userData.instanceId}`);
+        const origins = new Map([[target, target.position.clone()]]);
+        if (selected) for (const mesh of this.objectMeshes.values()) {
+          if (mesh === this.getSelectedMesh() || this.extraKeys.has(`${mesh.userData.objectId}_${mesh.userData.instanceId}`)) origins.set(mesh, mesh.position.clone());
+        }
+        this.planeDrag = { pointerId: e.pointerId, target, plane, start: hit.point.clone(), origins, moved: false,
+          orbitEnabled: this.orbitControls.enabled, transformEnabled: this.transformControls.enabled };
+        this.orbitControls.enabled = false;
+        this.transformControls.enabled = false;
+        this.renderer.domElement.setPointerCapture(e.pointerId);
+        e.preventDefault();
+        return;
+      }
+    }
+
     if (this.isPaintingActive && (e.button === 0 || (this.advancedPainting && e.button === 2))) {
       const hit = this.raycastSelectedMesh(e);
       if (hit && typeof hit.faceIndex === 'number') {
@@ -1593,6 +1732,20 @@ export class PlateScene {
   };
 
   private onPointerMove = (e: PointerEvent): void => {
+    const drag = this.planeDrag;
+    if (drag && drag.pointerId === e.pointerId) {
+      if (!drag.moved && Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y) <= 5) return;
+      const point = this.pointerRay(e).ray.intersectPlane(drag.plane, new THREE.Vector3());
+      if (!point) return;
+      if (!drag.moved) {
+        drag.moved = true;
+        if (drag.origins.size === 1) this.callbacks.onSelect(drag.target.userData.objectId, drag.target.userData.instanceId);
+      }
+      const delta = point.sub(drag.start);
+      delta.z = 0;
+      for (const [mesh, origin] of drag.origins) mesh.position.copy(origin).add(delta);
+      return;
+    }
     if (this.advancedPainting) {
       const hover = this.raycastSelectedMesh(e);
       if (hover) this.paintCursor.update(new THREE.Vector3(...hover.hit), hover.normal, this.cursorRadius, this.cursorTool);
@@ -1610,6 +1763,11 @@ export class PlateScene {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
+    if (this.planeDrag?.pointerId === e.pointerId) {
+      const moved = this.planeDrag.moved;
+      this.finishPlaneDrag(true);
+      if (moved) return;
+    }
     if (this.isPaintingActive && this.isPaintingStroke) {
       this.isPaintingStroke = false;
       this.orbitControls.enabled = true;
@@ -1695,7 +1853,7 @@ export class PlateScene {
       }
     }
 
-    if (!this.isPaintingActive) {
+    if (!this.isPaintingActive && e.button === 0) {
       const rect = this.renderer.domElement.getBoundingClientRect();
       const mouse = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -1711,12 +1869,59 @@ export class PlateScene {
       if (intersects.length > 0 && typeof intersects[0].faceIndex === 'number') {
         const hit = intersects[0].object as THREE.Mesh;
         if (hit.userData) {
-          this.callbacks.onSelect(hit.userData.objectId, hit.userData.instanceId, e.shiftKey || e.ctrlKey || e.metaKey);
+          const objectId = hit.userData.objectId;
+          let volumeId: number | undefined;
+          const partitions = this.meshVolumes.get(objectId);
+          if (partitions && partitions.length > 0) {
+            const partition = partitions.find(
+              (p) => intersects[0].faceIndex! >= p.firstFacet && intersects[0].faceIndex! < p.firstFacet + p.facetCount
+            );
+            if (partition) volumeId = partition.volumeId;
+          }
+          this.callbacks.onSelect(objectId, hit.userData.instanceId, e.shiftKey || e.ctrlKey || e.metaKey, volumeId);
         }
       } else if (!(e.shiftKey || e.ctrlKey || e.metaKey)) {
         this.callbacks.onSelect(null, null);
       }
     }
+  };
+
+  private pointerRay(e: PointerEvent): THREE.Raycaster {
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(
+      (e.clientX - rect.left) / rect.width * 2 - 1,
+      -(e.clientY - rect.top) / rect.height * 2 + 1
+    ), this.camera);
+    return raycaster;
+  }
+
+  private finishPlaneDrag(commit: boolean): void {
+    const drag = this.planeDrag;
+    if (!drag) return;
+    this.planeDrag = null;
+    this.orbitControls.enabled = drag.orbitEnabled;
+    this.transformControls.enabled = drag.transformEnabled;
+    if (this.renderer.domElement.hasPointerCapture(drag.pointerId)) this.renderer.domElement.releasePointerCapture(drag.pointerId);
+    if (!commit) for (const [mesh, origin] of drag.origins) mesh.position.copy(origin);
+    if (!commit || !drag.moved) return;
+    this.commitMeshTransforms([...drag.origins.keys()]);
+  }
+
+  private commitMeshTransforms(meshes: THREE.Object3D[]): void {
+    const entries = meshes.map(mesh => ({
+      objectId: mesh.userData.objectId as number, instanceId: mesh.userData.instanceId as number,
+      offset: mesh.position.toArray() as [number, number, number],
+      rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z] as [number, number, number],
+      scale: [Math.abs(mesh.scale.x), Math.abs(mesh.scale.y), Math.abs(mesh.scale.z)] as [number, number, number]
+    }));
+    if (entries.length > 1 && this.callbacks.onTransformMany) this.callbacks.onTransformMany(entries);
+    else for (const entry of entries) this.callbacks.onTransformChange(entry.objectId, entry.instanceId, entry);
+  }
+
+  private onPointerCancel = (): void => {
+    this.finishPlaneDrag(false);
+    this.onPointerLeave();
   };
 
   private onPointerLeave = (): void => {
@@ -1732,7 +1937,7 @@ export class PlateScene {
   };
 
   private onContextMenu = (e: MouseEvent): void => {
-    if (this.advancedPainting) e.preventDefault();
+    e.preventDefault();
   };
 
   private onWindowResize = (): void => {
@@ -1761,6 +1966,7 @@ export class PlateScene {
     this.animationFrameId = requestAnimationFrame(this.animate);
 
     this.orbitControls.update();
+    this.updateSelectionOutline();
     const light = document.documentElement.dataset.theme === 'light';
     if (this.scene.userData.lightTheme !== light) {
       this.scene.userData.lightTheme = light;
@@ -1769,7 +1975,6 @@ export class PlateScene {
     }
     // See-through when the camera is below the bed, so parts stay visible from underneath.
     if (this.bedFloorMaterial) this.bedFloorMaterial.opacity = this.camera.position.z < 0 ? 0.25 : 1;
-    if (this.customBedModel) this.customBedModel.material.opacity = this.camera.position.z < 0 ? 0.25 : 1;
     this.renderer.render(this.scene, this.camera);
   };
 
@@ -1806,6 +2011,13 @@ export class PlateScene {
       return;
     }
 
+    if (usePrefsStore.getState().display.autoPerspective) {
+      const type = view === 0 ? 'perspective' : 'orthographic';
+      this.setCameraType(type);
+      usePrefsStore.getState().setDisplayPref('cameraType', type);
+      this.perspectiveOnOrbit = view !== 0;
+    }
+
     const { cx, cy, span } = this.plateLayout();
     this.orbitControls.target.set(cx, cy, 0);
 
@@ -1836,12 +2048,282 @@ export class PlateScene {
     this.orbitControls.update();
   }
 
+  /**
+   * Renders a real 3D model thumbnail for a specific plate without bed or UI elements.
+   * Reuses the existing Three.js renderer and scene geometry.
+   */
+  public renderThumbnail(params: {
+    width: number;
+    height: number;
+    plateIndex?: number;
+    format?: 'PNG' | 'JPG' | 'QOI';
+  }): string | null {
+    if (this.isDestroyed || !this.renderer) return null;
+
+    // 1. Save visibility of scene elements and overlays
+    const savedBedVisible = this.bedGroup.visible;
+    const savedGridVisible = this.bedGridHelper ? this.bedGridHelper.visible : false;
+    const savedAxesVisible = this.axesHelper ? this.axesHelper.visible : false;
+    const savedBuildVolumeVisible = this.buildVolumeHelper ? this.buildVolumeHelper.visible : false;
+    const savedLabelsVisible = this.plateLabelGroup.visible;
+    const savedObjectLabelsVisible = this.labelsGroup.visible;
+    const savedExtraBedsVisible = this.extraBedsGroup.visible;
+    const savedFlattenVisible = this.flattenGroup.visible;
+    const savedBrimEarsVisible = this.brimEarsGroup.visible;
+    const savedMeasureVisible = this.measureGroup.visible;
+    const savedControlsVisible = this.transformControls.getHelper().visible;
+    const savedOutlineVisible = this.selectionOutline.visible;
+    const savedTowerVisible = this.towerPreview ? this.towerPreview.visible : false;
+
+    // Save every cursor visibility
+    const savedCircleCursor = this.paintCursor.circleMesh.visible;
+    const savedDiskCursor = this.paintCursor.diskMesh.visible;
+    const savedSphereCursor = this.paintCursor.sphereMesh.visible;
+    const savedPointerCursor = this.paintCursor.pointerMesh.visible;
+
+    const savedBackground = this.scene.background;
+    const savedOverhang = this.overhangHighlight.value;
+
+    // Save paint overlays visibility
+    const savedOverlays = new Map<string, boolean>();
+    for (const [k, ov] of this.overlayMeshes.entries()) {
+      savedOverlays.set(k, ov.visible);
+      ov.visible = false;
+    }
+
+    // Save child overlays attached to meshes
+    const savedChildOverlays = new Map<THREE.Object3D, boolean>();
+    for (const mesh of this.objectMeshes.values()) {
+      for (const child of mesh.children) {
+        if (child.name === '__paint_overlay_container__' || child.name.includes('overlay')) {
+          savedChildOverlays.set(child, child.visible);
+          child.visible = false;
+        }
+      }
+    }
+
+    // Save renderer state
+    const prevRenderTarget = this.renderer.getRenderTarget();
+    const prevClearColor = new THREE.Color();
+    this.renderer.getClearColor(prevClearColor);
+    const prevClearAlpha = this.renderer.getClearAlpha();
+
+    // Hide bed and UI elements
+    this.bedGroup.visible = false;
+    if (this.bedGridHelper) this.bedGridHelper.visible = false;
+    if (this.axesHelper) this.axesHelper.visible = false;
+    if (this.buildVolumeHelper) this.buildVolumeHelper.visible = false;
+    this.plateLabelGroup.visible = false;
+    this.labelsGroup.visible = false;
+    this.extraBedsGroup.visible = false;
+    this.flattenGroup.visible = false;
+    this.brimEarsGroup.visible = false;
+    this.measureGroup.visible = false;
+    this.transformControls.getHelper().visible = false;
+    this.selectionOutline.visible = false;
+    if (this.towerPreview) this.towerPreview.visible = false;
+
+    this.paintCursor.circleMesh.visible = false;
+    this.paintCursor.diskMesh.visible = false;
+    this.paintCursor.sphereMesh.visible = false;
+    this.paintCursor.pointerMesh.visible = false;
+
+    this.scene.background = null;
+    this.overhangHighlight.value = false;
+
+    const targetPlateIndex = params.plateIndex ?? this.activePlateIndex;
+    const plate = usePlatesStore.getState().plates.find(p => p.index === targetPlateIndex);
+    const allowedKeys = plate?.instances.length
+      ? new Set(plate.instances.map(i => `${i.objectId}_${i.instanceId}`)) : null;
+    // The sidebar plate membership can lag a model import. Until refreshed, use
+    // the displayed plate's bounds rather than treating a newly occupied bed as empty.
+    const origin = this.plates.find(p => p.index === targetPlateIndex)?.origin ?? plate?.origin ?? [0, 0, 0];
+    const centerX = origin[0] + this.bedConfig.center[0];
+    const centerY = origin[1] + this.bedConfig.center[1];
+
+    // Exclude non-printable objects (modifier / negative / support blocker / enforcer)
+    const nonPrintableObjIds = new Set<number>();
+    try {
+      const treeObjects = useObjectListStore.getState().objects || [];
+      for (const to of treeObjects) {
+        if (to.volumes && to.volumes.length > 0 && to.volumes.every((v) => v.type !== 'part')) {
+          nonPrintableObjIds.add(to.id);
+        }
+      }
+    } catch (_) {}
+
+    const savedMeshStates = new Map<string, { visible: boolean; material: THREE.Material | THREE.Material[] }>();
+    const bbox = new THREE.Box3();
+    let visibleCount = 0;
+
+    for (const [key, mesh] of this.objectMeshes.entries()) {
+      savedMeshStates.set(key, { visible: mesh.visible, material: mesh.material });
+
+      const objId = mesh.userData?.objectId;
+
+      if (objId !== undefined && nonPrintableObjIds.has(objId)) {
+        mesh.visible = false;
+        continue;
+      }
+
+      const shouldBeVisible = allowedKeys ? allowedKeys.has(key) :
+        Math.abs(mesh.position.x - centerX) <= this.bedConfig.width / 2 + 10 &&
+        Math.abs(mesh.position.y - centerY) <= this.bedConfig.depth / 2 + 10;
+      mesh.visible = shouldBeVisible;
+      if (shouldBeVisible) {
+        mesh.material = this.defaultMaterial;
+        bbox.expandByObject(mesh);
+        visibleCount++;
+      }
+    }
+
+    let renderTarget: THREE.WebGLRenderTarget | null = null;
+    let thumbCamera: THREE.PerspectiveCamera | null = null;
+    let camLight: THREE.DirectionalLight | null = null;
+
+    try {
+      if (visibleCount === 0 || bbox.isEmpty()) {
+        return null;
+      }
+
+      const width = params.width;
+      const height = params.height;
+      const aspect = width / height;
+
+      thumbCamera = new THREE.PerspectiveCamera(40, aspect, 0.1, 10000);
+      thumbCamera.up.set(0, 0, 1);
+
+      camLight = new THREE.DirectionalLight(0xffffff, 1.2);
+      camLight.position.set(0.5, 0.5, 1);
+      thumbCamera.add(camLight);
+      this.scene.add(thumbCamera);
+
+      const center = bbox.getCenter(new THREE.Vector3());
+      const sphere = bbox.getBoundingSphere(new THREE.Sphere());
+      const radius = Math.max(sphere.radius, 10);
+
+      // Frame non-square dimensions correctly (respect horizontal and vertical FOV)
+      const vFovHalf = THREE.MathUtils.degToRad(thumbCamera.fov) / 2;
+      const hFovHalf = Math.atan(Math.tan(vFovHalf) * aspect);
+      const minFovHalf = Math.min(vFovHalf, hFovHalf);
+      const dist = (radius / Math.sin(minFovHalf)) * 1.35;
+
+      // Standard OrcaSlicer isometric camera angle
+      const dir = new THREE.Vector3(0.65, -0.75, 0.7).normalize();
+      thumbCamera.position.copy(center).addScaledVector(dir, dist);
+      thumbCamera.lookAt(center);
+      thumbCamera.updateProjectionMatrix();
+
+      renderTarget = new THREE.WebGLRenderTarget(width, height, {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat,
+        colorSpace: THREE.SRGBColorSpace,
+      });
+
+      this.renderer.setRenderTarget(renderTarget);
+      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.clear();
+      this.renderer.render(this.scene, thumbCamera);
+
+      const pixels = new Uint8Array(width * height * 4);
+      this.renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, pixels);
+
+      // Vertically flip OpenGL bottom-up pixels to raster top-down
+      const clamped = new Uint8ClampedArray(width * height * 4);
+      const rowSize = width * 4;
+      for (let y = 0; y < height; y++) {
+        const srcY = height - 1 - y;
+        clamped.set(pixels.subarray(srcY * rowSize, (srcY + 1) * rowSize), y * rowSize);
+      }
+
+      if (params.format === 'QOI') {
+        const qoiBytes = encodeQoi(clamped, width, height);
+        return 'data:image/qoi;base64,' + bytesToBase64(qoiBytes);
+      }
+
+      if (typeof document !== 'undefined') {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const imgData = new ImageData(clamped, width, height);
+          ctx.putImageData(imgData, 0, 0);
+          const mime = params.format === 'JPG' ? 'image/jpeg' : 'image/png';
+          const quality = params.format === 'JPG' ? 0.85 : undefined;
+          return canvas.toDataURL(mime, quality);
+        }
+      }
+      return null;
+    } catch (err) {
+      console.error('[PlateScene] Error rendering thumbnail:', err);
+      return null;
+    } finally {
+      if (thumbCamera) {
+        if (camLight) {
+          thumbCamera.remove(camLight);
+          camLight.dispose();
+        }
+        this.scene.remove(thumbCamera);
+      }
+
+      // Restore renderer renderTarget and clearColor
+      if (this.renderer) {
+        this.renderer.setRenderTarget(prevRenderTarget);
+        this.renderer.setClearColor(prevClearColor, prevClearAlpha);
+      }
+      if (renderTarget) {
+        renderTarget.dispose();
+      }
+
+      // Restore element visibilities
+      this.bedGroup.visible = savedBedVisible;
+      if (this.bedGridHelper) this.bedGridHelper.visible = savedGridVisible;
+      if (this.axesHelper) this.axesHelper.visible = savedAxesVisible;
+      if (this.buildVolumeHelper) this.buildVolumeHelper.visible = savedBuildVolumeVisible;
+      this.plateLabelGroup.visible = savedLabelsVisible;
+      this.labelsGroup.visible = savedObjectLabelsVisible;
+      this.extraBedsGroup.visible = savedExtraBedsVisible;
+      this.flattenGroup.visible = savedFlattenVisible;
+      this.brimEarsGroup.visible = savedBrimEarsVisible;
+      this.measureGroup.visible = savedMeasureVisible;
+      this.transformControls.getHelper().visible = savedControlsVisible;
+      this.selectionOutline.visible = savedOutlineVisible;
+      if (this.towerPreview) this.towerPreview.visible = savedTowerVisible;
+
+      // Restore all cursor meshes
+      this.paintCursor.circleMesh.visible = savedCircleCursor;
+      this.paintCursor.diskMesh.visible = savedDiskCursor;
+      this.paintCursor.sphereMesh.visible = savedSphereCursor;
+      this.paintCursor.pointerMesh.visible = savedPointerCursor;
+
+      this.scene.background = savedBackground;
+      this.overhangHighlight.value = savedOverhang;
+
+      for (const [k, ov] of this.overlayMeshes.entries()) {
+        const wasVis = savedOverlays.get(k);
+        if (wasVis !== undefined) ov.visible = wasVis;
+      }
+
+      for (const [child, wasVis] of savedChildOverlays.entries()) {
+        child.visible = wasVis;
+      }
+
+      for (const [key, state] of savedMeshStates.entries()) {
+        const mesh = this.objectMeshes.get(key);
+        if (mesh) {
+          mesh.visible = state.visible;
+          mesh.material = state.material;
+        }
+      }
+    }
+  }
+
   public destroy(): void {
     this.setWipeTowerPreview({ enabled: false });
     this.bedAssetRevision++;
     this.bedTexture?.dispose();
-    this.customBedModel?.geometry.dispose();
-    this.customBedModel?.material.dispose();
     this.isDestroyed = true;
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
@@ -1850,14 +2332,20 @@ export class PlateScene {
     this.unsubscribePrefs?.();
     this.unsubscribePrefs = null;
 
-    this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown);
+    this.finishPlaneDrag(false);
+    this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown, true);
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp);
     this.renderer.domElement.removeEventListener('pointerleave', this.onPointerLeave);
-    this.renderer.domElement.removeEventListener('pointercancel', this.onPointerLeave);
+    this.renderer.domElement.removeEventListener('pointercancel', this.onPointerCancel);
+    this.renderer.domElement.removeEventListener('lostpointercapture', this.onPointerCancel);
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     window.removeEventListener('resize', this.onWindowResize);
+    this.resizeObserver.disconnect();
 
+    this.selectionOutline.geometry.dispose();
+    this.selectionOutline.material.dispose();
+    this.scene.remove(this.selectionOutline);
     this.transformControls.dispose();
     this.orbitControls.dispose();
     this.paintCursor.dispose();

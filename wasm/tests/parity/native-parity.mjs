@@ -231,7 +231,11 @@ function parseCompareOutput(output) {
 function extractGcodeMetrics(filePath) {
   if (!fs.existsSync(filePath)) return null;
   const content = fs.readFileSync(filePath, 'utf8');
-  let layers = 0;
+  const layers = (content.match(/^[ \t]*;[ \t]*(?:LAYER_CHANGE|CHANGE_LAYER)\b/gm) ?? []).length ||
+    (content.match(/^[ \t]*;[ \t]*Z:/gm) ?? []).length;
+  const extrusionByFeature = {};
+  let feature = 'Before first layer';
+  let inLayers = false;
   let g1Count = 0;
   let totalExtrusion = 0;
   let minX = Infinity, maxX = -Infinity;
@@ -241,10 +245,10 @@ function extractGcodeMetrics(filePath) {
   const lines = content.split(/\r?\n/);
   for (const rawLine of lines) {
     const line = rawLine.replace(/[ \t]*;.*$/, '').trim();
-    if (/^[ \t]*;LAYER_CHANGE/.test(rawLine) || /^[ \t]*;Z:/.test(rawLine)) {
-      layers++;
-    }
-    if (!line.startsWith('G1')) continue;
+    if (/^[ \t]*;[ \t]*(?:LAYER_CHANGE|CHANGE_LAYER)\b/.test(rawLine)) inLayers = true;
+    const featureMatch = rawLine.match(/^[ \t]*;[ \t]*(?:FEATURE|TYPE):[ \t]*(.+)/);
+    if (inLayers && featureMatch) feature = featureMatch[1].trim();
+    if (!/^G1(?:[ \t]|$)/.test(line)) continue;
     g1Count++;
     const tokens = line.split(/[ \t]+/);
     for (let i = 1; i < tokens.length; i++) {
@@ -252,7 +256,10 @@ function extractGcodeMetrics(filePath) {
       const code = tok[0];
       const val = parseFloat(tok.slice(1));
       if (isNaN(val)) continue;
-      if (code === 'E') totalExtrusion += val;
+      if (code === 'E') {
+        totalExtrusion += val;
+        extrusionByFeature[feature] = (extrusionByFeature[feature] ?? 0) + val;
+      }
       else if (code === 'X') { if (val < minX) minX = val; if (val > maxX) maxX = val; }
       else if (code === 'Y') { if (val < minY) minY = val; if (val > maxY) maxY = val; }
       else if (code === 'Z') { if (val < minZ) minZ = val; if (val > maxZ) maxZ = val; }
@@ -263,6 +270,7 @@ function extractGcodeMetrics(filePath) {
     layers,
     g1Count,
     totalExtrusion: Number(totalExtrusion.toFixed(4)),
+    extrusionByFeature: Object.fromEntries(Object.entries(extrusionByFeature).map(([key, value]) => [key, Number(value.toFixed(5))])),
     xRange: minX !== Infinity ? `${minX.toFixed(3)} - ${maxX.toFixed(3)}` : 'N/A',
     yRange: minY !== Infinity ? `${minY.toFixed(3)} - ${maxY.toFixed(3)}` : 'N/A',
     zRange: minZ !== Infinity ? `${minZ.toFixed(3)} - ${maxZ.toFixed(3)}` : 'N/A'

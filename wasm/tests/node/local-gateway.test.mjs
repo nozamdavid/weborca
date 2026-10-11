@@ -174,11 +174,19 @@ describe('local gateway', () => {
   test('read-only mode applies to the app routes and to the printer UI', async () => {
     const api = await request(readOnlyGateway.port, `/_printer/http/127.0.0.1:${printerPort}/printer/gcode/script`, { method: 'POST', headers: asApp(), body: 'M104 S200' });
     assert.equal(api.status, 403);
+    const bypassScript = await request(readOnlyGateway.port, `/_printer/http/127.0.0.1:${printerPort}/printer/gcode/%73cript`, { method: 'GET', headers: asApp() });
+    assert.equal(bypassScript.status, 403);
+    const bypassDelete = await request(readOnlyGateway.port, `/_printer/http/127.0.0.1:${printerPort}/server/files/%64elete_file`, { method: 'GET', headers: asApp() });
+    assert.equal(bypassDelete.status, 403);
+    const bypassPrefix = await request(readOnlyGateway.port, `/_printer/http/127.0.0.1:${printerPort}/proxy/klipper/printer/emergency_stop`, { method: 'GET', headers: asApp() });
+    assert.equal(bypassPrefix.status, 403);
     const created = await request(readOnlyGateway.port, '/_gw/ui-session', { method: 'POST', headers: asApp(), body: JSON.stringify({ url: `http://127.0.0.1:${printerPort}/` }) });
     const { label } = JSON.parse(created.body);
     printerRequests.length = 0;
     const ui = await request(readOnlyGateway.port, '/printer/emergency_stop', { method: 'POST', headers: { host: `${label}.localhost:${readOnlyGateway.port}`, 'sec-fetch-site': 'same-origin' } });
     assert.equal(ui.status, 403);
+    const uiPrefix = await request(readOnlyGateway.port, '/proxy/klipper/printer/emergency_stop', { method: 'GET', headers: { host: `${label}.localhost:${readOnlyGateway.port}`, 'sec-fetch-site': 'same-origin' } });
+    assert.equal(uiPrefix.status, 403);
     assert.deepEqual(printerRequests, [], 'nothing reached the printer');
     const read = await request(readOnlyGateway.port, '/server/info', { headers: { host: `${label}.localhost:${readOnlyGateway.port}`, 'sec-fetch-site': 'same-origin' } });
     assert.equal(read.status, 200);

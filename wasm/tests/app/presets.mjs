@@ -243,7 +243,7 @@ async function runBrowserPresetsSuite(browserType, browserName) {
     // Verify it is deleted and active restored to base system preset
     await page.waitForFunction(() => {
       const ps = document.getElementById('process-select');
-      return ps && !ps.value.startsWith('user:');
+      return ps && !ps.value.startsWith('user:') && !window.__appStore.getState().isSelectingPreset;
     }, null, { timeout: 10000 });
 
     const presetsRemaining = await page.evaluate(() => {
@@ -310,7 +310,7 @@ async function runBrowserPresetsSuite(browserType, browserName) {
     await page.click('[data-testid="delete-printer-preset-btn"]');
     await page.waitForFunction(() => {
       const p = document.getElementById('printer-select');
-      return p && !p.value.startsWith('user:');
+      return p && !p.value.startsWith('user:') && !window.__appStore.getState().isSelectingPreset;
     }, null, { timeout: 10000 });
 
     const printerAfterDelete = await page.evaluate(() => window.__appStore.getState().selectedPrinter);

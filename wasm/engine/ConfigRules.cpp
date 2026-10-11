@@ -1,6 +1,7 @@
 #include "ConfigRules.hpp"
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/PrintConfig.hpp"
+#include "libslic3r/Config.hpp"
 #include "libslic3r/MaterialType.hpp"
 #include "libslic3r/GCode/AdaptivePAProcessor.hpp"
 
@@ -417,7 +418,7 @@ void update_print_fff_config(const DynamicPrintConfig& config, const RuleContext
         result.fixes.push_back({"enforce_support_layers", "0", spiral_yes_reason});
         result.fixes.push_back({"detect_thin_wall", "0", spiral_yes_reason});
         result.fixes.push_back({"overhang_reverse", "0", spiral_yes_reason});
-        result.fixes.push_back({"timelapse_type", "traditional", spiral_yes_reason});
+        result.fixes.push_back({"timelapse_type", ConfigOptionEnum<TimelapseType>(tlTraditional).serialize(), spiral_yes_reason});
         result.fixes.push_back({"enable_wrapping_detection", "0", spiral_yes_reason});
 
         // Option: No (only available when !is_object_config)
@@ -434,12 +435,12 @@ void update_print_fff_config(const DynamicPrintConfig& config, const RuleContext
         std::string alt_wall_no_reason = "Alternate extra wall doesn't work well when ensure vertical shell thickness is set to All. [No - Don't use alternate extra wall]";
 
         if (!context.is_global_config) {
-            result.fixes.push_back({"ensure_vertical_shell_thickness", "Moderate", alt_wall_yes_reason});
+            result.fixes.push_back({"ensure_vertical_shell_thickness", ConfigOptionEnum<EnsureVerticalShellThickness>(evstModerate).serialize(), alt_wall_yes_reason});
             result.fixes.push_back({"alternate_extra_wall", "1", alt_wall_yes_reason});
         } else {
-            result.fixes.push_back({"ensure_vertical_shell_thickness", "Moderate", alt_wall_yes_reason});
+            result.fixes.push_back({"ensure_vertical_shell_thickness", ConfigOptionEnum<EnsureVerticalShellThickness>(evstModerate).serialize(), alt_wall_yes_reason});
             result.fixes.push_back({"alternate_extra_wall", "1", alt_wall_yes_reason});
-            result.fixes.push_back({"ensure_vertical_shell_thickness", "All", alt_wall_no_reason});
+            result.fixes.push_back({"ensure_vertical_shell_thickness", ConfigOptionEnum<EnsureVerticalShellThickness>(evstAll).serialize(), alt_wall_no_reason});
             result.fixes.push_back({"alternate_extra_wall", "0", alt_wall_no_reason});
         }
     }

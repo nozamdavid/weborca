@@ -139,8 +139,15 @@ describe('Orca WASM Engine evaluateRules Test Suite', () => {
     assert.strictEqual(fixesMap.get('enforce_support_layers'), '0', 'enforce_support_layers must be fixed to 0');
     assert.strictEqual(fixesMap.get('detect_thin_wall'), '0', 'detect_thin_wall must be fixed to 0');
     assert.strictEqual(fixesMap.get('overhang_reverse'), '0', 'overhang_reverse must be fixed to 0');
-    assert.strictEqual(fixesMap.get('timelapse_type'), 'traditional', 'timelapse_type must be fixed to traditional');
+    assert.strictEqual(fixesMap.get('timelapse_type'), '0', 'timelapse_type must be fixed to traditional');
     assert.strictEqual(fixesMap.get('enable_wrapping_detection'), '0', 'enable_wrapping_detection must be fixed to 0');
+    const yesOptions = Object.fromEntries(res.fixes.filter(f => !f.reason.includes('[No:')).map(f => [f.key, f.value]));
+    const applied = await core.call('setOptions', { options: yesOptions });
+    assert.deepEqual(applied.errors ?? [], [], 'every proposed Yes fix must be accepted natively');
+    const fixedConfig = await core.call('getConfig');
+    assert.equal(fixedConfig.timelapse_type, '0');
+    assert.equal(fixedConfig.wall_loops, '1');
+    assert.equal(fixedConfig.sparse_infill_density, '0%');
     // "No" branch from ConfigManipulation.cpp:484
     assert.strictEqual(fixesMap.get('spiral_mode'), '0', 'spiral_mode "No" branch must be fixed to 0');
 
@@ -154,6 +161,22 @@ describe('Orca WASM Engine evaluateRules Test Suite', () => {
     const spiralFixes = res.fixes.filter((f) => f.key === 'spiral_mode' || f.key === 'wall_loops');
     assert.strictEqual(spiralFixes.length, 0, 'No spiral mode fixes when spiral_mode is 0');
 
+    await core.call('resetOptions', {});
+  });
+
+  test('alternate-wall recommendation branches use valid enum values', async () => {
+    await core.call('setOptions', { options: { alternate_extra_wall: '1', ensure_vertical_shell_thickness: 'ensure_all' } });
+    const result = await core.call('evaluateRules', { kind: 'print' });
+    const noBranch = f => /\[No\s*(?::|-)/.test(f.reason);
+    for (const no of [false, true]) {
+      const options = Object.fromEntries(result.fixes.filter(f => noBranch(f) === no).map(f => [f.key, f.value]));
+      assert.ok(Object.keys(options).length);
+      const applied = await core.call('setOptions', { options });
+      assert.deepEqual(applied.errors ?? [], []);
+      const config = await core.call('getConfig');
+      assert.equal(config.ensure_vertical_shell_thickness, no ? 'ensure_all' : 'ensure_moderate');
+      assert.equal(config.alternate_extra_wall, no ? '0' : '1');
+    }
     await core.call('resetOptions', {});
   });
 

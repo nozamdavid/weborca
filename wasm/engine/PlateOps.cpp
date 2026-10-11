@@ -351,6 +351,46 @@ nlohmann::json addPlate(
     return listPlates(model, plates, config);
 }
 
+nlohmann::json duplicatePlate(
+    const nlohmann::json& args,
+    Slic3r::Model& model,
+    Slic3r::PlateDataPtrs& plates,
+    Slic3r::DynamicPrintConfig& config
+) {
+    listPlates(model, plates, config);
+    const int index = args.at("plateIndex").get<int>();
+    if (index < 0 || static_cast<size_t>(index) >= plates.size())
+        throw Slic3r::RuntimeError("Invalid plateIndex");
+    const auto* source = plates[index];
+    const auto plate_config = source->config;
+    const auto filament_maps = source->filament_maps;
+    const auto name = source->plate_name;
+    double width, depth, height;
+    getBedDimensions(config, width, depth, height);
+    const auto origin = computePlateOrigin(index, plates.size(), width, depth);
+    std::map<int, std::set<int>> selected;
+    for (const auto& ref : source->objects_and_instances) selected[ref.first].insert(ref.second);
+    Slic3r::Model snapshot;
+    for (const auto& entry : selected) {
+        const auto* object = model.objects.at(entry.first);
+        auto* copy = snapshot.add_object(*object);
+        for (size_t i = object->instances.size(); i-- > 0;)
+            if (entry.second.count(static_cast<int>(i)) == 0) copy->delete_instance(i);
+    }
+    // Adding a plate can change the grid's column count and move existing
+    // instances. The snapshot retains their original plate-local positions.
+    addPlate({{"name", name + " (copy)"}}, model, plates, config);
+    auto* target = plates.back();
+    target->config = plate_config;
+    target->filament_maps = filament_maps;
+    const Slic3r::Vec3d shift = computePlateOrigin(target->plate_index, plates.size(), width, depth) - origin;
+    for (const auto* object : snapshot.objects) {
+        auto* copy = model.add_object(*object);
+        copy->translate_instances(shift);
+    }
+    return listPlates(model, plates, config);
+}
+
 nlohmann::json deletePlate(
     const nlohmann::json& args,
     Slic3r::Model& model,

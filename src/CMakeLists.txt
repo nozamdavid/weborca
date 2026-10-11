@@ -309,7 +309,7 @@ if (WIN32)
     endif()
 
 else ()
-    if (NOT APPLE)
+    if (NOT APPLE AND SLIC3R_GUI)
         set(output_sos_Release "")
         set(output_sos_Debug "")
         add_custom_target(OrcaSlicerSosCopy ALL DEPENDS OrcaSlicer)

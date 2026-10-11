@@ -1,9 +1,15 @@
 # Printer connections
 
 The web app can read from and send jobs to printers on your network: Klipper (Moonraker), PrusaLink,
-OctoPrint and Bambu Lab (LAN mode). Add a printer from the sidebar's connect button or the Device tab;
+OctoPrint, Bambu Lab (LAN mode), and the modern Flashforge HTTP API. Add a printer from the sidebar's connect button or the Device tab;
 the dialog asks for the API address (`print_host`) and the printer's own web UI address (`print_host_webui`),
 like desktop's physical printer dialog.
+
+Choosing a printer profile in the Prepare sidebar associates it with the selected device and saves
+the current filament presets and colors. For an unbound device, **Use current profile for device**
+keeps the settings already displayed. Saved user printer profiles use their system parent's brand
+and defaults before restoring the device's filament setup. Project loading and programmatic profile
+selection do not change the saved device profile.
 
 ## Why there is a gateway
 
@@ -31,7 +37,7 @@ which is never forwarded to the printer.
 
 ## Turning it on
 
-The gateway is **off** unless the server is started with `ORCA_PRINTER_PROXY`:
+LAN forwarding is **off** unless the server is started with `ORCA_PRINTER_PROXY`. Cloud bridges can be enabled separately with `ORCA_PRINTER_CLOUD`:
 
 ```bash
 ORCA_PRINTER_PROXY=private npx vite preview --host 0.0.0.0 --port 5070
@@ -48,10 +54,13 @@ Anyone who can reach the app server can use the gateway, so it is restricted:
   only, and the gateway connects to the address it checked, so DNS rebinding cannot swap it afterwards.
 - A comma list restricts the gateway to exactly those hosts.
 - `ORCA_PRINTER_PROXY_READONLY=1` refuses everything that could change a printer: any HTTP method but
-  GET/HEAD/OPTIONS, the few Moonraker paths that act on a GET (`/printer/gcode/script`, `/printer/print/*`,
+  GET/HEAD/OPTIONS (plus the read-only Flashforge `POST /detail` query), the few Moonraker paths that act on a GET (`/printer/gcode/script`, `/printer/print/*`,
   `/printer/emergency_stop`, restarts, ...), and every websocket JSON-RPC request outside a read-only
   allow-list. Frames that are not valid JSON, batches containing a refused request and binary frames are
   dropped, so the filter fails closed. On Bambu only `info.get_version` and `pushing.pushall` pass.
+  HTTP path checks inspect every segment after bounded decoding of nested escaping, so prefixes and
+  encoded separators cannot hide command names. Method-override headers are refused for mutating verbs
+  in read-only mode and are stripped before forwarding in every mode.
 - Bambu uploads accept plain `.gcode` / `.3mf` names only.
 - API keys, access codes and passwords are stored in this browser's local storage and sent only to the gateway.
 
@@ -131,3 +140,38 @@ status mapping follow the community-documented MQTT messages and are tested agai
   PrusaLink and a Bambu broker through the real gateway.
 - `wasm/tests/node/printer-live.test.mjs`: read-only check of a real Moonraker printer, only when
   `ORCA_LIVE_PRINTER=<address>` is set. It runs through a read-only gateway and never calls upload.
+
+## Filament inventory and Flashforge
+
+Prepare's filament sync dialog reads material/color inventory and lets you map each loaded slot to a compatible local preset before applying it. Bambu LAN reports support AMS trays and the external spool. Moonraker supports Snapmaker U1's `print_task_config` assignments (including manually configured non-RFID spools), with `filament_detect` metadata as a fallback and feeder presence checks, Happy Hare MMU gate metadata, and the active spool from Moonraker's Spoolman integration. U1 and Happy Hare tool numbers are preserved even when some tools have no filament. Loaded U1 slots without material metadata require a manual preset choice; their existing colors are preserved. Standard Spoolman exposes one active spool, which maps to the first slicer slot, rather than a per-tool inventory. Spoolman changes update the available inventory; clicking Sync applies it to the project.
+
+Generic extruder temperatures and tool counts do not identify loaded materials. PrusaLink/OctoPrint inventory sync is not available without a supported metadata source. Filament presets and colors chosen in Prepare are remembered on the selected saved device. Inventory sync only reads the printer and updates the slicer; it does not load filament or send G-code. The read-only gateway permits the Spoolman active-spool query and proxy GET requests for individual spool records, but refuses proxy writes and unrelated routes.
+
+Flashforge connections use the modern HTTP API (default port 8898), a serial number and check code, through the gateway. The driver reads loaded material-station slots from `/detail` and uploads to `/uploadGcode`. This is the API used by modern material-station printers such as AD5X; it does not implement older Flashforge TCP protocols. Mocks verify status, temperatures, progress, fans and multi-nozzle reports; unrecognized states remain unknown. Availability depends on printer firmware and has not been tested on physical Flashforge hardware.
+
+Creality Cloud account integrations are not implemented.
+
+## Bambu Cloud
+
+The cloud account driver connects to Bambu Cloud to monitor bound devices. Cloud uploading and printing are unsupported (read-only). To enable the cloud endpoints, you must opt-in by setting `ORCA_PRINTER_CLOUD=bambu-cloud` on the app server gateway, or `--cloud bambu-cloud` on the local gateway program.
+
+```bash
+ORCA_PRINTER_CLOUD=bambu-cloud npx vite preview          # server gateway
+node orca-gateway.mjs --allow-origin <app origin> --cloud bambu-cloud   # local gateway
+```
+
+The connection picker offers "Bambu Cloud" and explains whether its gateway is enabled. You log in with your account and password or verification code. The credentials are exchanged for an access token stored locally and never sent to the printer. The token allows fetching your user ID and bound devices. Once a device is chosen, the gateway connects to the cloud MQTT broker to receive live status and filament inventory.
+
+The login API currently uses `api.bambulab.com`; the broker picker selects the MQTT endpoint separately. China and legacy broker choices require regional account verification. Passwords and verification codes are cleared after successful login; the saved email remains separate from the MQTT username for re-login. HTTPS and MQTT TLS verify certificates. Only the three account API routes and read-only MQTT information requests are allowed by the dedicated bridge; cloud opt-in does not open the generic HTTP proxy to Bambu's API.
+
+Isolated gateway and client mocks cover authentication errors, code challenges, bound devices, incremental AMS/status reports, malformed messages, rejected broker/print requests and reconnect cleanup. Chromium and Firefox exercise password login, code login and re-login. Real account challenges, token expiration and printer/AMS compatibility remain unverified.
+
+## Creality Cloud
+
+The Creality Cloud connection uses regional HTTPS account login and read-only polling for bound printers. It supports password login and a QR code scanned by the Creality Cloud app. Global and China regions use separate fixed account/API hosts. The saved token, user ID, device name and telemetry ID recover the connection after a refresh; passwords are cleared after login.
+
+Enable the dedicated bridge using `ORCA_PRINTER_CLOUD=creality-cloud` on the app server or `--cloud creality-cloud` on the local gateway. Multiple cloud services use a comma-separated list. Monitoring provides state, progress, temperatures, fans, layers and reported CFS/external-spool material/color inventory. Empty or unavailable CFS slots are excluded. Inventory can be mapped to Prepare filament presets using the existing sync dialog.
+
+The gateway allows account authentication, device enumeration, telemetry and the exact CFS query `{ "method": "get", "params": { "cfsList": 1 } }`. Uploads, dispatch, feeding and other device-control RPCs are unsupported and rejected. Cloud opt-in does not grant generic HTTP proxy access to Creality hosts. Certificate verification remains enabled, and upstream requests time out after 15 seconds. Requests stop when the connection or login flow closes.
+
+The response contracts come from Creality's published Cura integration and current Creality Print device-manager sources. Mock tests validate these contracts and the gateway boundaries; real account login, regional availability, firmware telemetry and CFS inventory remain unverified. The API does not provide a model support guarantee, so support is determined by which account-bound printers expose the expected telemetry.

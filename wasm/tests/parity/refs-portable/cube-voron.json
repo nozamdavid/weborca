@@ -1,0 +1,14 @@
+{
+  "normalizedSha256": "d2a7f956defad1b12b1b1f1effb06fcac4081dd4e01e3345505558babd518bb6",
+  "provenance": "Release native Linux same-source slicing driver; portable RNG and canonical clipped open-wall endpoint ordering. Independently matches current WASM and Chromium/Firefox output.",
+  "model": "tests/data/20mm_cube.obj",
+  "modelSha256": "15943d9ad0548b654199c4e8eecdfc937964eaac80aad0237bf70fac75725b80",
+  "printer": "Voron 2.4 300 0.4 nozzle",
+  "process": "0.20mm Standard @Voron",
+  "filaments": [
+    "Generic PLA @System"
+  ],
+  "flattenedConfigSha256": "2f4d8888bdd4406da1f1031506ec13158293b91cb35ad2088e2df8d72899b0a3",
+  "g1Commands": 9097,
+  "layers": 100
+}

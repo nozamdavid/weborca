@@ -1,7 +1,8 @@
+import { usePlatesStore } from '../plates/platesStore';
 import { useWizardStore } from '../wizard';
 import { usePrefsStore } from '../prefs';
 import { FilamentSyncButton } from '../printers/FilamentSyncDialog';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ModifiedSettingsDialog } from '../settings/ModifiedSettingsDialog';
 import { modifiedSettings } from '../settings/modifiedSettings';
 import { FlushVolumesDialog } from '../flush/FlushVolumesDialog';
@@ -9,11 +10,20 @@ import { useHistoryStore } from '../history';
 import { ObjectListPanel } from '../objectlist/ObjectListPanel';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
 import { SettingsPanel } from '../settings/SettingsPanel';
-import { useAppStore } from '../store/appStore';
+import { useAppStore, resolveDeviceVendor, pendingOptionKey } from '../store/appStore';
 import type { PresetKind } from '../presets/types';
 import { exportGcode } from './exportGcode';
 import { EditIcon, GearIcon, PlugIcon, SaveIcon, TrashIcon } from './glyphs';
 import { useTranslation } from "../i18n";
+
+const bedTypeIcons: Record<string, string> = {
+  'Cool Plate': 'bed_cool',
+  'Engineering Plate': 'bed_engineering',
+  'High Temp Plate': 'bed_high_templ',
+  'Textured PEI Plate': 'bed_pei',
+  'Textured Cool Plate': 'bed_pei_cool',
+  'Supertack Plate': 'bed_cool_supertack'
+};
 
 const Section: React.FC<{ title: string; badge?: string; children: React.ReactNode; defaultOpen?: boolean; className?: string; headerExtra?: React.ReactNode }> = ({ title, badge, children, defaultOpen = true, className = '', headerExtra }) => {
     const { t } = useTranslation();
@@ -41,12 +51,13 @@ const PresetRow: React.FC<{
   user: Array<{ name: string }>;
   value: string;
   onSystem: (name: string) => void;
+  onUser: (name: string) => void;
   extra?: React.ReactNode;
   canEdit: boolean;
   canSave: boolean;
-}> = ({ kind, disabled, selectDisabled, placeholder, system, user, value, onSystem, extra, canEdit, canSave }) => {
+}> = ({ kind, disabled, selectDisabled, placeholder, system, user, value, onSystem, onUser, extra, canEdit, canSave }) => {
     const { t } = useTranslation();
-  const { selectUserPreset, openDialog, openSavePresetDialog, openManagePresetsDialog, deleteUserPresetAction, activeUserPreset } = useAppStore();
+  const { openDialog, openSavePresetDialog, openManagePresetsDialog, deleteUserPresetAction, activeUserPreset } = useAppStore();
   const activeUser = activeUserPreset[kind];
   return (
     <div className="preset-row">
@@ -56,7 +67,7 @@ const PresetRow: React.FC<{
         aria-label={`${kind} preset`}
         value={value}
         disabled={selectDisabled}
-        onChange={(e) => (e.target.value.startsWith('user:') ? selectUserPreset(kind, e.target.value.substring(5)) : onSystem(e.target.value))}
+        onChange={(e) => (e.target.value.startsWith('user:') ? onUser(e.target.value.substring(5)) : onSystem(e.target.value))}
       >
         <option value="">{placeholder}</option>
         {system.length > 0 && <optgroup label={t("System presets")}>{system.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}</optgroup>}
@@ -84,12 +95,14 @@ const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({
   const presetConfig = useAppStore((s) => s.presetConfig);
   const currentConfig = useAppStore((s) => s.currentConfig);
   const applyOptionChange = useAppStore((s) => s.applyOptionChange);
+  const pendingOptions = useAppStore((s) => s.pendingOptions);
+  const value = (key: string) => pendingOptions[pendingOptionKey('print', key)]?.value ?? currentConfig[key];
   const changedCount = modifiedSettings(layout, currentConfig, presetConfig).length;
   const toggles: { id: string; label: string; checked: boolean; off?: string; apply: [string, string, string]; disabled?: boolean; title?: string }[] = [
-    { id: 'support', label: t("Support"), checked: currentConfig.enable_support === '1', apply: ['enable_support', '1', '0'] },
-    { id: 'brim', label: t("Brim"), checked: !!currentConfig.brim_type && currentConfig.brim_type !== 'no_brim', apply: ['brim_type', 'auto_brim', 'no_brim'] },
-    { id: 'prime-tower', label: t("Prime tower"), checked: currentConfig.enable_prime_tower === '1', apply: ['enable_prime_tower', '1', '0'], disabled: !multiFilament, title: multiFilament ? undefined : 'Needs more than one filament' },
-    { id: 'ironing', label: t("Ironing"), checked: !!currentConfig.ironing_type && currentConfig.ironing_type !== 'no ironing', apply: ['ironing_type', 'top', 'no ironing'] }
+    { id: 'support', label: t("Support"), checked: value('enable_support') === '1', apply: ['enable_support', '1', '0'] },
+    { id: 'brim', label: t("Brim"), checked: !!value('brim_type') && value('brim_type') !== 'no_brim', apply: ['brim_type', 'auto_brim', 'no_brim'] },
+    { id: 'prime-tower', label: t("Prime tower"), checked: value('enable_prime_tower') === '1', apply: ['enable_prime_tower', '1', '0'], disabled: !multiFilament, title: multiFilament ? undefined : 'Needs more than one filament' },
+    { id: 'ironing', label: t("Ironing"), checked: !!value('ironing_type') && value('ironing_type') !== 'no ironing', apply: ['ironing_type', 'top', 'no ironing'] }
   ];
   return (
     <div id="quick-toggles" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', padding: '4px 12px 8px', fontSize: 12 }}>
@@ -97,6 +110,7 @@ const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({
         <label key={t.id} title={t.title} style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: disabled || t.disabled ? 0.5 : 1 }}>
           <input
             id={`quick-${t.id}`} type="checkbox" checked={t.checked} disabled={disabled || t.disabled}
+            aria-busy={Boolean(pendingOptions[pendingOptionKey('print', t.apply[0])])}
             onChange={(e) => void applyOptionChange(t.apply[0], e.target.checked ? t.apply[1] : t.apply[2], 'print')}
           />
           {t.label}
@@ -113,14 +127,24 @@ const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({
 export const PrepareSidebar: React.FC = () => {
     const { t } = useTranslation();
   const sidebarWidth = usePrefsStore((s) => s.display.sidebarWidth);
-  const setWidth = (width: number) => {
-    usePrefsStore.getState().setDisplayPref('sidebarWidth', width);
-    window.dispatchEvent(new Event('resize'));
+  const sidebarRef = useRef<HTMLElement>(null);
+  const [renderedWidth, setRenderedWidth] = useState(sidebarWidth);
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    const observer = new ResizeObserver(() => setRenderedWidth(sidebar.getBoundingClientRect().width));
+    observer.observe(sidebar);
+    return () => observer.disconnect();
+  }, []);
+  const setWidth = (width: number, available: number, persist = true) => {
+    const clamped = Math.max(Math.min(220, available * 0.2), Math.min(available * 0.3, width));
+    if (persist) usePrefsStore.getState().setDisplayPref('sidebarWidth', clamped);
+    else usePrefsStore.setState(state => ({ display: { ...state.display, sidebarWidth: clamped } }));
   };
   const {
     vendors, selectedVendor, chooseVendor, printers, selectedPrinter, choosePrinter,
     processes, selectedProcess, chooseProcess, filaments, selectedFilament, selectedFilaments, chooseFilament,
-    addFilamentSlot, removeFilamentSlot, setSlotColor, currentConfig,
+    addFilamentSlot, removeFilamentSlot, setSlotColor, currentConfig, configDefs, applyOptionChange,
     userPresets, activeUserPreset, isSlicing, isModelLoading, startSlice, cancelSlice, isEngineReady, modelFile, sliceResult, modelObjects,
     selectUserPreset, openDialog, openSavePresetDialog, openManagePresetsDialog, deleteUserPresetAction
   } = useAppStore();
@@ -132,10 +156,48 @@ export const PrepareSidebar: React.FC = () => {
   const printerCount = devices.length;
   const openSendDialog = usePrinterConnectionStore((s) => s.openSendDialog);
 
-  const isBusy = !isEngineReady || isSlicing || isModelLoading || isRestoring;
+  const isSelectingPreset = useAppStore((s) => s.isSelectingPreset);
+  const changePreset = async (change: () => Promise<void>) => {
+    if (useAppStore.getState().isSelectingPreset) return;
+    useAppStore.setState({ isSelectingPreset: true });
+    try { await change(); }
+    finally { useAppStore.setState({ isSelectingPreset: false }); }
+  };
+
+  // Only explicit sidebar actions associate a profile with a physical device.
+  const bindDeviceProfile = async (name: string, deviceId: string | null) => {
+    if (!deviceId) return;
+    const before = useAppStore.getState();
+    const isUser = before.userPresets.some(preset => preset.kind === 'printer' && preset.name === name);
+    // Resolve without updating a saved device before the final identity check.
+    const vendor = isUser ? await resolveDeviceVendor({ id: '', preset: name }) : before.selectedVendor;
+    const app = useAppStore.getState();
+    const store = usePrinterConnectionStore.getState();
+    if (!app.isEngineReady || app.isModelLoading || app.engineError || app.selectedPrinter !== name || store.selectedPrinterId !== deviceId) return;
+    const device = store.printers.find(printer => printer.id === deviceId);
+    if (!device || !vendor) return;
+    store.savePrinter({
+      ...device, preset: name, vendor,
+      filamentPresets: [...app.selectedFilaments],
+      filamentColors: (app.currentConfig.filament_colour || '').split(';')
+    });
+  };
+  const handleSelectPrinter = (name: string, isUser: boolean) => {
+    const deviceId = usePrinterConnectionStore.getState().selectedPrinterId;
+    return changePreset(async () => {
+      if (isUser) await selectUserPreset('printer', name);
+      else await choosePrinter(name);
+      await bindDeviceProfile(name, deviceId);
+    });
+  };
+  const isBusy = !isEngineReady || isSlicing || isModelLoading || isRestoring || isSelectingPreset;
+  const supportsBedTypes = selectedVendor === 'BBL' || currentConfig.support_multi_bed_types === '1' || currentConfig.support_multi_bed_types === 'true';
+  const bedTypeDef = configDefs.curr_bed_type;
   const activeFilaments = selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments : (selectedFilament ? [selectedFilament] : []);
   // A finished slice with the selected printer connected is sent rather than sliced again.
-  const readyToSend = !!sliceResult?.gcode && !isBusy && printerStatus === 'online';
+  const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
+  const hasCurrentGcode = !!sliceResult?.gcode && sliceResult.plateIndex === activePlateIndex;
+  const readyToSend = hasCurrentGcode && !isBusy && printerStatus === 'online';
   const canSlice = isEngineReady && !isBusy && !!modelFile && !!selectedPrinter && !!selectedProcess && (activeFilaments.length > 0);
 
   const extrudersCount = Math.max(1, (currentConfig['nozzle_diameter'] || '').split(',').length);
@@ -168,7 +230,7 @@ export const PrepareSidebar: React.FC = () => {
         disabled={isBusy || activeFilaments.length >= maxFilaments}
         onClick={(e) => {
           e.stopPropagation();
-          addFilamentSlot();
+          void changePreset(() => addFilamentSlot());
         }}
         style={{
           width: 22,
@@ -193,7 +255,7 @@ export const PrepareSidebar: React.FC = () => {
         disabled={isBusy || activeFilaments.length <= 1}
         onClick={(e) => {
           e.stopPropagation();
-          removeFilamentSlot();
+          void changePreset(() => removeFilamentSlot());
         }}
         style={{
           width: 22,
@@ -211,7 +273,8 @@ export const PrepareSidebar: React.FC = () => {
     </div>
   );
   const user = (kind: PresetKind) => userPresets.filter((p) => p.kind === kind);
-  const current = (kind: PresetKind, system: string) => (activeUserPreset[kind] ? `user:${activeUserPreset[kind]}` : system);
+  const current = (kind: PresetKind, name: string) =>
+    userPresets.some(preset => preset.kind === kind && preset.name === name) ? `user:${name}` : name;
 
   // Printers added in the configuration wizard are the ones offered for their brand; with none added, every printer of the brand is.
   const addedPrinters = useWizardStore((s) => s.addedPrinters);
@@ -231,14 +294,14 @@ export const PrepareSidebar: React.FC = () => {
   );
 
   return (
-    <aside className="sidebar" aria-label={t("Print settings")} style={{ width: sidebarWidth }}>
+    <aside ref={sidebarRef} className="sidebar" aria-label={t("Print settings")} aria-busy={isBusy} style={{ width: sidebarWidth }}>
       <div className="sidebar-resizer" role="separator" aria-label={t("Resize settings sidebar")} aria-orientation="vertical"
-        tabIndex={0} aria-valuenow={sidebarWidth}
+        tabIndex={0} aria-valuenow={Math.round(renderedWidth)}
         onKeyDown={(e) => {
           if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
           e.preventDefault();
           const available = e.currentTarget.parentElement?.parentElement?.clientWidth ?? window.innerWidth;
-          setWidth(Math.max(Math.min(220, available * 0.3), Math.min(available * 0.3, sidebarWidth + (e.key === 'ArrowRight' ? 10 : -10))));
+          setWidth((e.currentTarget.parentElement?.getBoundingClientRect().width ?? sidebarWidth) + (e.key === 'ArrowRight' ? 10 : -10), available);
         }}
         onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); }}
         onPointerMove={(e) => {
@@ -246,9 +309,10 @@ export const PrepareSidebar: React.FC = () => {
           const container = e.currentTarget.parentElement?.parentElement;
           if (!container) return;
           const bounds = container.getBoundingClientRect();
-          setWidth(Math.max(Math.min(220, bounds.width * 0.3), Math.min(bounds.width * 0.3, e.clientX - bounds.left)));
+          setWidth(e.clientX - bounds.left, bounds.width, false);
         }}
-        onPointerUp={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }} />
+        onPointerUp={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}
+        onLostPointerCapture={() => usePrefsStore.getState().setDisplayPref('sidebarWidth', usePrefsStore.getState().display.sidebarWidth)} />
       <div className="sidebar-scroll">
         <Section title={t("Printer")}>
           {devices.length > 0 && (
@@ -260,12 +324,33 @@ export const PrepareSidebar: React.FC = () => {
             </>
           )}
           <label className="field-label" htmlFor="vendor-select">{t("Brand")}</label>
-          <select id="vendor-select" value={selectedVendor} disabled={isBusy || vendors.length === 0} onChange={(e) => chooseVendor(e.target.value)}>
+          <select id="vendor-select" value={selectedVendor} disabled={isBusy || vendors.length === 0} onChange={(e) => void changePreset(() => chooseVendor(e.target.value))}>
             <option value="">{t("Select brand...")}</option>
             {vendors.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
           </select>
           <PresetRow kind="printer" disabled={isBusy} selectDisabled={isBusy || printers.length === 0} placeholder={t("Select printer...")} system={offeredPrinters} user={user('printer')}
-            value={current('printer', selectedPrinter)} onSystem={choosePrinter} extra={connectButton} canEdit={!!selectedPrinter} canSave={!!selectedPrinter} />
+            value={current('printer', selectedPrinter)} onSystem={(name) => void handleSelectPrinter(name, false)} onUser={(name) => void handleSelectPrinter(name, true)} extra={connectButton} canEdit={!!selectedPrinter} canSave={!!selectedPrinter} />
+          {selectedPrinter && supportsBedTypes && bedTypeDef?.enumValues && (
+            <>
+              <label className="field-label" htmlFor="bed-type-select">{t("Bed type")}</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {bedTypeIcons[currentConfig.curr_bed_type] && <img id="bed-type-icon" src={`/icons/${bedTypeIcons[currentConfig.curr_bed_type]}.png`} alt="" aria-hidden="true" width={40} height={40} />}
+              <select id="bed-type-select" data-testid="bed-type-select" value={currentConfig.curr_bed_type || ''} disabled={isBusy}
+                style={{ flex: 1, minWidth: 0 }}
+                onChange={(e) => void applyOptionChange('curr_bed_type', e.target.value, 'print')}>
+                {bedTypeDef.enumValues.map((value, index) => (
+                  <option key={value} value={value}>{t(bedTypeDef.enumLabels?.[index] || value)}</option>
+                ))}
+              </select>
+              </div>
+            </>
+          )}
+          {selectedDeviceId && selectedPrinter && devices.find(device => device.id === selectedDeviceId)?.preset !== selectedPrinter && (
+            <button className="btn btn-secondary" id="bind-device-profile" disabled={isBusy}
+              onClick={() => void changePreset(() => bindDeviceProfile(selectedPrinter, selectedDeviceId))}>
+              {t("Use current profile for device")}
+            </button>
+          )}
           <button className="btn btn-secondary" id="add-printers-btn" style={{ alignSelf: 'flex-start', padding: '2px 10px' }} disabled={isBusy || !selectedVendor} onClick={addPrinters}>{t("Add printers and nozzles...")}</button>
         </Section>
 
@@ -321,7 +406,8 @@ export const PrepareSidebar: React.FC = () => {
                       id={`filament-color-input-${slotNumber}`}
                       data-testid={`filament-color-input-${slotNumber}`}
                       value={toHexColor(slotColor)}
-                      onChange={(e) => setSlotColor(idx, e.target.value)}
+                      disabled={isBusy}
+                      onChange={(e) => void setSlotColor(idx, e.target.value)}
                       style={{
                         position: 'absolute',
                         opacity: 0,
@@ -339,11 +425,10 @@ export const PrepareSidebar: React.FC = () => {
                     value={current('filament', filamentName)}
                     disabled={isBusy || !selectedPrinter || filaments.length === 0}
                     onChange={(e) => {
-                      if (e.target.value.startsWith('user:')) {
-                        selectUserPreset('filament', e.target.value.substring(5), idx);
-                      } else {
-                        chooseFilament(e.target.value, idx);
-                      }
+                      const value = e.target.value;
+                      void changePreset(() => value.startsWith('user:')
+                        ? selectUserPreset('filament', value.substring(5), idx)
+                        : chooseFilament(value, idx));
                     }}
                   >
                     <option value="">{t("Select filament...")}</option>
@@ -374,7 +459,7 @@ export const PrepareSidebar: React.FC = () => {
                     title={t("Edit filament preset")}
                     aria-label={t("Edit filament preset")}
                     disabled={!filamentName || isBusy}
-                    onClick={() => openDialog('filament')}
+                    onClick={() => openDialog('filament', idx)}
                   >
                     <EditIcon />
                   </button>
@@ -385,7 +470,7 @@ export const PrepareSidebar: React.FC = () => {
                     title={t("Save as a user preset")}
                     aria-label={t("Save filament preset")}
                     disabled={!filamentName || isBusy}
-                    onClick={() => openSavePresetDialog('filament')}
+                    onClick={() => openSavePresetDialog('filament', idx)}
                   >
                     <SaveIcon />
                   </button>
@@ -421,7 +506,7 @@ export const PrepareSidebar: React.FC = () => {
 
         <Section title={t("Process")}>
           <PresetRow kind="process" disabled={isBusy} selectDisabled={isBusy || !selectedPrinter || processes.length === 0} placeholder={t("Select process...")} system={processes} user={user('process')}
-            value={current('process', selectedProcess)} onSystem={chooseProcess} canEdit={false} canSave={!!selectedProcess} />
+            value={current('process', selectedProcess)} onSystem={(name) => void changePreset(() => chooseProcess(name))} onUser={(name) => void changePreset(() => selectUserPreset('process', name))} canEdit={false} canSave={!!selectedProcess} />
         </Section>
 
         <QuickToggles disabled={isBusy || !selectedProcess} multiFilament={activeFilaments.length > 1} />
@@ -440,7 +525,7 @@ export const PrepareSidebar: React.FC = () => {
           <button id="slice-btn" className="btn-slice" disabled={!canSlice} onClick={() => startSlice()}>{isSlicing ? 'Slicing...' : 'Slice plate'}</button>
         )}
         <button id="cancel-btn" className="btn-danger-wide" hidden={!isSlicing} disabled={!isSlicing} onClick={() => cancelSlice()}>{t("Cancel")}</button>
-        {sliceResult?.gcode && !isSlicing && (
+        {hasCurrentGcode && !isSlicing && (
           <div className="footer-row">
             <button id="export-gcode-btn" className="btn-secondary-wide" onClick={exportGcode}>{t("Export G-code")}</button>
             {!readyToSend && <button id="send-to-printer-btn" className="btn-secondary-wide" onClick={openSendDialog}>{t("Send to printer")}</button>}

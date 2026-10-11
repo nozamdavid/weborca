@@ -27,20 +27,20 @@ export const CanvasToolbar: React.FC<{ groups: CanvasTool[][] }> = ({ groups }) 
     {groups.map((group, i) => (
       <React.Fragment key={i}>
         {i > 0 && <div className="tool-sep" />}
-        {group.map((t) => (
+        {group.map((tool) => (
           <button
-            key={t.id}
-            id={t.id}
-            data-testid={t.testId}
-            className={`icon-btn ${t.active ? 'active' : ''} ${t.danger ? 'danger' : ''}`}
-            aria-label={t.label}
-            aria-pressed={t.active}
-            data-tip={t.shortcut ? `${t.label} (${t.shortcut})` : t.label}
-            disabled={t.disabled}
-            onClick={t.onClick}
-            {...Object.fromEntries(Object.entries(t.data ?? {}).map(([k, v]) => [`data-${k}`, String(v)]))}
+            key={tool.id}
+            id={tool.id}
+            data-testid={tool.testId}
+            className={`icon-btn ${tool.active ? 'active' : ''} ${tool.danger ? 'danger' : ''}`}
+            aria-label={t(tool.label)}
+            aria-pressed={tool.active}
+            data-tip={tool.shortcut ? `${t(tool.label)} (${tool.shortcut})` : t(tool.label)}
+            disabled={tool.disabled}
+            onClick={tool.onClick}
+            {...Object.fromEntries(Object.entries(tool.data ?? {}).map(([k, v]) => [`data-${k}`, String(v)]))}
           >
-            {typeof t.icon === 'string' ? <Icon name={t.icon} /> : t.icon}
+            {typeof tool.icon === 'string' ? <Icon name={tool.icon} /> : tool.icon}
           </button>
         ))}
       </React.Fragment>
@@ -53,7 +53,7 @@ export const CanvasToolbar: React.FC<{ groups: CanvasTool[][] }> = ({ groups }) 
 export const ViewButtons: React.FC = () => { const { t } = useTranslation(); return (
   <div className="view-buttons" role="group" aria-label={t("Camera views")}>
     {CAMERA_VIEWS.map((v) => (
-      <button key={v.label} id={`view-${v.label.toLowerCase()}`} title={`${v.label} view (${v.key})`} onClick={() => setCameraView(v.view)}>{v.label}</button>
+      <button key={v.label} id={`view-${v.label.toLowerCase()}`} title={`${t(v.label)} (${v.key})`} onClick={() => setCameraView(v.view)}>{t(v.label)}</button>
     ))}
     <button id="view-fit" title={t("Zoom to selection (Z)")} onClick={() => setCameraView('Z')}>{t("Fit")}</button>
   </div>

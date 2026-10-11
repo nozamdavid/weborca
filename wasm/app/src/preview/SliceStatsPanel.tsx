@@ -1,3 +1,4 @@
+import { usePlatesStore } from '../plates/platesStore';
 /**
  * @file SliceStatsPanel.tsx
  * Floating statistics panel showing slice print time, layers, moves,
@@ -9,6 +10,7 @@ import { usePreviewStore } from './previewStore';
 import { useAppStore } from '../store/appStore';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
 import { SendToPrinterDialog } from '../printers/SendToPrinterDialog';
+import { exportGcode } from '../shell/exportGcode';
 import { useTranslation } from "../i18n";
 
 function formatPrintTime(seconds: number): string {
@@ -34,13 +36,13 @@ function parseFilamentStats(
   selectedFilaments: string[],
   currentConfig: Record<string, string>
 ): SlotFilamentStat[] {
-  if (!selectedFilaments || selectedFilaments.length <= 1) return [];
+  if (!selectedFilaments?.length) return [];
 
   const rawColors = (currentConfig['filament_colour'] || '')
     .split(';')
     .map((c) => c.trim())
-    .filter(Boolean)
     .map((c) => {
+      if (!c) return '';
       let hex = c.startsWith('#') ? c : `#${c}`;
       return hex.length > 7 ? hex.slice(0, 7) : hex;
     });
@@ -71,7 +73,7 @@ function parseFilamentStats(
       mm: mmValues[idx] || 0,
       g: gValues[idx] || 0
     };
-  });
+  }).filter(item => item.mm > 0 || item.g > 0);
 }
 
 /** The filament cost the slicer writes into the G-code footer (`; total filament cost = 1.23`), from the filament's cost per kg. */
@@ -248,7 +250,7 @@ export const SliceStatsPanel: React.FC = () => {
           )}
 
           {/* Multi-filament Breakdown */}
-          {filamentStats.length > 1 && (
+          {filamentStats.length > 0 && (
             <div id="stat-filaments-section" style={{ marginBottom: 10 }}>
               <div
                 style={{
@@ -367,6 +369,7 @@ export const SliceStatsPanel: React.FC = () => {
               <a
                 id="download-link"
                 href={gcodeUrl}
+                onClick={(event) => { event.preventDefault(); void exportGcode(); }}
                 download={downloadFileName}
                 className="btn btn-download"
                 style={{
@@ -392,7 +395,12 @@ export const SliceStatsPanel: React.FC = () => {
             </div>
           )}
           <SendToPrinterDialog 
-             getGcode={() => useAppStore.getState().sliceResult?.gcode || null}
+             getGcode={() => {
+               const result = useAppStore.getState().sliceResult;
+               const activeIdx = usePlatesStore.getState().activePlateIndex;
+               if (!result || result.plateIndex !== activeIdx) return null;
+               return result.gcode;
+             }}
              defaultFilename={downloadFileName}
           />
         </div>

@@ -59,7 +59,7 @@ export const ViewTypeLegend: React.FC = () => {
         const name = selectedFilaments[slotIdx]
           ? `Filament ${slotIdx + 1} (${selectedFilaments[slotIdx]})`
           : item.name;
-        const color = parsedColors[slotIdx] || item.color;
+        const color = viewType === 'Tool' ? item.color : parsedColors[slotIdx] || item.color;
         return {
           ...item,
           name,

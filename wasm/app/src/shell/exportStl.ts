@@ -1,143 +1,55 @@
-/**
- * @file exportStl.ts
- * Builds and downloads a single binary STL containing all objects arranged on the plate.
- */
-
-import * as THREE from 'three';
+/** Native model export preserves volume transforms, mirrored instances and modifier semantics. */
+import { zipSync } from 'fflate';
+import { getEngine } from '../engine/orcaEngine';
 import { usePlateStore } from '../plate/plateStore';
+import { usePlatesStore } from '../plates/platesStore';
 import { useAppStore } from '../store/appStore';
-import type { MeshBufferData, PlateInstance } from '../plate/types';
+import { sanitizeFileName } from './exportName';
 import { showToast } from './toastStore';
 
-export async function exportPlateAsStl(): Promise<void> {
-  const { modelFile } = useAppStore.getState();
-  const { objects, getMesh } = usePlateStore.getState();
+type ModelFormat = 'stl' | 'drc' | '3mf';
 
-  if (!objects || objects.length === 0) {
-    showToast('No objects on plate to export', 'error');
-    return;
-  }
+function download(bytes: Uint8Array, name: string): void {
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'application/octet-stream' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
+async function modelBytes(format: ModelFormat, selection: { objectId?: number; plateIndex?: number }): Promise<Uint8Array> {
+  const engine = await getEngine();
+  const path = `/out/model_export.${format === 'drc' ? 'stl' : format}`;
+  await engine.call('exportModel', { path, format: format === 'drc' ? 'stl' : format, ...selection });
+  const bytes = new Uint8Array(await engine.readFile(path));
+  if (format !== 'drc') return bytes;
+  const { encodeStlToDraco } = await import('./dracoEncoder');
+  return encodeStlToDraco(bytes);
+}
+
+export async function exportModels(format: ModelFormat, separate = false, activePlateOnly = false): Promise<void> {
   try {
-    interface MeshWithInstances {
-      mesh: MeshBufferData;
-      instances: PlateInstance[];
-    }
-    const meshList: MeshWithInstances[] = [];
-    let totalTriangles = 0;
-
-    for (const obj of objects) {
-      if (!obj.instances || obj.instances.length === 0) continue;
-      const mesh = await getMesh(obj.id);
-      if (mesh && mesh.triangleCount > 0) {
-        meshList.push({ mesh, instances: obj.instances });
-        totalTriangles += mesh.triangleCount * obj.instances.length;
+    const objects = usePlateStore.getState().objects;
+    if (objects.length === 0) throw new Error('No objects to export');
+    const base = sanitizeFileName(useAppStore.getState().modelFile?.name.replace(/\.[^.]+$/, '') || 'models');
+    if (separate) {
+      const files: Record<string, Uint8Array> = {};
+      for (const [index, object] of objects.entries()) {
+        if (!object.instances.length) continue;
+        // Index prefixes keep objects with identical names distinct in the archive.
+        const name = `${index + 1}_${sanitizeFileName(object.name.replace(/\.[^.]+$/, '') || 'object')}.${format}`;
+        files[name] = await modelBytes(format, { objectId: object.id });
       }
+      download(zipSync(files), `${base}_${format}_objects.zip`);
+    } else {
+      const selection = activePlateOnly ? { plateIndex: usePlatesStore.getState().activePlateIndex } : {};
+      download(await modelBytes(format, selection), `${base}${activePlateOnly ? '_plate' : ''}.${format}`);
     }
-
-    if (totalTriangles === 0) {
-      showToast('No geometry found on plate to export', 'error');
-      return;
-    }
-
-    // Binary STL size: 84 header/count bytes + 50 bytes per triangle
-    const buffer = new ArrayBuffer(84 + 50 * totalTriangles);
-    const view = new DataView(buffer);
-
-    // 80-byte header
-    const headerStr = 'OrcaSlicer Web arranged plate STL export';
-    for (let i = 0; i < headerStr.length && i < 80; i++) {
-      view.setUint8(i, headerStr.charCodeAt(i));
-    }
-
-    // 4-byte triangle count (uint32 little-endian)
-    view.setUint32(80, totalTriangles, true);
-
-    let triIndex = 0;
-    for (const { mesh, instances } of meshList) {
-      for (const inst of instances) {
-        const matrix = new THREE.Matrix4();
-        const pos = new THREE.Vector3(inst.offset[0], inst.offset[1], inst.offset[2]);
-        const rot = new THREE.Euler(inst.rotation[0], inst.rotation[1], inst.rotation[2], 'XYZ');
-        const sc = new THREE.Vector3(inst.scale[0], inst.scale[1], inst.scale[2]);
-        const quat = new THREE.Quaternion().setFromEuler(rot);
-        matrix.compose(pos, quat, sc);
-
-        for (let t = 0; t < mesh.triangleCount; t++) {
-          const i0 = mesh.indices[t * 3];
-          const i1 = mesh.indices[t * 3 + 1];
-          const i2 = mesh.indices[t * 3 + 2];
-
-          const v0 = new THREE.Vector3(
-            mesh.positions[i0 * 3],
-            mesh.positions[i0 * 3 + 1],
-            mesh.positions[i0 * 3 + 2]
-          ).applyMatrix4(matrix);
-
-          const v1 = new THREE.Vector3(
-            mesh.positions[i1 * 3],
-            mesh.positions[i1 * 3 + 1],
-            mesh.positions[i1 * 3 + 2]
-          ).applyMatrix4(matrix);
-
-          const v2 = new THREE.Vector3(
-            mesh.positions[i2 * 3],
-            mesh.positions[i2 * 3 + 1],
-            mesh.positions[i2 * 3 + 2]
-          ).applyMatrix4(matrix);
-
-          // Compute face normal: (v1 - v0) x (v2 - v0)
-          const e1 = new THREE.Vector3().subVectors(v1, v0);
-          const e2 = new THREE.Vector3().subVectors(v2, v0);
-          const normal = new THREE.Vector3().crossVectors(e1, e2).normalize();
-          if (!Number.isFinite(normal.x) || !Number.isFinite(normal.y) || !Number.isFinite(normal.z)) {
-            normal.set(0, 0, 0);
-          }
-
-          const off = 84 + triIndex * 50;
-          // Normal (3 x float32)
-          view.setFloat32(off, normal.x, true);
-          view.setFloat32(off + 4, normal.y, true);
-          view.setFloat32(off + 8, normal.z, true);
-
-          // V0 (3 x float32)
-          view.setFloat32(off + 12, v0.x, true);
-          view.setFloat32(off + 16, v0.y, true);
-          view.setFloat32(off + 20, v0.z, true);
-
-          // V1 (3 x float32)
-          view.setFloat32(off + 24, v1.x, true);
-          view.setFloat32(off + 28, v1.y, true);
-          view.setFloat32(off + 32, v1.z, true);
-
-          // V2 (3 x float32)
-          view.setFloat32(off + 36, v2.x, true);
-          view.setFloat32(off + 40, v2.y, true);
-          view.setFloat32(off + 44, v2.z, true);
-
-          // Attribute byte count (uint16)
-          view.setUint16(off + 48, 0, true);
-
-          triIndex++;
-        }
-      }
-    }
-
-    const baseName = modelFile?.name
-      ? (modelFile.name.substring(0, modelFile.name.lastIndexOf('.')) || modelFile.name)
-      : 'plate';
-    const downloadName = `${baseName}_plate.stl`;
-
-    const blob = new Blob([buffer], { type: 'application/sla' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = downloadName;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-    showToast(`Exported plate as STL (${totalTriangles} triangles)`, 'success');
-  } catch (err: any) {
-    showToast(`Failed to export plate as STL: ${err.message || String(err)}`, 'error');
+    showToast(`Exported ${format.toUpperCase()} models`, 'success');
+  } catch (error) {
+    showToast(`Model export failed: ${error instanceof Error ? error.message : String(error)}`, 'error');
   }
 }
+
+export const exportPlateAsStl = (): Promise<void> => exportModels('stl', false, true);

@@ -1,9 +1,12 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
 import { useAppStore } from '../store/appStore';
 import { useObjectListStore } from '../objectlist/objectListStore';
 import { PlateContextMenu } from './PlateContextMenu';
+import { ContextMenu } from '../objectlist/ContextMenu';
+import { exportGcode } from '../shell/exportGcode';
+import { ModalBackdrop } from '../components/ModalBackdrop';
 import { PlateRenameDialog } from './PlateRenameDialog';
 import { isDefaultPlateName } from '../plates/plateName';
 import { usePlatesStore } from '../plates/platesStore';
@@ -50,6 +53,7 @@ export const PlateView: React.FC = () => {
     const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PlateScene | null>(null);
+  const assigningFilament = useRef(false);
 
   const showNavigator = usePrefsStore((s) => s.display.showNavigator);
   const getCameraQuaternion = useCallback(() => sceneRef.current?.getCameraQuaternion(), []);
@@ -103,6 +107,8 @@ export const PlateView: React.FC = () => {
 
   // App Store (for Slicing progress & printer selection)
   const isSlicing = useAppStore((s) => s.isSlicing);
+  const isModelLoading = useAppStore((s) => s.isModelLoading);
+  const isEngineReady = useAppStore((s) => s.isEngineReady);
   const slicePercent = useAppStore((s) => s.slicePercent);
   const sliceStatusText = useAppStore((s) => s.sliceStatusText);
   const sliceResult = useAppStore((s) => s.sliceResult);
@@ -110,21 +116,30 @@ export const PlateView: React.FC = () => {
   const modelFile = useAppStore((s) => s.modelFile);
 
   const currentConfig = useAppStore((s) => s.currentConfig);
+  const bedConfigLoading = useAppStore((s) => !s.isEngineReady || s.isSelectingPreset || s.isModelLoading);
   const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [renamingPlate, setRenamingPlate] = useState<{ index: number; x: number; y: number; value: string } | null>(null);
   const [plateMenu, setPlateMenu] = useState<{ x: number; y: number } | null>(null);
-
-  // Initialize Bed Config on Mount
-  useEffect(() => {
-    initBedConfig();
-  }, [initBedConfig]);
+  const [objectMenu, setObjectMenu] = useState<{
+    x: number;
+    y: number;
+    objectId: number;
+    volumeId?: number;
+    isObject: boolean;
+    isMulti?: boolean;
+  } | null>(null);
+  const [renamingItem, setRenamingItem] = useState<{
+    objectId: number;
+    volumeId?: number;
+    name: string;
+  } | null>(null);
 
   // Sync Bed Dimensions when active printer config changes
   useEffect(() => {
     if (currentConfig) {
-      initBedConfig();
+      initBedConfig(currentConfig.printable_area, currentConfig.printable_height);
     }
   }, [currentConfig.printable_area, currentConfig.printable_height, initBedConfig]);
 
@@ -133,9 +148,23 @@ export const PlateView: React.FC = () => {
     if (!containerRef.current) return;
 
     const scene = new PlateScene(containerRef.current, bedConfig, {
-      onSelect: (objId, instId, additive) => {
-        if (additive && objId !== null && instId !== null) usePlateStore.getState().toggleSelect(objId, instId);
-        else selectObject(objId, instId);
+      canMoveObjects: () => {
+        const app = useAppStore.getState();
+        return app.isEngineReady && !app.isSlicing && !app.isModelLoading && !app.isSelectingPreset && !useHistoryStore.getState().isRestoring;
+      },
+      onSelect: (objId, instId, additive, volumeId) => {
+        if (additive && objId !== null && instId !== null) {
+          usePlateStore.getState().toggleSelect(objId, instId);
+        } else {
+          selectObject(objId, instId);
+          const currentSelectedObj = usePlateStore.getState().selectedObjectId;
+          const obj = useObjectListStore.getState().objects.find((o) => o.id === objId);
+          if (currentSelectedObj === objId && obj && obj.volumes.length > 1 && volumeId !== undefined) {
+            useObjectListStore.getState().selectItem(objId, volumeId);
+          } else {
+            useObjectListStore.getState().selectItem(objId, null);
+          }
+        }
       },
       onTransformMany: (entries) => {
         void usePlateStore.getState().setInstanceTransforms(entries);
@@ -217,15 +246,26 @@ export const PlateView: React.FC = () => {
   const vendor = useAppStore((s) => s.selectedVendor);
   const printer = useAppStore((s) => s.selectedPrinter);
   const userPrinters = useAppStore((s) => s.userPresets);
+  // Hide before the next paint, and invalidate older asynchronous artwork loads.
+  useLayoutEffect(() => {
+    sceneRef.current?.setBedLoading(true);
+  }, [bedConfigLoading, vendor, printer, userPrinters, bedConfig, currentConfig.bed_custom_model, currentConfig.bed_custom_texture]);
   useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene || bedConfigLoading || !printer) return;
     let cancelled = false;
+    scene.setBedLoading(true);
     const systemPrinter = userPrinters.find((p) => p.kind === 'printer' && p.name === printer)?.inherits || printer;
     void resolveBedAssets(vendor, systemPrinter, { model: currentConfig.bed_custom_model || undefined, texture: currentConfig.bed_custom_texture || undefined })
-      .then((assets) => { if (!cancelled) return sceneRef.current?.setBedAssets(assets); })
-      .catch((error) => console.warn('[Bed assets]', error));
-    return () => { cancelled = true; };
-  }, [vendor, printer, userPrinters, bedConfig, currentConfig.bed_custom_model, currentConfig.bed_custom_texture]);
+      .then((assets) => { if (!cancelled) return scene.setBedAssets(assets); })
+      .catch((error) => {
+        console.warn('[Bed assets]', error);
+        if (!cancelled) scene.setBedLoading(false);
+      });
+    return () => { cancelled = true; scene.setBedLoading(true); };
+  }, [bedConfigLoading, vendor, printer, userPrinters, bedConfig, currentConfig.bed_custom_model, currentConfig.bed_custom_texture]);
 
+  const objectTree = useObjectListStore((s) => s.objects);
   useEffect(() => {
     let cancelled = false;
     void getEngine().then((engine) => engine.call('getWipeTowerPreview', { plateIndex: activePlateIndex }))
@@ -234,10 +274,9 @@ export const PlateView: React.FC = () => {
         if (!cancelled) sceneRef.current?.setWipeTowerPreview(tower, origin as [number, number, number]);
       }).catch(() => { if (!cancelled) sceneRef.current?.setWipeTowerPreview({ enabled: false }); });
     return () => { cancelled = true; };
-  }, [currentConfig, activePlateIndex, objects]);
+  }, [currentConfig, activePlateIndex, objects, objectTree, paintOverlayRevision]);
 
   // Each part takes the colour of the filament it is assigned to (extruder 0 means the first filament).
-  const objectTree = useObjectListStore((s) => s.objects);
   const filamentColours = useAppStore((s) => s.currentConfig['filament_colour']);
   useEffect(() => {
     const palette = (filamentColours || '').split(';').map((c) => c.trim().slice(0, 7));
@@ -425,6 +464,8 @@ export const PlateView: React.FC = () => {
   // Keyboard shortcuts matching desktop OrcaSlicer
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      const app = useAppStore.getState();
+      if (!app.isEngineReady || app.isSlicing || app.isModelLoading || useHistoryStore.getState().isRestoring) return;
       if (e.key === 'Escape') {
         if (usePlateStore.getState().explodeActive) {
           usePlateStore.getState().setExplodeActive(false);
@@ -451,6 +492,7 @@ export const PlateView: React.FC = () => {
         const target = e.target as HTMLElement | null;
         if (!target?.closest?.('input, textarea, select, [contenteditable="true"], [role="dialog"]') && !isTextActive && !isLayersActive && !isCutting && !isRepairing && !isOperatingEdit) {
           selectObject(null, null);
+          setGizmoMode(null);
           return;
         }
       }
@@ -466,6 +508,41 @@ export const PlateView: React.FC = () => {
           Boolean(target.closest?.('input, textarea, select, [contenteditable="true"]')))
       ) {
         return;
+      }
+
+      // With a selection, number keys target filament IDs instead of camera views.
+      // Keypad digits also report a numeric key when Num Lock is enabled.
+      if (/^[1-9]$/.test(e.key)) {
+        if (containerRef.current?.closest('[hidden]')) return;
+        const plate = usePlateStore.getState();
+        if (plate.selectedObjectId !== null) {
+          if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+          const editOps = useEditOpsStore.getState();
+          const tree = useObjectListStore.getState();
+          if (app.isSelectingPreset || plate.isLoading || tree.isLoading ||
+              usePaintToolsStore.getState().isActive || useTextStore.getState().isOpen ||
+              useLayersStore.getState().isLayersActive || useCutStore.getState().isCutActive || useCutStore.getState().isCutting || useCutStore.getState().isCutting ||
+              useRepairStore.getState().isRepairing || editOps.isOperating || editOps.activeTool || editOps.activeDialog ||
+              plate.measureActive || plate.explodeActive ||
+              document.querySelector('[role="dialog"], [role="alertdialog"], .modal-backdrop')) return;
+          e.preventDefault();
+          const extruder = Number(e.key);
+          if (e.repeat || assigningFilament.current || extruder > app.selectedFilaments.length) return;
+          const objectIds = new Set([plate.selectedObjectId, ...plate.extraSelection.map(s => s.objectId)]);
+          const volumeId = plate.extraSelection.length === 0 && tree.selectedObjectId === plate.selectedObjectId
+            ? tree.selectedVolumeId : null;
+          assigningFilament.current = true;
+          void (async () => {
+            for (const objectId of objectIds) {
+              const object = tree.objects.find(o => o.id === objectId);
+              const volumes = volumeId === null ? object?.volumes : object?.volumes.filter(v => v.id === volumeId);
+              if (!volumes?.length || volumes.every(v => v.extruder === extruder)) continue;
+              if (volumeId !== null) await tree.setVolumeExtruder(objectId, volumeId, extruder);
+              else await tree.setObjectExtruder(objectId, extruder);
+            }
+          })().catch(console.error).finally(() => { assigningFilament.current = false; });
+          return;
+        }
       }
 
       if (e.ctrlKey || e.metaKey) {
@@ -490,9 +567,14 @@ export const PlateView: React.FC = () => {
           usePlateStore.getState().selectAll();
           return;
         }
+        if ((e.key === 'x' || e.key === 'X') && !e.shiftKey && !isPaintingActive && !isOperatingEdit) {
+          e.preventDefault();
+          void usePlateStore.getState().cutSelected();
+          return;
+        }
         if ((e.key === 'c' || e.key === 'C') && !e.shiftKey && !isPaintingActive && !isOperatingEdit) {
           e.preventDefault();
-          usePlateStore.getState().copySelected();
+          void usePlateStore.getState().copySelected();
           return;
         }
         if ((e.key === 'v' || e.key === 'V') && !isPaintingActive && !isOperatingEdit) {
@@ -614,10 +696,12 @@ export const PlateView: React.FC = () => {
     e.stopPropagation();
     setIsDragOver(false);
 
+    const app = useAppStore.getState();
+    if (!app.isEngineReady || app.isSlicing || app.isModelLoading || useHistoryStore.getState().isRestoring) return;
     const file = e.dataTransfer.files?.[0];
     if (file) {
       const ext = file.name.split('.').pop()?.toLowerCase();
-      if (ext && ['stl', 'obj', '3mf', 'amf', 'step', 'stp'].includes(ext)) {
+      if (ext && ['stl', 'obj', '3mf', 'amf', 'step', 'stp', 'svg', 'zip'].includes(ext)) {
         await useAppStore.getState().requestImportFile(file);
       }
     }
@@ -630,16 +714,16 @@ export const PlateView: React.FC = () => {
     ? `${modelFile.name.substring(0, modelFile.name.lastIndexOf('.')) || modelFile.name}.gcode`
     : 'plate.gcode';
 
-  const busy = isRestoring || isSlicing;
+  const busy = isRestoring || isSlicing || isModelLoading || !isEngineReady;
   const toolGroups: CanvasTool[][] = [
     [
       {
         id: 'tool-undo-btn', testId: 'tool-undo-btn', label: t("Undo"), shortcut: 'Ctrl+Z', icon: <UndoIcon />,
-        disabled: !canUndo || isRestoring || isSlicing || isCutting || isRepairing || isOperatingEdit, data: { 'can-undo': canUndo, 'is-restoring': isRestoring }, onClick: () => undo()
+        disabled: !canUndo || busy || isCutting || isRepairing || isOperatingEdit, data: { 'can-undo': canUndo, 'is-restoring': isRestoring }, onClick: () => undo()
       },
       {
         id: 'tool-redo-btn', testId: 'tool-redo-btn', label: t("Redo"), shortcut: 'Ctrl+Shift+Z', icon: <RedoIcon />,
-        disabled: !canRedo || isRestoring || isSlicing || isCutting || isRepairing || isOperatingEdit, data: { 'can-redo': canRedo, 'is-restoring': isRestoring }, onClick: () => redo()
+        disabled: !canRedo || busy || isCutting || isRepairing || isOperatingEdit, data: { 'can-redo': canRedo, 'is-restoring': isRestoring }, onClick: () => redo()
       }
     ],
     [
@@ -649,7 +733,7 @@ export const PlateView: React.FC = () => {
           if (isPaintingActive) stopPainting();
           if (activeEditTool === 'flatten') useEditOpsStore.getState().stopFlatten();
           if (activeEditTool === 'brimears') useEditOpsStore.getState().stopBrimEars();
-          setGizmoMode(mode);
+          setGizmoMode(usePlateStore.getState().gizmoMode === mode ? null : mode);
         }
       })),
       {
@@ -873,8 +957,77 @@ export const PlateView: React.FC = () => {
       if (e.button !== 2 || !down || down.button !== 2) return;
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       down = null;
-      if (moved > 4 || usePaintToolsStore.getState().isActive || sceneRef.current?.isObjectAt(e.clientX, e.clientY)) return;
-      setPlateMenu({ x: e.clientX, y: e.clientY });
+      if (moved > 4 || usePaintToolsStore.getState().isActive || !container.contains(e.target as Node)) return;
+
+      const hit = sceneRef.current?.hitTest(e.clientX, e.clientY);
+      if (!hit) {
+        setObjectMenu(null);
+        setPlateMenu({ x: e.clientX, y: e.clientY });
+        return;
+      }
+
+      setPlateMenu(null);
+      const plate = usePlateStore.getState();
+      const objStore = useObjectListStore.getState();
+      const objects = objStore.objects;
+      const hitObj = objects.find((o) => o.id === hit.objectId);
+      const volumes = hitObj?.volumes ?? [];
+
+      const isMulti = plate.extraSelection.length > 0;
+      const isHitInSelection =
+        (plate.selectedObjectId === hit.objectId && plate.selectedInstanceId === hit.instanceId) ||
+        plate.extraSelection.some((s) => s.objectId === hit.objectId && s.instanceId === hit.instanceId);
+
+      if (isMulti && isHitInSelection) {
+        setObjectMenu({
+          x: e.clientX,
+          y: e.clientY,
+          objectId: hit.objectId,
+          volumeId: undefined,
+          isObject: true,
+          isMulti: true
+        });
+        return;
+      }
+
+      const hitVol = hit.volumeId !== undefined ? volumes.find((v) => v.id === hit.volumeId) : undefined;
+      const hasMultipleVolumes = volumes.length > 1;
+
+      let isObjectTarget = true;
+      let targetVolumeId: number | undefined = undefined;
+
+      if (objStore.selectedObjectId === hit.objectId && objStore.selectedVolumeId !== null && objStore.selectedVolumeId === hit.volumeId) {
+        // A specific volume of this object is currently selected -> target that volume
+        isObjectTarget = false;
+        targetVolumeId = objStore.selectedVolumeId;
+      } else if (!hasMultipleVolumes) {
+        isObjectTarget = true;
+      } else if (hitVol && hitVol.type !== 'part') {
+        isObjectTarget = false;
+        targetVolumeId = hitVol.id;
+      } else if (hitVol && volumes.indexOf(hitVol) > 0) {
+        isObjectTarget = false;
+        targetVolumeId = hitVol.id;
+      } else {
+        isObjectTarget = true;
+      }
+
+      if (isObjectTarget) {
+        plate.selectObject(hit.objectId, hit.instanceId);
+        objStore.selectItem(hit.objectId, null);
+      } else {
+        plate.selectObject(hit.objectId, hit.instanceId);
+        objStore.selectItem(hit.objectId, targetVolumeId);
+      }
+
+      setObjectMenu({
+        x: e.clientX,
+        y: e.clientY,
+        objectId: hit.objectId,
+        volumeId: targetVolumeId,
+        isObject: isObjectTarget,
+        isMulti: false
+      });
     };
     const onMenu = (e: MouseEvent) => e.preventDefault();
     container.addEventListener('pointerdown', onDown);
@@ -1019,6 +1172,82 @@ export const PlateView: React.FC = () => {
         />
       )}
       {plateMenu && <PlateContextMenu x={plateMenu.x} y={plateMenu.y} onClose={() => setPlateMenu(null)} />}
+      {objectMenu && (
+        <ContextMenu
+          x={objectMenu.x}
+          y={objectMenu.y}
+          isObject={objectMenu.isObject}
+          objectId={objectMenu.objectId}
+          volumeId={objectMenu.volumeId}
+          isMulti={objectMenu.isMulti}
+          onClose={() => setObjectMenu(null)}
+          onRename={() => {
+            const obj = useObjectListStore.getState().objects.find((o) => o.id === objectMenu.objectId);
+            const vol = objectMenu.volumeId !== undefined ? obj?.volumes?.find((v) => v.id === objectMenu.volumeId) : undefined;
+            const currentName = objectMenu.isObject ? (obj?.name ?? '') : (vol?.name ?? '');
+            setRenamingItem({
+              objectId: objectMenu.objectId,
+              volumeId: objectMenu.volumeId,
+              name: currentName
+            });
+            setObjectMenu(null);
+          }}
+        />
+      )}
+      {renamingItem && (
+        <ModalBackdrop
+          id="item-rename-dialog"
+          role="dialog"
+          aria-label={t("Rename")}
+          onClose={() => setRenamingItem(null)}
+          dirty={false}
+          dirtyWhat="name"
+          style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0, 0, 0, 0.45)' }}
+        >
+          <div style={{ width: 380, padding: 20, display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--panel-bg)', border: '1px solid var(--control-bg)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0, 0, 0, 0.5)', color: 'var(--text-color)' }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>{renamingItem.volumeId !== undefined ? t("Rename part") : t("Rename object")}</div>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+              {t("Name")}<input
+                id="item-rename-input"
+                data-testid="item-rename-input"
+                autoFocus
+                defaultValue={renamingItem.name}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter') {
+                    const val = (e.target as HTMLInputElement).value.trim();
+                    if (val) {
+                      if (renamingItem.volumeId !== undefined) {
+                        void useObjectListStore.getState().renameVolume(renamingItem.objectId, renamingItem.volumeId, val);
+                      } else {
+                        void useObjectListStore.getState().renameObject(renamingItem.objectId, val);
+                      }
+                    }
+                    setRenamingItem(null);
+                  }
+                  if (e.key === 'Escape') setRenamingItem(null);
+                }}
+                style={{ padding: '8px 10px', fontSize: 14, background: 'var(--canvas-bg)', color: 'var(--text-color)', border: '1px solid var(--border-color)', borderRadius: 6, outline: 'none' }}
+              />
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+              <button className="btn btn-secondary" id="item-rename-cancel" onClick={() => setRenamingItem(null)}>{t("Cancel")}</button>
+              <button className="btn btn-primary" id="item-rename-ok" onClick={(e) => {
+                const input = (e.currentTarget.parentElement?.previousElementSibling?.querySelector('input') as HTMLInputElement);
+                const val = input?.value.trim();
+                if (val) {
+                  if (renamingItem.volumeId !== undefined) {
+                    void useObjectListStore.getState().renameVolume(renamingItem.objectId, renamingItem.volumeId, val);
+                  } else {
+                    void useObjectListStore.getState().renameObject(renamingItem.objectId, val);
+                  }
+                }
+                setRenamingItem(null);
+              }}>{t("OK")}</button>
+            </div>
+          </div>
+        </ModalBackdrop>
+      )}
 
       {/* Slicing Results & Statistics */}
       {sliceResult && !isSlicing && (
@@ -1061,6 +1290,7 @@ export const PlateView: React.FC = () => {
               <a
                 id="download-link"
                 href={gcodeUrl}
+                onClick={(event) => { event.preventDefault(); void exportGcode(); }}
                 download={downloadFileName}
                 className="btn btn-download"
               >

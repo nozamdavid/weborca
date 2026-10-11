@@ -1,3 +1,4 @@
+import { isNoRuleFix } from '../engine/ruleFixes';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
 import { systemProfiles } from '../presets/systemProfiles';
 import { showToast } from '../shell/toastStore';
@@ -8,6 +9,7 @@ import { storeRecentFile } from '../shell/recentFiles';
  */
 
 import { create } from 'zustand';
+import type { PlateObject } from '../plate/types';
 import {
   getEngine,
   loadVendors,
@@ -18,8 +20,10 @@ import {
   getConfigDef,
   evaluateRules,
   setOptions,
+  setOption,
+  getOption,
+  resetOptions,
   addModel,
-  arrange,
   slice
 } from '../engine/orcaEngine';
 import type {
@@ -46,6 +50,12 @@ import {
   exportDesktopArchiveHelper
 } from '../presets/presetActions';
 
+export function pendingOptionKey(kind: 'print' | 'filament' | 'printer', key: string, filamentIndex?: number, layoutIndex?: number): string {
+  return `${kind}:${key}:${filamentIndex ?? ''}:${layoutIndex ?? ''}`;
+}
+
+let optionRequestId = 0;
+
 export interface AppState {
   // Cross-origin isolation
   isIsolated: boolean;
@@ -66,6 +76,7 @@ export interface AppState {
   filaments: PresetItem[];
   selectedFilament: string;
   selectedFilaments: string[];
+  isSelectingPreset: boolean;
 
   // Model state
   modelFile: { name: string; size: number } | null;
@@ -85,6 +96,8 @@ export interface AppState {
   configDefs: Record<string, ConfigOptionDef>;
   presetConfig: Record<string, string>;
   currentConfig: Record<string, string>;
+  /** Requested UI values awaiting the engine; excluded from slicing and persistence. */
+  pendingOptions: Record<string, { value: string; requestId: number }>;
 
   // Per-kind overrides (kept separate so changing filament doesn't drop process edits)
   processOverrides: Record<string, string>;
@@ -121,11 +134,12 @@ export interface AppState {
 
   // Dialogs
   activeDialog: 'printer' | 'filament' | null;
-  openDialog: (dialog: 'printer' | 'filament') => void;
+  activeFilamentSlot: number;
+  openDialog: (dialog: 'printer' | 'filament', slotIndex?: number) => void;
   closeDialog: () => void;
 
   savePresetDialogTarget: { kind: PresetKind; baseName: string } | null;
-  openSavePresetDialog: (kind: PresetKind) => void;
+  openSavePresetDialog: (kind: PresetKind, slotIndex?: number) => void;
   closeSavePresetDialog: () => void;
   managePresetsDialogTarget: { kind: PresetKind; initialAction?: 'manage' | 'duplicate' | 'rename'; targetPresetName?: string } | null;
   openManagePresetsDialog: (kind: PresetKind, initialAction?: 'manage' | 'duplicate' | 'rename', targetPresetName?: string) => void;
@@ -149,7 +163,7 @@ export interface AppState {
   stepImportState: { file: File } | null;
   setStepImportState: (state: { file: File } | null) => void;
   requestImportFile: (file: File) => void;
-  importModelFile: (file: File, options?: StepImportOptions) => Promise<void>;
+  importModelFile: (file: File, options?: StepImportOptions, inArchive?: boolean) => Promise<void>;
   openProjectFile: (file: File) => Promise<void>;
   saveProjectFile: (fileName?: string) => Promise<Uint8Array | null>;
   openGcodeFile: (file: File) => Promise<void>;
@@ -158,8 +172,8 @@ export interface AppState {
   invalidateSlicePreview: () => void;
 
   // Settings Actions
-  applyOptionChange: (key: string, value: string, kind?: 'print' | 'filament' | 'printer') => Promise<void>;
-  resetOption: (key: string, kind?: 'print' | 'filament' | 'printer') => Promise<void>;
+  applyOptionChange: (key: string, value: string, explicitKind?: 'print' | 'filament' | 'printer', layoutIndex?: number, filamentSlot?: number | null) => Promise<void>;
+  resetOption: (key: string, kind?: 'print' | 'filament' | 'printer', layoutIndex?: number) => Promise<void>;
   applyFixes: (branch: 'yes' | 'no') => Promise<void>;
   closeFixesDialog: () => void;
 
@@ -184,6 +198,61 @@ function resolveSystemPreset(
   return user ? user.inherits : name;
 }
 
+/** Merge each user filament into its own slot using the desktop config composer. */
+async function reapplyPresetOverrides(filaments: string[], overrides: Record<string, string>): Promise<void> {
+  const users = useAppStore.getState().userPresets;
+  const slots = filaments.map(name => {
+    const preset = users.find(user => user.kind === 'filament' && user.name === name);
+    return { preset: preset?.inherits || name, values: preset?.values || {} };
+  });
+  const userValues = slots.some(slot => Object.keys(slot.values).length)
+    ? await (await getEngine()).call('mergeFilamentPresets', { slots }) as Record<string, string>
+    : {};
+  const options = { ...userValues, ...overrides };
+  if (Object.keys(options).length) await setOptions(options);
+}
+
+/** Saved web presets are the reset baseline; their system parents only supply inherited values. */
+async function computeBaselineConfig(
+  filaments: string[],
+  userPresets: UserPreset[],
+  activeOverrides?: { printer?: string | null; process?: string | null; filament?: string | null }
+): Promise<Record<string, string>> {
+  const systemBaselineConfig = await getConfig();
+  const active = activeOverrides || useAppStore.getState().activeUserPreset;
+  const printer = userPresets.find(preset => preset.kind === 'printer' && preset.name === active.printer);
+  const process = userPresets.find(preset => preset.kind === 'process' && preset.name === active.process);
+  const slots = filaments.map(name => {
+    const preset = userPresets.find(user => user.kind === 'filament' && user.name === name);
+    return { preset: preset?.inherits || name, values: preset?.values || {} };
+  });
+  const userValues = slots.some(slot => Object.keys(slot.values).length)
+    ? await (await getEngine()).call('mergeFilamentPresets', { slots }) as Record<string, string>
+    : {};
+
+  const baseline: Record<string, string> = { ...systemBaselineConfig };
+  const mergeKnown = (src?: Record<string, string>) => {
+    if (!src) return;
+    for (const [k, v] of Object.entries(src)) {
+      if (k in systemBaselineConfig) {
+        baseline[k] = v;
+      }
+    }
+  };
+  mergeKnown(printer?.values);
+  mergeKnown(process?.values);
+  mergeKnown(userValues);
+  return baseline;
+}
+
+/** Pause UI actions and autosave while a managed preset is persisted and applied. */
+async function runPresetManagementAction(action: () => Promise<void>): Promise<void> {
+  if (useAppStore.getState().isSelectingPreset) throw new Error('A preset operation is already in progress.');
+  useAppStore.setState({ isSelectingPreset: true });
+  try { await action(); }
+  finally { useAppStore.setState({ isSelectingPreset: false }); }
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   isIsolated: typeof window !== 'undefined' ? !!window.crossOriginIsolated : false,
 
@@ -201,6 +270,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   filaments: [],
   selectedFilament: '',
   selectedFilaments: [],
+  isSelectingPreset: false,
 
   modelFile: null,
   modelObjects: null,
@@ -217,6 +287,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   configDefs: {},
   presetConfig: {},
   currentConfig: {},
+  pendingOptions: {},
 
   processOverrides: {},
   filamentOverrides: {},
@@ -248,12 +319,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   pendingFixTriggerKey: null,
 
   activeDialog: null,
-  openDialog: async (dialog) => {
-    set({ activeDialog: dialog });
+  activeFilamentSlot: 0,
+  openDialog: async (dialog, slotIndex = 0) => {
+    set({ activeDialog: dialog, activeFilamentSlot: slotIndex });
     // Evaluate rules for the opened dialog
     const kind = dialog === 'printer' ? 'printer' : 'filament';
     try {
-      const res = await evaluateRules({ kind, filamentIndex: 0 });
+      const res = await evaluateRules({ kind, filamentIndex: get().activeFilamentSlot || 0 });
       set((state) => ({
         rulesState: {
           fields: { ...state.rulesState.fields, ...res.fields },
@@ -267,7 +339,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ activeDialog: null });
     // Re-evaluate print rules
     try {
-      evaluateRules({ kind: 'print', filamentIndex: 0 }).then((res) => {
+      evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 }).then((res) => {
         set((state) => ({
           rulesState: {
             fields: { ...state.rulesState.fields, ...res.fields },
@@ -280,13 +352,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   savePresetDialogTarget: null,
-  openSavePresetDialog: (kind) => {
-    const { selectedPrinter, selectedProcess, selectedFilament } = get();
+  openSavePresetDialog: (kind, slotIndex) => {
+    const { selectedPrinter, selectedProcess, selectedFilament, selectedFilaments, activeFilamentSlot } = get();
+    const filamentSlot = slotIndex ?? activeFilamentSlot;
     let baseName = '';
     if (kind === 'process') baseName = selectedProcess;
-    else if (kind === 'filament') baseName = selectedFilament;
+    else if (kind === 'filament') baseName = selectedFilaments[filamentSlot] || selectedFilament;
     else if (kind === 'printer') baseName = selectedPrinter;
-    set({ savePresetDialogTarget: { kind, baseName } });
+    set({ savePresetDialogTarget: { kind, baseName }, ...(kind === 'filament' ? { activeFilamentSlot: filamentSlot } : {}) });
   },
   closeSavePresetDialog: () => set({ savePresetDialogTarget: null }),
   managePresetsDialogTarget: null,
@@ -372,7 +445,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (startVendor) {
         await get().chooseVendor(startVendor);
       }
-      if (device?.preset && deviceVendor === startVendor) await get().choosePrinter(device.preset);
+      if (device?.preset && deviceVendor === startVendor) {
+        const userPrinter = get().userPresets.find((p) => p.kind === 'printer' && p.name === device.preset);
+        await get().choosePrinter(userPrinter?.inherits || device.preset);
+        if (userPrinter) await get().selectUserPreset('printer', device.preset);
+      }
       await restoreDeviceFilaments();
       applyingDevice = false;
       set({ isEngineReady: true, isEngineInitializing: false });
@@ -471,12 +548,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Re-apply remaining process & filament overrides
         const { processOverrides, filamentOverrides } = get();
         const activeOverrides = { ...processOverrides, ...filamentOverrides };
-        if (Object.keys(activeOverrides).length > 0) {
-          await setOptions(activeOverrides);
-        }
+        await reapplyPresetOverrides([defaultFilament], activeOverrides);
 
         const effectiveConfig = await getConfig();
-        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: 0 });
+
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 });
 
         let processes = await listPresets('process', { compatibleOnly: true });
         if (processes.length === 0) processes = allProcesses;
@@ -533,17 +609,16 @@ export const useAppStore = create<AppState>((set, get) => ({
           filaments: systemFilaments
         });
 
-        const baselineConfig = await getConfig();
+        const baselineConfig = await computeBaselineConfig(filamentsList, userPresets);
 
         // Re-apply remaining filament and printer overrides
         const { filamentOverrides, printerOverrides } = get();
         const activeOverrides = { ...filamentOverrides, ...printerOverrides };
-        if (Object.keys(activeOverrides).length > 0) {
-          await setOptions(activeOverrides);
-        }
+        await reapplyPresetOverrides(filamentsList, activeOverrides);
 
         const effectiveConfig = await getConfig();
-        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: 0 });
+
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 });
 
         const filaments = await listPresets('filament', { compatibleOnly: true });
         if (filaments.length > 0) {
@@ -570,6 +645,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   chooseFilament: async (filament: string, slotIndex: number = 0) => {
     if (!filament) return;
+    if (get().isSlicing) get().cancelSlice();
+    get().invalidateSlicePreview();
     const { selectedPrinter, selectedProcess, selectedFilaments, selectedFilament, userPresets } = get();
     const currentList = selectedFilaments && selectedFilaments.length > 0 ? [...selectedFilaments] : [selectedFilament || filament];
     if (slotIndex < currentList.length) {
@@ -588,14 +665,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       if (selectedPrinter && selectedProcess) {
-        if (slotIndex === 0) {
-          // Clear filament overrides when selecting a new system filament for slot 0
-          set((state) => ({
-            filamentOverrides: {},
-            activeUserPreset: { ...state.activeUserPreset, filament: null }
-          }));
-        }
-
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
         const systemFilaments = currentList.map((f) => resolveSystemPreset('filament', f, userPresets));
@@ -606,34 +675,52 @@ export const useAppStore = create<AppState>((set, get) => ({
           filaments: systemFilaments
         });
 
-        const baselineConfig = await getConfig();
+        const baselineConfig = await computeBaselineConfig(currentList, userPresets);
 
         // A slot keeps its colour when only its filament preset changes
         const baseColours = (baselineConfig['filament_colour'] || '').split(';').map((c) => c.trim());
         const keptColours = currentList.map((_, i) => (i < prevCount && prevColours[i]) || baseColours[i] || '');
+
+        const { processOverrides, printerOverrides, filamentOverrides } = get();
+        let nextFilOverrides = { ...filamentOverrides };
         if (keptColours.every(Boolean)) {
-          set((state) => ({ filamentOverrides: { ...state.filamentOverrides, filament_colour: keptColours.join(';') } }));
+          nextFilOverrides['filament_colour'] = keptColours.join(';');
         }
+
+        // Reset ONLY chosen slot cells preserving others via native vector projection
+        const resetRes = await resetOptions({
+          filamentIndex: slotIndex,
+          overrides: nextFilOverrides,
+          baseline: baselineConfig
+        });
+        if (resetRes && resetRes.filamentOverrides) {
+          nextFilOverrides = resetRes.filamentOverrides;
+        }
+        // Slot colors belong to the project, not the preset being reset.
+        if (keptColours.every(Boolean)) nextFilOverrides.filament_colour = keptColours.join(';');
 
         // Re-apply process, printer and filament overrides
-        const { processOverrides, printerOverrides, filamentOverrides } = get();
-        const activeOverrides = { ...processOverrides, ...printerOverrides, ...filamentOverrides };
-        if (Object.keys(activeOverrides).length > 0) {
-          await setOptions(activeOverrides);
-        }
+        const activeOverrides = { ...processOverrides, ...printerOverrides, ...nextFilOverrides };
+        await reapplyPresetOverrides(currentList, activeOverrides);
 
         const effectiveConfig = await getConfig();
-        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: 0 });
 
-        set({
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 });
+
+        set((state) => ({
+          filamentOverrides: nextFilOverrides,
           presetConfig: baselineConfig,
           currentConfig: effectiveConfig,
+          activeUserPreset: {
+            ...state.activeUserPreset,
+            filament: slotIndex === 0 ? null : state.activeUserPreset.filament
+          },
           rulesState: {
             fields: rulesRes.fields || {},
             fixes: rulesRes.fixes || [],
             messages: rulesRes.messages || []
           }
-        });
+        }));
       }
     } catch (err: any) {
       set({ engineError: `Failed to select filament '${filament}': ${err.message || String(err)}` });
@@ -645,6 +732,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const candidate = presetName || (selectedFilaments[selectedFilaments.length - 1] || selectedFilament || (filaments[0]?.name ?? 'Generic PLA'));
     const nextList = [...(selectedFilaments.length > 0 ? selectedFilaments : [selectedFilament]), candidate];
     if (nextList.length > 16) return;
+    if (get().isSlicing) get().cancelSlice();
+    get().invalidateSlicePreview();
 
     try {
       if (selectedPrinter && selectedProcess) {
@@ -658,7 +747,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           filaments: systemFilaments
         });
 
-        const baselineConfig = await getConfig();
+        const baselineConfig = await computeBaselineConfig(nextList, userPresets);
 
         const { processOverrides, printerOverrides, filamentOverrides } = get();
         const nextFilOverrides = { ...filamentOverrides };
@@ -671,12 +760,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           nextFilOverrides['filament_colour'] = colors.slice(0, nextList.length).join(';');
         }
         const activeOverrides = { ...processOverrides, ...printerOverrides, ...nextFilOverrides };
-        if (Object.keys(activeOverrides).length > 0) {
-          await setOptions(activeOverrides);
-        }
+        await reapplyPresetOverrides(nextList, activeOverrides);
 
         const effectiveConfig = await getConfig();
-        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: 0 });
+
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 });
 
         set({
           selectedFilaments: nextList,
@@ -713,6 +801,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       nextList = currentList.slice(0, -1);
     }
     if (nextList.length === 0) return;
+    if (get().isSlicing) get().cancelSlice();
+    get().invalidateSlicePreview();
 
     try {
       if (selectedPrinter && selectedProcess) {
@@ -726,7 +816,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           filaments: systemFilaments
         });
 
-        const baselineConfig = await getConfig();
+        const baselineConfig = await computeBaselineConfig(nextList, userPresets);
 
         const { processOverrides, printerOverrides, filamentOverrides } = get();
         const nextFilOverrides = { ...filamentOverrides };
@@ -735,12 +825,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           nextFilOverrides['filament_colour'] = colors.join(';');
         }
         const activeOverrides = { ...processOverrides, ...printerOverrides, ...nextFilOverrides };
-        if (Object.keys(activeOverrides).length > 0) {
-          await setOptions(activeOverrides);
-        }
+        await reapplyPresetOverrides(nextList, activeOverrides);
 
         const effectiveConfig = await getConfig();
-        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: 0 });
+
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 });
 
         set({
           selectedFilaments: nextList,
@@ -765,21 +854,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   setSlotColor: async (slotIndex: number, newColor: string) => {
-    const { currentConfig, selectedFilaments, applyOptionChange } = get();
-    const count = selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments.length : 1;
-    const rawColors = (currentConfig['filament_colour'] || '').split(';').map(c => c.trim());
-    const defaultColors = ['#16417C', '#58B957', '#F5D130', '#E53935', '#8E24AA', '#00ACC1', '#FB8C00', '#D81B60'];
-    const colors: string[] = [];
-    for (let i = 0; i < count; i++) {
-      if (i === slotIndex) {
-        colors.push(newColor.toUpperCase());
-      } else if (rawColors[i]) {
-        colors.push(rawColors[i]);
-      } else {
-        colors.push(defaultColors[i % defaultColors.length]);
-      }
-    }
-    await applyOptionChange('filament_colour', colors.join(';'), 'filament');
+    // setOption edits one native vector cell; passing the serialized color
+    // vector here would store that entire vector as a single slot's color.
+    await get().applyOptionChange('filament_colour', newColor.toUpperCase(), 'filament', undefined, slotIndex);
   },
 
   stepImportState: null,
@@ -905,6 +982,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   openGcodeFile: async (file: File) => {
     if (!file) return;
+    if (get().isSlicing) get().cancelSlice();
     try {
       const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
@@ -915,8 +993,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         stats = await usePreviewStore.getState().loadGcodeBytes(bytes, file.name);
       } catch (_) {}
 
+      const { usePlatesStore } = await import('../plates/platesStore');
+      const oldUrl = get().gcodeUrl;
+      if (oldUrl) URL.revokeObjectURL(oldUrl);
       set({
+        gcodeUrl: URL.createObjectURL(new Blob([bytes as BlobPart], { type: 'text/plain' })),
         sliceResult: {
+          plateIndex: usePlatesStore.getState().activePlateIndex,
           gcode: bytes,
           gcodePath: file.name,
           gcodeBytes: bytes.byteLength,
@@ -938,8 +1021,32 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  importModelFile: async (file: File, options?: StepImportOptions) => {
+  importModelFile: async (file: File, options?: StepImportOptions, inArchive = false) => {
     if (!file) return;
+    if (!inArchive && /\.zip$/i.test(file.name)) {
+      set({ isModelLoading: true, engineError: null, sliceResult: null, sliceStatusText: `Opening ${file.name}...` });
+      let imported = 0;
+      try {
+        const { readArchiveModels } = await import('../shell/archiveModels');
+        const models = await readArchiveModels(new Uint8Array(await file.arrayBuffer()));
+        for (const [index, model] of models.entries()) {
+          set({ sliceStatusText: `Importing ${index + 1}/${models.length}: ${model.name}` });
+          await get().importModelFile(new File([model.bytes as BlobPart], model.name), options, true);
+          if (get().engineError) throw new Error(get().engineError!);
+          imported++;
+        }
+        const { useHistoryStore } = await import('../history');
+        if (!inArchive) await useHistoryStore.getState().commitTransaction(`Import ${file.name}`);
+        showToast(`Imported ${models.length} models from ${file.name}`, 'success');
+      } catch (error) {
+        if (imported) {
+          const { useHistoryStore } = await import('../history');
+          await useHistoryStore.getState().commitTransaction(`Import ${imported} models from ${file.name}`);
+        }
+        set({ engineError: `ZIP import failed after ${imported} models: ${error instanceof Error ? error.message : String(error)}`, sliceStatusText: 'ZIP import failed' });
+      } finally { set({ isModelLoading: false }); }
+      return;
+    }
     const knownObjectIds = new Set((await import('../plate/plateStore')).usePlateStore.getState().objects.map((o) => o.id));
     set({
       isModelLoading: true,
@@ -955,37 +1062,28 @@ export const useAppStore = create<AppState>((set, get) => ({
         const text = await file.text();
         const engine = await getEngine();
         await engine.call('addSvg', { svgText: text, name: file.name });
-        await arrange();
         const objs = await engine.listObjects();
         res = { objects: objs };
       } else {
         const buffer = await file.arrayBuffer();
         res = await addModel(file.name, new Uint8Array(buffer), options);
-        await arrange();
       }
 
-      try {
-        const { usePlateStore } = await import('../plate/plateStore');
-        // The engine centres a loaded mesh on its origin, which leaves half of it under the plate: stand every new object on it.
-        const engine = await getEngine();
-        await usePlateStore.getState().refreshObjects();
-        for (const obj of usePlateStore.getState().objects) {
-          if (knownObjectIds.has(obj.id)) continue;
-          for (const inst of obj.instances) await engine.call('setInstanceTransform', { objectId: obj.id, instanceId: inst.id, offset: inst.offset });
-        }
-        await usePlateStore.getState().refreshObjects();
-      } catch (_) {}
+      const { usePlateStore } = await import('../plate/plateStore');
+      const { usePlatesStore } = await import('../plates/platesStore');
+      const engine = await getEngine();
+      const added = (await engine.listObjects()).filter((obj: PlateObject) => !knownObjectIds.has(obj.id));
+      if (added.length) {
+        await engine.call('placeObjects', { objectIds: added.map((obj: PlateObject) => obj.id), plateIndex: usePlatesStore.getState().activePlateIndex });
+      }
+      await usePlateStore.getState().refreshObjects();
 
       set({
         modelFile: { name: file.name, size: file.size },
         modelObjects: res.objects,
-        isModelLoading: false,
-        sliceStatusText: `Loaded and arranged ${file.name}`
+        isModelLoading: inArchive,
+        sliceStatusText: `Loaded ${file.name}`
       });
-      try {
-        const { useHistoryStore } = await import('../history');
-        await useHistoryStore.getState().commitTransaction(`Import ${file.name}`);
-      } catch (_) {}
 
       try {
         const { usePrefsStore } = await import('../prefs/prefsStore');
@@ -995,6 +1093,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       } catch (_) {}
 
+      try {
+        const { useHistoryStore } = await import('../history');
+        if (!inArchive) await useHistoryStore.getState().commitTransaction(`Import ${file.name}`);
+      } catch (_) {}
+
       showToast(`Imported ${file.name}`, 'success');
       try {
         const buffer = await file.arrayBuffer();
@@ -1002,7 +1105,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       } catch (_) {}
     } catch (err: any) {
       set({
-        isModelLoading: false,
+        isModelLoading: inArchive,
         engineError: `Failed to load model '${file.name}': ${err.message || String(err)}`,
         sliceStatusText: 'Model loading failed'
       });
@@ -1011,13 +1114,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   startSlice: async () => {
-    const { isEngineReady, isSlicing, modelFile, selectedPrinter, selectedProcess, selectedFilament, selectedFilaments } = get();
+    // A queued setting may be waiting behind a large autosave export.
+    // Slice only after its acknowledgement, using the confirmed configuration.
+    if (Object.keys(get().pendingOptions).length) {
+      await new Promise<void>(resolve => {
+        const unsubscribe = useAppStore.subscribe(state => {
+          if (!Object.keys(state.pendingOptions).length) { unsubscribe(); resolve(); }
+        });
+      });
+      if (get().engineError) return;
+    }
     try {
       const { useHistoryStore } = await import('../history');
       if (useHistoryStore.getState().isRestoring) {
         return;
       }
     } catch (_) {}
+    const { isEngineReady, isSlicing, modelFile, selectedPrinter, selectedProcess, selectedFilament, selectedFilaments } = get();
     if (!isEngineReady || isSlicing || !modelFile || !selectedPrinter || !selectedProcess || (!selectedFilament && (!selectedFilaments || selectedFilaments.length === 0))) {
       return;
     }
@@ -1033,6 +1146,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
 
     try {
+      const { usePrefsStore } = await import('../prefs/prefsStore');
+      if (usePrefsStore.getState().general.autosave) {
+        try {
+          const { writeAutosave } = await import('../shell/autosave');
+          await writeAutosave();
+        } catch (err) {
+          console.warn('[autosave] backup before slicing failed:', err);
+        }
+      }
+      if (abortController.signal.aborted) throw new DOMException('Slicing canceled', 'AbortError');
       const threads = Math.min(
         typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4,
         8
@@ -1060,6 +1183,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       });
 
+      if (abortController.signal.aborted) throw new DOMException('Slicing canceled', 'AbortError');
       performance.mark('orca-slice-end');
       if (typeof window !== 'undefined') {
         (window as any)._orcaSliceEndTime = performance.now();
@@ -1075,7 +1199,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         isSlicing: false,
         slicePercent: 100,
         sliceStatusText: 'Slicing complete!',
-        sliceResult: result,
+        sliceResult: { ...result, plateIndex: currentPlateIndex ?? 0 },
         gcodeUrl,
         abortController: null
       });
@@ -1122,8 +1246,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  applyOptionChange: async (key: string, value: string, explicitKind) => {
-    const { layout, activeDialog } = get();
+  applyOptionChange: async (key: string, value: string, explicitKind, layoutIndex?: number, filamentSlot?: number | null) => {
+    const { layout, activeDialog, activeFilamentSlot } = get();
     let kind: 'print' | 'filament' | 'printer' = explicitKind || (activeDialog === 'printer' ? 'printer' : activeDialog === 'filament' ? 'filament' : 'print');
 
     // Auto-detect kind from layout if not explicitly provided
@@ -1146,24 +1270,38 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().isSlicing) get().cancelSlice();
     get().invalidateSlicePreview();
 
-    // Record override for this kind
-    if (kind === 'print') {
-      set((state) => ({ processOverrides: { ...state.processOverrides, [key]: value } }));
-    } else if (kind === 'filament') {
-      set((state) => ({ filamentOverrides: { ...state.filamentOverrides, [key]: value } }));
-    } else if (kind === 'printer') {
-      set((state) => ({ printerOverrides: { ...state.printerOverrides, [key]: value } }));
-    }
-
+    const isFilament = kind === 'filament' || activeDialog === 'filament';
+    const filIndex = isFilament && filamentSlot !== null ? (filamentSlot ?? activeFilamentSlot ?? 0) : undefined;
+    const pendingKey = pendingOptionKey(kind, key, filIndex, layoutIndex);
+    const requestId = ++optionRequestId;
+    set(state => ({ pendingOptions: { ...state.pendingOptions, [pendingKey]: { value, requestId } } }));
     try {
-      await setOptions({ [key]: value });
+      // A null target edits a project-wide vector (for example the flush
+      // matrix); a numeric target edits one physical filament slot.
+      if (layoutIndex !== undefined || isFilament || get().configDefs[key]?.type === 'string') {
+        await setOption({ key, value, filamentIndex: filIndex, layoutIndex });
+      } else {
+        await setOptions({ [key]: value });
+      }
       const effectiveConfig = await getConfig();
 
+      // Record override for this kind with the exact effective string to preserve other-slot manual edits
+      if (kind === 'print') {
+        set((state) => ({ processOverrides: { ...state.processOverrides, [key]: effectiveConfig[key] } }));
+      } else if (kind === 'filament') {
+        set((state) => ({ filamentOverrides: { ...state.filamentOverrides, [key]: effectiveConfig[key] } }));
+      } else if (kind === 'printer') {
+        set((state) => ({ printerOverrides: { ...state.printerOverrides, [key]: effectiveConfig[key] } }));
+      }
+
+
+
       const ruleKind = kind === 'printer' ? 'printer' : kind === 'filament' ? 'filament' : 'print';
-      const rulesRes = await evaluateRules({ kind: ruleKind, filamentIndex: 0 });
+      const rulesRes = await evaluateRules({ kind: ruleKind, filamentIndex: get().activeFilamentSlot || 0 });
 
       set((state) => ({
         currentConfig: effectiveConfig,
+        engineError: null,
         rulesState: {
           fields: { ...state.rulesState.fields, ...rulesRes.fields },
           fixes: rulesRes.fixes || [],
@@ -1190,10 +1328,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       } catch (_) {}
     } catch (err: any) {
       set({ engineError: `Failed to set option '${key}': ${err.message || String(err)}` });
+    } finally {
+      // An older reply must not remove a newer edit to the same control.
+      if (get().pendingOptions[pendingKey]?.requestId === requestId) {
+        set(state => {
+          const pendingOptions = { ...state.pendingOptions };
+          delete pendingOptions[pendingKey];
+          return { pendingOptions };
+        });
+      }
     }
   },
 
-  resetOption: async (key: string, explicitKind) => {
+  resetOption: async (key: string, explicitKind, layoutIndex?: number) => {
     const { presetConfig, layout, activeDialog } = get();
     let kind: 'print' | 'filament' | 'printer' = explicitKind || (activeDialog === 'printer' ? 'printer' : activeDialog === 'filament' ? 'filament' : 'print');
 
@@ -1212,39 +1359,63 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    // The G-code no longer matches the settings: drop a finished slice and stop one in progress.
     if (get().isSlicing) get().cancelSlice();
     get().invalidateSlicePreview();
 
-    // Remove from overrides
-    if (kind === 'print') {
-      set((state) => {
-        const next = { ...state.processOverrides };
-        delete next[key];
-        return { processOverrides: next };
-      });
-    } else if (kind === 'filament') {
-      set((state) => {
-        const next = { ...state.filamentOverrides };
-        delete next[key];
-        return { filamentOverrides: next };
-      });
-    } else if (kind === 'printer') {
-      set((state) => {
-        const next = { ...state.printerOverrides };
-        delete next[key];
-        return { printerOverrides: next };
-      });
-    }
+    try {
+      const isFilament = kind === 'filament' || activeDialog === 'filament';
+      const filamentIndex = isFilament ? get().activeFilamentSlot : undefined;
+      const fullPresetVal = presetConfig[key];
 
-    const baselineVal = presetConfig[key];
-    if (baselineVal !== undefined) {
-      try {
-        await setOptions({ [key]: baselineVal });
-        const effectiveConfig = await getConfig();
+      // Fetch native projected baseline for slot and layout using full preset baseline vector
+      const baselineRes = await getOption({
+        key,
+        filamentIndex,
+        layoutIndex,
+        serializedValue: fullPresetVal
+      });
+      const projectedBaseline = baselineRes.value;
+
+      if (layoutIndex !== undefined || isFilament || get().configDefs[key]?.type === 'string') {
+        await setOption({ key, value: projectedBaseline, filamentIndex, layoutIndex });
+      } else {
+        await setOptions({ [key]: projectedBaseline });
+      }
+      const effectiveConfig = await getConfig();
+
+      if (kind === 'print') {
+        set((state) => {
+          const next = { ...state.processOverrides };
+          const saved = state.userPresets.find(preset => preset.kind === 'process' && preset.name === state.activeUserPreset.process);
+          // The native engine loads the system parent, so saved user values
+          // must remain in the effective override map after a reset.
+          if (saved?.values[key] !== undefined || effectiveConfig[key] !== presetConfig[key]) next[key] = effectiveConfig[key];
+          else delete next[key];
+          return { processOverrides: next };
+        });
+      } else if (kind === 'filament') {
+        set((state) => {
+          const next = { ...state.filamentOverrides };
+          const baseFull = presetConfig[key];
+          if (baseFull !== undefined && effectiveConfig[key] === baseFull) {
+            delete next[key];
+          } else {
+            next[key] = effectiveConfig[key];
+          }
+          return { filamentOverrides: next };
+        });
+      } else if (kind === 'printer') {
+        set((state) => {
+          const next = { ...state.printerOverrides };
+          const saved = state.userPresets.find(preset => preset.kind === 'printer' && preset.name === state.activeUserPreset.printer);
+          if (saved?.values[key] !== undefined || effectiveConfig[key] !== presetConfig[key]) next[key] = effectiveConfig[key];
+          else delete next[key];
+          return { printerOverrides: next };
+        });
+      }
 
         const ruleKind = kind === 'printer' ? 'printer' : kind === 'filament' ? 'filament' : 'print';
-        const rulesRes = await evaluateRules({ kind: ruleKind, filamentIndex: 0 });
+        const rulesRes = await evaluateRules({ kind: ruleKind, filamentIndex: get().activeFilamentSlot || 0 });
 
         set((state) => ({
           currentConfig: effectiveConfig,
@@ -1257,7 +1428,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       } catch (err: any) {
         set({ engineError: `Failed to reset option '${key}': ${err.message || String(err)}` });
       }
-    }
   },
 
   applyFixes: async (branch: 'yes' | 'no') => {
@@ -1271,17 +1441,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       const overridesUpdate: Record<string, string> = {};
       if (branch === 'yes') {
         // Apply all Yes fixes (or all fixes that are not explicitly the No alternative)
-        const yesFixes = pendingFixes.filter((f) => !f.reason.includes('[No:'));
+        const yesFixes = pendingFixes.filter((f) => !isNoRuleFix(f));
         for (const f of yesFixes) {
           overridesUpdate[f.key] = f.value;
         }
         await setOptions(overridesUpdate);
       } else {
         // User canceled / rejected -> apply No fix (e.g. spiral_mode = 0)
-        const noFix = pendingFixes.find((f) => f.reason.includes('[No:'));
-        if (noFix) {
-          overridesUpdate[noFix.key] = noFix.value;
-          await setOptions({ [noFix.key]: noFix.value });
+        const noFixes = pendingFixes.filter(isNoRuleFix);
+        if (noFixes.length) {
+          for (const fix of noFixes) overridesUpdate[fix.key] = fix.value;
+          await setOptions(overridesUpdate);
         } else if (pendingFixTriggerKey) {
           const { presetConfig } = get();
           const restoreVal = presetConfig[pendingFixTriggerKey] || '0';
@@ -1291,16 +1461,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       const effectiveConfig = await getConfig();
+
       const kind = activeDialog === 'printer' ? 'printer' : activeDialog === 'filament' ? 'filament' : 'print';
-      const rulesRes = await evaluateRules({ kind, filamentIndex: 0 });
+      const rulesRes = await evaluateRules({ kind, filamentIndex: get().activeFilamentSlot || 0 });
 
       set((state) => {
         const nextOverrides = { ...state.processOverrides };
         if (branch === 'yes') {
           Object.assign(nextOverrides, overridesUpdate);
         } else {
+          const saved = state.userPresets.find(preset => preset.kind === 'process' && preset.name === state.activeUserPreset.process);
           for (const k of Object.keys(overridesUpdate)) {
-            delete nextOverrides[k];
+            if (saved?.values[k] !== undefined) nextOverrides[k] = effectiveConfig[k];
+            else delete nextOverrides[k];
           }
         }
         return {
@@ -1329,15 +1502,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { userPresets, selectedPrinter, selectedProcess, selectedFilament } = get();
     const preset = userPresets.find((p) => p.kind === kind && p.name === name);
     if (!preset) return;
+    if (get().isSlicing) get().cancelSlice();
+    get().invalidateSlicePreview();
+
+    // Snapshot existing valid state to preserve on failure
+    const prevState = {
+      activeUserPreset: { ...get().activeUserPreset },
+      selectedPrinter: get().selectedPrinter,
+      selectedProcess: get().selectedProcess,
+      selectedFilament: get().selectedFilament,
+      selectedFilaments: [...get().selectedFilaments],
+      processOverrides: { ...get().processOverrides },
+      filamentOverrides: { ...get().filamentOverrides },
+      printerOverrides: { ...get().printerOverrides },
+      presetConfig: { ...get().presetConfig },
+      currentConfig: { ...get().currentConfig },
+    };
 
     try {
       if (kind === 'process') {
-        set((state) => ({
-          activeUserPreset: { ...state.activeUserPreset, process: name },
-          selectedProcess: name,
-          processOverrides: { ...preset.values }
-        }));
-
+        const targetActive = { ...prevState.activeUserPreset, process: name };
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
         const { selectedFilaments: curFils } = get();
         const filamentsList = curFils && curFils.length > 0 ? curFils : [selectedFilament];
@@ -1349,19 +1533,30 @@ export const useAppStore = create<AppState>((set, get) => ({
           filaments: systemFilaments
         });
 
-        const baselineConfig = await getConfig();
-        const { processOverrides, filamentOverrides, printerOverrides } = get();
-        const allOverrides = { ...processOverrides, ...filamentOverrides, ...printerOverrides };
-        if (Object.keys(allOverrides).length > 0) {
-          await setOptions(allOverrides);
-        }
+        const baselineConfig = await computeBaselineConfig(filamentsList, userPresets, targetActive);
+        const nextProcessOverrides = { ...preset.values };
+        const { filamentOverrides, printerOverrides } = get();
+        const allOverrides = { ...nextProcessOverrides, ...filamentOverrides, ...printerOverrides };
+        await reapplyPresetOverrides(filamentsList, allOverrides);
 
         const effectiveConfig = await getConfig();
-        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: 0 });
+
+        // Canonicalize baseline values with native effective values for known keys
+        for (const [k, v] of Object.entries(nextProcessOverrides)) {
+          if (k in effectiveConfig && !(k in filamentOverrides) && !(k in printerOverrides)) {
+            baselineConfig[k] = effectiveConfig[k];
+          }
+        }
+
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 });
 
         set({
+          activeUserPreset: targetActive,
+          selectedProcess: name,
+          processOverrides: nextProcessOverrides,
           presetConfig: baselineConfig,
           currentConfig: effectiveConfig,
+          engineError: null,
           rulesState: {
             fields: rulesRes.fields || {},
             fixes: rulesRes.fixes || [],
@@ -1369,16 +1564,19 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         });
       } else if (kind === 'filament') {
-        const { selectedFilaments: curFils } = get();
+        // Recovery may select a saved preset into a slot that does not exist
+        // yet. Create it before resetting that slot's native override cells.
+        if (slotIndex === get().selectedFilaments.length) await get().addFilamentSlot();
+        const { selectedFilaments: curFils, filamentOverrides: curFilOverrides } = get();
         const currentList = curFils && curFils.length > 0 ? [...curFils] : [name];
         currentList[slotIndex] = name;
-        set((state) => ({
-          activeUserPreset: { ...state.activeUserPreset, filament: name },
-          selectedFilament: currentList[0],
-          selectedFilaments: currentList,
-          filamentOverrides: { ...preset.values }
-        }));
 
+        const targetActive = {
+          ...prevState.activeUserPreset,
+          filament: userPresets.some(user => user.kind === 'filament' && user.name === currentList[0]) ? currentList[0] : null
+        };
+
+        const projectColours = get().currentConfig.filament_colour;
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
         const systemFilaments = currentList.map((f) => resolveSystemPreset('filament', f, userPresets));
@@ -1389,19 +1587,34 @@ export const useAppStore = create<AppState>((set, get) => ({
           filaments: systemFilaments
         });
 
-        const baselineConfig = await getConfig();
-        const { processOverrides, filamentOverrides, printerOverrides } = get();
-        const allOverrides = { ...processOverrides, ...filamentOverrides, ...printerOverrides };
-        if (Object.keys(allOverrides).length > 0) {
-          await setOptions(allOverrides);
-        }
+        const baselineConfig = await computeBaselineConfig(currentList, userPresets, targetActive);
+
+        // Replace only this slot's manual cells with its saved preset values.
+        // A sibling override must not reintroduce this slot's system defaults.
+        const resetRes = await resetOptions({
+          filamentIndex: slotIndex,
+          overrides: curFilOverrides,
+          baseline: baselineConfig
+        });
+        const nextFilOverrides = resetRes.filamentOverrides || { ...curFilOverrides };
+        if (projectColours) nextFilOverrides.filament_colour = projectColours;
+
+        const { processOverrides, printerOverrides } = get();
+        const allOverrides = { ...processOverrides, ...nextFilOverrides, ...printerOverrides };
+        await reapplyPresetOverrides(currentList, allOverrides);
 
         const effectiveConfig = await getConfig();
-        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: 0 });
+
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 });
 
         set({
+          activeUserPreset: targetActive,
+          selectedFilament: currentList[0],
+          selectedFilaments: currentList,
+          filamentOverrides: nextFilOverrides,
           presetConfig: baselineConfig,
           currentConfig: effectiveConfig,
+          engineError: null,
           rulesState: {
             fields: rulesRes.fields || {},
             fixes: rulesRes.fixes || [],
@@ -1409,12 +1622,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         });
       } else if (kind === 'printer') {
-        set((state) => ({
-          activeUserPreset: { ...state.activeUserPreset, printer: name },
-          selectedPrinter: name,
-          printerOverrides: { ...preset.values }
-        }));
-
+        const targetActive = { ...prevState.activeUserPreset, printer: name };
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
         const { selectedFilaments: curFils } = get();
         const filamentsList = curFils && curFils.length > 0 ? curFils : [selectedFilament];
@@ -1426,15 +1634,21 @@ export const useAppStore = create<AppState>((set, get) => ({
           filaments: systemFilaments
         });
 
-        const baselineConfig = await getConfig();
-        const { processOverrides, filamentOverrides, printerOverrides } = get();
-        const allOverrides = { ...processOverrides, ...filamentOverrides, ...printerOverrides };
-        if (Object.keys(allOverrides).length > 0) {
-          await setOptions(allOverrides);
-        }
+        const baselineConfig = await computeBaselineConfig(filamentsList, userPresets, targetActive);
+        const nextPrinterOverrides = { ...preset.values };
+        const { processOverrides, filamentOverrides } = get();
+        const allOverrides = { ...processOverrides, ...filamentOverrides, ...nextPrinterOverrides };
+        await reapplyPresetOverrides(filamentsList, allOverrides);
 
         const effectiveConfig = await getConfig();
-        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: 0 });
+
+        for (const [k, v] of Object.entries(nextPrinterOverrides)) {
+          if (k in effectiveConfig && !(k in processOverrides) && !(k in filamentOverrides)) {
+            baselineConfig[k] = effectiveConfig[k];
+          }
+        }
+
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 });
 
         // Update compatible processes and filaments for this printer base
         const [compProcesses, compFilaments] = await Promise.all([
@@ -1445,8 +1659,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({
           ...(compProcesses.length > 0 ? { processes: compProcesses } : {}),
           ...(compFilaments.length > 0 ? { filaments: compFilaments } : {}),
+          activeUserPreset: targetActive,
+          selectedPrinter: name,
+          printerOverrides: nextPrinterOverrides,
           presetConfig: baselineConfig,
           currentConfig: effectiveConfig,
+          engineError: null,
           rulesState: {
             fields: rulesRes.fields || {},
             fixes: rulesRes.fixes || [],
@@ -1455,16 +1673,42 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
       }
     } catch (err: any) {
-      set({ engineError: `Failed to select user preset '${name}': ${err.message || String(err)}` });
+      // Revert native engine back to previous valid selection and overrides
+      try {
+        const prevSystemPrinter = resolveSystemPreset('printer', prevState.selectedPrinter, userPresets);
+        const prevSystemProcess = resolveSystemPreset('process', prevState.selectedProcess, userPresets);
+        const prevFilaments = prevState.selectedFilaments && prevState.selectedFilaments.length > 0
+          ? prevState.selectedFilaments : [prevState.selectedFilament];
+        const prevSystemFilaments = prevFilaments.map((f) => resolveSystemPreset('filament', f, userPresets));
+        await selectPresets({
+          printer: prevSystemPrinter,
+          process: prevSystemProcess,
+          filaments: prevSystemFilaments
+        });
+        const prevAllOverrides = {
+          ...prevState.processOverrides,
+          ...prevState.filamentOverrides,
+          ...prevState.printerOverrides
+        };
+        if (Object.keys(prevAllOverrides).length > 0) {
+          await reapplyPresetOverrides(prevFilaments, prevAllOverrides);
+        }
+      } catch (_) {}
+
+      // Preserve previous valid selection and baseline in Zustand store, and surface engineError
+      set({
+        ...prevState,
+        engineError: `Failed to select user preset '${name}': ${err.message || String(err)}`
+      });
     }
   },
 
   saveCurrentUserPreset: async (kind: PresetKind, name: string) =>
-    saveCurrentUserPresetHelper(get, set, kind, name),
+    runPresetManagementAction(() => saveCurrentUserPresetHelper(get, set, kind, name)),
   duplicateUserPresetAction: async (kind: PresetKind, sourceName: string, newName: string) =>
-    duplicateUserPresetHelper(get, set, kind, sourceName, newName),
+    runPresetManagementAction(() => duplicateUserPresetHelper(get, set, kind, sourceName, newName)),
   deleteUserPresetAction: async (kind: PresetKind, name: string) =>
-    deleteUserPresetHelper(get, set, kind, name),
+    runPresetManagementAction(() => deleteUserPresetHelper(get, set, kind, name)),
   renameUserPresetAction: async (kind: PresetKind, oldName: string, newName: string) =>
     renameUserPresetHelper(get, set, kind, oldName, newName),
   importPresetBundleAction: async (bundleData: unknown, strategy: ConflictStrategy = 'overwrite') =>
@@ -1487,17 +1731,19 @@ const selectedDevice = () => {
 let applyingDevice = true;
 
 /** Older saved devices did not record a brand. Resolve it without changing the engine. */
-async function resolveDeviceVendor(device: { id: string; preset?: string; vendor?: string }): Promise<string | undefined> {
+export async function resolveDeviceVendor(device: { id: string; preset?: string; vendor?: string }): Promise<string | undefined> {
   if (device.vendor || !device.preset) return device.vendor;
   const state = useAppStore.getState();
+  const userPreset = state.userPresets.find((p) => p.kind === 'printer' && p.name === device.preset);
+  const targetPreset = userPreset ? userPreset.inherits : device.preset;
   const candidates = [...state.vendors].sort((a, b) => {
-    const matches = (vendor: string) => device.preset!.toLowerCase().startsWith(vendor.toLowerCase()) ||
-      (vendor === 'BBL' && device.preset!.startsWith('Bambu'));
+    const matches = (vendor: string) => targetPreset.toLowerCase().startsWith(vendor.toLowerCase()) ||
+      (vendor === 'BBL' && targetPreset.startsWith('Bambu'));
     return Number(matches(b.name)) - Number(matches(a.name));
   });
   for (const vendor of candidates) {
     const profiles = await systemProfiles(vendor.name, 'machine').catch(() => []);
-    if (!profiles.some((p) => p.name === device.preset)) continue;
+    if (!profiles.some((p) => p.name === targetPreset)) continue;
     const store = usePrinterConnectionStore.getState();
     const saved = store.printers.find((p) => p.id === device.id);
     if (saved) usePrinterConnectionStore.setState({ printers: store.printers.map((p) => p.id === device.id ? { ...p, vendor: vendor.name } : p) });
@@ -1510,9 +1756,13 @@ async function restoreDeviceFilaments() {
   const device = selectedDevice();
   if (!device?.filamentPresets?.length) return;
   const app = useAppStore.getState();
-  const valid = device.filamentPresets.filter((name) => app.filaments.some((p) => p.name === name) ||
-    app.userPresets.some((p) => p.kind === 'filament' && p.name === name));
-  if (!valid.length) return;
+  const fallback = app.selectedFilaments[0] || app.selectedFilament;
+  // Keep physical slot indices and colors together even if a saved preset
+  // was deleted. That slot falls back to the selected printer's default.
+  const valid = device.filamentPresets.map(name =>
+    app.filaments.some(preset => preset.name === name) ||
+    app.userPresets.some(preset => preset.kind === 'filament' && preset.name === name)
+      ? name : fallback);
   // Use the normal preset path so all per-slot settings reach the engine, not just the dropdowns.
   for (let i = 0; i < valid.length; i++) {
     const user = useAppStore.getState().userPresets.find((p) => p.kind === 'filament' && p.name === valid[i]);
@@ -1534,9 +1784,23 @@ async function applyDevicePreset() {
   useAppStore.setState({ isEngineReady: false, isEngineInitializing: true });
   try {
     const vendor = await resolveDeviceVendor(device);
-    if (state.selectedPrinter !== device.preset) {
-      if (vendor && vendor !== state.selectedVendor) await state.chooseVendor(vendor);
-      else if (!state.printers.some((p) => p.name === device.preset)) return;
+    const isUser = state.userPresets.some((p) => p.kind === 'printer' && p.name === device.preset);
+    if (vendor && vendor !== state.selectedVendor) {
+      await state.chooseVendor(vendor);
+    } else if (!isUser && !state.printers.some((p) => p.name === device.preset)) {
+      return;
+    }
+    const curState = useAppStore.getState();
+    if (!isUser && !curState.printers.some((p) => p.name === device.preset)) return;
+    if (isUser && !curState.userPresets.some((p) => p.kind === 'printer' && p.name === device.preset)) return;
+    // Two devices can share a machine profile and have different spools.
+    // Start from its default rather than inheriting the previous device's slots.
+    useAppStore.setState({ filamentOverrides: {}, activeFilamentSlot: 0 });
+    if (isUser) {
+      const preset = curState.userPresets.find((p) => p.kind === 'printer' && p.name === device.preset)!;
+      await useAppStore.getState().choosePrinter(preset.inherits);
+      await useAppStore.getState().selectUserPreset('printer', device.preset);
+    } else {
       await useAppStore.getState().choosePrinter(device.preset);
     }
     await restoreDeviceFilaments();

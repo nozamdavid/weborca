@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { getEngine, slice } from '../engine/orcaEngine';
+import { usePlateStore } from '../plate/plateStore';
+import { useHistoryStore } from '../history';
 import { useAppStore } from '../store/appStore';
 import type { ProgressNotification, SliceResult } from '../engine/types';
 import { plateTitle } from './plateName';
@@ -15,6 +17,7 @@ export interface PlatesStoreState {
   fetchPlates: () => Promise<PlateInfo[]>;
   setActivePlate: (index: number) => void;
   addPlate: (name?: string, config?: Record<string, string>) => Promise<PlateInfo[]>;
+  duplicatePlate: (index: number) => Promise<void>;
   deletePlate: (index: number, deleteObjects?: boolean) => Promise<PlateInfo[]>;
   setPlateConfig: (
     index: number,
@@ -22,7 +25,7 @@ export interface PlatesStoreState {
     name?: string,
     locked?: boolean
   ) => Promise<void>;
-  slicePlate: (plateIndex: number) => Promise<void>;
+  slicePlate: (plateIndex: number) => Promise<boolean>;
   sliceAll: () => Promise<void>;
 }
 
@@ -87,7 +90,10 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
   setActivePlate: (index: number) => {
     const { plates } = get();
     if (index >= 0 && index < plates.length) {
+      const app = useAppStore.getState();
+      if (index !== get().activePlateIndex && app.isSlicing) app.cancelSlice();
       set({ activePlateIndex: index });
+      if (app.sliceResult?.plateIndex !== index) app.invalidateSlicePreview();
     }
   },
 
@@ -101,12 +107,28 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
 
       await engine.call('addPlate', payload);
       const plates = await get().fetchPlates();
+      await usePlateStore.getState().refreshObjects();
       set({ activePlateIndex: plates.length - 1, isLoading: false });
+      await useHistoryStore.getState().commitTransaction('Add plate');
       return plates;
     } catch (err: any) {
       console.error('[platesStore] Failed to add plate:', err);
       set({ isLoading: false, error: err.message || String(err) });
       return get().plates;
+    }
+  },
+
+  duplicatePlate: async (index) => {
+    try {
+      set({ isLoading: true, error: null });
+      const engine = await getEngine();
+      await engine.call('duplicatePlate', { plateIndex: index });
+      const plates = await get().fetchPlates();
+      await usePlateStore.getState().refreshObjects();
+      set({ activePlateIndex: plates.length - 1, isLoading: false });
+      await useHistoryStore.getState().commitTransaction('Duplicate plate');
+    } catch (error) {
+      set({ isLoading: false, error: error instanceof Error ? error.message : String(error) });
     }
   },
 
@@ -121,7 +143,9 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
       if (nextActive >= plates.length) {
         nextActive = Math.max(0, plates.length - 1);
       }
+      await usePlateStore.getState().refreshObjects();
       set({ activePlateIndex: nextActive, isLoading: false });
+      await useHistoryStore.getState().commitTransaction('Delete plate');
       return plates;
     } catch (err: any) {
       console.error('[platesStore] Failed to delete plate:', err);
@@ -146,6 +170,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
 
       await engine.call('setPlateConfig', payload);
       await get().fetchPlates();
+      await useHistoryStore.getState().commitTransaction('Change plate settings');
     } catch (err: any) {
       console.error('[platesStore] Failed to set plate config:', err);
       set({ error: err.message || String(err) });
@@ -154,7 +179,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
 
   slicePlate: async (plateIndex: number) => {
     const appState = useAppStore.getState();
-    if (appState.isSlicing) return;
+    if (appState.isSlicing) return false;
 
     const abortController = new AbortController();
     useAppStore.setState({
@@ -185,6 +210,10 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
         }
       });
 
+      // A plate switch can cancel a slice just as its worker finishes.
+      if (abortController.signal.aborted) throw new DOMException('Slicing canceled', 'AbortError');
+      set({ activePlateIndex: plateIndex });
+
       const { gcodeUrl: oldUrl } = useAppStore.getState();
       if (oldUrl) URL.revokeObjectURL(oldUrl);
 
@@ -195,10 +224,11 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
         isSlicing: false,
         slicePercent: 100,
         sliceStatusText: `Plate ${plateIndex + 1} slicing complete!`,
-        sliceResult: result,
+        sliceResult: { ...result, plateIndex },
         gcodeUrl,
         abortController: null
       });
+      return true;
     } catch (err: any) {
       const isCanceled = err.name === 'AbortError' || err.canceled || err.message === 'canceled';
       useAppStore.setState({
@@ -207,13 +237,16 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
         sliceStatusText: isCanceled ? 'Slicing canceled' : 'Slicing failed',
         engineError: isCanceled ? null : `Slicing error: ${err.message || String(err)}`
       });
+      return false;
     }
   },
 
   sliceAll: async () => {
-    const { plates, slicePlate } = get();
-    for (let i = 0; i < plates.length; i++) {
-      await slicePlate(i);
+    if (useAppStore.getState().isSlicing) return;
+    const plates = await get().fetchPlates();
+    for (const plate of plates) {
+      if (!plate.instances.length) continue;
+      if (!await get().slicePlate(plate.index)) break;
     }
   }
 }));

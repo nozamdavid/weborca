@@ -14,6 +14,8 @@
  * It is OFF unless ORCA_PRINTER_PROXY is set, and ORCA_PRINTER_PROXY_READONLY=1 refuses everything that could
  * change a printer. See gateway/policy.ts for the rules and PRINTERS.md for the security model.
  */
+import { handleCrealityCloudRequest } from './gateway/crealityCloud.ts';
+import type { CrealityCloudGatewayOptions } from './gateway/crealityCloud.ts';
 import * as ftp from 'basic-ftp';
 import * as http from 'node:http';
 import * as https from 'node:https';
@@ -23,22 +25,36 @@ import type { MqttClient } from 'mqtt';
 import type { Plugin, PreviewServer, ViteDevServer } from 'vite';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
-  CLOUD_SERVICES, GATEWAY_OFF_MESSAGE, GatewayError, bambuRequestAllowedInReadOnly, checkRpcFrame, cloudHosts, configFromEnv,
+  CLOUD_SERVICES, GATEWAY_OFF_MESSAGE, GatewayError, bambuRequestAllowedInReadOnly, checkRpcFrame, configFromEnv,
   digestAuthorization, httpAllowedInReadOnly, parseDigestChallenge, resolveTarget
 } from './gateway/policy.ts';
 import type { DigestChallenge, GatewayConfig, Resolver, Target } from './gateway/policy.ts';
 
-export interface GatewayOptions extends GatewayConfig {
+export interface GatewayOptions extends GatewayConfig, CrealityCloudGatewayOptions {
   /** Replaces DNS lookups (tests). */
   resolver?: Resolver;
   /** Where Bambu printers listen (tests point this at a local broker). */
   bambu?: { mqttPort?: number; mqttProtocol?: 'mqtt' | 'mqtts'; ftpPort?: number; ftpSecure?: boolean | 'implicit' };
+  bambuCloud?: { apiHost?: string; apiPort?: number; apiProtocol?: 'http' | 'https'; apiRejectUnauthorized?: boolean; mqttHost?: string; mqttPort?: number; mqttProtocol?: 'mqtt' | 'mqtts'; mqttRejectUnauthorized?: boolean };
 }
 
 const HOP_BY_HOP = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'upgrade'];
-const NOT_FORWARDED = ['host', 'origin', 'referer', 'cookie', 'x-orca-auth', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto'];
+const NOT_FORWARDED = ['host', 'origin', 'referer', 'cookie', 'x-orca-auth', 'x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-http-method-override', 'x-method-override', 'x-http-method'];
 const UPSTREAM_IDLE_MS = 60_000;
 const MAX_QUEUED_WS_FRAMES = 200;
+
+const BAMBU_CLOUD_API_HOST = 'api.bambulab.com';
+const BAMBU_CLOUD_MQTT_HOSTS = new Set([
+  'cn.mqtt.bambulab.com',
+  'us.mqtt.bambulab.com',
+  'mqtt.bambu-lab.com',
+]);
+const BAMBU_CLOUD_API_ALLOWLIST = new Set([
+  'POST /v1/user-service/user/login',
+  'GET /v1/iot-service/api/user/bind',
+  'GET /v1/design-user-service/my/preference'
+]);
+
 
 function fail(res: http.ServerResponse, status: number, message: string) {
   if (res.headersSent) {
@@ -144,7 +160,9 @@ async function handleProxy(
   const config = { ...configFromEnv(), ...options };
   const target = await resolveTarget(hostPort, scheme === 'https' ? 443 : 80, config, options.resolver);
   const method = req.method ?? 'GET';
-  if (config.readOnly && !httpAllowedInReadOnly(method, path)) {
+  const override = req.headers['x-http-method-override'] ?? req.headers['x-method-override'] ?? req.headers['x-http-method'];
+  const effectiveMethod = (typeof override === 'string' ? override : Array.isArray(override) ? override[0] : method).trim();
+  if (config.readOnly && (!httpAllowedInReadOnly(method, path) || !httpAllowedInReadOnly(effectiveMethod, path))) {
     throw new GatewayError(403, 'Read-only mode: this request could change the printer.');
   }
 
@@ -349,8 +367,131 @@ async function handleBambuFtp(req: http.IncomingMessage, res: http.ServerRespons
 // Plugin
 // ---------------------------------------------------------------------------------------------
 
+
+async function handleBambuCloudApi(req: http.IncomingMessage, res: http.ServerResponse, path: string, options: GatewayOptions) {
+  if (!(options.cloud ?? configFromEnv().cloud ?? '').split(',').map(value => value.trim()).includes('bambu-cloud')) {
+    fail(res, 403, 'Bambu Cloud is not enabled on this gateway.');
+    return;
+  }
+  const method = (req.method || 'GET').toUpperCase();
+  const allowKey = `${method} ${path}`;
+  if (!BAMBU_CLOUD_API_ALLOWLIST.has(allowKey)) {
+    fail(res, 403, 'Cloud API endpoint not in allowlist');
+    return;
+  }
+
+  const apiHost = options.bambuCloud?.apiHost ?? BAMBU_CLOUD_API_HOST;
+  const reqHeaders: http.OutgoingHttpHeaders = {
+    'host': apiHost,
+    'accept': 'application/json'
+  };
+
+  if (req.headers['content-type']) reqHeaders['content-type'] = req.headers['content-type'];
+  if (req.headers['content-length']) reqHeaders['content-length'] = req.headers['content-length'];
+  if (req.headers['authorization']) reqHeaders['authorization'] = req.headers['authorization'];
+
+  const requestFn = options.bambuCloud?.apiProtocol === 'http' ? http.request : https.request;
+  const creq = requestFn({
+    method,
+    hostname: apiHost,
+    port: options.bambuCloud?.apiPort ?? 443,
+    path,
+    headers: reqHeaders,
+    timeout: 15_000,
+    rejectUnauthorized: options.bambuCloud?.apiRejectUnauthorized ?? true
+  }, (cres) => {
+    res.statusCode = cres.statusCode || 500;
+    res.setHeader('content-type', cres.headers['content-type'] || 'application/json');
+    cres.pipe(res);
+  });
+
+  creq.on('timeout', () => creq.destroy(new Error('Cloud API did not answer in time.')));
+  creq.on('error', (err) => fail(res, 502, errorMessage(err)));
+  res.on('close', () => { if (!res.writableFinished) creq.destroy(); });
+  req.pipe(creq);
+}
+
+function handleBambuCloudMqtt(wss: WebSocketServer, req: http.IncomingMessage, socket: Duplex, head: Buffer, brokerHost: string, options: GatewayOptions) {
+  if (!(options.cloud ?? configFromEnv().cloud ?? '').split(',').map(value => value.trim()).includes('bambu-cloud')) {
+    socket.end('HTTP/1.1 403 Forbidden\r\n\r\nBambu Cloud is not enabled on this gateway.');
+    return;
+  }
+  if (!BAMBU_CLOUD_MQTT_HOSTS.has(brokerHost)) {
+    socket.end('HTTP/1.1 403 Forbidden\r\n\r\nInvalid cloud MQTT broker');
+    return;
+  }
+
+  wss.handleUpgrade(req, socket, head, (client) => {
+    let broker: MqttClient | undefined;
+    let serial = '';
+    const send = (message: object) => client.readyState === WebSocket.OPEN && client.send(JSON.stringify(message));
+    const authTimeout = setTimeout(() => client.close(1008, 'No connect message'), 10_000);
+
+    client.on('message', (data) => {
+      let message: { type?: string; serial?: string; username?: string; token?: string; payload?: unknown };
+      try {
+        message = JSON.parse(data.toString());
+      } catch {
+        return;
+      }
+      if (!message || typeof message !== 'object' || Array.isArray(message)) return;
+
+      if (message.type === 'connect' && !broker) {
+        clearTimeout(authTimeout);
+        if (typeof message.serial !== 'string' || !/^[A-Za-z0-9_-]+$/.test(message.serial) ||
+            typeof message.username !== 'string' || !message.username || typeof message.token !== 'string' || !message.token) {
+          send({ type: 'error', message: 'Serial, username, and token required for cloud MQTT.' });
+          client.close(1008);
+          return;
+        }
+        serial = message.serial;
+        broker = mqtt.connect({
+          protocol: options.bambuCloud?.mqttProtocol ?? 'mqtts',
+          host: options.bambuCloud?.mqttHost ?? brokerHost,
+          port: options.bambuCloud?.mqttPort ?? 8883,
+          username: message.username,
+          password: message.token,
+          rejectUnauthorized: options.bambuCloud?.mqttRejectUnauthorized ?? true,
+          clientId: `orca_web_${Math.random().toString(16).slice(2, 10)}`,
+          reconnectPeriod: 0,
+          connectTimeout: 10_000
+        });
+
+        broker.on('connect', () => {
+          broker!.subscribe(`device/${serial}/report`, (err) => {
+            if (err) return send({ type: 'error', message: err.message });
+            send({ type: 'connected' });
+          });
+        });
+
+        broker.on('message', (_topic, payload) => {
+          try {
+            send({ type: 'report', payload: JSON.parse(payload.toString()) });
+          } catch {
+            /* ignore */
+          }
+        });
+
+        broker.on('error', (err) => {
+          send({ type: 'error', message: errorMessage(err) });
+        });
+        broker.on('close', () => client.close());
+      } else if (message.type === 'publish' && broker) {
+        if (!bambuRequestAllowedInReadOnly(message.payload)) {
+          send({ type: 'error', message: 'Refused in read-only mode.' });
+        } else {
+          broker.publish(`device/${serial}/request`, JSON.stringify(message.payload));
+        }
+      }
+    });
+
+    client.on('close', () => { clearTimeout(authTimeout); broker?.end(true); });
+  });
+}
+
 const ROUTE = /^\/_printer\/(http|https|ws|wss)\/([^/]+)(\/.*)?$/;
 const BAMBU_ROUTE = /^\/_printer\/bambu\/(mqtt|ftp)\/([^/?]+)/;
+const BAMBU_CLOUD_ROUTE = /^\/_printer\/bambu-cloud\/(api|mqtt)\/([^?]+)/;
 
 /** The gateway's request handlers, independent of the server that hosts them (Vite plugin or the local gateway). */
 export function createGateway(options: GatewayOptions = {}) {
@@ -358,12 +499,14 @@ export function createGateway(options: GatewayOptions = {}) {
 
   function status() {
     const config = { ...configFromEnv(), ...options };
+    const cloud = (config.cloud ?? '').split(',').map((s) => s.trim()).filter((id) => id in CLOUD_SERVICES);
+    const enabled = !!config.proxy || cloud.length > 0;
     return {
-      enabled: !!config.proxy || cloudHosts(config).size > 0,
-      mode: config.proxy === 'private' ? 'private' : config.proxy ? 'list' : cloudHosts(config).size > 0 ? 'cloud' : 'off',
+      enabled,
+      mode: config.proxy === 'private' ? 'private' : config.proxy ? 'list' : cloud.length > 0 ? 'cloud' : 'off',
       readOnly: !!config.readOnly,
-      cloud: (config.cloud ?? '').split(',').map((s) => s.trim()).filter((id) => id in CLOUD_SERVICES),
-      message: config.proxy || cloudHosts(config).size > 0 ? undefined : GATEWAY_OFF_MESSAGE
+      cloud,
+      message: enabled ? undefined : GATEWAY_OFF_MESSAGE
     };
   }
 
@@ -377,9 +520,18 @@ export function createGateway(options: GatewayOptions = {}) {
         res.end(JSON.stringify(status()));
         return true;
       }
+      if (url.startsWith('/_printer/creality-cloud/')) {
+        await handleCrealityCloudRequest(req, res, url, options);
+        return true;
+      }
       const bambu = BAMBU_ROUTE.exec(url);
       if (bambu?.[1] === 'ftp') {
         await handleBambuFtp(req, res, bambu[2], options);
+        return true;
+      }
+      const cloud = BAMBU_CLOUD_ROUTE.exec(url);
+      if (cloud?.[1] === 'api') {
+        await handleBambuCloudApi(req, res, '/' + cloud[2], options);
         return true;
       }
       const match = ROUTE.exec(url);
@@ -417,10 +569,19 @@ export function createGateway(options: GatewayOptions = {}) {
     };
     try {
       const config = { ...configFromEnv(), ...options };
+      if (url.startsWith('/_printer/creality-cloud/')) {
+        refuse(400, 'Creality Cloud monitoring uses HTTP requests.');
+        return true;
+      }
       const bambu = BAMBU_ROUTE.exec(url);
       if (bambu?.[1] === 'mqtt') {
         const target = await resolveTarget(bambu[2], 8883, config, options.resolver);
         handleBambuMqtt(sockets, req, socket, head, target, options);
+        return true;
+      }
+      const cloud = BAMBU_CLOUD_ROUTE.exec(url);
+      if (cloud?.[1] === 'mqtt') {
+        handleBambuCloudMqtt(sockets, req, socket, head, cloud[2], options);
         return true;
       }
       const match = ROUTE.exec(url);

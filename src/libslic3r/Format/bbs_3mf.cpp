@@ -2342,6 +2342,11 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
                 mo->config.set_key_value("extruder", new ConfigOptionInt(1));
 
             if (mo->volumes.size() == 1) {
+                // A single part inherits its object's filament. Preserve an
+                // explicit part assignment before removing that redundant override.
+                const auto* part_extruder = dynamic_cast<const ConfigOptionInt*>(mo->volumes[0]->config.option("extruder"));
+                if (part_extruder && part_extruder->getInt() > 0 && part_extruder->getInt() <= max_filament_id)
+                    mo->config.set_key_value("extruder", new ConfigOptionInt(part_extruder->getInt()));
                 mo->volumes[0]->config.erase("extruder");
             }
             else {

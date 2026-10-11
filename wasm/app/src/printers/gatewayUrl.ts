@@ -71,6 +71,17 @@ export function bambuMqttUrl(printer: PhysicalPrinter): string {
   return `${gatewayOrigin(printer, true)}/_printer/bambu/mqtt/${hostPort}`;
 }
 
+/** Websocket URL of the gateway's Bambu Cloud MQTT bridge. */
+export function bambuCloudMqttUrl(printer: PhysicalPrinter, brokerHost: string): string {
+  return `${gatewayOrigin(printer, true)}/_printer/bambu-cloud/mqtt/${brokerHost}`;
+}
+
+/** HTTP URL of the gateway's Bambu Cloud API bridge. */
+export function bambuCloudApiUrl(printer: PhysicalPrinter, path: string): string {
+  return `${localGatewayBase(printer) ? gatewayOrigin(printer, false) : ''}/_printer/bambu-cloud/api${path.startsWith('/') ? path : '/' + path}`;
+}
+
+
 /** URL of the gateway's Bambu FTPS bridge. */
 export function bambuFtpUrl(printer: PhysicalPrinter): string {
   const { hostPort } = parseHost(printer.print_host);

@@ -60,6 +60,30 @@ TEST_CASE("Adjusted solid distance", "[Fill]") {
 }
 #endif
 
+TEST_CASE("Equal-length boundary connections keep parallel infill continuous", "[Fill][Regression]") {
+    constexpr int line_count = 12;
+    constexpr double line_spacing = 1.0;
+    constexpr double side = (line_count + 1) * line_spacing;
+    const ExPolygon boundary(Points{Point::new_scale(0, 0), Point::new_scale(side, 0),
+                                    Point::new_scale(side, side), Point::new_scale(0, side)});
+    Polylines input, output;
+    for (int i = 1; i <= line_count; ++i)
+        input.emplace_back(Points{Point::new_scale(i * line_spacing, 0),
+                                  Point::new_scale(i * line_spacing, side)});
+    FillParams params;
+    params.density = 0.2f;
+    params.anchor_length = 2.0f;
+    params.anchor_length_max = 2.0f;
+    Fill::connect_infill(std::move(input), boundary, output, 0.4, params);
+
+    REQUIRE(output.size() == 1);
+    // Each line traverses the square; adjacent lines connect along its boundary.
+    // The two remaining ends receive their configured boundary anchors.
+    const double expected_length = line_count * side + (line_count - 1) * line_spacing +
+                                   2.0 * params.anchor_length;
+    REQUIRE_THAT(unscale<double>(output.front().length()), Catch::Matchers::WithinAbs(expected_length, 1e-6));
+}
+
 TEST_CASE("Pattern path length", "[Fill]") {
     std::unique_ptr<Slic3r::Fill> filler(Slic3r::Fill::new_from_type("rectilinear"));
     filler->angle = float(-(PI)/2.0);

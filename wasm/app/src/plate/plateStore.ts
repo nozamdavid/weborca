@@ -34,6 +34,7 @@ export function parseMeshBuffer(bytes: Uint8Array): MeshBufferData {
 }
 
 const PASTE_OFFSET_MM = 20;
+let clipboardWork: Promise<void> = Promise.resolve();
 
 /** Arrange options; an empty spacing uses the distance from the print settings. */
 export interface ArrangeSettings {
@@ -67,8 +68,9 @@ export interface PlateStoreState {
   selectedInstanceId: number | null;
   /** Further selected instances besides the primary one (Shift/Ctrl-click, Select all). */
   extraSelection: InstanceRef[];
-  /** Copied instances; pasting adds another instance of each. */
+  /** Instance references marking the independent native clipboard snapshot. */
   clipboard: InstanceRef[];
+  clipboardOrigin: [number, number, number];
   gizmoMode: GizmoMode;
   measureActive: boolean;
   measurePoints: Array<[number, number, number]>;
@@ -102,7 +104,8 @@ export interface PlateStoreState {
   ) => Promise<void>;
   toggleSelect: (objectId: number, instanceId: number) => void;
   selectAll: () => void;
-  copySelected: () => void;
+  copySelected: (cut?: boolean) => Promise<void>;
+  cutSelected: () => Promise<void>;
   pasteClipboard: () => Promise<void>;
   mirrorSelected: (axis: 0 | 1 | 2) => Promise<void>;
   deleteAll: () => Promise<void>;
@@ -136,6 +139,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   selectedInstanceId: null,
   extraSelection: [],
   clipboard: [],
+  clipboardOrigin: [0, 0, 0],
   arrangeSettings: loadArrangeSettings(),
   arrangeDialogOpen: false,
   setArrangeDialogOpen: (open) => set({ arrangeDialogOpen: open }),
@@ -144,7 +148,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     set({ arrangeSettings: next });
     try { localStorage.setItem(ARRANGE_KEY, JSON.stringify(next)); } catch (_) {}
   },
-  gizmoMode: 'translate',
+  gizmoMode: null,
   measureActive: false,
   measurePoints: [],
   explodeActive: false,
@@ -233,7 +237,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
         set({ selectedObjectId: null, selectedInstanceId: null });
       }
       const exists = (r: InstanceRef) => objs.some((o) => o.id === r.objectId && o.instances.some((i) => i.id === r.instanceId));
-      set((st) => ({ extraSelection: st.extraSelection.filter(exists), clipboard: st.clipboard.filter(exists) }));
+      set((st) => ({ extraSelection: st.extraSelection.filter(exists) }));
 
       // Sync with appStore
       useAppStore.setState({
@@ -292,35 +296,39 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     set({ selectedObjectId: first?.objectId ?? null, selectedInstanceId: first?.instanceId ?? null, extraSelection: rest });
   },
 
-  copySelected: () => {
+  copySelected: async (cut = false) => {
     const { selectedObjectId, selectedInstanceId, extraSelection } = get();
     if (selectedObjectId === null || selectedInstanceId === null) return;
-    set({ clipboard: [{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection] });
+    const refs = [{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection];
+    const plates = usePlatesStore.getState();
+    const origin = plates.plates[plates.activePlateIndex]?.origin ?? [0, 0, 0];
+    clipboardWork = (async () => {
+      const engine = await getEngine();
+      await engine.call('copySelection', { instances: refs, cut });
+      set({ clipboard: refs, clipboardOrigin: [...origin] as [number, number, number] });
+      if (cut) {
+        await get().refreshObjects();
+        await useHistoryStore.getState().commitTransaction('Cut objects');
+      }
+    })();
+    await clipboardWork;
   },
 
+  cutSelected: async () => get().copySelected(true),
+
   pasteClipboard: async () => {
-    const { clipboard } = get();
-    if (clipboard.length === 0) return;
-    // Each copied object comes back as an independent object, set a little aside from the original.
+    await clipboardWork;
+    if (!get().clipboard.length) return;
     const engine = await getEngine();
-    const sources = [...new Set(clipboard.map((r) => r.objectId))];
-    const created: number[] = [];
-    for (const objectId of sources) {
-      const res = (await engine.call('cloneObject', { objectId })) as { objectId: number };
-      created.push(res.objectId);
-    }
-    const objects = await get().refreshObjects();
-    for (const id of created) {
-      for (const inst of objects.find((o) => o.id === id)?.instances ?? []) {
-        await engine.call('setInstanceTransform', { objectId: id, instanceId: inst.id, offset: [inst.offset[0] + PASTE_OFFSET_MM, inst.offset[1] + PASTE_OFFSET_MM, inst.offset[2]] });
-      }
-    }
+    const plates = usePlatesStore.getState();
+    const origin = plates.plates[plates.activePlateIndex]?.origin ?? [0, 0, 0];
+    const copiedOrigin = get().clipboardOrigin;
+    const offset = origin.map((value, index) => value - copiedOrigin[index] + (index < 2 ? PASTE_OFFSET_MM : 0));
+    const result = await engine.call('pasteSelection', { offset }) as { objectIds: number[] };
     const after = await get().refreshObjects();
-    const [first, ...rest] = created.flatMap((id) => after.find((o) => o.id === id)?.instances.map((i) => ({ objectId: id, instanceId: i.id })) ?? []);
+    const [first, ...rest] = result.objectIds.flatMap((id) => after.find((o) => o.id === id)?.instances.map((i) => ({ objectId: id, instanceId: i.id })) ?? []);
     if (first) set({ selectedObjectId: first.objectId, selectedInstanceId: first.instanceId, extraSelection: rest });
-    try {
-      await useHistoryStore.getState().commitTransaction(created.length > 1 ? 'Paste objects' : 'Paste object');
-    } catch (_) {}
+    await useHistoryStore.getState().commitTransaction(result.objectIds.length > 1 ? 'Paste objects' : 'Paste object');
   },
 
   mirrorSelected: async (axis) => {
@@ -432,9 +440,14 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   },
 
   deleteSelected: async () => {
-    const { selectedObjectId, extraSelection } = get();
-    if (selectedObjectId === null) return;
-    await get().deleteObjects([selectedObjectId, ...extraSelection.map((r) => r.objectId)]);
+    const { selectedObjectId, selectedInstanceId, extraSelection } = get();
+    if (selectedObjectId === null || selectedInstanceId === null) return;
+    const engine = await getEngine();
+    await engine.call('deleteInstances', {
+      instances: [{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection]
+    });
+    await get().refreshObjects();
+    await useHistoryStore.getState().commitTransaction('Delete selected instances');
   },
 
   deleteObject: async (objectId: number) => {

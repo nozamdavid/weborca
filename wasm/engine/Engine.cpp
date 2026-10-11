@@ -28,11 +28,14 @@
 #include "libslic3r/PrintBase.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/Preset.hpp"
 #include "libslic3r/AppConfig.hpp"
 #include "libslic3r/Thread.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/GCode/GCodeProcessor.hpp"
 #include "libslic3r/GCode/WipeTowerEstimate.hpp"
+#include "libslic3r/Format/STL.hpp"
+#include "libslic3r/Format/3mf.hpp"
 
 #include <tbb/task_arena.h>
 
@@ -57,6 +60,10 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <memory>
+#include <optional>
+#include <set>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -65,6 +72,43 @@
 using json = nlohmann::json;
 
 namespace {
+
+// Some legacy numeric deserializers accept incomplete input. Validate browser
+// edits before invoking them, without changing desktop profile compatibility.
+bool valid_numeric_option(const Slic3r::ConfigOption& option, const std::string& value) {
+    const int scalar_type = int(option.type()) & ~int(Slic3r::coVectorType);
+    const bool integer = scalar_type == Slic3r::coInt;
+    const bool percent = scalar_type == Slic3r::coPercent || scalar_type == Slic3r::coFloatOrPercent;
+    const bool boolean = scalar_type == Slic3r::coBool;
+    if (!integer && !percent && !boolean && scalar_type != Slic3r::coFloat)
+        return true;
+    if (value.empty() || value.back() == ',' ||
+        (!(int(option.type()) & int(Slic3r::coVectorType)) && value.find(',') != std::string::npos)) return false;
+    std::istringstream cells(value);
+    std::string cell;
+    while (std::getline(cells, cell, ',')) {
+        const auto first = cell.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) return false;
+        cell = cell.substr(first, cell.find_last_not_of(" \t\r\n") - first + 1);
+        if (option.nullable() && cell == "nil") continue;
+        if (boolean) {
+            if (cell != "0" && cell != "1") return false;
+            continue;
+        }
+        if (percent && cell.back() == '%') cell.pop_back();
+        std::istringstream number(cell);
+        if (integer) {
+            int parsed = 0;
+            if (!(number >> parsed)) return false;
+        } else {
+            double parsed = 0.;
+            if (!(number >> parsed) || !std::isfinite(parsed)) return false;
+        }
+        number >> std::ws;
+        if (!number.eof()) return false;
+    }
+    return true;
+}
 
 json serialize_option_def(const Slic3r::ConfigOptionDef& def) {
     json j = json::object();
@@ -213,12 +257,16 @@ private:
     json op_getConfig(const json& args);
     json op_getWipeTowerPreview(const json& args);
     json op_getPresetConfig(const json& args);
+    json op_mergeFilamentPresets(const json& args);
     json op_getConfigDef(const json& args);
     json op_evaluateRules(const json& args);
     json op_setOptions(const json& args);
+    json op_setOption(const json& args);
+    json op_getOption(const json& args);
     json op_resetOptions(const json& args);
     json op_loadModel(const json& args);
     json op_arrange(const json& args);
+    json op_placeObjects(const json& args);
     json op_addModel(const json& args);
     json op_listObjects(const json& args);
     json op_getMesh(const json& args);
@@ -229,6 +277,9 @@ private:
     json op_duplicateInstance(const json& args);
     json op_mirrorInstance(const json& args);
     json op_cloneObject(const json& args);
+    json op_copySelection(const json& args);
+    json op_pasteSelection(const json& args);
+    json op_exportModel(const json& args);
     json op_openProject(const json& args);
     json op_saveProject(const json& args);
     json op_getObjectTree(const json& args);
@@ -241,6 +292,7 @@ private:
     json op_setVolumeExtruder(const json& args);
     json op_listPlates(const json& args);
     json op_addPlate(const json& args);
+    json op_duplicatePlate(const json& args);
     json op_deletePlate(const json& args);
     json op_setPlateConfig(const json& args);
     json op_getSupportPainting(const json& args);
@@ -326,6 +378,7 @@ private:
     std::vector<std::string> m_selected_filaments;
     Slic3r::DynamicPrintConfig m_options_override;
     Slic3r::Model m_model;
+    Slic3r::Model m_clipboard;
     Slic3r::PlateDataPtrs m_plate_data;
     Slic3r::Calib_Params m_calib_params;
 };
@@ -443,6 +496,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_getWipeTowerPreview(args);
         } else if (op == "getConfig") {
             result_data = op_getConfig(args);
+        } else if (op == "mergeFilamentPresets") {
+            result_data = op_mergeFilamentPresets(args);
         } else if (op == "getPresetConfig") {
             result_data = op_getPresetConfig(args);
         } else if (op == "getConfigDef") {
@@ -451,6 +506,10 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_evaluateRules(args);
         } else if (op == "setOptions") {
             result_data = op_setOptions(args);
+        } else if (op == "setOption") {
+            result_data = op_setOption(args);
+        } else if (op == "getOption") {
+            result_data = op_getOption(args);
         } else if (op == "resetOptions") {
             result_data = op_resetOptions(args);
         } else if (op == "loadModel") {
@@ -463,6 +522,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_getMesh(args);
         } else if (op == "setInstanceTransform") {
             result_data = op_setInstanceTransform(args);
+        } else if (op == "deleteInstances") {
+            result_data = OrcaWasm::deleteInstances(m_model, args);
         } else if (op == "deleteObject") {
             result_data = op_deleteObject(args);
         } else if (op == "moveObject") {
@@ -471,8 +532,16 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_duplicateInstance(args);
         } else if (op == "mirrorInstance") {
             result_data = op_mirrorInstance(args);
+        } else if (op == "copySelection") {
+            result_data = op_copySelection(args);
+        } else if (op == "pasteSelection") {
+            result_data = op_pasteSelection(args);
         } else if (op == "cloneObject") {
             result_data = op_cloneObject(args);
+        } else if (op == "exportModel") {
+            result_data = op_exportModel(args);
+        } else if (op == "placeObjects") {
+            result_data = op_placeObjects(args);
         } else if (op == "arrange") {
             result_data = op_arrange(args);
         } else if (op == "openProject") {
@@ -499,6 +568,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_setVolumeExtruder(args);
         } else if (op == "listPlates") {
             result_data = op_listPlates(args);
+        } else if (op == "duplicatePlate") {
+            result_data = op_duplicatePlate(args);
         } else if (op == "addPlate") {
             result_data = op_addPlate(args);
         } else if (op == "deletePlate") {
@@ -964,10 +1035,30 @@ json Engine::Impl::op_getWipeTowerPreview(const json& args) {
     if (plate < m_plate_data.size()) config.apply(m_plate_data[plate]->config);
     const auto* diameters = config.opt<Slic3r::ConfigOptionFloats>("filament_diameter");
     if (!config.opt_bool("enable_prime_tower") || !diameters || diameters->values.size() < 2) return {{"enabled", false}};
-    std::vector<unsigned int> filaments;
-    for (size_t i = 0; i < diameters->values.size(); ++i) filaments.push_back(static_cast<unsigned int>(i));
+    // Configured filament slots alone do not require a tower. Only printable
+    // geometry on this plate (including material painting) contributes tools.
+    OrcaEngine::listPlates(m_model, m_plate_data, config);
+    if (plate >= m_plate_data.size()) return {{"enabled", false}};
+    std::set<int> object_indices;
+    for (const auto& pair : m_plate_data[plate]->objects_and_instances) {
+        const auto* object = m_model.objects[pair.first];
+        if (object->printable && object->instances[pair.second]->printable)
+            object_indices.insert(pair.first);
+    }
+    std::set<unsigned int> used_filaments;
     double height = 20.0;
-    for (const auto* object : m_model.objects) height = std::max(height, object->bounding_box_exact().size().z());
+    for (int index : object_indices) {
+        const auto* object = m_model.objects[index];
+        height = std::max(height, object->bounding_box_exact().size().z());
+        for (const auto* volume : object->volumes) {
+            for (int extruder : volume->get_extruders()) {
+                const unsigned int filament = static_cast<unsigned int>(std::max(1, extruder) - 1);
+                if (filament < diameters->values.size()) used_filaments.insert(filament);
+            }
+        }
+    }
+    if (used_filaments.size() < 2) return {{"enabled", false}};
+    const std::vector<unsigned int> filaments(used_filaments.begin(), used_filaments.end());
     const auto footprint = Slic3r::estimate_wipe_tower_footprint(config, Slic3r::resolve_wipe_tower_type(config), filaments, config.opt_float("layer_height"), height);
     const auto coordinate = [&](const char* key, double fallback) {
         const auto* values = config.opt<Slic3r::ConfigOptionFloats>(key);
@@ -978,7 +1069,7 @@ json Engine::Impl::op_getWipeTowerPreview(const json& args) {
             {"rotation", config.opt_float("wipe_tower_rotation_angle")}};
 }
 
-json Engine::Impl::op_getConfig(const json& /*args*/) {
+json Engine::Impl::op_getConfig(const json& args) {
     if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized; call loadVendors first");
     Slic3r::DynamicPrintConfig config = m_bundle->full_config();
     config.apply(m_options_override);
@@ -988,8 +1079,33 @@ json Engine::Impl::op_getConfig(const json& /*args*/) {
     }
 
     json res = json::object();
+    const auto& filament_keys = Slic3r::Preset::filament_options();
+    const bool project_slot = args.contains("filamentIndex") && !args.at("filamentIndex").is_null();
+    if (project_slot) {
+        if (!args.at("filamentIndex").is_number_integer() || args.at("filamentIndex").get<int64_t>() < 0) {
+            throw Slic3r::RuntimeError("Invalid filament index");
+        }
+    }
+    const size_t slot = project_slot ? args.at("filamentIndex").get<size_t>() : 0;
+    const auto* colours = config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+    const size_t count = colours ? colours->values.size() : m_selected_filaments.size();
+    if (project_slot && slot >= count) throw Slic3r::RuntimeError("Invalid filament index");
     for (const std::string& key : config.keys()) {
-        res[key] = config.opt_serialize(key);
+        if (!project_slot) {
+            res[key] = config.opt_serialize(key);
+            continue;
+        }
+        if (key != "filament_colour" && std::find(filament_keys.begin(), filament_keys.end(), key) == filament_keys.end()) continue;
+        if (args.contains("keys") && std::find(args.at("keys").begin(), args.at("keys").end(), key) == args.at("keys").end()) continue;
+        const auto* source = config.option(key);
+        std::unique_ptr<Slic3r::ConfigOption> value(source->clone());
+        if (const auto* vector = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(source)) {
+            // Keep each filament's complete nozzle-variant stride and native string escaping.
+            const size_t stride = vector->size() >= count && vector->size() % count == 0 ? vector->size() / count : vector->size();
+            const size_t start = vector->size() >= count && vector->size() % count == 0 ? slot * stride : 0;
+            static_cast<Slic3r::ConfigOptionVectorBase*>(value.get())->set(source, start, stride);
+        }
+        res[key] = value->serialize();
     }
     return res;
 }
@@ -1012,6 +1128,57 @@ json Engine::Impl::op_getPresetConfig(const json& args) {
     json res = json::object();
     for (const std::string& key : preset->config.keys()) res[key] = preset->config.opt_serialize(key);
     return res;
+}
+
+// Use desktop's multi-filament merge, including per-extruder vector strides.
+json Engine::Impl::op_mergeFilamentPresets(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+    const auto& slots = args.at("slots");
+    if (!slots.is_array() || slots.empty() || slots.size() > 16)
+        throw Slic3r::RuntimeError("Expected 1 to 16 filament slots");
+    std::vector<Slic3r::Preset> presets;
+    std::set<std::string> changed_keys;
+    const auto& allowed = Slic3r::Preset::filament_options();
+    for (const auto& slot : slots) {
+        const auto name = slot.at("preset").get<std::string>();
+        const auto* base = m_bundle->filaments.find_preset(name, false);
+        if (!base) throw Slic3r::RuntimeError("Unknown filament preset: " + name);
+        presets.push_back(*base);
+        if (!slot.contains("values")) continue;
+        if (!slot["values"].is_object()) throw Slic3r::RuntimeError("Filament overrides must be an object");
+        for (const auto& [key, value] : slot["values"].items()) {
+            const auto* definition = Slic3r::print_config_def.get(key);
+            if (!definition) continue;
+            if (key != "filament_colour" && std::find(allowed.begin(), allowed.end(), key) == allowed.end())
+                throw Slic3r::RuntimeError("Not a filament option: " + key);
+            std::unique_ptr<Slic3r::ConfigOption> option(definition->create_empty_option());
+            if (!valid_numeric_option(*option, value.get<std::string>()))
+                throw Slic3r::RuntimeError("Invalid filament option value: " + key);
+            presets.back().config.set_deserialize_strict(key, value.get<std::string>());
+            changed_keys.insert(key);
+        }
+    }
+    // Colours belong to the project, but user filament presets may supply a colour.
+    // Include it in every slot so the desktop vector merge can collect it safely.
+    if (changed_keys.count("filament_colour")) {
+        const auto* colours = m_bundle->project_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+        for (size_t i = 0; i < presets.size(); ++i) {
+            if (!presets[i].config.has("filament_colour")) {
+                const std::string colour = colours && !colours->values.empty()
+                    ? colours->values[std::min(i, colours->values.size() - 1)] : "#FFFFFF";
+                presets[i].config.set_deserialize_strict("filament_colour", colour);
+            }
+        }
+    }
+    auto printer = m_bundle->printers.get_edited_preset();
+    auto process = m_bundle->prints.get_edited_preset();
+    const auto config = Slic3r::PresetBundle::construct_full_config(
+        printer, process, m_bundle->project_config, presets, true, std::nullopt);
+    json result = json::object();
+    for (const auto& key : changed_keys) {
+        if (config.has(key)) result[key] = config.opt_serialize(key);
+    }
+    return result;
 }
 
 json Engine::Impl::op_getConfigDef(const json& args) {
@@ -1204,9 +1371,16 @@ json Engine::Impl::op_evaluateRules(const json& args) {
 json Engine::Impl::op_setOptions(const json& args) {
     json errors_arr = json::array();
     if (args.contains("options") && args["options"].is_object()) {
+        Slic3r::DynamicPrintConfig staged = m_options_override;
+        bool has_fatal_error = false;
         for (auto& [key, val] : args["options"].items()) {
             if (!Slic3r::print_config_def.has(key)) {
-                errors_arr.push_back({{"key", key}, {"error", "Unknown option key"}});
+                errors_arr.push_back({
+                    {"key", key},
+                    {"error", "Unknown option key"},
+                    {"code", "unknown_key"},
+                    {"fatal", false}
+                });
                 continue;
             }
             std::string sval;
@@ -1229,15 +1403,33 @@ json Engine::Impl::op_setOptions(const json& args) {
                 }
                 sval = joined;
             } else {
-                errors_arr.push_back({{"key", key}, {"error", "Unsupported value type"}});
+                errors_arr.push_back({
+                    {"key", key},
+                    {"error", "Unsupported value type"},
+                    {"code", "unsupported_type"},
+                    {"fatal", true}
+                });
+                has_fatal_error = true;
                 continue;
             }
 
             try {
-                m_options_override.set_deserialize_strict(key, sval);
+                std::unique_ptr<Slic3r::ConfigOption> option(Slic3r::print_config_def.get(key)->create_empty_option());
+                if (!valid_numeric_option(*option, sval))
+                    throw Slic3r::RuntimeError("Invalid numeric option value");
+                staged.set_deserialize_strict(key, sval);
             } catch (const std::exception& e) {
-                errors_arr.push_back({{"key", key}, {"error", e.what()}});
+                errors_arr.push_back({
+                    {"key", key},
+                    {"error", e.what()},
+                    {"code", "invalid_value"},
+                    {"fatal", true}
+                });
+                has_fatal_error = true;
             }
+        }
+        if (!has_fatal_error) {
+            m_options_override = std::move(staged);
         }
     }
     return json{{"errors", errors_arr}};
@@ -1275,8 +1467,149 @@ json Engine::Impl::op_parsePreset(const json& args) {
     return {{"config", values}, {"meta", meta}, {"droppedKeys", ctx.unrecogized_keys}};
 }
 
-json Engine::Impl::op_resetOptions(const json& /*args*/) {
-    m_options_override.clear();
+json Engine::Impl::op_resetOptions(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+
+    auto baseline_config = m_bundle->full_config();
+    const auto* colours = baseline_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+    const size_t total_slots = colours ? colours->values.size() : (m_selected_filaments.empty() ? 1 : m_selected_filaments.size());
+
+    if (args.contains("filamentIndex") && !args.at("filamentIndex").is_null()) {
+        if (!args.at("filamentIndex").is_number_integer() || args.at("filamentIndex").get<int64_t>() < 0) {
+            throw Slic3r::RuntimeError("Invalid filament index");
+        }
+        if (args.at("filamentIndex").get<size_t>() >= total_slots) {
+            throw Slic3r::RuntimeError("Invalid filament index");
+        }
+    }
+    if (args.contains("layoutIndex") && !args.at("layoutIndex").is_null()) {
+        if (!args.at("layoutIndex").is_number_integer() || args.at("layoutIndex").get<int64_t>() < 0) {
+            throw Slic3r::RuntimeError("Invalid layout index");
+        }
+    }
+
+    if (args.empty() || (!args.contains("filamentIndex") && !args.contains("key") && !args.contains("overrides"))) {
+        m_options_override.clear();
+        return json::object();
+    }
+
+    if (args.contains("overrides") && args.contains("filamentIndex")) {
+        if (args.at("filamentIndex").is_null()) throw Slic3r::RuntimeError("Invalid filament index");
+        if (args.contains("baseline") && !args.at("baseline").is_object())
+            throw Slic3r::RuntimeError("Preset baseline must be an object");
+        const size_t slot = args.at("filamentIndex").get<size_t>();
+        const auto& filament_keys = Slic3r::Preset::filament_options();
+        const size_t count = total_slots;
+        if (count == 0 || slot >= count) throw Slic3r::RuntimeError("Invalid filament index");
+
+        json remaining_overrides = json::object();
+        for (const auto& [key, val] : args["overrides"].items()) {
+            if (!Slic3r::print_config_def.has(key)) continue;
+            if (key != "filament_colour" && std::find(filament_keys.begin(), filament_keys.end(), key) == filament_keys.end()) {
+                remaining_overrides[key] = val;
+                continue;
+            }
+
+            // Web user presets supply an effective baseline. Resetting one
+            // slot against its system parent would overwrite saved values
+            // whenever another slot retains an override for the same key.
+            if (args.contains("baseline") && args.at("baseline").contains(key))
+                baseline_config.set_deserialize_strict(key, args.at("baseline").at(key).get<std::string>());
+            const auto* base_opt = baseline_config.option(key);
+            if (!base_opt) continue;
+
+            const auto* base_vec = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(base_opt);
+            if (!base_vec) {
+                if (slot != 0) {
+                    remaining_overrides[key] = val;
+                }
+                continue;
+            }
+
+            std::unique_ptr<Slic3r::ConfigOption> cur_opt(base_opt->clone());
+            bool parsed = false;
+            try {
+                if (val.is_string()) {
+                    parsed = cur_opt->deserialize(val.get<std::string>());
+                }
+            } catch (...) {
+                parsed = false;
+            }
+            if (!parsed) continue;
+
+            auto* cur_vec = dynamic_cast<Slic3r::ConfigOptionVectorBase*>(cur_opt.get());
+            if (!cur_vec) continue;
+
+            const size_t stride = (count > 0 && cur_vec->size() >= count && cur_vec->size() % count == 0) ? (cur_vec->size() / count) : 1;
+            const size_t start = slot * stride;
+
+            if (start + stride <= cur_vec->size() && start + stride <= base_vec->size()) {
+                for (size_t i = 0; i < stride; ++i) {
+                    cur_vec->set_at(base_opt, start + i, start + i);
+                }
+            }
+
+            if (!cur_opt->operator==(*base_opt)) {
+                remaining_overrides[key] = cur_opt->serialize();
+            }
+        }
+        return json{{"filamentOverrides", remaining_overrides}};
+    }
+
+    if (args.contains("key")) {
+        const std::string key = args.at("key").get<std::string>();
+        if (!Slic3r::print_config_def.has(key)) throw Slic3r::RuntimeError("Unknown option key");
+
+        if (!args.contains("filamentIndex") && !args.contains("layoutIndex")) {
+            m_options_override.erase(key);
+            return json::object();
+        }
+
+        const bool project_slot = args.contains("filamentIndex") && !args.at("filamentIndex").is_null();
+        const size_t slot = project_slot ? args.at("filamentIndex").get<size_t>() : 0;
+        const bool has_layout = args.contains("layoutIndex") && !args.at("layoutIndex").is_null();
+        const size_t layout_idx = has_layout ? args.at("layoutIndex").get<size_t>() : 0;
+
+        const auto* base_opt = baseline_config.option(key);
+        if (!base_opt) return json::object();
+
+        auto* cur_opt = m_options_override.option(key);
+        if (!cur_opt) return json::object();
+
+        const auto* base_vec = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(base_opt);
+        auto* cur_vec = dynamic_cast<Slic3r::ConfigOptionVectorBase*>(cur_opt);
+
+        const size_t count = total_slots;
+        if (project_slot && (count == 0 || slot >= count)) throw Slic3r::RuntimeError("Invalid filament index");
+
+        if (!base_vec || !cur_vec) {
+            if (has_layout && layout_idx > 0) throw Slic3r::RuntimeError("Invalid layout index");
+            m_options_override.erase(key);
+            return json::object();
+        }
+
+        const size_t stride = (count > 0 && base_vec->size() >= count && base_vec->size() % count == 0) ? (base_vec->size() / count) : base_vec->size();
+        const size_t start = (count > 0 && base_vec->size() >= count && base_vec->size() % count == 0 && project_slot) ? slot * stride : 0;
+
+        if (has_layout && layout_idx >= stride && project_slot) throw Slic3r::RuntimeError("Invalid layout index");
+        if (has_layout && layout_idx >= base_vec->size() && !project_slot) throw Slic3r::RuntimeError("Invalid layout index");
+
+        if (has_layout) {
+            if (start + layout_idx < cur_vec->size() && start + layout_idx < base_vec->size()) {
+                cur_vec->set_at(base_opt, start + layout_idx, start + layout_idx);
+            }
+        } else if (project_slot) {
+            for (size_t i = 0; i < stride && start + i < cur_vec->size() && start + i < base_vec->size(); ++i) {
+                cur_vec->set_at(base_opt, start + i, start + i);
+            }
+        }
+
+        if (cur_opt->operator==(*base_opt)) {
+            m_options_override.erase(key);
+        }
+        return json::object();
+    }
+
     return json::object();
 }
 
@@ -1709,6 +2042,55 @@ json Engine::Impl::op_mirrorInstance(const json& args) {
     return json::object();
 }
 
+json Engine::Impl::op_copySelection(const json& args) {
+    const auto find_source = [&](size_t id) {
+        for (auto* object : m_model.objects)
+            if (object->id().id == id) return object;
+        throw Slic3r::RuntimeError("Clipboard object not found");
+    };
+    std::unordered_map<size_t, std::unordered_set<size_t>> selection;
+    for (const auto& ref : args.at("instances"))
+        selection[ref.at("objectId").get<size_t>()].insert(ref.at("instanceId").get<size_t>());
+    Slic3r::Model snapshot;
+    std::vector<size_t> object_order;
+    for (const auto* object : m_model.objects)
+        if (selection.count(object->id().id)) object_order.push_back(object->id().id);
+    if (object_order.size() != selection.size()) throw Slic3r::RuntimeError("Clipboard object not found");
+    for (size_t object_id : object_order) {
+        const auto& selected_instances = selection.at(object_id);
+        auto* source = find_source(object_id);
+        for (size_t id : selected_instances)
+            if (std::none_of(source->instances.begin(), source->instances.end(), [id](const auto* instance) { return instance->id().id == id; }))
+                throw Slic3r::RuntimeError("Clipboard instance not found");
+        auto* copy = snapshot.add_object(*source);
+        for (size_t i = source->instances.size(); i-- > 0;)
+            if (selected_instances.count(source->instances[i]->id().id) == 0) copy->delete_instance(i);
+    }
+    m_clipboard = std::move(snapshot);
+    if (args.value("cut", false)) {
+        for (const auto& entry : selection) {
+            auto* source = find_source(entry.first);
+            for (size_t i = source->instances.size(); i-- > 0;)
+                if (entry.second.count(source->instances[i]->id().id)) source->delete_instance(i);
+            if (source->instances.empty()) m_model.delete_object(source);
+        }
+    }
+    return json{{"objects", m_clipboard.objects.size()}};
+}
+
+json Engine::Impl::op_pasteSelection(const json& args) {
+    const auto offset = args.value("offset", std::vector<double>{20, 20, 0});
+    if (offset.size() != 3 || !std::all_of(offset.begin(), offset.end(), [](double value) { return std::isfinite(value); }))
+        throw Slic3r::RuntimeError("Invalid paste offset");
+    json ids = json::array();
+    for (const auto* object : m_clipboard.objects) {
+        auto* copy = m_model.add_object(*object);
+        copy->translate_instances(Slic3r::Vec3d(offset[0], offset[1], offset[2]));
+        ids.push_back(copy->id().id);
+    }
+    return json{{"objectIds", ids}};
+}
+
 json Engine::Impl::op_cloneObject(const json& args) {
     if (!args.contains("objectId"))
         throw Slic3r::RuntimeError("cloneObject requires objectId");
@@ -1722,6 +2104,80 @@ json Engine::Impl::op_cloneObject(const json& args) {
     // A full copy: volumes, settings, painting and every instance, as an independent object.
     Slic3r::ModelObject* copy = m_model.add_object(*source);
     return json{{"objectId", copy->id().id}, {"id", copy->id().id}};
+}
+
+json Engine::Impl::op_exportModel(const json& args) {
+    const std::string format = args.value("format", "stl");
+    if (format != "stl" && format != "3mf")
+        throw Slic3r::RuntimeError("Unsupported model export format");
+    const std::string path = args.value("path", "/out/model." + format);
+    const size_t object_id = args.value("objectId", size_t(0));
+    const int plate_index = args.value("plateIndex", -1);
+    std::unordered_set<size_t> instance_ids;
+    Slic3r::Vec3d origin = Slic3r::Vec3d::Zero();
+    if (plate_index >= 0) {
+        if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+        Slic3r::DynamicPrintConfig config = m_bundle->full_config();
+        config.apply(m_options_override);
+        OrcaEngine::listPlates(m_model, m_plate_data, config);
+        if (static_cast<size_t>(plate_index) >= m_plate_data.size())
+            throw Slic3r::RuntimeError("Plate not found");
+        for (const auto& pair : m_plate_data[plate_index]->objects_and_instances)
+            instance_ids.insert(m_model.objects[pair.first]->instances[pair.second]->id().id);
+        double width, depth, height;
+        OrcaEngine::getBedDimensions(config, width, depth, height);
+        origin = OrcaEngine::computePlateOrigin(plate_index, m_plate_data.size(), width, depth);
+    }
+    Slic3r::Model selected;
+    for (const auto* object : m_model.objects) {
+        if (object_id != 0 && object->id().id != object_id) continue;
+        auto* copy = selected.add_object(*object);
+        for (size_t i = object->instances.size(); i-- > 0;) {
+            if (plate_index >= 0 && instance_ids.count(object->instances[i]->id().id) == 0)
+                copy->delete_instance(i);
+            else
+                copy->instances[i]->set_offset(copy->instances[i]->get_offset() - origin);
+        }
+        if (copy->instances.empty()) selected.delete_object(copy->id());
+    }
+    if (selected.objects.empty()) throw Slic3r::RuntimeError("No objects to export");
+    // Native mesh export applies volume/instance transforms, including mirroring, and excludes modifiers.
+    const bool written = format == "stl"
+        ? Slic3r::store_stl(path.c_str(), &selected, true)
+        : Slic3r::store_3mf(path.c_str(), &selected, nullptr, false);
+    if (!written) throw Slic3r::RuntimeError("Model export failed");
+    return json{{"path", path}, {"objects", selected.objects.size()}};
+}
+
+// Place only the imported group. Existing instances must retain their transforms
+// unless the caller explicitly requests a full plate arrangement.
+json Engine::Impl::op_placeObjects(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+    const auto ids = args.at("objectIds").get<std::unordered_set<size_t>>();
+    Slic3r::BoundingBoxf3 bounds;
+    std::vector<Slic3r::ModelObject*> objects;
+    for (auto* object : m_model.objects) {
+        if (ids.count(object->id().id) == 0) continue;
+        objects.push_back(object);
+        bounds.merge(object->bounding_box_exact());
+    }
+    if (!bounds.defined) throw Slic3r::RuntimeError("No imported objects to place");
+    auto config = m_bundle->full_config();
+    config.apply(m_options_override);
+    Slic3r::BoundingBoxf bed;
+    if (const auto* shape = config.opt<Slic3r::ConfigOptionPoints>("printable_area"))
+        for (const auto& point : shape->values) bed.merge(point);
+    const int plate_index = args.value("plateIndex", 0);
+    if (plate_index < 0 || static_cast<size_t>(plate_index) >= std::max(size_t(1), m_plate_data.size()))
+        throw Slic3r::RuntimeError("Invalid plate index");
+    double width = 256, depth = 256, height = 256;
+    OrcaEngine::getBedDimensions(config, width, depth, height);
+    const auto origin = OrcaEngine::computePlateOrigin(plate_index, std::max(size_t(1), m_plate_data.size()), width, depth);
+    const Slic3r::Vec2d center = bed.defined ? bed.center() : Slic3r::Vec2d(width / 2, depth / 2);
+    const Slic3r::Vec3d delta(center.x() + origin.x() - bounds.center().x(),
+                              center.y() + origin.y() - bounds.center().y(), -bounds.min.z());
+    for (auto* object : objects) object->translate_instances(delta);
+    return json{{"placed", objects.size()}};
 }
 
 json Engine::Impl::op_arrange(const json& args) {
@@ -1893,6 +2349,13 @@ json Engine::Impl::op_addPlate(const json& args) {
     Slic3r::DynamicPrintConfig config = m_bundle->full_config();
     config.apply(m_options_override);
     return OrcaEngine::addPlate(args, m_model, m_plate_data, config);
+}
+
+json Engine::Impl::op_duplicatePlate(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+    auto config = m_bundle->full_config();
+    config.apply(m_options_override);
+    return OrcaEngine::duplicatePlate(args, m_model, m_plate_data, config);
 }
 
 json Engine::Impl::op_deletePlate(const json& args) {
@@ -2284,3 +2747,276 @@ json Engine::Impl::op_getSvg(const json& args) { return OrcaWasm::getSvg(m_model
 json Engine::Impl::op_getBrimEars(const json& args) { return OrcaWasm::getBrimEars(m_model, args); }
 json Engine::Impl::op_setBrimEars(const json& args) { return OrcaWasm::setBrimEars(m_model, args); }
 json Engine::Impl::op_clearBrimEars(const json& args) { return OrcaWasm::clearBrimEars(m_model, args); }
+
+
+json Engine::Impl::op_getOption(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+    const std::string key = args.at("key").get<std::string>();
+    if (!Slic3r::print_config_def.has(key)) throw Slic3r::RuntimeError("Unknown option key");
+
+    if (args.contains("filamentIndex") && !args.at("filamentIndex").is_null()) {
+        if (!args.at("filamentIndex").is_number_integer() || args.at("filamentIndex").get<int64_t>() < 0) {
+            throw Slic3r::RuntimeError("Invalid filament index");
+        }
+    }
+    if (args.contains("layoutIndex") && !args.at("layoutIndex").is_null()) {
+        if (!args.at("layoutIndex").is_number_integer() || args.at("layoutIndex").get<int64_t>() < 0) {
+            throw Slic3r::RuntimeError("Invalid layout index");
+        }
+    }
+
+    const Slic3r::DynamicPrintConfig base_config = m_bundle->full_config();
+    const auto* colours_bundle = base_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+    const size_t total_slots = colours_bundle ? colours_bundle->values.size() : (m_selected_filaments.empty() ? 1 : m_selected_filaments.size());
+
+    const bool project_slot = args.contains("filamentIndex") && !args.at("filamentIndex").is_null();
+    const size_t slot = project_slot ? args.at("filamentIndex").get<size_t>() : 0;
+    const bool has_layout = args.contains("layoutIndex") && !args.at("layoutIndex").is_null();
+    const size_t layout_idx = has_layout ? args.at("layoutIndex").get<size_t>() : 0;
+
+    if (project_slot && slot >= total_slots) {
+        throw Slic3r::RuntimeError("Invalid filament index");
+    }
+
+    if (project_slot && key != "filament_colour") {
+        const auto& filament_keys = Slic3r::Preset::filament_options();
+        if (std::find(filament_keys.begin(), filament_keys.end(), key) == filament_keys.end()) {
+            throw Slic3r::RuntimeError("Not a filament key");
+        }
+    }
+
+    // Baseline or current option resolution
+    std::unique_ptr<Slic3r::ConfigOption> source_holder;
+    const Slic3r::ConfigOption* source = nullptr;
+
+    if (args.contains("serializedValue") && !args.at("serializedValue").is_null()) {
+        const std::string sval = args.at("serializedValue").get<std::string>();
+        const auto* tmpl = base_config.option(key);
+        if (tmpl) {
+            source_holder.reset(tmpl->clone());
+        } else {
+            const auto* def = Slic3r::print_config_def.get(key);
+            if (def) {
+                source_holder.reset(def->create_empty_option());
+            }
+        }
+        if (source_holder) {
+            if (!valid_numeric_option(*source_holder, sval) || !source_holder->deserialize(sval))
+                throw Slic3r::RuntimeError("Invalid serialized option value");
+            source = source_holder.get();
+        }
+    } else {
+        const bool baseline = args.value("baseline", false);
+        Slic3r::DynamicPrintConfig config = m_bundle->full_config();
+        if (!baseline) {
+            config.apply(m_options_override);
+        }
+        const auto* opt = config.option(key);
+        if (opt) {
+            source_holder.reset(opt->clone());
+            source = source_holder.get();
+        }
+    }
+
+    if (!source) return json{{"value", ""}};
+
+    const auto* vector = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(source);
+
+    if (!vector) {
+        if (project_slot && slot >= total_slots) throw Slic3r::RuntimeError("Invalid filament index");
+        if (has_layout && layout_idx > 0) throw Slic3r::RuntimeError("Invalid layout index");
+        if (const auto* text = dynamic_cast<const Slic3r::ConfigOptionString*>(source))
+            return json{{"value", text->value}};
+        return json{{"value", source->serialize()}};
+    }
+
+
+    const size_t stride = (vector->size() >= total_slots && vector->size() % total_slots == 0) ? (vector->size() / total_slots) : vector->size();
+    if (has_layout) {
+        if (project_slot && layout_idx >= stride) throw Slic3r::RuntimeError("Invalid layout index");
+        if (!project_slot && layout_idx >= vector->size()) throw Slic3r::RuntimeError("Invalid layout index");
+    }
+
+    std::unique_ptr<Slic3r::ConfigOption> value(source->clone());
+
+    if (project_slot) {
+        const size_t start = (vector->size() >= total_slots && vector->size() % total_slots == 0) ? slot * stride : 0;
+        static_cast<Slic3r::ConfigOptionVectorBase*>(value.get())->set(source, start, stride);
+    }
+
+    if (has_layout) {
+        auto* val_vec = dynamic_cast<Slic3r::ConfigOptionVectorBase*>(value.get());
+        if (val_vec && layout_idx < val_vec->size()) {
+            std::unique_ptr<Slic3r::ConfigOption> single(val_vec->clone());
+            static_cast<Slic3r::ConfigOptionVectorBase*>(single.get())->set(val_vec, layout_idx, 1);
+            if (auto* strvec = dynamic_cast<Slic3r::ConfigOptionStrings*>(single.get())) {
+                if (!strvec->values.empty()) return json{{"value", strvec->values[0]}};
+            }
+            return json{{"value", single->serialize()}};
+        } else {
+            return json{{"value", ""}};
+        }
+    }
+
+    if (auto* strvec = dynamic_cast<Slic3r::ConfigOptionStrings*>(value.get())) {
+        if (strvec->values.size() == 1) return json{{"value", strvec->values[0]}};
+        if (strvec->values.empty()) return json{{"value", ""}};
+    }
+
+    return json{{"value", value->serialize()}};
+}
+
+json Engine::Impl::op_setOption(const json& args) {
+    if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
+    const std::string key = args.at("key").get<std::string>();
+    if (!Slic3r::print_config_def.has(key)) throw Slic3r::RuntimeError("Unknown option key");
+
+    if (args.contains("filamentIndex") && !args.at("filamentIndex").is_null()) {
+        if (!args.at("filamentIndex").is_number_integer() || args.at("filamentIndex").get<int64_t>() < 0) {
+            throw Slic3r::RuntimeError("Invalid filament index");
+        }
+    }
+    if (args.contains("layoutIndex") && !args.at("layoutIndex").is_null()) {
+        if (!args.at("layoutIndex").is_number_integer() || args.at("layoutIndex").get<int64_t>() < 0) {
+            throw Slic3r::RuntimeError("Invalid layout index");
+        }
+    }
+
+    const Slic3r::DynamicPrintConfig base_config = m_bundle->full_config();
+    const auto* colours_bundle = base_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
+    const size_t total_slots = colours_bundle ? colours_bundle->values.size() : (m_selected_filaments.empty() ? 1 : m_selected_filaments.size());
+
+    const bool project_slot = args.contains("filamentIndex") && !args.at("filamentIndex").is_null();
+    const size_t slot = project_slot ? args.at("filamentIndex").get<size_t>() : 0;
+    const bool has_layout = args.contains("layoutIndex") && !args.at("layoutIndex").is_null();
+    const size_t layout_idx = has_layout ? args.at("layoutIndex").get<size_t>() : 0;
+
+    if (project_slot && slot >= total_slots) {
+        throw Slic3r::RuntimeError("Invalid filament index");
+    }
+
+    if (project_slot && key != "filament_colour") {
+        const auto& filament_keys = Slic3r::Preset::filament_options();
+        if (std::find(filament_keys.begin(), filament_keys.end(), key) == filament_keys.end()) {
+            throw Slic3r::RuntimeError("Not a filament key");
+        }
+    }
+
+    std::string sval;
+    auto& val = args.at("value");
+    if (val.is_string()) sval = val.get<std::string>();
+    else if (val.is_number_float()) sval = Slic3r::float_to_string_decimal_point(val.get<double>());
+    else if (val.is_number()) sval = val.dump();
+    else if (val.is_boolean()) sval = val.get<bool>() ? "1" : "0";
+    else if (val.is_null()) sval = "";
+
+    Slic3r::DynamicPrintConfig config = m_bundle->full_config();
+    config.apply(m_options_override);
+
+    const auto* source = config.option(key);
+    if (!source) throw Slic3r::RuntimeError("Option not found in config");
+    if (!valid_numeric_option(*source, sval))
+        return json{{"success", false}, {"error", "Invalid numeric option value"}};
+
+    const auto* vector = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(source);
+
+    if (!vector) {
+        if (project_slot && slot >= total_slots) throw Slic3r::RuntimeError("Invalid filament index");
+        if (has_layout && layout_idx > 0) throw Slic3r::RuntimeError("Invalid layout index");
+        if (dynamic_cast<const Slic3r::ConfigOptionString*>(source)) {
+            // UI text is literal; serialized profile strings still use setOptions.
+            m_options_override.set_key_value(key, new Slic3r::ConfigOptionString(sval));
+            return json{{"success", true}};
+        }
+        try {
+            m_options_override.set_deserialize_strict(key, sval);
+            return json{{"success", true}};
+        } catch (const std::exception& e) {
+            return json{{"success", false}, {"error", e.what()}};
+        }
+    }
+
+    if (!project_slot && !has_layout) {
+        try {
+            m_options_override.set_deserialize_strict(key, sval);
+            return json{{"success", true}};
+        } catch (const std::exception& e) {
+            return json{{"success", false}, {"error", e.what()}};
+        }
+    }
+
+
+    const size_t stride = (vector->size() >= total_slots && vector->size() % total_slots == 0) ? (vector->size() / total_slots) : vector->size();
+    if (has_layout) {
+        if (project_slot && layout_idx >= stride) throw Slic3r::RuntimeError("Invalid layout index");
+        if (!project_slot && layout_idx >= vector->size()) throw Slic3r::RuntimeError("Invalid layout index");
+    }
+
+    std::unique_ptr<Slic3r::ConfigOption> new_full(source->clone());
+    auto* new_full_vec = static_cast<Slic3r::ConfigOptionVectorBase*>(new_full.get());
+    const size_t start = (project_slot && vector->size() >= total_slots && vector->size() % total_slots == 0) ? slot * stride : 0;
+
+    std::unique_ptr<Slic3r::ConfigOption> temp_val(source->clone());
+    bool parsed = true;
+    try {
+        if (auto* str_temp = dynamic_cast<Slic3r::ConfigOptionStrings*>(temp_val.get())) {
+            if (has_layout || (project_slot && stride == 1)) {
+                str_temp->values.clear();
+                str_temp->values.push_back(sval);
+            } else {
+                parsed = temp_val->deserialize(sval);
+            }
+        } else if (has_layout || (project_slot && stride == 1)) {
+            // Deserialize scalar cell value into a temporary vector of size 1
+            std::unique_ptr<Slic3r::ConfigOption> single_cell(source->clone());
+            auto* single_vec = static_cast<Slic3r::ConfigOptionVectorBase*>(single_cell.get());
+            if (single_vec->size() > 0) {
+                single_vec->set(source, 0, 1);
+            }
+            parsed = single_cell->deserialize(sval);
+            if (parsed) {
+                temp_val = std::move(single_cell);
+            }
+        } else {
+            parsed = temp_val->deserialize(sval);
+        }
+    } catch (const std::exception& e) {
+        return json{{"success", false}, {"error", e.what()}};
+    } catch (...) {
+        return json{{"success", false}, {"error", "Failed to deserialize option " + key + ": invalid value"}};
+    }
+
+    if (!parsed) {
+        return json{{"success", false}, {"error", "Failed to deserialize option " + key + ": invalid value"}};
+    }
+
+    auto* temp_vec = dynamic_cast<const Slic3r::ConfigOptionVectorBase*>(temp_val.get());
+    if ((has_layout || (project_slot && stride == 1)) && temp_vec && temp_vec->size() != 1)
+        return json{{"success", false}, {"error", "Expected one option value"}};
+
+    if (has_layout) {
+        if (start + layout_idx < new_full_vec->size()) {
+            new_full_vec->set_at(temp_val.get(), start + layout_idx, 0);
+        }
+    } else if (project_slot) {
+        if (temp_vec) {
+            if (stride == 1 && temp_vec->size() == 1) {
+                new_full_vec->set_at(temp_val.get(), start, 0);
+            } else {
+                for (size_t i = 0; i < stride && i < temp_vec->size(); ++i) {
+                    if (start + i < new_full_vec->size()) {
+                        new_full_vec->set_at(temp_val.get(), start + i, i);
+                    }
+                }
+            }
+        }
+    }
+
+    const auto* base_opt = base_config.option(key);
+    if (base_opt && new_full->operator==(*base_opt)) {
+        m_options_override.erase(key);
+    } else {
+        m_options_override.set_key_value(key, new_full->clone());
+    }
+    return json{{"success", true}};
+}

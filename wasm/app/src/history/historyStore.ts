@@ -5,7 +5,7 @@
  */
 
 import { create } from 'zustand';
-import { getEngine } from '../engine/orcaEngine';
+import { getEngine, getConfig, selectPresets, evaluateRules } from '../engine/orcaEngine';
 import { usePlateStore } from '../plate/plateStore';
 import { useObjectListStore } from '../objectlist/objectListStore';
 import { usePaintingStore } from '../painting/paintingStore';
@@ -16,7 +16,9 @@ import type {
   HistorySnapshot,
   HistoryStoreState,
   HistorySelection,
-  HistoryPaintState
+  HistoryPaintState,
+  HistoryPlateState,
+  HistorySettingsState
 } from './types';
 
 const MAX_SLOTS = 20;
@@ -32,8 +34,7 @@ function allocateSlot(): number {
     availableSlots.delete(slot);
     return slot;
   }
-  // Fallback: rotate sequence
-  return (nextSnapshotSeq % MAX_SLOTS);
+  throw new Error('No free history snapshot slot');
 }
 
 function releaseSlot(slot: number | undefined): void {
@@ -63,6 +64,58 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
     () => {}
   );
   return next;
+}
+
+export function capturePlateState(): HistoryPlateState {
+  const platesStore = usePlatesStore.getState();
+  return {
+    plates: platesStore.plates.map((p) => ({
+      index: p.index,
+      name: p.name,
+      locked: !!p.locked,
+      config: { ...p.config },
+      filamentMaps: p.filamentMaps ? [...p.filamentMaps] : undefined
+    })),
+    activePlateIndex: platesStore.activePlateIndex
+  };
+}
+
+function captureSettingsState(): HistorySettingsState {
+  const app = useAppStore.getState();
+  // Effective overrides include saved web preset values, which the native
+  // engine cannot recover by selecting their system parent alone.
+  const options: Record<string, string> = {
+    ...app.processOverrides, ...app.filamentOverrides, ...app.printerOverrides
+  };
+  for (const name of app.selectedFilaments) {
+    const saved = app.userPresets.find(preset => preset.kind === 'filament' && preset.name === name);
+    for (const key of Object.keys(saved?.values || {})) {
+      if (app.currentConfig[key] !== undefined) options[key] = app.currentConfig[key];
+    }
+  }
+  for (const [key, value] of Object.entries(app.currentConfig)) {
+    if (value !== app.presetConfig[key]) {
+      options[key] = value;
+    }
+  }
+
+  return {
+    vendor: app.selectedVendor,
+    printer: app.selectedPrinter,
+    process: app.selectedProcess,
+    filaments: [...app.selectedFilaments],
+    activeUserPreset: {
+      process: app.activeUserPreset.process,
+      filament: app.activeUserPreset.filament,
+      printer: app.activeUserPreset.printer
+    },
+    processOverrides: { ...app.processOverrides },
+    filamentOverrides: { ...app.filamentOverrides },
+    printerOverrides: { ...app.printerOverrides },
+    presetConfig: { ...app.presetConfig },
+    currentConfig: { ...app.currentConfig },
+    options
+  };
 }
 
 function restoreSelectionSafely(snap: HistorySnapshot, objects: PlateObject[]): void {
@@ -124,11 +177,20 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
 
   initHistory: async () => {
     return withLock(async () => {
-      // Clear any prior slots
+      // Clear and release any prior slots
+      const { past, future, currentSnapshot } = get();
+      for (const snap of past) releaseSlot(snap.slotId);
+      for (const snap of future) releaseSlot(snap.slotId);
+      if (currentSnapshot) releaseSlot(currentSnapshot.slotId);
+
       availableSlots.clear();
       for (let i = 0; i < MAX_SLOTS; i++) {
         availableSlots.add(i);
       }
+
+      // Capture actual current settings and plates, not fabricated default state
+      const plateState = capturePlateState();
+      const settings = captureSettingsState();
 
       const initialSnap: HistorySnapshot = {
         id: `snap_init_${Date.now()}`,
@@ -138,7 +200,9 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
         byteSize: 1024,
         selection: null,
         paintState: null,
-        modelFileName: null
+        modelFileName: null,
+        plateState,
+        settings
       };
 
       set({
@@ -162,6 +226,8 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
         return;
       }
 
+      useAppStore.getState().invalidateSlicePreview();
+
       const engine = await getEngine();
       if (typeof window !== 'undefined') {
         (window as any).__orcaEngine = engine;
@@ -169,21 +235,45 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
       const plateObjects = usePlateStore.getState().objects;
       const isEmpty = plateObjects.length === 0;
 
+      // Reclaim discarded redo and the oldest history before writing a file.
+      // A live snapshot's slot must never be reused while its metadata remains.
+      for (const snap of future) releaseSlot(snap.slotId);
+      const nextFuture: HistorySnapshot[] = [];
+      const nextPast = currentSnapshot ? [...past, currentSnapshot] : [...past];
+      while (!isEmpty && availableSlots.size === 0 && nextPast.length > 0) {
+        releaseSlot(nextPast.shift()?.slotId);
+      }
+
       let slotId: number | undefined;
       let filePath: string | undefined;
       let byteSize = 1024;
 
       if (!isEmpty) {
-        slotId = allocateSlot();
-        filePath = `/out/undo_slot_${slotId}.3mf`;
         try {
+          slotId = allocateSlot();
+          filePath = `/out/undo_slot_${slotId}.3mf`;
           await engine.call('saveProject', { path: filePath });
           byteSize = estimateMeshBytes();
         } catch (err: any) {
           console.warn('[historyStore] Failed to save project snapshot:', err);
-          releaseSlot(slotId);
-          slotId = undefined;
-          filePath = undefined;
+          if (slotId !== undefined) {
+            releaseSlot(slotId);
+          }
+          // Do not record an invalid snapshot without geometry file.
+          // Maintain slot consistency: future slots were released so future must be cleared.
+          const retainedBytes = nextPast.reduce((sum, s) => sum + (s.byteSize || 1024), 0);
+          set({
+            past: nextPast,
+            future: nextFuture,
+            currentSnapshot: null,
+            canUndo: nextPast.length > 0,
+            canRedo: false,
+            totalRetainedBytes: retainedBytes
+          });
+          // Some editing actions catch their own errors, so surface a failed
+          // history write here as well as rejecting the transaction.
+          useAppStore.setState({ engineError: `Could not save Undo snapshot: ${err instanceof Error ? err.message : String(err)}` });
+          throw err;
         }
       }
 
@@ -217,6 +307,9 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
           }
         : null;
 
+      const plateState = capturePlateState();
+      const settings = captureSettingsState();
+
       const newSnapshot: HistorySnapshot = {
         id: `snap_${++nextSnapshotSeq}_${Date.now()}`,
         description,
@@ -227,24 +320,14 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
         byteSize,
         selection,
         paintState,
-        modelFileName: useAppStore.getState().modelFile?.name || null
+        modelFileName: useAppStore.getState().modelFile?.name || null,
+        plateState,
+        settings
       };
-
-      // Push current snapshot onto past stack
-      const nextPast = [...past];
-      if (currentSnapshot) {
-        nextPast.push(currentSnapshot);
-      }
-
-      // Free any redo slots since edit-after-undo invalidates redo
-      for (const snap of future) {
-        releaseSlot(snap.slotId);
-      }
-      const nextFuture: HistorySnapshot[] = [];
 
       // Enforce bounds by count & total bytes
       let totalBytes = (newSnapshot.byteSize || 1024) + nextPast.reduce((sum, s) => sum + (s.byteSize || 1024), 0);
-      while ((nextPast.length > maxSnapshots || totalBytes > maxBytes) && nextPast.length > 1) {
+      while ((nextPast.length >= maxSnapshots || totalBytes > maxBytes) && nextPast.length > 1) {
         const evicted = nextPast.shift();
         if (evicted) {
           releaseSlot(evicted.slotId);
@@ -358,9 +441,10 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
   },
 
   clearHistory: () => {
-    const { past, future } = get();
+    const { past, future, currentSnapshot } = get();
     for (const snap of past) releaseSlot(snap.slotId);
     for (const snap of future) releaseSlot(snap.slotId);
+    if (currentSnapshot) releaseSlot(currentSnapshot.slotId);
     set({
       past: [],
       future: [],
@@ -371,6 +455,132 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
     });
   }
 }));
+
+export async function restorePlatesOnEmptyCanvas(engine: any, plateState?: HistoryPlateState): Promise<void> {
+  const targetPlates = plateState?.plates && plateState.plates.length > 0
+    ? plateState.plates
+    : [{ index: 0, name: 'Plate 1', locked: false, config: {} }];
+  const targetActiveIndex = plateState?.activePlateIndex ?? 0;
+
+  try {
+    // 1. Add temporary plate so we can delete all prior plates down to 1
+    // (PlateOps throws if deleting the only plate).
+    await engine.call('addPlate', { name: '__history_tmp__' });
+
+    let platesRaw: any = await engine.call('listPlates', {});
+    let currentCount = Array.isArray(platesRaw) ? platesRaw.length : 1;
+
+    // Delete all older plates
+    while (currentCount > 1) {
+      await engine.call('deletePlate', { plateIndex: 0, deleteObjects: false });
+      currentCount--;
+    }
+
+    // Now plate 0 is fresh. Configure it with targetPlates[0]
+    const p0 = targetPlates[0];
+    await engine.call('setPlateConfig', {
+      plateIndex: 0,
+      name: p0.name,
+      locked: !!p0.locked,
+      config: p0.config || {}
+    });
+
+    // Add any remaining target plates
+    for (let i = 1; i < targetPlates.length; i++) {
+      const p = targetPlates[i];
+      await engine.call('addPlate', {
+        name: p.name,
+        config: p.config || {}
+      });
+      if (p.locked) {
+        await engine.call('setPlateConfig', {
+          plateIndex: i,
+          locked: true
+        });
+      }
+    }
+
+    await usePlatesStore.getState().fetchPlates();
+    usePlatesStore.getState().setActivePlate(Math.min(targetActiveIndex, targetPlates.length - 1));
+  } catch (err) {
+    throw err;
+  }
+}
+
+async function restoreSettingsOnEmptyCanvas(engine: any, settings?: HistorySettingsState): Promise<void> {
+  if (!settings) return;
+
+  try {
+    const app = useAppStore.getState();
+    const needPresetSelect =
+      (settings.printer && settings.printer !== app.selectedPrinter) ||
+      (settings.process && settings.process !== app.selectedProcess) ||
+      (settings.filaments && JSON.stringify(settings.filaments) !== JSON.stringify(app.selectedFilaments));
+
+    if (needPresetSelect && settings.printer && settings.process) {
+      const systemName = (kind: 'printer' | 'process' | 'filament', name: string) =>
+        app.userPresets.find(preset => preset.kind === kind && preset.name === name)?.inherits || name;
+      await selectPresets({
+        printer: systemName('printer', settings.printer),
+        process: systemName('process', settings.process),
+        filaments: (settings.filaments.length > 0 ? settings.filaments : app.selectedFilaments)
+          .map(name => systemName('filament', name))
+      });
+    }
+
+    // Reset native option overrides
+    await engine.call('resetOptions', {});
+
+    // Reapply modified options from snapshot
+    if (settings.options && Object.keys(settings.options).length > 0) {
+      await engine.call('setOptions', { options: settings.options });
+    }
+
+    const effectiveConfig = await getConfig();
+
+    const userName = (kind: 'printer' | 'process' | 'filament', name: string) =>
+      app.userPresets.some((p) => p.kind === kind && p.name === name) ? name : null;
+
+    const filaments = settings.filaments && settings.filaments.length > 0
+      ? settings.filaments
+      : app.selectedFilaments;
+    const printer = settings.printer || app.selectedPrinter;
+    const process = settings.process || app.selectedProcess;
+
+    useAppStore.setState({
+      currentConfig: effectiveConfig,
+      presetConfig: settings.presetConfig || effectiveConfig,
+      selectedVendor: settings.vendor || app.selectedVendor,
+      selectedPrinter: printer,
+      selectedProcess: process,
+      selectedFilaments: [...filaments],
+      selectedFilament: filaments[0] || app.selectedFilament,
+      activeUserPreset: {
+        printer: settings.activeUserPreset?.printer ?? userName('printer', printer),
+        process: settings.activeUserPreset?.process ?? userName('process', process),
+        filament: settings.activeUserPreset?.filament ?? userName('filament', filaments[0] || app.selectedFilament)
+      },
+      processOverrides: { ...(settings.processOverrides || {}) },
+      filamentOverrides: { ...(settings.filamentOverrides || {}) },
+      printerOverrides: { ...(settings.printerOverrides || {}) }
+    });
+
+    try {
+      const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: useAppStore.getState().activeFilamentSlot || 0 });
+      if (rulesRes) {
+        useAppStore.setState((s) => ({
+          rulesState: {
+            fields: { ...s.rulesState.fields, ...rulesRes.fields },
+            fixes: rulesRes.fixes || [],
+            messages: rulesRes.messages || []
+          }
+        }));
+      }
+    } catch (_) {}
+  } catch (err) {
+    throw err;
+  }
+}
 
 async function restoreSnapshotInternal(snap: HistorySnapshot): Promise<void> {
   const engine = await getEngine();
@@ -402,9 +612,70 @@ async function restoreSnapshotInternal(snap: HistorySnapshot): Promise<void> {
     usePlateStore.setState({ objects: [], selectedObjectId: null, selectedInstanceId: null });
     useObjectListStore.setState({ objects: [], selectedObjectId: null, selectedVolumeId: null });
     useAppStore.setState({ modelFile: null, modelObjects: null });
+
+    // Empty projects have no 3MF geometry, so restore their captured metadata.
+    await restorePlatesOnEmptyCanvas(engine, snap.plateState);
+    await restoreSettingsOnEmptyCanvas(engine, snap.settings);
   } else if (snap.filePath) {
     // Restore from saved 3MF project
-    await engine.call('openProject', { path: snap.filePath });
+    const openRes = await engine.call('openProject', { path: snap.filePath });
+
+    // openProject resets native config and clears options_override.
+    // Reapply modified options from snapshot to ensure native options_override matches.
+    if (snap.settings?.options && Object.keys(snap.settings.options).length > 0) {
+      await engine.call('setOptions', { options: snap.settings.options });
+    }
+
+    const effectiveConfig = await getConfig();
+    const state = useAppStore.getState();
+
+    const userName = (kind: 'printer' | 'process' | 'filament', name: string) =>
+      state.userPresets.some((p) => p.kind === kind && p.name === name) ? name : null;
+
+    if (snap.settings) {
+      const settings = snap.settings;
+      const filaments = (settings.filaments && settings.filaments.length > 0)
+        ? settings.filaments
+        : (openRes?.selectedPresets?.filaments || state.selectedFilaments);
+      const printer = settings.printer || openRes?.selectedPresets?.printer || state.selectedPrinter;
+      const process = settings.process || openRes?.selectedPresets?.process || state.selectedProcess;
+
+      useAppStore.setState({
+        currentConfig: effectiveConfig,
+        presetConfig: settings.presetConfig || state.presetConfig,
+        selectedVendor: settings.vendor || state.selectedVendor,
+        selectedPrinter: printer,
+        selectedProcess: process,
+        selectedFilaments: Array.isArray(filaments) ? [...filaments] : [filaments],
+        selectedFilament: Array.isArray(filaments) ? (filaments[0] || state.selectedFilament) : filaments,
+        activeUserPreset: {
+          printer: settings.activeUserPreset?.printer ?? userName('printer', printer),
+          process: settings.activeUserPreset?.process ?? userName('process', process),
+          filament: settings.activeUserPreset?.filament ?? userName('filament', Array.isArray(filaments) ? filaments[0] : filaments)
+        },
+        processOverrides: { ...(settings.processOverrides || {}) },
+        filamentOverrides: { ...(settings.filamentOverrides || {}) },
+        printerOverrides: { ...(settings.printerOverrides || {}) }
+      });
+    } else {
+      // Fallback if older snapshot has no settings
+      useAppStore.setState({ currentConfig: effectiveConfig });
+    }
+
+    try {
+      const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: useAppStore.getState().activeFilamentSlot || 0 });
+      if (rulesRes) {
+        useAppStore.setState((s) => ({
+          rulesState: {
+            fields: { ...s.rulesState.fields, ...rulesRes.fields },
+            fixes: rulesRes.fixes || [],
+            messages: rulesRes.messages || []
+          }
+        }));
+      }
+    } catch (_) {}
+  } else {
+    throw new Error(`Snapshot ${snap.id} has no valid geometry file to restore`);
   }
 
   // Refresh plate store & object list store from engine
@@ -414,6 +685,11 @@ async function restoreSnapshotInternal(snap: HistorySnapshot): Promise<void> {
   try {
     await usePlatesStore.getState().fetchPlates();
   } catch (_) {}
+
+  // Restore activePlateIndex if captured
+  if (snap.plateState?.activePlateIndex !== undefined) {
+    usePlatesStore.getState().setActivePlate(snap.plateState.activePlateIndex);
+  }
 
   // Update appStore modelFile if restored
   if (!snap.isEmpty) {

@@ -284,7 +284,7 @@ function orcaAssetsPlugin() {
 export default defineConfig({
   plugins: [react(), orcaAssetsPlugin(), printerGatewayPlugin()],
   server: {
-    allowedHosts: ['server-1.barbel-hops.ts.net'],
+    allowedHosts: ['server-1.barbel-hops.ts.net', 'weborca.noz.am'],
     fs: {
       allow: [repoRoot]
     },
@@ -295,7 +295,7 @@ export default defineConfig({
   },
   preview: {
     port: 5058,
-    allowedHosts: ['server-1.barbel-hops.ts.net'],
+    allowedHosts: ['server-1.barbel-hops.ts.net', 'weborca.noz.am'],
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp'

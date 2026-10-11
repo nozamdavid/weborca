@@ -144,12 +144,26 @@ export async function parsePreset(format: 'json' | 'ini', text: string): Promise
 
 export async function setOptions(options: Record<string, string>): Promise<SetOptionsResult> {
   const engine = await getEngine();
-  return (await engine.setOptions(options)) as SetOptionsResult;
+  const res = (await engine.setOptions(options)) as SetOptionsResult;
+  const fatalErrors = res.errors?.filter(
+    (e) => e.fatal === true || (e.code ? e.code !== 'unknown_key' : e.error !== 'Unknown option key')
+  );
+  if (fatalErrors && fatalErrors.length > 0) {
+    const errorDetails = fatalErrors.map((e) => `${e.key}: ${e.error}`).join('; ');
+    throw new Error(`Failed to apply options: ${errorDetails}`);
+  }
+  return res;
 }
 
-export async function resetOptions(): Promise<void> {
+export async function resetOptions(args?: {
+  key?: string;
+  filamentIndex?: number;
+  layoutIndex?: number;
+  overrides?: Record<string, string>;
+  baseline?: Record<string, string>;
+}): Promise<{ filamentOverrides?: Record<string, string> }> {
   const engine = await getEngine();
-  await engine.resetOptions();
+  return (await engine.call('resetOptions', args || {})) as { filamentOverrides?: Record<string, string> };
 }
 
 export async function loadModel(fileName: string, bytes: Uint8Array | ArrayBuffer, options?: StepImportOptions): Promise<LoadModelResult> {
@@ -338,4 +352,28 @@ export function disposeEngine(): void {
     engineInstance = null;
     initPromise = null;
   }
+}
+
+export async function setOption(args: {
+  key: string;
+  value: string;
+  filamentIndex?: number;
+  layoutIndex?: number;
+}): Promise<void> {
+  const engine = await getEngine();
+  const res = (await engine.call('setOption', args)) as { success?: boolean; error?: string };
+  if (res && res.success === false) {
+    throw new Error(res.error || `Failed to set option '${args.key}'`);
+  }
+}
+
+export async function getOption(args: {
+  key: string;
+  filamentIndex?: number;
+  layoutIndex?: number;
+  baseline?: boolean;
+  serializedValue?: string;
+}): Promise<{ value: string }> {
+  const engine = await getEngine();
+  return (await engine.call('getOption', args)) as { value: string };
 }

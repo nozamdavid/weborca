@@ -33,11 +33,12 @@ try {
 const { chromium, firefox } = playwright;
 
 // Import G-code hasher
-const { hashGcode, hashGcodeFile } = await import('../lib/gcode_hash.mjs');
+const { hashGcode } = await import('../lib/gcode_hash.mjs');
 
 const PORT = 5058;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
-const REF_GCODE_PATH = path.resolve(repoRoot, 'wasm/tests/parity/refs-macos-x86_64/cube-voron.gcode');
+const REFERENCE_PATH = path.resolve(repoRoot, 'wasm/tests/parity/refs-portable/cube-voron.json');
+const reference = JSON.parse(fs.readFileSync(REFERENCE_PATH, 'utf8'));
 const CUBE_MODEL_PATH = path.resolve(repoRoot, 'tests/data/20mm_cube.obj');
 const BENCHY_MODEL_PATH = path.resolve(repoRoot, 'wasm/build/models/3DBenchy.stl');
 const SCREENSHOT_DIR = path.resolve(repoRoot, 'wasm/build/tests-app');
@@ -129,7 +130,7 @@ async function runBrowserSuite(browserType, browserName) {
     await page.click('#slice-btn');
 
     // Verify progress bar appears
-    await page.waitForSelector('#progress-bar', { state: 'attached', timeout: 15000 });
+    await page.waitForSelector('#preview-slicing-overlay', { state: 'visible', timeout: 15000 });
     console.log(`[${browserName}] Progress bar active.`);
 
     // Wait for slicing completion & stats
@@ -158,7 +159,7 @@ async function runBrowserSuite(browserType, browserName) {
     });
 
     const computedHash = hashGcode(gcodeText);
-    const expectedHash = hashGcodeFile(REF_GCODE_PATH);
+    const expectedHash = reference.normalizedSha256;
     console.log(`[${browserName}] G-Code Hash: ${computedHash}`);
     console.log(`[${browserName}] Expected Hash: ${expectedHash}`);
 
@@ -239,20 +240,18 @@ async function runBrowserSuite(browserType, browserName) {
     // Trigger slice
     await page.click('#slice-btn');
 
-    // Wait for Cancel button to become enabled
-    await page.waitForFunction(() => {
-      const cancelBtn = document.getElementById('cancel-btn');
-      return cancelBtn && !cancelBtn.disabled;
-    }, null, { timeout: 5000 });
+    // Slicing switches to Preview; its overlay exposes the visible Cancel control.
+    await page.waitForSelector('#preview-cancel-btn', { state: 'visible', timeout: 5000 });
 
     const cancelStart = Date.now();
-    await page.click('#cancel-btn');
+    await page.click('#preview-cancel-btn');
 
     // Wait for cancel to settle
     await page.waitForFunction(() => {
-      const cancelBtn = document.getElementById('cancel-btn');
       const sliceBtn = document.getElementById('slice-btn');
-      return cancelBtn && cancelBtn.disabled && sliceBtn && !sliceBtn.disabled;
+      const state = window.__appStore.getState();
+      return !document.getElementById('preview-slicing-overlay') && sliceBtn && !sliceBtn.disabled &&
+        !state.isSlicing && state.sliceStatusText === 'Slicing canceled.' && state.engineError === null;
     }, null, { timeout: 5000, polling: 10 });
 
     const cancelDurationMs = Date.now() - cancelStart;

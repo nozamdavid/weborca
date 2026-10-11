@@ -10,6 +10,7 @@ namespace OrcaWasm {
 
 nlohmann::json getObjectTree(const Slic3r::Model& model, const nlohmann::json& args);
 nlohmann::json addVolume(Slic3r::Model& model, const nlohmann::json& args);
+nlohmann::json deleteInstances(Slic3r::Model& model, const nlohmann::json& args);
 nlohmann::json deleteVolume(Slic3r::Model& model, const nlohmann::json& args);
 nlohmann::json moveVolume(Slic3r::Model& model, const nlohmann::json& args);
 nlohmann::json renameObject(Slic3r::Model& model, const nlohmann::json& args);

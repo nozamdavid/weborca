@@ -60,11 +60,10 @@ Slic3r::ColorRGBA convert(const Color& c)
 
 Color convert(const Slic3r::ColorRGBA& c)
 {
-    // ORCA: Fix dark color rendering. Ensure minimal brightness.
-    auto safe_val = [](float v) -> uint8_t {
-        return std::max((uint8_t)(v * 255.0f), (uint8_t)48);
-    };
-    return { safe_val(c.r()), safe_val(c.g()), safe_val(c.b()) };
+    // Preserve the filament's RGB channels, including black and saturated colors.
+    return { static_cast<uint8_t>(std::lround(c.r() * 255.0f)),
+             static_cast<uint8_t>(std::lround(c.g() * 255.0f)),
+             static_cast<uint8_t>(std::lround(c.b() * 255.0f)) };
 }
 
 Color convert(const std::string& color_str)

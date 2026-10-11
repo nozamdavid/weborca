@@ -994,3 +994,53 @@ TEST_CASE("A hole whose outer wall touches the contour's runs with it", "[Perime
         CHECK(layers[i].holes_ccw.front() == ccw);
     }
 }
+
+TEST_CASE("Arachne open walls stay continuous and choose stable clipped endpoints", "[Perimeters]")
+{
+    const bool detect_overhang = GENERATE(false, true);
+    const auto [sx, sy] = GENERATE(std::make_pair(1.4, 20.0), std::make_pair(20.0, 1.4));
+    CAPTURE(detect_overhang, sx, sy);
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_deserialize_strict({
+        { "wall_generator",             "arachne" },
+        { "detect_overhang_wall",       detect_overhang },
+        { "overhang_reverse",           false },
+        { "wall_loops",                 3 },
+        { "layer_height",               0.2 },
+        { "initial_layer_print_height", 0.2 },
+        { "top_shell_layers",           0 },
+        { "bottom_shell_layers",        0 },
+        { "only_one_wall_top",          false },
+        { "only_one_wall_first_layer",  false },
+    });
+    Print print;
+    init_and_process_print({ make_cube(sx, sy, 2.0) }, print, config);
+    REQUIRE_FALSE(print.objects().empty());
+    size_t open_walls_checked = 0;
+    for (const Layer *layer : print.objects().front()->layers()) {
+        if (layer->id() == 0) continue; // Overhang clipping starts above the bed.
+        for (const LayerRegion *region : layer->regions()) {
+            const auto walls = region->perimeters.flatten();
+            for (const ExtrusionEntity *entity : walls.entities) {
+                if (entity->is_loop()) continue;
+                const auto *multi = dynamic_cast<const ExtrusionMultiPath*>(entity);
+                REQUIRE(multi != nullptr);
+                REQUIRE_FALSE(multi->paths.empty());
+                ++open_walls_checked;
+                const Point first = multi->first_point(), last = multi->last_point();
+                CAPTURE(layer->id(), first, last);
+                CHECK(multi->length() > 0.);
+                CHECK(first != last);
+                for (size_t p = 1; p < multi->paths.size(); ++p)
+                    CHECK(multi->paths[p - 1].last_point() == multi->paths[p].first_point());
+                if (detect_overhang) {
+                    const bool first_overhang = multi->paths.front().role() == erOverhangPerimeter;
+                    const bool last_overhang = multi->paths.back().role() == erOverhangPerimeter;
+                    if (first_overhang != last_overhang) CHECK_FALSE(first_overhang);
+                    else CHECK(first < last);
+                }
+            }
+        }
+    }
+    REQUIRE(open_walls_checked > 0);
+}

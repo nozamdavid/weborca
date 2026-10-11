@@ -253,7 +253,7 @@ Usage: orca-gateway --allow-origin <app origin> [options]
   --port <n>               Port to listen on (default 5199), loopback only.
   --proxy <private|list>   Printers it may reach: "private" (default) is private/loopback/tailnet
                            addresses, or a comma list of hosts.
-  --cloud <services>       Cloud services it may also reach (comma list): prusa-connect.
+  --cloud <services>       Cloud bridges (comma list): prusa-connect, bambu-cloud, creality-cloud.
                            Also read from ORCA_PRINTER_CLOUD.
   --readonly               Refuse everything that could change a printer.
   --help                   Show this help.

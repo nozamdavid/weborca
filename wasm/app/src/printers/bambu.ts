@@ -1,3 +1,4 @@
+import { finiteNumber } from './numberValue';
 import { bambuFtpUrl, bambuMqttUrl, sendWithProgress } from './gatewayUrl';
 import type { PrinterFilament, Heater, PhysicalPrinter, PrinterApi, PrinterRunState, PrinterState, UploadOptions } from './types';
 
@@ -22,11 +23,19 @@ export function deriveBambuFilaments(print: Record<string, any>): PrinterFilamen
     slots.push({ id, label, material: tray.tray_type, presetId: tray.tray_info_idx,
       color: /^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(hex) ? `#${hex.slice(0, 6)}` : undefined });
   };
-  for (const unit of print.ams?.ams ?? []) {
-    for (const tray of unit.tray ?? []) add(tray, `ams:${unit.id}:${tray.id}`, `AMS ${Number(unit.id) + 1} / ${Number(tray.id) + 1}`);
+  const units = Array.isArray(print.ams?.ams) ? print.ams.ams : [];
+  for (const unit of units) {
+    if (!unit || typeof unit !== 'object') continue;
+    for (const tray of Array.isArray(unit.tray) ? unit.tray : []) {
+      if (!tray || typeof tray !== 'object') continue;
+      add(tray, `ams:${unit.id}:${tray.id}`, `AMS ${Number(unit.id) + 1} / ${Number(tray.id) + 1}`);
+    }
   }
   if (Array.isArray(print.vir_slot)) {
-    for (const tray of print.vir_slot) add(tray, `external:${tray.id}`, `External spool ${tray.id}`);
+    for (const tray of print.vir_slot) {
+      if (!tray || typeof tray !== 'object') continue;
+      add(tray, `external:${tray.id}`, `External spool ${tray.id}`);
+    }
   } else add(print.vt_tray, 'external:254', 'External spool');
   return slots;
 }
@@ -34,8 +43,10 @@ export function deriveBambuFilaments(print: Record<string, any>): PrinterFilamen
 /** Status pushes can omit unchanged AMS units or trays. Retain their last reported fields. */
 export function mergeBambuReport(previous: Record<string, any>, update: Record<string, any>): Record<string, any> {
   const result = { ...previous };
+  if (!update || typeof update !== 'object' || Array.isArray(update)) return result;
   for (const [key, value] of Object.entries(update)) {
-    if (Array.isArray(value) && value.every((item) => item && typeof item === 'object' && item.id != null)) {
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+    if (Array.isArray(value) && value.length > 0 && value.every((item) => item && typeof item === 'object' && item.id != null)) {
       const old = Array.isArray(previous[key]) ? previous[key] : [];
       result[key] = old.map((item: any) => ({ ...item }));
       for (const item of value) {
@@ -51,7 +62,11 @@ export function mergeBambuReport(previous: Record<string, any>, update: Record<s
 }
 
 export function deriveBambuState(print: Record<string, any>): PrinterState {
-  const state = STATES[print.gcode_state] ?? 'ready';
+  print = { ...print };
+  for (const key of ['nozzle_temper', 'nozzle_target_temper', 'bed_temper', 'bed_target_temper', 'chamber_temper',
+    'cooling_fan_speed', 'big_fan1_speed', 'big_fan2_speed', 'heatbreak_fan_speed',
+    'mc_percent', 'mc_remaining_time', 'layer_num', 'total_layer_num', 'spd_lvl']) print[key] = finiteNumber(print[key]);
+  const state = STATES[print.gcode_state] ?? 'unknown';
   const heaters: Heater[] = [];
   if (print.nozzle_temper != null) heaters.push({ id: 'nozzle', kind: 'extruder', label: 'Nozzle', current: print.nozzle_temper, target: print.nozzle_target_temper ?? 0 });
   if (print.bed_temper != null) heaters.push({ id: 'bed', kind: 'bed', label: 'Bed', current: print.bed_temper, target: print.bed_target_temper ?? 0 });
@@ -62,12 +77,12 @@ export function deriveBambuState(print: Record<string, any>): PrinterState {
   const active = state === 'printing' || state === 'paused' || state === 'complete';
   return {
     state,
-    message: print.print_error ? `Printer error ${print.print_error}` : undefined,
+    message: print.print_error ? `Printer error ${print.print_error}` : state === 'unknown' && typeof print.gcode_state === 'string' ? `Status: ${print.gcode_state}` : undefined,
     heaters, fans,
-    progress: active && print.mc_percent != null ? print.mc_percent / 100 : undefined,
+    progress: active && print.mc_percent != null ? Math.max(0, Math.min(1, print.mc_percent / 100)) : undefined,
     file: active ? print.subtask_name || print.gcode_file || undefined : undefined,
-    remaining: active && print.mc_remaining_time != null ? print.mc_remaining_time * 60 : undefined,
-    layer: active && print.layer_num != null ? { current: print.layer_num, total: print.total_layer_num || undefined } : undefined,
+    remaining: active && print.mc_remaining_time != null ? Math.max(0, print.mc_remaining_time * 60) : undefined,
+    layer: active && print.layer_num != null ? { current: Math.max(0, Math.floor(print.layer_num)), total: print.total_layer_num > 0 ? Math.floor(print.total_layer_num) : undefined } : undefined,
     speedFactor: SPEED_PERCENT[print.spd_lvl] || undefined,
     software: 'Bambu Lab',
     filaments: deriveBambuFilaments(print)

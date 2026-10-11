@@ -8,6 +8,7 @@ import type { PreviewStatistics, LegendData } from './types';
 let previewModulePromise: Promise<any> | null = null;
 let previewModule: any = null;
 let previewInstance: any = null;
+let bedPolygon: [number, number][] | null = null;
 
 export async function getPreviewModule(canvas?: HTMLCanvasElement): Promise<any> {
   if (previewModule) return previewModule;
@@ -97,6 +98,7 @@ export async function initPreview(canvas: HTMLCanvasElement): Promise<any> {
 export function disposePreview(): void {
   previewInstance?.delete();
   previewInstance = null;
+  bedPolygon = null;
 }
 
 export function getPreviewInstance(): any {
@@ -126,6 +128,16 @@ export function loadGcode(data: Uint8Array | ArrayBuffer | string, _name = 'prin
     if (stats.error) {
       throw new Error(stats.error);
     }
+
+    // The processor may fall back to default tool colors even though Orca's
+    // footer contains the actual filament palette. Keep physical slot indices.
+    const footer = new TextDecoder().decode(bytes.subarray(Math.max(0, bytes.length - 65536)));
+    const palette = footer.match(/^;\s*filament_colour\s*=\s*(.+)$/m)?.[1].trim().split(';')
+      .map(color => /^#?[\da-f]{6}([\da-f]{2})?$/i.test(color.trim()) ? `#${color.trim().replace(/^#/, '').slice(0, 6)}` : '');
+    if (palette?.some(Boolean)) previewInstance.setToolColors(palette);
+
+    // G-code metadata describes the printable area, not the decorative bed outline.
+    if (bedPolygon) previewInstance.setBedPolygon(bedPolygon);
 
     // Expose stats globally for tests
     (window as any).previewStats = stats;
@@ -214,6 +226,7 @@ export function setBed(minX: number, minY: number, maxX: number, maxY: number): 
 }
 
 export function setBedPolygon(points: [number, number][]): void {
+  bedPolygon = points;
   if (previewInstance) {
     previewInstance.setBedPolygon(points);
   }

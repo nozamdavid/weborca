@@ -37,6 +37,7 @@
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/Flow.hpp"
 #include "FillRectilinear.hpp"
+#include "libslic3r/Random.hpp"
 
 // #define SLIC3R_DEBUG
 // #define INFILL_DEBUG_OUTPUT
@@ -2436,7 +2437,7 @@ static std::vector<MonotonicRegionLink> chain_monotonic_regions(
             // Pick randomly the first from the queue at random orientation.
             //FIXME picking the 1st monotonic region should likely be done based on accumulated pheromone level as well,
             // but the inefficiency caused by the random pick of the 1st monotonic region is likely insignificant.
-            int first_idx = std::uniform_int_distribution<>(0, int(queue.size()) - 1)(rng);
+            int first_idx = static_cast<int>(Random::uniform_bounded(rng, queue.size() - 1));
             path.emplace_back(MonotonicRegionLink{ queue[first_idx], rng() > rng.max() / 2 });
             *(queue.begin() + first_idx) = std::move(queue.back());
             queue.pop_back();

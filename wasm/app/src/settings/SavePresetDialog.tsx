@@ -13,10 +13,13 @@ export const SavePresetDialog: React.FC = () => {
     processes,
     filaments,
     printers,
-    activeUserPreset
+    activeUserPreset,
+    activeFilamentSlot,
+    selectedFilaments
   } = useAppStore();
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isSaving, setSaving] = useState(false);
 
   if (!savePresetDialogTarget) return null;
 
@@ -24,6 +27,7 @@ export const SavePresetDialog: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     const trimmed = name.trim();
     if (!trimmed) {
       setError('Preset name cannot be empty.');
@@ -39,21 +43,26 @@ export const SavePresetDialog: React.FC = () => {
 
     // Check user preset collision with a different preset
     const collision = userPresets.find((u) => u.kind === kind && u.name === trimmed);
-    if (collision && activeUserPreset[kind] !== trimmed) {
+    const activeName = kind === 'filament' ? selectedFilaments[activeFilamentSlot] : activeUserPreset[kind];
+    if (collision && activeName !== trimmed) {
       setError(`A preset named "${trimmed}" already exists.`);
       return;
     }
 
+    setSaving(true);
     try {
       await saveCurrentUserPreset(kind, trimmed);
       setName('');
       setError(null);
     } catch (err: any) {
       setError(err.message || 'Failed to save preset.');
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleClose = () => {
+    if (isSaving) return;
     setName('');
     setError(null);
     closeSavePresetDialog();
@@ -64,12 +73,13 @@ export const SavePresetDialog: React.FC = () => {
       <div className="modal-box preset-modal" style={{ minWidth: 380 }}>
         <form onSubmit={handleSubmit}>
           <div className="modal-header">
-            <div className="modal-title">{t("Save User")}{kind.toUpperCase()} {t("Preset")}</div>
+            <div className="modal-title">{t("Save Preset")}</div>
             <button
               type="button"
               className="modal-close-btn"
               data-testid="save-preset-cancel-btn"
               onClick={handleClose}
+              disabled={isSaving}
             >
               ✕
             </button>
@@ -101,6 +111,7 @@ export const SavePresetDialog: React.FC = () => {
               <input
                 type="text"
                 id="preset-name-input"
+                disabled={isSaving}
                 data-testid="preset-name-input"
                 className="form-control"
                 placeholder={t("Enter preset name...")}
@@ -119,13 +130,14 @@ export const SavePresetDialog: React.FC = () => {
               type="button"
               className="btn btn-secondary"
               onClick={handleClose}
+              disabled={isSaving}
             >
               {t("Cancel")}</button>
             <button
               type="submit"
               className="btn btn-primary"
               data-testid="save-preset-confirm-btn"
-              disabled={!name.trim()}
+              disabled={isSaving || !name.trim()}
             >
               {t("Save Preset")}</button>
           </div>

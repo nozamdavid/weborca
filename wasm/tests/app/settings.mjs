@@ -169,7 +169,7 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     await page.fill('#setting-input-layer_height', '0.3');
     await page.waitForSelector('[data-testid="reset-btn-layer_height"]', { timeout: 5000 });
 
-    const modBadge = await page.$('[data-testid="mod-count-Quality"]');
+    const modBadge = await page.waitForSelector('[data-testid="mod-count-Quality"]');
     assert(modBadge, 'Quality tab should display modified count badge');
 
     // Slice cube with 0.3 layer height
@@ -247,6 +247,24 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     results.push({ name: '(d) Spiral Vase Dialog & Fixes', pass: true });
 
     // -------------------------------------------------------------------------
+    console.log(`[${browserName}] alternate-wall recommendations apply only the chosen branch...`);
+    await page.evaluate(async () => {
+      await window.__appStore.getState().applyOptionChange('spiral_mode', '0', 'print');
+      await window.__appStore.getState().applyOptionChange('alternate_extra_wall', '1', 'print');
+    });
+    await page.click('[data-testid="fix-yes-btn"]');
+    await page.waitForSelector('[data-testid="fixes-dialog"]', { state: 'detached' });
+    let alternate = await page.evaluate(() => window.__orcaEngine.getConfig());
+    assert.equal(alternate.ensure_vertical_shell_thickness, 'ensure_moderate');
+    assert.equal(alternate.alternate_extra_wall, '1');
+    await page.evaluate(() => window.__appStore.getState().applyOptionChange('ensure_vertical_shell_thickness', 'ensure_all', 'print'));
+    await page.click('[data-testid="fix-no-btn"]');
+    await page.waitForSelector('[data-testid="fixes-dialog"]', { state: 'detached' });
+    alternate = await page.evaluate(() => window.__orcaEngine.getConfig());
+    assert.equal(alternate.ensure_vertical_shell_thickness, 'ensure_all');
+    assert.equal(alternate.alternate_extra_wall, '0');
+    assert.equal(await page.evaluate(() => window.__appStore.getState().engineError), null);
+
     // (e) Bambu Lab X1 Carbon vs Voron scan_first_layer visibility in printer dialog
     // -------------------------------------------------------------------------
     console.log(`[${browserName}] (e) Checking scan_first_layer visibility in printer dialog...`);
@@ -384,6 +402,13 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     await page.selectOption('[data-testid="mode-select"]', 'advanced');
     await page.waitForSelector('#setting-row-initial_layer_line_width', { timeout: 5000 });
 
+    assert.equal(await page.locator('[data-testid="settings-group-Ironing"]').count(), 1,
+      'Ironing group exists before checking its removal');
+    await page.selectOption('[data-testid="mode-select"]', 'expert');
+    await page.waitForSelector('[data-testid="settings-group-Z contouring"]');
+    assert.equal(await page.locator('[data-testid="settings-group-Z contouring"]').count(), 1,
+      'Z contouring group exists before checking its removal');
+
     // Switch to Simple mode
     await page.selectOption('[data-testid="mode-select"]', 'simple');
     await page.waitForSelector('#setting-row-initial_layer_line_width', { state: 'detached', timeout: 5000 });
@@ -393,11 +418,14 @@ async function runBrowserSettingsSuite(browserType, browserName) {
 
     // Check that empty groups are hidden in simple mode
     // (Ironing / Z contouring)
-    await page.waitForSelector('.settings-group-header:has-text("Ironing")', { state: 'detached', timeout: 5000 });
-    await page.waitForSelector('.settings-group-header:has-text("Z contouring")', { state: 'detached', timeout: 5000 });
+    await page.waitForSelector('[data-testid="settings-group-Ironing"]', { state: 'detached', timeout: 5000 });
+    await page.waitForSelector('[data-testid="settings-group-Z contouring"]', { state: 'detached', timeout: 5000 });
+    await page.click('[data-testid="page-tab-Speed"]');
+    assert.equal(await page.locator('[data-testid="settings-content"]').innerText(), 'No settings available in this mode.');
+
 
     // Switch back to Advanced mode
-
+    await page.click('[data-testid="page-tab-Quality"]');
     await page.selectOption('[data-testid="mode-select"]', 'advanced');
     await page.waitForSelector('#setting-row-initial_layer_line_width', { timeout: 5000 });
     results.push({ name: '(g) Mode Switch Filtering', pass: true });

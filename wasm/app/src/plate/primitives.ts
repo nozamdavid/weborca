@@ -38,7 +38,7 @@ function revolve(profile: [number, number][]): Mesh {
     for (let i = 0; i < SEGMENTS; i++) {
       const j = (i + 1) % SEGMENTS;
       const [a, b] = [rings[k], rings[k + 1]];
-      if (poles[k] !== null) faces.push([poles[k]!, b[i], b[j]]);
+      if (poles[k] !== null) faces.push([poles[k]!, b[j], b[i]]);
       else if (poles[k + 1] !== null) faces.push([a[i], a[j], poles[k + 1]!]);
       else faces.push([a[i], a[j], b[j]], [a[i], b[j], b[i]]);
     }

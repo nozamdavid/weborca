@@ -6,14 +6,16 @@ import { useCalibrationStore } from '../calibration/calibrationStore';
 import { useInputShapingStore } from '../calibration/inputShapingStore';
 import { useOtherCalibrationStore } from '../calibration/otherCalibrationStore';
 import { useHistoryStore } from '../history';
+import { restorePlatesOnEmptyCanvas } from '../history/historyStore';
+import { getEngine } from '../engine/orcaEngine';
 import { usePlateStore } from '../plate/plateStore';
 import { usePlatesStore } from '../plates/platesStore';
 import { useAppStore } from '../store/appStore';
 import { useEditOpsStore } from '../editops';
 import { CAMERA_VIEWS, setCameraView } from './cameraBridge';
 import { exportGcode, exportGcodeToFile } from './exportGcode';
-import { exportPlateAsStl } from './exportStl';
-import { exportPlateSlicedFile } from './exportPlateSlicedFile';
+import { exportPlateAsStl, exportModels } from './exportStl';
+import { exportPlateSlicedFile, exportAllPlateSlicedFiles } from './exportPlateSlicedFile';
 import { getRecentFiles, openRecentFile } from './recentFiles';
 import { ImportIcon, RedoIcon, UndoIcon } from './glyphs';
 import { useHelpStore } from './HelpDialogs';
@@ -21,6 +23,7 @@ import { useProjectNotesStore } from './ProjectNotesDialog';
 import { usePrefsStore } from '../prefs/prefsStore';
 import { usePreviewStore } from '../preview/previewStore';
 import { useTranslation } from "../i18n";
+import { AutosaveStatus } from './AutosaveStatus';
 
 export type TabId = 'prepare' | 'preview' | 'device' | 'calibration';
 
@@ -50,6 +53,13 @@ const Menu: React.FC<{
 }> = ({ label, entries, openMenu, setOpenMenu }) => {
     const { t } = useTranslation();
   const open = openMenu === label;
+  const positionSubmenu = (event: React.SyntheticEvent<HTMLDivElement>) => {
+    const popup = event.currentTarget.querySelector<HTMLElement>('.menu-subpopup');
+    if (!popup) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    popup.style.left = `${Math.max(4, Math.min(rect.right, window.innerWidth - popup.offsetWidth - 8))}px`;
+    popup.style.top = `${Math.max(4, Math.min(rect.top, window.innerHeight - popup.scrollHeight - 8))}px`;
+  };
   return (
     <div className={`menu ${open ? 'open' : ''}`} onMouseEnter={() => openMenu && setOpenMenu(label)}>
       <button
@@ -66,7 +76,8 @@ const Menu: React.FC<{
             if (e === 'sep') return <div className="menu-sep" key={i} />;
             if (e.submenu) {
               return (
-                <div key={e.label} className="menu-item menu-submenu" role="menuitem" aria-haspopup="true">
+                <div key={e.label} className="menu-item menu-submenu" role="menuitem" aria-haspopup="true" tabIndex={0}
+                  onMouseEnter={positionSubmenu} onFocus={positionSubmenu}>
                   <span>{e.label}</span>
                   <span className="submenu-arrow">▶</span>
                   <div className="menu-subpopup" role="menu">
@@ -147,12 +158,14 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
   const saveProjectFile = useAppStore((s) => s.saveProjectFile);
   const openGcodeFile = useAppStore((s) => s.openGcodeFile);
   const openManagePresetsDialog = useAppStore((s) => s.openManagePresetsDialog);
-  const hasGcode = useAppStore((s) => !!s.sliceResult?.gcode);
+  const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
+  const slicedPlate = useAppStore((s) => s.sliceResult);
+  const hasGcode = !!slicedPlate?.gcode && slicedPlate.plateIndex === activePlateIndex;
   const hasPlateObjects = usePlateStore((s) => (s.objects?.length ?? 0) > 0);
   const hasModelFile = useAppStore((s) => !!s.modelFile);
   const hasObjects = hasPlateObjects || hasModelFile;
   const objectCount = usePlateStore((s) => (s.objects?.length ?? 0));
-  const isWorking = useAppStore((s) => s.isSlicing || s.isModelLoading);
+  const isWorking = useAppStore((s) => s.isSlicing || s.isModelLoading || !s.isEngineReady || s.isSelectingPreset);
   const isRestoring = useHistoryStore((s) => s.isRestoring);
   const isBusy = isWorking || isRestoring;
   const canUndo = useHistoryStore((s) => s.canUndo);
@@ -276,6 +289,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
       const appState = useAppStore.getState();
       const busy =
         appState.isSlicing ||
+        !appState.isEngineReady ||
         appState.isModelLoading ||
         useHistoryStore.getState().isRestoring;
       const objs =
@@ -308,18 +322,19 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
   /** Empties the plate and the extra plates, like desktop's File > New project. */
   const newProject = async () => {
     if (!(await confirmDialog({ title: t("Close the current project?"), message: 'Unsaved changes are lost.', confirmLabel: 'Close project', cancelLabel: 'Cancel' }))) return;
-    const plates = usePlatesStore.getState();
-    for (const plate of [...plates.plates].reverse()) if (plate.index > 0) await plates.deletePlate(plate.index, false);
     await usePlateStore.getState().deleteAll();
+    await restorePlatesOnEmptyCanvas(await getEngine());
+    await useAppStore.getState().applyOptionChange('notes', '', 'print');
     useAppStore.setState({ modelFile: null, modelObjects: null, sliceResult: null, gcodeUrl: null });
-    void import('./autosave').then((m) => m.clearAutosave());
+    await useHistoryStore.getState().initHistory();
+    await (await import('./autosave')).clearAutosave();
   };
 
   const menus: Array<[string, Entry[]]> = [
     [
       'File',
       [
-        { label: t("New project"), disabled: isBusy || !hasObjects, onClick: newProject },
+        { label: t("New project"), disabled: isBusy, onClick: newProject },
         { label: t("Open project..."), keys: 'Ctrl+O', disabled: isBusy, onClick: openProject },
         { label: t("Save project"), keys: 'Ctrl+S', disabled: isBusy || !hasObjects, onClick: saveProject },
         { label: t("Project notes..."), disabled: isBusy, onClick: () => useProjectNotesStore.getState().setOpen(true) },
@@ -341,12 +356,19 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         },
         'sep',
         { label: t("Import model..."), keys: 'Ctrl+I', disabled: isBusy, onClick: importModel },
+        { label: t("Import ZIP Archive..."), disabled: isBusy, onClick: importModel },
         { label: t("Open G-code..."), disabled: isBusy, onClick: openGcode },
         'sep',
         { label: t("Export plate as STL..."), disabled: isBusy || !hasObjects, onClick: () => void exportPlateAsStl() },
+        { label: t("Export all objects as one STL..."), disabled: isBusy || !hasObjects, onClick: () => void exportModels('stl') },
+        { label: t("Export objects as STLs..."), disabled: isBusy || !hasObjects, onClick: () => void exportModels('stl', true) },
+        { label: t("Export all objects as one DRC..."), disabled: isBusy || !hasObjects, onClick: () => void exportModels('drc') },
+        { label: t("Export objects as DRCs..."), disabled: isBusy || !hasObjects, onClick: () => void exportModels('drc', true) },
+        { label: t("Export Generic 3MF..."), disabled: isBusy || !hasObjects, onClick: () => void exportModels('3mf') },
         { label: t("Export G-code"), keys: 'Ctrl+G', disabled: !hasGcode || isBusy, onClick: exportGcode },
         { label: t("Export G-code to drive..."), disabled: !hasGcode || isBusy, onClick: () => void exportGcodeToFile() },
-        { label: t("Export plate sliced file"), disabled: !hasGcode || isBusy, onClick: () => void exportPlateSlicedFile() },
+        { label: t("Export plate sliced file"), disabled: !hasGcode || isBusy || useAppStore.getState().sliceResult?.plateIndex !== usePlatesStore.getState().activePlateIndex, onClick: () => void exportPlateSlicedFile() },
+        { label: t("Export all plates sliced file..."), disabled: isBusy || !hasObjects, onClick: () => void exportAllPlateSlicedFiles() },
         'sep',
         { label: t("Printer presets..."), onClick: () => openManagePresetsDialog('printer') },
         { label: t("Filament presets..."), onClick: () => openManagePresetsDialog('filament') },
@@ -365,8 +387,10 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         'sep',
         { label: t("Select all"), keys: 'Ctrl+A', disabled: isBusy || !hasObjects, onClick: () => usePlateStore.getState().selectAll() },
         { label: t("Deselect all"), keys: 'Esc', disabled: !hasSelection, onClick: () => usePlateStore.getState().selectObject(null) },
-        { label: t("Copy"), keys: 'Ctrl+C', disabled: isBusy || !hasSelection, onClick: () => usePlateStore.getState().copySelected() },
+        { label: t("Cut"), keys: 'Ctrl+X', disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().cutSelected() },
+        { label: t("Copy"), keys: 'Ctrl+C', disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().copySelected() },
         { label: t("Paste"), keys: 'Ctrl+V', disabled: isBusy || !hasClipboard, onClick: () => void usePlateStore.getState().pasteClipboard() },
+        { label: t("Duplicate Current Plate"), disabled: isBusy, onClick: () => void usePlatesStore.getState().duplicatePlate(usePlatesStore.getState().activePlateIndex) },
         { label: t("Clone"), keys: 'Ctrl+K', disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().duplicateSelected() },
         { label: t("Mirror X"), disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().mirrorSelected(0) },
         { label: t("Mirror Y"), disabled: isBusy || !hasSelection, onClick: () => void usePlateStore.getState().mirrorSelected(1) },
@@ -398,7 +422,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
       'View',
       [
         ...CAMERA_VIEWS.map((v): Item => ({
-          label: v.label,
+          label: t(v.label),
           keys: v.key,
           onClick: () => {
             setActiveTab('prepare');
@@ -429,11 +453,21 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           checked: prefsDisplay.cameraType === 'orthographic',
           onClick: toggleCameraType
         },
+        {
+          label: t("Auto Perspective"),
+          checked: prefsDisplay.autoPerspective,
+          onClick: () => usePrefsStore.getState().setDisplayPref('autoPerspective', !prefsDisplay.autoPerspective)
+        },
         'sep',
         {
           label: t("Bed grid"),
           checked: prefsDisplay.showGrid,
           onClick: toggleShowGrid
+        },
+        {
+          label: t("Show Overhang"),
+          checked: prefsDisplay.showOverhang,
+          onClick: () => usePrefsStore.getState().setDisplayPref('showOverhang', !prefsDisplay.showOverhang)
         },
         {
           label: t("3D navigator"),
@@ -537,6 +571,8 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
     [
       'Help',
       [
+        { label: t("Configuration wizard..."), onClick: () => useWizardStore.getState().setOpen(true) },
+        { label: t("Calibration Guide"), onClick: () => window.open('https://www.orcaslicer.com/wiki/calibration_guide', '_blank', 'noopener,noreferrer') },
         {
           label: t("OrcaSlicer Wiki"),
           onClick: () => window.open('https://github.com/OrcaSlicer/OrcaSlicer/wiki', '_blank', 'noopener,noreferrer')
@@ -559,7 +595,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           <img src="/icons/OrcaSlicer.svg" alt="" />
           {t("OrcaSlicer Web")}</div>
         {menus.map(([label, entries]) => (
-          <Menu key={label} label={label} entries={entries} openMenu={openMenu} setOpenMenu={setOpenMenu} />
+          <Menu key={label} label={t(label)} entries={entries} openMenu={openMenu} setOpenMenu={setOpenMenu} />
         ))}
       </div>
 
@@ -580,6 +616,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
       </nav>
 
       <div className="topbar-right">
+        <AutosaveStatus />
         <input
           type="file"
           id="project-file-input"
@@ -599,7 +636,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           data-testid="model-file"
           ref={fileInput}
           style={{ display: 'none' }}
-          accept=".stl,.obj,.3mf,.amf,.step,.stp,.svg"
+          accept=".stl,.obj,.3mf,.amf,.step,.stp,.svg,.zip"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) requestImportFile(file);

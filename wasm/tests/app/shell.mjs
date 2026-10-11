@@ -35,6 +35,22 @@ async function runSuite(browserType, name) {
     }
     await page.setViewportSize({ width: 1280, height: 720 });
 
+    log('light theme applies the palette to plate controls and their settings popup');
+    await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('theme', 'light'));
+    const plateColors = await page.locator('#plate-selector-bar').evaluate(element => ({ background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color }));
+    assert.equal(plateColors.background, 'rgb(246, 246, 247)');
+    assert.equal(plateColors.color, 'rgb(37, 39, 42)');
+    await page.click('#plate-settings-btn');
+    assert.equal(await page.locator('#plate-settings-popover').evaluate(element => getComputedStyle(element).backgroundColor), 'rgb(246, 246, 247)');
+    await page.click('#plate-settings-btn');
+    await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('theme', 'dark'));
+
+    log('toolbar labels and tooltips follow the selected language');
+    await page.evaluate(() => window.__prefsStore.getState().setGeneralPref('language', 'es'));
+    assert.equal(await page.locator('#tool-move-btn').getAttribute('aria-label'), 'Mover');
+    assert.equal(await page.locator('#tool-move-btn').getAttribute('data-tip'), 'Mover (M)');
+    await page.evaluate(() => window.__prefsStore.getState().setGeneralPref('language', 'en'));
+    assert.equal(await page.locator('#tool-move-btn').getAttribute('aria-label'), 'Move');
 
     log('horizontal/vertical toolbar pref defaults vertical');
     const toolbar = page.locator('.canvas-toolbar');
@@ -42,7 +58,23 @@ async function runSuite(browserType, name) {
     await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('toolbarOrientation', 'horizontal'));
     assert.equal(await toolbar.getAttribute('aria-orientation'), 'horizontal');
 
-    
+    const blockedTools = await toolbar.locator('button').evaluateAll(buttons => buttons.filter(button => {
+      const r = button.getBoundingClientRect();
+      return !button.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+    }).map(button => button.id));
+    assert.deepEqual(blockedTools, [], 'camera controls must not intercept horizontal tools');
+
+    log('keyboard resizing starts from the rendered width on narrower windows');
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('sidebarWidth', 360));
+    await page.locator('.sidebar-resizer').press('ArrowLeft');
+    assert.equal(Math.round((await page.locator('aside.sidebar').boundingBox()).width), 290);
+    await page.setViewportSize({ width: 700, height: 800 });
+    await page.locator('.sidebar-resizer').press('ArrowLeft');
+    assert.equal(Math.round((await page.locator('aside.sidebar').boundingBox()).width), 200,
+      'narrow sidebar must remain resizable below the 30% cap');
+    await page.setViewportSize({ width: 1280, height: 800 });
+
     log('resizing via drag <=30% and preference persistence');
     await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('sidebarWidth', 250));
     await page.waitForTimeout(200); 
@@ -77,6 +109,13 @@ async function runSuite(browserType, name) {
     const prefAfterW = await page.evaluate(() => window.__prefsStore.getState().display.sidebarWidth);
     assert.equal(Math.round(prefAfterW), 220, 'sidebar width pref persists after reload');
 
+    log('resetting preferences resizes the canvas to its new container');
+    await page.evaluate(() => window.__prefsStore.getState().resetDefaults());
+    await page.waitForFunction(() => {
+      const scene = window.__plateScene;
+      return scene?.renderer.domElement.clientWidth === scene?.container.clientWidth;
+    });
+    await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('sidebarWidth', 220));
 
     log('the tabs switch screens');
     for (const tab of ['preview', 'device', 'calibration', 'prepare']) {
@@ -115,6 +154,36 @@ async function runSuite(browserType, name) {
     await page.mouse.move(800, 400);
     await page.keyboard.press('1');
     assert.deepEqual(await cameraPosition(), top, 'key 1 selects the Top view, like desktop');
+
+    log('automatic perspective switches fixed views and orbiting, while respecting manual projection');
+    const projection = () => page.evaluate(() => window.__plateScene.getCameraType());
+    assert.equal(await page.evaluate(() => window.__prefsStore.getState().display.autoPerspective), false);
+    await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('autoPerspective', true));
+    await page.click('#view-top');
+    assert.equal(await projection(), 'orthographic');
+    assert.equal(await page.evaluate(() => window.__prefsStore.getState().display.cameraType), 'orthographic');
+    const canvas = await page.locator('.plate-view canvas').first().boundingBox();
+    assert.ok(canvas);
+    const orbit = async () => {
+      const x = canvas.x + canvas.width * 0.9, y = canvas.y + canvas.height * 0.8;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x - 60, y - 30, { steps: 5 });
+      await page.mouse.up();
+    };
+    await orbit();
+    assert.equal(await projection(), 'perspective');
+    await page.click('#view-top');
+    await page.evaluate(() => window.__plateScene.toggleCameraType());
+    await page.evaluate(() => window.__plateScene.toggleCameraType());
+    assert.equal(await projection(), 'orthographic');
+    await orbit();
+    assert.equal(await projection(), 'orthographic', 'manual projection remains until another fixed view is selected');
+    await page.click('#view-iso');
+    assert.equal(await projection(), 'perspective');
+    await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('autoPerspective', false));
+    await page.click('#view-top');
+    assert.equal(await projection(), 'perspective', 'disabled preference preserves the selected projection');
 
     log('opening Preview with nothing sliced starts the slice');
     assert.equal(await page.evaluate(() => window.__appStore.getState().sliceResult), null);

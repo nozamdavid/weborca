@@ -400,6 +400,7 @@ set(lisbslic3r_sources
     ProjectTask.hpp
     QuadricEdgeCollapse.cpp
     QuadricEdgeCollapse.hpp
+    Random.hpp
     Semver.cpp
     Shape/TextShape.cpp
     Shape/TextShape.hpp
@@ -790,6 +791,7 @@ target_link_libraries(libslic3r
         ${_assimp_libs}
     PRIVATE
         ${CMAKE_DL_LIBS}
+        ${_cgal_tgt}
         ${EXPAT_LIBRARIES}
         ${OCCT_LIBS}
         boost_libs

@@ -75,7 +75,7 @@ async function startServer(port, testName) {
     throw new Error(`Port ${port} is occupied by an unrelated server; failing per test isolation requirements`);
   }
 
-  const previewArgs = ['vite', 'preview', '--outDir', outDir, '--port', String(port), '--host', '127.0.0.1'];
+  const previewArgs = ['vite', 'preview', '--outDir', outDir, '--port', String(port), '--strictPort', '--host', '127.0.0.1'];
 
   console.log(`[Server] Launching 'vite preview' on port ${port}...`);
   serverProcess = spawn('npx', previewArgs, {
@@ -92,6 +92,7 @@ async function startServer(port, testName) {
   }
 
   if (!ready) {
+    await stopServer(port);
     throw new Error(`Server failed to respond on port ${port} within timeout`);
   }
   console.log(`[Server] Vite preview server ready at http://127.0.0.1:${port}`);

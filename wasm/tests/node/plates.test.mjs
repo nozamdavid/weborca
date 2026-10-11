@@ -395,4 +395,61 @@ describe('Orca WASM Engine Multiple Plates Test Suite', () => {
     assert.equal((await core.call('getWipeTowerPreview', { plateIndex: 0 })).enabled, false);
   });
 
+  test('duplicate plate copies only its instances and settings across a grid-column change', async () => {
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    let plates = await core.call('listPlates');
+    while (plates.length < 4) plates = await core.call('addPlate');
+    const source = plates[2];
+    const object = (await core.call('listObjects'))[0];
+    await core.call('setInstanceTransform', { objectId: object.id, instanceId: object.instances[0].id, offset: [source.origin[0] + 100, source.origin[1] + 120, 10] });
+    await core.call('duplicateInstance', { objectId: object.id, instanceId: object.instances[0].id });
+    const instances = (await core.call('listObjects'))[0].instances;
+    const other = plates[0];
+    await core.call('setInstanceTransform', { objectId: object.id, instanceId: instances[1].id, offset: [other.origin[0] + 100, other.origin[1] + 120, 10] });
+    await core.call('setPlateConfig', { plateIndex: 2, name: 'Source', config: { enable_prime_tower: '0' } });
+    const before = await core.call('listPlates');
+    const count = before.length;
+    const result = await core.call('duplicatePlate', { plateIndex: 2 });
+    assert.equal(result.length, count + 1);
+    const target = result.at(-1);
+    assert.equal(target.name, 'Source (copy)');
+    assert.equal(target.config.enable_prime_tower, '0');
+    assert.equal(target.instances.length, 1);
+    assert.equal(result[2].instances.length, 1);
+    assert.equal(result[0].instances.length, 1);
+    const copied = (await core.call('listObjects')).find(o => o.id === target.instances[0].objectId);
+    assert.notEqual(copied.id, object.id);
+    assert.equal(copied.instances.length, 1);
+    assert.equal(copied.instances[0].offset[0] - target.origin[0], 100);
+    assert.equal(copied.instances[0].offset[1] - target.origin[1], 120);
+  });
+
+  test('wipe tower preview requires multiple used filaments on the active plate', async () => {
+    await core.call('selectPresets', {
+      printer: 'Bambu Lab X1 Carbon 0.4 nozzle', process: '0.20mm Standard @BBL X1C',
+      filaments: ['Bambu PLA Basic @BBL X1C', 'Bambu PLA Matte @BBL X1C']
+    });
+    await core.call('setOptions', { options: { enable_prime_tower: '1' } });
+    for (const object of await core.call('listObjects')) await core.call('deleteObject', { objectId: object.id });
+    await core.call('listPlates');
+    await core.call('setPlateConfig', { plateIndex: 0, config: { enable_prime_tower: '1' } });
+    assert.equal((await core.call('getWipeTowerPreview', { plateIndex: 0 })).enabled, false, 'empty plate');
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    const object = (await core.call('listObjects'))[0];
+    await core.call('setInstanceTransform', { objectId: object.id, instanceId: object.instances[0].id, offset: [100, 100, 10] });
+    assert.equal((await core.call('getWipeTowerPreview', { plateIndex: 0 })).enabled, false, 'single material despite two configured slots');
+    const part = await core.call('addVolume', { objectId: object.id, type: 'part', shape: 'cube', size: [10, 10, 10] });
+    await core.call('setVolumeExtruder', { objectId: object.id, volumeId: part.volumeId, extruder: 2 });
+    assert.equal((await core.call('getWipeTowerPreview', { plateIndex: 0 })).enabled, true, 'two-material model');
+    let plates = await core.call('listPlates');
+    if (plates.length < 2) plates = await core.call('addPlate');
+    const origin = plates[1].origin;
+    await core.call('setInstanceTransform', { objectId: object.id, instanceId: object.instances[0].id, offset: [origin[0] + 100, origin[1] + 100, 10] });
+    assert.equal((await core.call('getWipeTowerPreview', { plateIndex: 0 })).enabled, false, 'multicolor model on another plate');
+    await core.call('setPlateConfig', { plateIndex: 1, config: { enable_prime_tower: '1' } });
+    assert.equal((await core.call('getWipeTowerPreview', { plateIndex: 1 })).enabled, true);
+    await core.call('setPlateConfig', { plateIndex: 1, config: { enable_prime_tower: '0' } });
+    assert.equal((await core.call('getWipeTowerPreview', { plateIndex: 1 })).enabled, false, 'disabled tower');
+  });
+
 });

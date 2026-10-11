@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { SettingsGroup } from './SettingsGroup';
+import { isLineVisible } from './visibility';
 import type { SettingsMode } from './types';
 import './SettingsSearch.css';
 import { useTranslation } from "../i18n";
@@ -15,6 +16,7 @@ export const SettingsPanel: React.FC = () => {
     activePrintPage,
     setActivePrintPage,
     settingsMode,
+    rulesState,
     setSettingsMode,
     searchQuery,
     setSearchQuery,
@@ -309,9 +311,9 @@ export const SettingsPanel: React.FC = () => {
       {/* Page Content */}
       <div className="settings-content" data-testid="settings-content">
         {currentPage && currentPage.groups.length > 0 ? (
-          currentPage.groups.map((group) => (
-            <SettingsGroup key={group.title} group={group} kind="print" />
-          ))
+          currentPage.groups.some(group => group.lines.some(line => isLineVisible(line, settingsMode, configDefs, rulesState.fields)))
+            ? currentPage.groups.map((group) => <SettingsGroup key={group.title} group={group} kind="print" />)
+            : <div className="empty-page-placeholder">{t("No settings available in this mode.")}</div>
         ) : (
           <div className="empty-page-placeholder">
             <p>{t("Loading settings layout...")}</p>

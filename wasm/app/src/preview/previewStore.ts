@@ -7,6 +7,21 @@ import { create } from 'zustand';
 import type { PreviewStatistics, LegendData, PreviewViewType } from './types';
 import * as previewModule from './orcaPreviewModule';
 
+export const PREVIEW_VIEW_TYPE_STORAGE_KEY = 'orcaslicer_preview_view_type_v1';
+const VIEW_TYPES: readonly PreviewViewType[] = [
+  'FeatureType', 'Speed', 'ActualSpeed', 'Acceleration', 'Jerk', 'Height', 'Width',
+  'VolumetricFlowRate', 'ActualVolumetricFlowRate', 'LayerTimeLinear', 'LayerTimeLogarithmic',
+  'FanSpeed', 'Temperature', 'PressureAdvance', 'Tool', 'ColorPrint', 'Summary'
+];
+
+function loadStoredViewType(): PreviewViewType {
+  try {
+    const value = window.localStorage.getItem(PREVIEW_VIEW_TYPE_STORAGE_KEY);
+    if (VIEW_TYPES.includes(value as PreviewViewType)) return value as PreviewViewType;
+  } catch { /* Preview still works when browser storage is unavailable. */ }
+  return 'FeatureType';
+}
+
 export interface PreviewStoreState {
   isInitialized: boolean;
   isLoading: boolean;
@@ -48,17 +63,22 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
   minMove: 0,
   maxMove: 0,
   currentMove: 0,
-  viewType: 'FeatureType',
+  viewType: loadStoredViewType(),
   legend: { viewType: 'FeatureType', title: 'Line Type', type: 'features', items: [], options: [] },
   showStatsPanel: true,
   showGcodeWindow: false,
 
-  setInitialized: (val: boolean) => set({ isInitialized: val }),
+  setInitialized: (val: boolean) => {
+    if (val) previewModule.setViewType(get().viewType);
+    set({ isInitialized: val, ...(val ? { legend: previewModule.getLegendData() } : {}) });
+  },
 
   loadGcodeBytes: async (data, name = 'print.gcode') => {
     set({ isLoading: true });
     try {
       const stats = previewModule.loadGcode(data, name);
+      // Loading G-code can reset the native viewer's color scheme.
+      previewModule.setViewType(get().viewType);
       const zs = previewModule.getLayersZs();
       const moveRange = previewModule.getMoveRange();
       const legend = previewModule.getLegendData();
@@ -113,6 +133,9 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
   },
 
   setViewTypeAction: (viewType: PreviewViewType) => {
+    if (!VIEW_TYPES.includes(viewType) || viewType === get().viewType) return;
+    try { window.localStorage.setItem(PREVIEW_VIEW_TYPE_STORAGE_KEY, viewType); }
+    catch { /* Keep the selection for this session even if persistence is unavailable. */ }
     previewModule.setViewType(viewType);
     const legend = previewModule.getLegendData();
     set({ viewType, legend });

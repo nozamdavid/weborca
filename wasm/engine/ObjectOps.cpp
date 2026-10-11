@@ -3,11 +3,15 @@
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/PrintConfig.hpp"
+#include "libslic3r/Config.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Utils.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -102,6 +106,8 @@ json getObjectTree(const Slic3r::Model& model, const json& /*args*/) {
             }
 
             int extruder_id = vol->config.has("extruder") ? vol->config.extruder() : 0;
+            if (extruder_id == 0 && obj->config.has("extruder"))
+                extruder_id = obj->config.extruder();
 
             volumes_arr.push_back({
                 {"id", vol->id().id},
@@ -230,6 +236,33 @@ json addVolume(Slic3r::Model& model, const json& args) {
         {"id", new_vol->id().id},
         {"name", new_vol->name}
     };
+}
+
+json deleteInstances(Slic3r::Model& model, const json& args) {
+    std::map<size_t, std::set<size_t>> selection;
+    for (const auto& ref : args.at("instances")) {
+        const auto& object_id = ref.at("objectId");
+        const auto& instance_id = ref.at("instanceId");
+        if (!object_id.is_number_unsigned() || !instance_id.is_number_unsigned())
+            throw Slic3r::RuntimeError("Invalid selected instance ID");
+        selection[object_id.get<size_t>()].insert(instance_id.get<size_t>());
+    }
+    // Validate the complete selection before deleting anything.
+    for (const auto& [object_id, instances] : selection) {
+        const auto* object = find_object(model, object_id);
+        if (!object) throw Slic3r::RuntimeError("Selected object not found");
+        for (size_t id : instances)
+            if (std::none_of(object->instances.begin(), object->instances.end(),
+                             [id](const auto* instance) { return instance->id().id == id; }))
+                throw Slic3r::RuntimeError("Selected instance not found");
+    }
+    for (const auto& [object_id, instances] : selection) {
+        auto* object = find_object(model, object_id);
+        for (size_t i = object->instances.size(); i-- > 0;)
+            if (instances.count(object->instances[i]->id().id)) object->delete_instance(i);
+        if (object->instances.empty()) model.delete_object(object);
+    }
+    return json::object();
 }
 
 json deleteVolume(Slic3r::Model& model, const json& args) {
@@ -416,15 +449,14 @@ json setVolumeExtruder(Slic3r::Model& model, const json& args) {
         throw Slic3r::RuntimeError("Volume not found: " + std::to_string(volume_id));
     }
 
-    if (extruder > 0) {
-        if (vol->config.has("extruder")) {
-            vol->config.set("extruder", extruder);
-        } else {
-            vol->config.set_key_value("extruder", new Slic3r::ConfigOptionInt(extruder));
-        }
-    } else {
+    // Desktop 3MF stores a single part's assignment on its object.
+    auto& config = obj->volumes.size() == 1 ? obj->config : vol->config;
+    if (obj->volumes.size() == 1)
         vol->config.erase("extruder");
-    }
+    if (extruder > 0)
+        config.set_key_value("extruder", new Slic3r::ConfigOptionInt(extruder));
+    else
+        config.erase("extruder");
 
     return json::object();
 }

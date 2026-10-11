@@ -6,6 +6,7 @@ import './wizard.css';
 import { useWizardStore } from './wizardStore';
 import { ModalBackdrop } from '../components/ModalBackdrop';
 import { useTranslation } from "../i18n";
+import { generateCircularPrintableArea, validatePolygon } from './polygonValidation';
 
 const FILAMENT_TYPES = [
   'PLA-CF', 'PETG-CF', 'PA-CF', 'ABS-GF', 'PETG-Metal', 'PLA+', 'PLA',
@@ -33,7 +34,7 @@ function parseFilament(p: PresetItem) {
 }
 
 export const WizardDialog: React.FC = () => {
-    const { t } = useTranslation();
+  const { t } = useTranslation();
   const open = useWizardStore((s) => s.open);
   const setOpen = useWizardStore((s) => s.setOpen);
   const step = useWizardStore((s) => s.step);
@@ -58,9 +59,22 @@ export const WizardDialog: React.FC = () => {
   const [customPrinter, setCustomPrinter] = useState(false);
   const [customName, setCustomName] = useState('My custom printer');
   const [customSize, setCustomSize] = useState({ x: 220, y: 220, z: 250, nozzle: 0.4 });
+  const [customShape, setCustomShape] = useState<'rectangular' | 'circular' | 'polygonal'>('rectangular');
+  const [customPolygon, setCustomPolygon] = useState('0x0,220x0,220x220,0x220');
   const [customFlavor, setCustomFlavor] = useState('klipper');
   const [finishError, setFinishError] = useState('');
   const [isFinishing, setIsFinishing] = useState(false);
+
+  const handleClose = () => {
+    setFinishError('');
+    setIsFinishing(false);
+    setCustomPrinter(false);
+    setCustomShape('rectangular');
+    setCustomName('My custom printer');
+    setCustomSize({ x: 220, y: 220, z: 250, nozzle: 0.4 });
+    setCustomPolygon('0x0,220x0,220x220,0x220');
+    setOpen(false);
+  };
 
   // Auto-open on first run (no 'orca.wizard' key and no saved prefs)
   // Skip when navigator.webdriver is true (automated tests)
@@ -197,30 +211,74 @@ export const WizardDialog: React.FC = () => {
     setIsFinishing(true);
     setFinishError('');
     try {
-      if (customPrinter && (!customName.trim() || Object.values(customSize).some((value) => !Number.isFinite(value) || value <= 0))) throw new Error(t('Enter a printer name and positive dimensions.'));
-      const firstPrinter = customPrinter ? useAppStore.getState().selectedPrinter : selectedPrinters[0];
-      if (firstPrinter) {
-        let vendorToUse = customPrinter ? useAppStore.getState().selectedVendor : selectedVendor;
-        const found = vendorPrinters.find((p) => p.name === firstPrinter);
+      let areaStr = '';
+      if (customPrinter) {
+        if (!customName.trim()) throw new Error(t('Enter a printer name.'));
+        if (!Number.isFinite(customSize.z) || customSize.z <= 0) throw new Error(t('Enter a positive build height.'));
+        if (!Number.isFinite(customSize.nozzle) || customSize.nozzle <= 0) throw new Error(t('Enter a positive nozzle diameter.'));
+
+        if (customShape === 'rectangular') {
+          if (!Number.isFinite(customSize.x) || customSize.x <= 0 || !Number.isFinite(customSize.y) || customSize.y <= 0) {
+            throw new Error(t('Enter positive dimensions for X and Y.'));
+          }
+          areaStr = `0x0,${customSize.x}x0,${customSize.x}x${customSize.y},0x${customSize.y}`;
+        } else if (customShape === 'circular') {
+          if (!Number.isFinite(customSize.x) || customSize.x <= 0) {
+            throw new Error(t('Enter a positive diameter.'));
+          }
+          areaStr = generateCircularPrintableArea(customSize.x);
+        } else if (customShape === 'polygonal') {
+          const polyRes = validatePolygon(customPolygon);
+          if (!polyRes.valid) {
+            throw new Error(t(polyRes.error!));
+          }
+          areaStr = polyRes.areaStr!;
+        }
+      }
+
+      if (!customPrinter) {
+        const firstPrinter = selectedPrinters[0];
+        if (firstPrinter) {
+          let vendorToUse = selectedVendor;
+          const found = vendorPrinters.find((p) => p.name === firstPrinter);
+          if (found?.vendor) {
+            vendorToUse = found.vendor;
+          } else if (firstPrinter.includes('Voron')) {
+            vendorToUse = 'Voron';
+          } else if (firstPrinter.includes('Bambu') || firstPrinter.includes('BBL')) {
+            vendorToUse = 'BBL';
+          } else if (firstPrinter.includes('Prusa')) {
+            vendorToUse = 'Prusa';
+          }
+
+          if (vendorToUse && useAppStore.getState().selectedVendor !== vendorToUse) {
+            await useAppStore.getState().chooseVendor(vendorToUse);
+          }
+          await useAppStore.getState().choosePrinter(firstPrinter);
+        }
+      } else if (selectedPrinters.length > 0) {
+        const basePrinter = selectedPrinters[0];
+        let vendorToUse = selectedVendor;
+        const found = vendorPrinters.find((p) => p.name === basePrinter);
         if (found?.vendor) {
           vendorToUse = found.vendor;
-        } else if (firstPrinter.includes('Voron')) {
+        } else if (basePrinter.includes('Voron')) {
           vendorToUse = 'Voron';
-        } else if (firstPrinter.includes('Bambu') || firstPrinter.includes('BBL')) {
+        } else if (basePrinter.includes('Bambu') || basePrinter.includes('BBL')) {
           vendorToUse = 'BBL';
-        } else if (firstPrinter.includes('Prusa')) {
+        } else if (basePrinter.includes('Prusa')) {
           vendorToUse = 'Prusa';
         }
 
         if (vendorToUse && useAppStore.getState().selectedVendor !== vendorToUse) {
           await useAppStore.getState().chooseVendor(vendorToUse);
         }
-        await useAppStore.getState().choosePrinter(firstPrinter);
+        await useAppStore.getState().choosePrinter(basePrinter);
       }
 
       if (customPrinter) {
         const app = useAppStore.getState();
-        await app.applyOptionChange('printable_area', `0x0,${customSize.x}x0,${customSize.x}x${customSize.y},0x${customSize.y}`, 'printer');
+        await app.applyOptionChange('printable_area', areaStr, 'printer');
         await app.applyOptionChange('printable_height', String(customSize.z), 'printer');
         await app.applyOptionChange('nozzle_diameter', String(customSize.nozzle), 'printer');
         await app.applyOptionChange('gcode_flavor', customFlavor, 'printer');
@@ -243,7 +301,7 @@ export const WizardDialog: React.FC = () => {
       useWizardStore.getState().setAddedPrinters(selectedPrinters);
       useWizardStore.getState().setAddedFilaments(selectedFilaments);
 
-      setOpen(false);
+      handleClose();
     } catch (err) {
       setFinishError(err instanceof Error ? err.message : String(err));
       console.error('Wizard finish error:', err);
@@ -255,7 +313,7 @@ export const WizardDialog: React.FC = () => {
   if (!open) return null;
 
   return (
-    <ModalBackdrop onClose={() => setOpen(false)} id="wizard-dialog" role="dialog" aria-label={t("Configuration wizard")}>
+    <ModalBackdrop onClose={handleClose} id="wizard-dialog" role="dialog" aria-label={t("Configuration wizard")}>
       <div className="wizard-modal">
         {/* Header */}
         <div className="wizard-header">
@@ -263,7 +321,7 @@ export const WizardDialog: React.FC = () => {
           <button
             id="wizard-close-x"
             className="modal-close-btn"
-            onClick={() => setOpen(false)}
+            onClick={handleClose}
             aria-label={t("Close")}
           >
             ✕
@@ -282,7 +340,7 @@ export const WizardDialog: React.FC = () => {
             <span>3</span> {t("Summary")}</div>
         </div>
 
-        {finishError && <p role="alert">{finishError}</p>}
+        {finishError && <p id="wizard-error" role="alert" className="wizard-error" style={{ color: '#ef4444', margin: '8px 0', fontSize: 13, fontWeight: 500 }}>{finishError}</p>}
         {/* Step 1: Printers & Nozzles */}
         {step === 1 && (
           <div className="wizard-body" id="wizard-step-1">
@@ -290,10 +348,54 @@ export const WizardDialog: React.FC = () => {
             {customPrinter && <fieldset style={{ display: 'grid', gap: 8 }}>
               <legend>{t("Custom printer")}</legend>
               <label>{t("Name")} <input id="wizard-custom-name" value={customName} onChange={(e) => setCustomName(e.target.value)} /></label>
-              {(['x', 'y', 'z', 'nozzle'] as const).map((key) => <label key={key}>
-                {key === 'nozzle' ? t('Nozzle diameter') : t('Build volume') + ' ' + key.toUpperCase()} (mm)
-                <input id={`wizard-custom-${key}`} type="number" min={key === 'nozzle' ? 0.1 : 1} step={key === 'nozzle' ? 0.05 : 1} value={customSize[key]} onChange={(e) => setCustomSize({ ...customSize, [key]: Number(e.target.value) })} />
-              </label>)}
+
+              <label>{t("Bed shape")}
+                <select
+                  id="wizard-custom-shape"
+                  value={customShape}
+                  onChange={(e) => {
+                    const nextShape = e.target.value as 'rectangular' | 'circular' | 'polygonal';
+                    setCustomShape(nextShape);
+                    if (nextShape === 'circular') {
+                      setCustomSize((prev) => ({ ...prev, y: prev.x }));
+                    }
+                  }}
+                >
+                  <option value="rectangular">{t("Rectangular")}</option>
+                  <option value="circular">{t("Circular")}</option>
+                  <option value="polygonal">{t("Polygonal")}</option>
+                </select>
+              </label>
+
+              {customShape === 'rectangular' && (
+                <>
+                  <label>{t("Build volume X (mm)")} <input id="wizard-custom-x" type="number" min={1} step={1} value={customSize.x} onChange={(e) => setCustomSize({ ...customSize, x: Number(e.target.value) })} /></label>
+                  <label>{t("Build volume Y (mm)")} <input id="wizard-custom-y" type="number" min={1} step={1} value={customSize.y} onChange={(e) => setCustomSize({ ...customSize, y: Number(e.target.value) })} /></label>
+                </>
+              )}
+              {customShape === 'circular' && (
+                <label>{t("Diameter (mm)")} <input id="wizard-custom-diameter" data-testid="wizard-custom-diameter" className="wizard-custom-x" type="number" min={1} step={1} value={customSize.x} onChange={(e) => setCustomSize({ ...customSize, x: Number(e.target.value), y: Number(e.target.value) })} /></label>
+              )}
+              {customShape === 'polygonal' && (
+                <label>{t("Printable area (x1xy1,x2xy2...)")}
+                  <textarea
+                    id="wizard-custom-polygon"
+                    rows={3}
+                    style={{width: '100%', boxSizing: 'border-box', marginTop: 4}}
+                    value={customPolygon}
+                    onChange={(e) => setCustomPolygon(e.target.value)}
+                    placeholder="0x0,200x0,200x200,0x200"
+                  />
+                  {customPolygon.trim() && !validatePolygon(customPolygon).valid && (
+                    <span id="wizard-polygon-error" style={{ fontSize: 11, color: '#f87171', display: 'block', marginTop: 2 }}>
+                      {t(validatePolygon(customPolygon).error!)}
+                    </span>
+                  )}
+                </label>
+              )}
+
+              <label>{t("Build volume Z (mm)")} <input id="wizard-custom-z" type="number" min={1} step={1} value={customSize.z} onChange={(e) => setCustomSize({ ...customSize, z: Number(e.target.value) })} /></label>
+              <label>{t("Nozzle diameter")} (mm) <input id="wizard-custom-nozzle" type="number" min={0.1} step={0.05} value={customSize.nozzle} onChange={(e) => setCustomSize({ ...customSize, nozzle: Number(e.target.value) })} /></label>
               <label>{t("Firmware")} <select id="wizard-custom-firmware" value={customFlavor} onChange={(e) => setCustomFlavor(e.target.value)}>
                 <option value="klipper">Klipper</option><option value="marlin2">Marlin 2</option><option value="reprapfirmware">RepRapFirmware</option>
               </select></label>
@@ -413,19 +515,14 @@ export const WizardDialog: React.FC = () => {
                   onClick={selectNoneFilaments}
                 >
                   {t("Select None")}</button>
-                <span style={{ fontSize: 12, color: '#aaa', marginLeft: 6 }}>
-                  {selectedFilaments.length} {t("selected")}</span>
               </div>
             </div>
 
-            <div className="wizard-filament-sections">
-              {filamentGroups.map(([vendor, items]) => (
-                <div key={vendor} className="wizard-vendor-group">
-                  <div className="wizard-vendor-group-title">
-                    <span>{vendor}</span>
-                    <span style={{ fontSize: 11, color: '#999' }}>{items.length} {t("presets")}</span>
-                  </div>
-                  <div className="wizard-filament-list">
+            <div className="wizard-filament-groups">
+              {filamentGroups.map(([brand, items]) => (
+                <div key={brand} className="wizard-filament-group">
+                  <div className="wizard-group-title">{brand}</div>
+                  <div className="wizard-filament-grid">
                     {items.map((item) => {
                       const id = `wizard-filament-${safeId(item.name)}`;
                       const checked = selectedFilaments.includes(item.name);
@@ -455,7 +552,14 @@ export const WizardDialog: React.FC = () => {
           <div className="wizard-body" id="wizard-step-3">
             <div className="wizard-summary-card">
               <div className="wizard-summary-title">{t("Printers to Install")}</div>
-              {selectedPrinters.length === 0 ? (
+              {customPrinter ? (
+                <div className="wizard-summary-list">
+                  <div>★ {customName.trim() || t("Custom printer")} ({t("Custom")})</div>
+                  {selectedPrinters.map((p) => (
+                    <div key={p}>• {p}</div>
+                  ))}
+                </div>
+              ) : selectedPrinters.length === 0 ? (
                 <div style={{ color: '#a0a0a0', fontSize: 13 }}>{t("No printers selected.")}</div>
               ) : (
                 <div className="wizard-summary-list">
@@ -486,7 +590,7 @@ export const WizardDialog: React.FC = () => {
             </div>
 
             <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
-              {t("Clicking")}<strong>{t("Finish")}</strong> {t("will apply the first selected printer and filament to your workspace,\n              and save your configuration choices.")}</div>
+              {t("Clicking")} <strong>{t("Finish")}</strong> {t("will apply the first selected printer and filament to your workspace, and save your configuration choices.")}</div>
           </div>
         )}
 
@@ -496,7 +600,7 @@ export const WizardDialog: React.FC = () => {
             id="wizard-cancel-btn"
             type="button"
             className="btn btn-secondary"
-            onClick={() => setOpen(false)}
+            onClick={handleClose}
           >
             {t("Cancel")}</button>
           <div className="wizard-footer-right">
@@ -525,7 +629,7 @@ export const WizardDialog: React.FC = () => {
                 type="button"
                 className="btn btn-primary"
                 onClick={handleFinish}
-                disabled={isFinishing || selectedPrinters.length === 0}
+                disabled={isFinishing || (!customPrinter && selectedPrinters.length === 0)}
               >
                 {isFinishing ? 'Applying...' : 'Finish'}
               </button>

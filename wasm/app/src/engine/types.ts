@@ -30,6 +30,8 @@ export interface ProgressNotification {
 }
 
 export interface SliceResult {
+  /** Source plate for a generated result; absent for G-code opened from disk. */
+  plateIndex?: number;
   gcode: Uint8Array;
   gcodePath: string;
   gcodeBytes: number;
@@ -87,8 +89,20 @@ export interface EvaluateRulesResult {
 export interface OptionError {
   key: string;
   error: string;
+  code?: 'unknown_key' | 'invalid_value' | 'unsupported_type' | string;
+  fatal?: boolean;
 }
 
 export interface SetOptionsResult {
   errors: OptionError[];
+}
+
+export async function setOption(args: { key: string; value: string; filamentIndex?: number; layoutIndex?: number }): Promise<void> {
+  const { setOption: doSet } = await import('./orcaEngine');
+  return doSet(args);
+}
+
+export async function getOption(args: { key: string; filamentIndex?: number; layoutIndex?: number }): Promise<{ value: string }> {
+  const { getOption: doGet } = await import('./orcaEngine');
+  return doGet(args);
 }

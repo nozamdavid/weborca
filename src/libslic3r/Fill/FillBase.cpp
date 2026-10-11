@@ -1720,7 +1720,9 @@ void Fill::connect_infill(Polylines &&infill_ordered, const std::vector<const Po
         for (ContourIntersectionPoint& cp : graph.map_infill_end_point_to_boundary)
             if (cp.contour_idx != boundary_idx_unconnected && cp.next_on_contour != &cp && cp.could_connect_next())
                 arches.push_back({ &cp, path_length_along_contour_ccw(&cp, cp.next_on_contour, graph.boundary_params[cp.contour_idx].back()) });
-        std::sort(arches.begin(), arches.end(), [](const auto& l, const auto& r) { return l.arc_length < r.arc_length; });
+        // Equal-cost connections consume shared endpoints. Keep their input order so
+        // different standard libraries choose the same anchors and infill paths.
+        std::stable_sort(arches.begin(), arches.end(), [](const auto& l, const auto& r) { return l.arc_length < r.arc_length; });
     }
 
     //FIXME improve the Traveling Salesman problem with 2-opt and 3-opt local optimization.

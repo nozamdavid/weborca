@@ -53,6 +53,7 @@ describe('live printer (read-only)', { skip: host ? false : 'set ORCA_LIVE_PRINT
     assert.ok(state, 'a state arrived');
     console.log('  state:', state.state, '| heaters:', state.heaters.map((h) => `${h.label} ${h.current.toFixed(1)}/${h.target}`).join(', '));
     console.log('  cameras:', (state.webcams ?? []).map((c) => c.name).join(', ') || 'none', '| files:', state.files?.length ?? 0, '| software:', state.software);
+    console.log('  filaments:', (state.filaments ?? []).map((f) => `${f.label}: ${f.material || 'unknown'} ${f.color || ''}`).join(', ') || 'none reported');
     assert.ok(['ready', 'printing', 'paused', 'complete', 'error', 'offline'].includes(state.state));
     assert.ok(state.heaters.some((h) => h.kind === 'extruder'), 'extruders are listed');
     assert.ok(state.heaters.some((h) => h.kind === 'bed'), 'the bed is listed');

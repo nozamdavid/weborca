@@ -183,4 +183,41 @@ describe('Orca WASM Engine Project Operations Test Suite', () => {
     for (const [key, value] of Object.entries(options)) assert.equal(config[key], value, key + ' must survive project import');
   });
 
+  test('legacy single-part filament assignments survive 3MF import', async () => {
+    await core.call('selectPresets', {
+      printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron',
+      filaments: ['Generic PLA @System', 'Generic PLA @System']
+    });
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    const { objects } = await core.call('getObjectTree', {});
+    await core.call('setVolumeExtruder', {
+      objectId: objects[0].id, volumeId: objects[0].volumes[0].id, extruder: 2
+    });
+    await core.call('saveProject', { path: '/out/legacy-part-color.3mf' });
+    // Recreate older web exports with the assignment on the sole part.
+    const legacy = execFileSync('python3', ['-c', `
+import io, sys, zipfile, xml.etree.ElementTree as ET
+source = zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read()))
+output = io.BytesIO()
+with zipfile.ZipFile(output, 'w') as target:
+    for item in source.infolist():
+        data = source.read(item.filename)
+        if item.filename == 'Metadata/model_settings.config':
+            root = ET.fromstring(data)
+            obj = root.find('object')
+            assignment = obj.find("metadata[@key='extruder']")
+            assert assignment is not None and assignment.get('value') == '2'
+            obj.remove(assignment)
+            obj.find('part').append(assignment)
+            data = ET.tostring(root, encoding='utf-8')
+        target.writestr(item, data)
+sys.stdout.buffer.write(output.getvalue())
+`], { input: core.readFile('/out/legacy-part-color.3mf') });
+    core.writeFile('/out/legacy-part-color.3mf', legacy);
+    await core.call('openProject', { path: '/out/legacy-part-color.3mf' });
+    const restored = await core.call('getObjectTree', {});
+    assert.equal(restored.objects[0].config.extruder, '2');
+    assert.equal(restored.objects[0].volumes[0].extruder, 2);
+  });
+
 });

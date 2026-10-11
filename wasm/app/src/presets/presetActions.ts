@@ -10,7 +10,7 @@ import {
   exportPresetBundle,
   resolvePresetBundleImport
 } from './presetBundle';
-import { getCompatiblePresets } from '../engine/orcaEngine';
+import { getCompatiblePresets, getEngine } from '../engine/orcaEngine';
 import {
   parsePresetsFromUniversalInput,
   exportDesktopPrinterBundle,
@@ -59,7 +59,10 @@ export async function saveCurrentUserPresetHelper(
   }
 
   const collision = userPresets.find((u) => u.kind === kind && u.name === trimmed);
-  if (collision && activeUserPreset[kind] !== trimmed) {
+  const activeName = kind === 'filament'
+    ? (get().selectedFilaments[get().activeFilamentSlot || 0] || selectedFilament)
+    : activeUserPreset[kind];
+  if (collision && activeName !== trimmed) {
     const msg = `Preset '${trimmed}' already exists`;
     set({ engineError: msg });
     throw new Error(msg);
@@ -74,10 +77,25 @@ export async function saveCurrentUserPresetHelper(
     if (existingUser) inherits = existingUser.inherits;
     values = { ...processOverrides };
   } else if (kind === 'filament') {
-    inherits = selectedFilament;
-    const existingUser = userPresets.find((p) => p.kind === 'filament' && p.name === selectedFilament);
+    const { activeFilamentSlot, selectedFilaments } = get();
+    const slotIndex = activeFilamentSlot || 0;
+    const activeFil = (selectedFilaments && selectedFilaments[slotIndex]) || selectedFilament;
+    inherits = activeFil;
+    const existingUser = userPresets.find((p) => p.kind === 'filament' && p.name === activeFil);
     if (existingUser) inherits = existingUser.inherits;
-    values = { ...filamentOverrides };
+    const engine = await getEngine();
+    const slotConfig = await engine.call('getConfig', { filamentIndex: slotIndex }) as Record<string, string>;
+    const keys = new Set(Object.keys(existingUser?.values || {}).filter((key) => key in slotConfig));
+    // The override map also contains project-wide flushing settings and edits
+    // from other slots. Use the engine's filament keys to save only this slot.
+    for (const key of Object.keys(filamentOverrides)) {
+      if (!(key in slotConfig)) continue;
+      const serializedValue = get().presetConfig[key];
+      const current = await engine.call('getOption', { key, filamentIndex: slotIndex });
+      const baseline = await engine.call('getOption', { key, filamentIndex: slotIndex, serializedValue });
+      if (current.value !== baseline.value) keys.add(key);
+    }
+    values = await engine.call('getConfig', { filamentIndex: slotIndex, keys: [...keys] }) as Record<string, string>;
   } else if (kind === 'printer') {
     inherits = selectedPrinter;
     const existingUser = userPresets.find((p) => p.kind === 'printer' && p.name === selectedPrinter);
@@ -94,15 +112,28 @@ export async function saveCurrentUserPresetHelper(
 
   try {
     const updated = await saveUserPreset(newPreset);
-    set((state) => ({
+    set({
       userPresets: updated,
-      savePresetDialogTarget: null,
-      engineError: null,
-      activeUserPreset: { ...state.activeUserPreset, [kind]: trimmed },
+      engineError: null
+    });
+    const { activeFilamentSlot, selectedFilaments, selectedFilament } = get();
+    const slotIdx = kind === 'filament' ? (activeFilamentSlot || 0) : 0;
+    const currentList = selectedFilaments && selectedFilaments.length > 0 ? [...selectedFilaments] : [selectedFilament];
+    currentList[slotIdx] = trimmed;
+    set((state) => ({
+      activeUserPreset: {
+        ...state.activeUserPreset,
+        ...(kind === 'filament' && slotIdx !== 0 ? {} : { [kind]: trimmed })
+      },
       ...(kind === 'process' ? { selectedProcess: trimmed } : {}),
-      ...(kind === 'filament' ? { selectedFilament: trimmed, selectedFilaments: state.selectedFilaments && state.selectedFilaments.length > 0 ? [trimmed, ...state.selectedFilaments.slice(1)] : [trimmed] } : {}),
+      ...(kind === 'filament' ? {
+        selectedFilament: slotIdx === 0 ? trimmed : state.selectedFilament,
+        selectedFilaments: currentList
+      } : {}),
       ...(kind === 'printer' ? { selectedPrinter: trimmed } : {})
     }));
+    await get().selectUserPreset(kind, trimmed, slotIdx);
+    set({ savePresetDialogTarget: null });
   } catch (err: any) {
     const msg = `Failed to save preset '${trimmed}': ${err.message || String(err)}`;
     set({ engineError: msg });
@@ -156,6 +187,18 @@ export async function duplicateUserPresetHelper(
     throw new Error(msg);
   }
 
+  const { activeFilamentSlot, selectedFilaments } = get();
+  const sourceSlot = selectedFilaments[activeFilamentSlot] === sourceName
+    ? activeFilamentSlot : selectedFilaments.indexOf(sourceName);
+  const slotIndex = kind === 'filament' && sourceSlot >= 0 ? sourceSlot : activeFilamentSlot;
+  if (kind === 'filament' && sourceSlot >= 0) {
+    // Saving already projects native values to one slot and excludes project
+    // settings. Reuse it rather than copying the whole override vector.
+    set({ activeFilamentSlot: slotIndex });
+    await saveCurrentUserPresetHelper(get, set, kind, trimmed);
+    return;
+  }
+
   let inherits = '';
   let values: Record<string, string> = {};
 
@@ -191,14 +234,11 @@ export async function duplicateUserPresetHelper(
 
   try {
     const updated = await saveUserPreset(newPreset);
-    set((state) => ({
+    set({
       userPresets: updated,
-      engineError: null,
-      activeUserPreset: { ...state.activeUserPreset, [kind]: trimmed },
-      ...(kind === 'process' ? { selectedProcess: trimmed } : {}),
-      ...(kind === 'filament' ? { selectedFilament: trimmed, selectedFilaments: state.selectedFilaments && state.selectedFilaments.length > 0 ? [trimmed, ...state.selectedFilaments.slice(1)] : [trimmed] } : {}),
-      ...(kind === 'printer' ? { selectedPrinter: trimmed } : {})
-    }));
+      engineError: null
+    });
+    await get().selectUserPreset(kind, trimmed, kind === 'filament' ? slotIndex : undefined);
   } catch (err: any) {
     const msg = `Failed to duplicate preset '${sourceName}': ${err.message || String(err)}`;
     set({ engineError: msg });
@@ -212,7 +252,7 @@ export async function deleteUserPresetHelper(
   kind: PresetKind,
   name: string
 ): Promise<void> {
-  const { userPresets } = get();
+  const { userPresets, selectedProcess, selectedPrinter, selectedFilaments } = get();
   const existing = userPresets.find((u) => u.kind === kind && u.name === name);
   if (!existing) {
     const msg = `Cannot delete immutable system preset '${name}'`;
@@ -231,8 +271,9 @@ export async function deleteUserPresetHelper(
       }
     }));
 
-    const { activeUserPreset } = get();
-    if (activeUserPreset[kind] === null) {
+    const wasSelected = kind === 'process' ? selectedProcess === name
+      : kind === 'printer' ? selectedPrinter === name : selectedFilaments.includes(name);
+    if (wasSelected) {
       if (kind === 'process') {
         const { processes } = get();
         const target = processes.find((p) => p.name === existing.inherits)?.name || processes[0]?.name;
@@ -240,7 +281,11 @@ export async function deleteUserPresetHelper(
       } else if (kind === 'filament') {
         const { filaments } = get();
         const target = filaments.find((f) => f.name === existing.inherits)?.name || filaments[0]?.name;
-        if (target) await get().chooseFilament(target);
+        if (target) {
+          for (const [slotIndex, selected] of selectedFilaments.entries()) {
+            if (selected === name) await get().chooseFilament(target, slotIndex);
+          }
+        }
       } else if (kind === 'printer') {
         const { printers } = get();
         const target = printers.find((p) => p.name === existing.inherits)?.name || printers[0]?.name;

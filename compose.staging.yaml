@@ -1,0 +1,14 @@
+name: weborca-staging
+services:
+  web:
+    image: weborca-staging-web:latest
+    build:
+      context: .
+      dockerfile: wasm/deploy/Dockerfile
+      target: web
+    restart: unless-stopped
+    init: true
+    environment:
+      ORCA_HOST: ${ORCA_HOST:-weborca.noz.am}
+    ports:
+      - "${ORCA_BIND_ADDRESS:-0.0.0.0}:${ORCA_PORT:-8080}:8080"

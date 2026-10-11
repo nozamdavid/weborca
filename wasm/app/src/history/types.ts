@@ -16,6 +16,37 @@ export interface HistoryPaintState {
   selectedVolumeId: number | null;
 }
 
+export interface HistoryPlateInfo {
+  index: number;
+  name: string;
+  locked: boolean;
+  config: Record<string, string>;
+  filamentMaps?: number[];
+}
+
+export interface HistoryPlateState {
+  plates: HistoryPlateInfo[];
+  activePlateIndex: number;
+}
+
+export interface HistorySettingsState {
+  vendor: string;
+  printer: string;
+  process: string;
+  filaments: string[];
+  activeUserPreset: {
+    process: string | null;
+    filament: string | null;
+    printer: string | null;
+  };
+  processOverrides: Record<string, string>;
+  filamentOverrides: Record<string, string>;
+  printerOverrides: Record<string, string>;
+  presetConfig: Record<string, string>;
+  currentConfig: Record<string, string>;
+  options?: Record<string, string>;
+}
+
 export interface HistorySnapshot {
   id: string;
   description: string;
@@ -27,6 +58,8 @@ export interface HistorySnapshot {
   selection: HistorySelection | null;
   paintState: HistoryPaintState | null;
   modelFileName: string | null;
+  plateState?: HistoryPlateState;
+  settings?: HistorySettingsState;
 }
 
 export interface HistoryStoreState {

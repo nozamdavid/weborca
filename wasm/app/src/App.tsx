@@ -1,3 +1,4 @@
+import { useTranslation } from './i18n';
 import { ConfirmHost } from './components/ModalBackdrop';
 import { ComparePresetsDialog } from './settings/ComparePresetsDialog';
 import { WizardDialog } from './wizard';
@@ -39,6 +40,7 @@ function tabFromPath(): TabId {
 }
 
 export const App: React.FC = () => {
+  const { t } = useTranslation();
   const isIsolated = useAppStore((state) => state.isIsolated);
   const initApp = useAppStore((state) => state.initApp);
   const sliceResult = useAppStore((state) => state.sliceResult);
@@ -160,22 +162,22 @@ export const App: React.FC = () => {
           <CalibrationPage />
         </div>
 
-        {isSlicing && activeTab === 'preview' && (
+        {isSlicing && (
           <div id="preview-slicing-overlay" className="model-loading-overlay">
             <div className="model-loading-card" role="status" aria-live="polite" aria-atomic="true" style={{ flexDirection: 'column', alignItems: 'stretch', minWidth: 320 }}>
-              <strong>Slicing</strong>
+              <strong>{t("Slicing")}</strong>
               <div className="progress-bar-wrapper"><div className="progress-bar-fill" id="preview-progress-bar" style={{ width: `${slicePercent}%` }} /></div>
               <p id="preview-slicing-status">{sliceStatusText}</p>
-              <button className="btn-danger-wide" id="preview-cancel-btn" onClick={() => cancelSlice()}>Cancel</button>
+              <button className="btn-danger-wide" id="preview-cancel-btn" onClick={() => cancelSlice()}>{t("Cancel")}</button>
             </div>
           </div>
         )}
-        {isModelLoading && (
+        {isModelLoading && !isSlicing && (
           <div id="model-loading-overlay" className="model-loading-overlay">
             <div className="model-loading-card" role="status" aria-live="polite" aria-atomic="true">
               <span className="model-loading-spinner" aria-hidden="true" />
               <div>
-                <strong>Importing model</strong>
+                <strong>{t("Loading...")}</strong>
                 <p>{sliceStatusText}</p>
               </div>
             </div>

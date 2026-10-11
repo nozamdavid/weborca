@@ -17,7 +17,7 @@ async function readBody(req) {
 
 /** Parses a multipart/form-data body into { fields, files: { name: { filename, content } } }. */
 export function parseMultipart(body, contentType) {
-  const boundary = /boundary=(?:"([^"]+)"|([^;]+))/.exec(contentType ?? '');
+  const boundary = /boundary=(?:\"([^\"]+)\"|([^;]+))/.exec(contentType ?? '');
   const fields = {};
   const files = {};
   if (!boundary) return { fields, files };
@@ -30,8 +30,8 @@ export function parseMultipart(body, contentType) {
     const headerEnd = part.indexOf('\r\n\r\n');
     const headers = part.subarray(0, headerEnd).toString();
     const content = part.subarray(headerEnd + 4);
-    const name = /name="([^"]*)"/.exec(headers)?.[1];
-    const filename = /filename="([^"]*)"/.exec(headers)?.[1];
+    const name = /name=\"([^\"]*)\"/.exec(headers)?.[1];
+    const filename = /filename=\"([^\"]*)\"/.exec(headers)?.[1];
     if (filename !== undefined) files[name] = { filename, content };
     else fields[name] = content.toString();
     start = next;
@@ -48,7 +48,7 @@ const json = (res, status, body, headers = {}) => {
 // Moonraker (Klipper)
 // ---------------------------------------------------------------------------------------------
 
-export async function startMockMoonraker() {
+export async function startMockMoonraker({ filamentStatus = {}, spoolman = false, spool = null } = {}) {
   const status = {
     webhooks: { state: 'ready', state_message: 'Printer is ready' },
     print_stats: { state: 'standby', filename: '', print_duration: 0, message: '', info: { current_layer: null, total_layer: null } },
@@ -61,15 +61,21 @@ export async function startMockMoonraker() {
     extruder: { temperature: 210.2, target: 215 },
     extruder1: { temperature: 35, target: 0 },
     heater_bed: { temperature: 60.1, target: 60 },
-    'heater_generic chamber': { temperature: 40, target: 45 }
+    'heater_generic chamber': { temperature: 40, target: 45 },
+    ...filamentStatus
   };
   const objectNames = [...Object.keys(status), 'gcode_macro T0', 'mcu', 'temperature_sensor mcu_temp', 'configfile'];
   const sockets = new Set();
   const mock = {
     uploads: [],
     rpcMethods: [],
+    spoolRequests: [],
     httpRequests: [],
     started: [],
+    setSpool(value) {
+      spool = value;
+      sockets.forEach(s => s.send(JSON.stringify({ jsonrpc: '2.0', method: 'notify_active_spool_set', params: [{ spool_id: spool?.id ?? null }] })));
+    },
     port: 0,
     push(patch) {
       for (const [name, fields] of Object.entries(patch)) status[name] = { ...status[name], ...fields };
@@ -119,6 +125,11 @@ export async function startMockMoonraker() {
       const reply = (result) => ws.send(JSON.stringify({ jsonrpc: '2.0', result, id }));
       switch (method) {
         case 'server.connection.identify': return reply({ connection_id: 1 });
+        case 'server.info': return reply({ components: spoolman ? ['spoolman'] : [] });
+        case 'server.spoolman.get_spool_id': return reply({ spool_id: spool?.id ?? null });
+        case 'server.spoolman.proxy':
+          mock.spoolRequests.push(params);
+          return reply({ response: spool, error: null });
         case 'printer.objects.list': return reply({ objects: objectNames });
         case 'printer.objects.subscribe': {
           const wanted = Object.keys(params.objects ?? {});
@@ -219,11 +230,71 @@ export async function startMockPrusaLink({ user = 'maker', password = 'secret' }
 }
 
 // ---------------------------------------------------------------------------------------------
-// Flashforge
+// Flashforge (Port 8898 HTTP API, /detail, /uploadGcode)
+// Verified schema reference:
+// - @ghosttypes/ff-api (v2.1.0): https://github.com/GhostTypes/ff-5mp-api-ts
+//   src/models/ff-models.ts (FFPrinterDetail, FFMachineInfo, SlotInfo, MatlStationInfo)
+//   src/models/MachineInfo.ts
+// - Parallel-7/FlashForgeWebUI: https://github.com/Parallel-7/FlashForgeWebUI
+// - SoftFever/OrcaSlicer: src/slic3r/Utils/Flashforge.cpp
 // ---------------------------------------------------------------------------------------------
 
-export async function startMockFlashforge({ serialNumber = 'FF123', checkCode = 'CODE' } = {}) {
-  const mock = { uploads: [], port: 0, close: () => { server.closeAllConnections(); return new Promise((r) => server.close(r)); } };
+export async function startMockFlashforge({
+  serialNumber = 'FF123',
+  checkCode = 'CODE',
+  detail: initialDetail = {}
+} = {}) {
+  let currentDetail = {
+    status: 'ready',
+    name: 'Adventurer 5M Pro',
+    model: 'Adventurer 5M Pro',
+    pid: 36,
+    firmwareVersion: '1.2.3',
+    macAddr: 'AA:BB:CC:DD:EE:FF',
+    ipAddr: '127.0.0.1',
+    errorCode: '',
+    platTemp: 60,
+    platTargetTemp: 60,
+    rightTemp: 210,
+    rightTargetTemp: 210,
+    chamberTemp: 35,
+    chamberTargetTemp: 0,
+    coolingFanSpeed: 50,
+    coolingFanLeftSpeed: 0,
+    chamberFanSpeed: 0,
+    externalFanStatus: 'close',
+    internalFanStatus: 'close',
+    lightStatus: 'open',
+    doorStatus: 'close',
+    printProgress: 0,
+    printDuration: 0,
+    estimatedTime: 0,
+    printLayer: 0,
+    targetPrintLayer: 0,
+    printFileName: '',
+    cameraStreamUrl: 'http://127.0.0.1:8080/?action=stream',
+    matlStationInfo: {
+      slotCnt: 2,
+      slotInfos: [
+        { slotId: 1, hasFilament: 1, materialName: 'PLA', materialColor: 'FF0000' },
+        { slotId: 2, hasFilament: 0 }
+      ]
+    },
+    ...initialDetail
+  };
+
+  const mock = {
+    uploads: [],
+    port: 0,
+    setDetail: (update) => {
+      currentDetail = typeof update === 'function' ? update(currentDetail) : { ...currentDetail, ...update };
+    },
+    close: () => {
+      server.closeAllConnections();
+      return new Promise((r) => server.close(r));
+    }
+  };
+
   const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     const path = req.url.split('?')[0];
@@ -235,14 +306,7 @@ export async function startMockFlashforge({ serialNumber = 'FF123', checkCode = 
       }
       return json(res, 200, {
         code: 0,
-        detail: {
-          matlStationInfo: {
-            slotInfos: [
-              { slotId: 1, hasFilament: 1, materialName: "PLA", materialColor: "FF0000" },
-              { slotId: 2, hasFilament: 0 }
-            ]
-          }
-        }
+        detail: currentDetail
       });
     }
 
@@ -251,7 +315,12 @@ export async function startMockFlashforge({ serialNumber = 'FF123', checkCode = 
         return json(res, 200, { err: 1, msg: 'Invalid credentials' });
       }
       const { fields, files } = parseMultipart(body, req.headers['content-type']);
-      mock.uploads.push({ printNow: req.headers['printnow'] === 'true', filename: files.gcodeFile?.filename, content: files.gcodeFile?.content });
+      mock.uploads.push({
+        printNow: req.headers['printnow'] === 'true',
+        filename: files.gcodeFile?.filename,
+        content: files.gcodeFile?.content,
+        headers: req.headers
+      });
       return json(res, 200, { code: 0, msg: 'Upload success' });
     }
 

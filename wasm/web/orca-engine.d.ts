@@ -47,6 +47,8 @@ export interface SelectedPresetsResult {
 export interface OptionError {
   key: string;
   error: string;
+  code?: 'unknown_key' | 'invalid_value' | 'unsupported_type' | string;
+  fatal?: boolean;
 }
 
 export interface SetOptionsResult {

@@ -1,4 +1,9 @@
 #include "libslic3r/Utils.hpp"
+#include "libslic3r/libslic3r.h"
+#include "libslic3r/Point.hpp"
+#include "libslic3r/Polygon.hpp"
+#include "libslic3r/ExPolygon.hpp"
+#include "libslic3r/Tesselate.hpp"
 #include <emscripten.h>
 #include <emscripten/bind.h>
 #include <emscripten/html5.h>
@@ -296,6 +301,8 @@ public:
         rebuildMesh();
     }
 
+    const std::vector<std::pair<float, float>>& getPolygon() const { return m_polygon; }
+
     float getCenterX() const { return (m_min_x + m_max_x) * 0.5f; }
     float getCenterY() const { return (m_min_y + m_max_y) * 0.5f; }
     float getWidth() const { return m_max_x - m_min_x; }
@@ -326,28 +333,44 @@ private:
         // 1. Bed subtle floor plate at z = -0.05 mm
         const float fz = -0.05f;
         const float fr = m_light_theme ? 0.83f : 0.14f, fg = m_light_theme ? 0.85f : 0.15f, fb = m_light_theme ? 0.87f : 0.17f, fa = 1.0f;
-        verts.push_back({m_min_x, m_min_y, fz, fr, fg, fb, fa});
-        verts.push_back({m_max_x, m_min_y, fz, fr, fg, fb, fa});
-        verts.push_back({m_max_x, m_max_y, fz, fr, fg, fb, fa});
-
-        verts.push_back({m_min_x, m_min_y, fz, fr, fg, fb, fa});
-        verts.push_back({m_max_x, m_max_y, fz, fr, fg, fb, fa});
-        verts.push_back({m_min_x, m_max_y, fz, fr, fg, fb, fa});
+        Slic3r::Polygon polygon;
+        for (const auto& p : m_polygon)
+            polygon.points.emplace_back(Slic3r::scaled<coord_t>(p.first), Slic3r::scaled<coord_t>(p.second));
+        polygon.make_counter_clockwise();
+        for (const auto& p : Slic3r::triangulate_expolygon_2f(Slic3r::ExPolygon(polygon)))
+            verts.push_back({p.x(), p.y(), fz, fr, fg, fb, fa});
 
         m_floor_count = static_cast<GLsizei>(verts.size());
 
         // 2. Bed grid lines at z = 0.0 mm
         const float gz = 0.0f;
         const float gr = 0.22f, gg = 0.23f, gb = 0.26f, ga = 1.0f;
-        const float step = 10.0f; // 10mm grid
-
-        for (float x = std::ceil(m_min_x / step) * step; x <= m_max_x; x += step) {
-            verts.push_back({x, m_min_y, gz, gr, gg, gb, ga});
-            verts.push_back({x, m_max_y, gz, gr, gg, gb, ga});
-        }
-        for (float y = std::ceil(m_min_y / step) * step; y <= m_max_y; y += step) {
-            verts.push_back({m_min_x, y, gz, gr, gg, gb, ga});
-            verts.push_back({m_max_x, y, gz, gr, gg, gb, ga});
+        const float step = std::max(10.0f, std::ceil(std::max(getWidth(), getDepth()) / 10000.0f) * 10.0f);
+        // Pair polygon intersections to clip grid lines, including concave notches.
+        for (int axis = 0; axis < 2; ++axis) {
+            const float min = axis == 0 ? m_min_x : m_min_y;
+            const float max = axis == 0 ? m_max_x : m_max_y;
+            for (float value = std::ceil(min / step) * step; value <= max; value += step) {
+                std::vector<float> intersections;
+                for (size_t i = 0; i < m_polygon.size(); ++i) {
+                    const auto& a = m_polygon[i];
+                    const auto& b = m_polygon[(i + 1) % m_polygon.size()];
+                    const float av = axis == 0 ? a.first : a.second;
+                    const float bv = axis == 0 ? b.first : b.second;
+                    if ((av <= value && value < bv) || (bv <= value && value < av)) {
+                        const float other_a = axis == 0 ? a.second : a.first;
+                        const float other_b = axis == 0 ? b.second : b.first;
+                        intersections.push_back(other_a + (other_b - other_a) * (value - av) / (bv - av));
+                    }
+                }
+                std::sort(intersections.begin(), intersections.end());
+                for (size_t i = 0; i + 1 < intersections.size(); i += 2) {
+                    for (size_t j = i; j <= i + 1; ++j) {
+                        const float other = intersections[j];
+                        verts.push_back({axis == 0 ? value : other, axis == 0 ? other : value, gz, gr, gg, gb, ga});
+                    }
+                }
+            }
         }
 
         // 3. Bed boundary outline at z = 0.05 mm
@@ -483,6 +506,18 @@ public:
         m_initialized = true;
         std::printf("OrcaPreview: Initialized WebGL2 context on %s\n", canvas_selector.c_str());
         return true;
+    }
+
+    void setToolColors(emscripten::val colors) {
+        emscripten_webgl_make_context_current(m_ctx);
+        libvgcode::Palette palette = m_viewer.get_tool_colors();
+        const unsigned count = std::min(colors["length"].as<unsigned>(), 256u);
+        palette.resize(std::max(palette.size(), static_cast<size_t>(count)), libvgcode::convert(std::string("#009688")));
+        for (unsigned i = 0; i < count; ++i) {
+            const std::string color = colors[i].as<std::string>();
+            if (!color.empty()) palette[i] = libvgcode::convert(color);
+        }
+        m_viewer.set_tool_colors(palette);
     }
 
     std::string loadGcode(const std::string& path) {
@@ -638,7 +673,23 @@ public:
         return std::string(buf);
     }
 
-    // PathVertex preserves the processor's exact source line, including arc-generated vertices.
+    // Expose processor values for numeric preview verification.
+    std::string getMoveInfo(int move) const {
+        if (!m_initialized || move < 0 || static_cast<size_t>(move) >= m_viewer.get_vertices_count()) {
+            return "{}";
+        }
+        const auto& vertex = m_viewer.get_vertex_at(static_cast<size_t>(move));
+        char buf[512];
+        std::snprintf(buf, sizeof(buf),
+            "{\"position\":[%.3f,%.3f,%.3f],\"height\":%.4f,\"width\":%.4f,\"feedrate\":%.2f,\"actual_feedrate\":%.2f,\"fan_speed\":%.2f,\"temperature\":%.2f,\"role\":%d,\"type\":%d,\"pressure_advance\":%.4f,\"volumetric_rate\":%.4f,\"gcode_id\":%u}",
+            vertex.position[0], vertex.position[1], vertex.position[2],
+            vertex.height, vertex.width, vertex.feedrate, vertex.actual_feedrate,
+            vertex.fan_speed, vertex.temperature, static_cast<int>(vertex.role), static_cast<int>(vertex.type),
+            vertex.pressure_advance, vertex.volumetric_rate(), vertex.gcode_id
+        );
+        return std::string(buf);
+    }
+
     unsigned int getMoveGcodeLine(int move) const {
         if (!m_initialized || move < 0 || static_cast<size_t>(move) >= m_viewer.get_vertices_count()) return 0;
         return m_viewer.get_vertex_at(static_cast<size_t>(move)).gcode_id;
@@ -898,6 +949,17 @@ public:
         m_bed.setPolygon(poly);
     }
 
+    emscripten::val getBedPolygon() const {
+        auto result = emscripten::val::array();
+        for (const auto& point : m_bed.getPolygon()) {
+            auto p = emscripten::val::array();
+            p.call<void>("push", point.first);
+            p.call<void>("push", point.second);
+            result.call<void>("push", p);
+        }
+        return result;
+    }
+
     void resize(int w, int h) {
         m_width = (w > 0) ? w : 1;
         m_height = (h > 0) ? h : 1;
@@ -1053,10 +1115,12 @@ EMSCRIPTEN_BINDINGS(orca_preview) {
         .constructor<>()
         .function("init", &OrcaPreview::init)
         .function("loadGcode", &OrcaPreview::loadGcode)
+        .function("setToolColors", &OrcaPreview::setToolColors)
         .function("setLayerRange", &OrcaPreview::setLayerRange)
         .function("setMove", &OrcaPreview::setMove)
         .function("getMoveRange", &OrcaPreview::getMoveRange)
         .function("getMoveGcodeLine", &OrcaPreview::getMoveGcodeLine)
+        .function("getMoveInfo", &OrcaPreview::getMoveInfo)
         .function("getLayersZs", &OrcaPreview::getLayersZs)
         .function("getLayerZ", &OrcaPreview::getLayerZ)
         .function("setViewType", &OrcaPreview::setViewType)
@@ -1068,6 +1132,7 @@ EMSCRIPTEN_BINDINGS(orca_preview) {
         .function("setLightTheme", &OrcaPreview::setLightTheme)
         .function("setBed", &OrcaPreview::setBed)
         .function("setBedPolygon", &OrcaPreview::setBedPolygon)
+        .function("getBedPolygon", &OrcaPreview::getBedPolygon)
         .function("resize", &OrcaPreview::resize)
         .function("render", &OrcaPreview::render)
         .function("renderMatrices", &OrcaPreview::renderMatrices)

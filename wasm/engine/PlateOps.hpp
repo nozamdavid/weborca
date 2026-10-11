@@ -51,6 +51,13 @@ nlohmann::json addPlate(
     Slic3r::DynamicPrintConfig& config
 );
 
+nlohmann::json duplicatePlate(
+    const nlohmann::json& args,
+    Slic3r::Model& model,
+    Slic3r::PlateDataPtrs& plates,
+    Slic3r::DynamicPrintConfig& config
+);
+
 nlohmann::json deletePlate(
     const nlohmann::json& args,
     Slic3r::Model& model,

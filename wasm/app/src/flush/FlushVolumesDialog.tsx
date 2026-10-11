@@ -21,8 +21,8 @@ export const FlushVolumesDialog: React.FC<{ onClose: () => void }> = ({ onClose 
     setMatrix((m) => m.map((x, i) => (i === k ? v : x)));
   };
   const apply = async () => {
-    await applyOptionChange('flush_volumes_matrix', matrix.join(','), 'filament');
-    await applyOptionChange('flush_multiplier', String(multiplier), 'filament');
+    await applyOptionChange('flush_volumes_matrix', matrix.join(','), 'filament', undefined, null);
+    await applyOptionChange('flush_multiplier', String(multiplier), 'filament', undefined, null);
     onClose();
   };
   const swatch = (i: number) => <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: colours[i] || '#888', border: '1px solid rgba(255,255,255,0.4)', verticalAlign: 'middle' }} />;

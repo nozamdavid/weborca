@@ -1,5 +1,6 @@
 import { useObjectListStore } from "./objectListStore";
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { PrimitiveShape, VolumeType } from './types';
 import { usePaintToolsStore } from '../paint-tools';
 import { usePlateStore } from '../plate/plateStore';
@@ -19,10 +20,11 @@ export interface ContextMenuProps {
   volumeId?: number;
   volumeType?: VolumeType;
   currentExtruder?: number;
+  isMulti?: boolean;
   onClose: () => void;
-  onAddVolume: (objectId: number, type: VolumeType, shape: PrimitiveShape) => void;
-  onRename: () => void;
-  onDelete: () => void;
+  onAddVolume?: (objectId: number, type: VolumeType, shape: PrimitiveShape) => void;
+  onRename?: () => void;
+  onDelete?: () => void;
   onSetExtruder?: (extruder: number) => void;
 }
 
@@ -32,18 +34,31 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   isObject,
   objectId,
   volumeId,
-  currentExtruder = 0,
+  currentExtruder,
+  isMulti = false,
   onClose,
   onAddVolume,
   onRename,
   onDelete,
   onSetExtruder
 }) => {
-    const { t } = useTranslation();
+  const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
+  const submenuRef = useRef<HTMLDivElement>(null);
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
+  const [submenuPosition, setSubmenuPosition] = useState({ left: 0, top: 0 });
   const selectedFilaments = useAppStore((s) => s.selectedFilaments);
   const currentConfig = useAppStore((s) => s.currentConfig);
+
+  const objectTree = useObjectListStore((s) => s.objects);
+  const targetObj = objectTree.find((o) => o.id === objectId);
+  const targetVol = volumeId !== undefined ? targetObj?.volumes?.find((v) => v.id === volumeId) : undefined;
+  const effectiveExtruder =
+    currentExtruder !== undefined
+      ? currentExtruder
+      : isObject
+      ? (parseInt(targetObj?.config?.extruder || '0', 10) || (targetObj?.volumes?.[0]?.extruder || 0))
+      : (targetVol?.extruder || 0);
 
   const rawColors = (currentConfig['filament_colour'] || '').split(';').map((c) => c.trim());
   const defaultColors = ['#16417C', '#58B957', '#F5D130', '#E53935', '#8E24AA', '#00ACC1', '#FB8C00', '#D81B60'];
@@ -54,9 +69,90 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     color: rawColors[i] || defaultColors[i % defaultColors.length]
   }));
 
+  useLayoutEffect(() => {
+    if (!activeSubmenu || !submenuRef.current) return;
+    const anchor = menuRef.current?.querySelector(`#menu-item-${activeSubmenu}`)?.getBoundingClientRect();
+    if (!anchor) return;
+    const submenu = submenuRef.current.getBoundingClientRect();
+    setSubmenuPosition({
+      left: Math.max(10, anchor.right + submenu.width <= window.innerWidth - 10 ? anchor.right : anchor.left - submenu.width),
+      top: Math.max(10, Math.min(anchor.top, window.innerHeight - submenu.height - 10))
+    });
+  }, [activeSubmenu, slotCount]);
+
+  // Portals keep flyouts outside the main menu's scrolling/clipping container.
+  const submenuStyle: React.CSSProperties = {
+    position: 'fixed', ...submenuPosition,
+    maxHeight: window.innerHeight - 20, overflowY: 'auto',
+    background: 'var(--panel-bg)', border: '1px solid var(--control-bg)',
+    borderRadius: 6, boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+    minWidth: 140, padding: '4px 0', zIndex: 10000,
+    color: 'var(--text-color)', fontSize: '0.82rem', userSelect: 'none'
+  };
+
+  const handleAddVolume = (objId: number, type: VolumeType, shape: PrimitiveShape) => {
+    if (onAddVolume) {
+      onAddVolume(objId, type, shape);
+    } else {
+      void useObjectListStore.getState().addVolume({ objectId: objId, type, shape });
+    }
+  };
+
+  const handleDelete = async () => {
+    if (onDelete) {
+      onDelete();
+      return;
+    }
+    const plate = usePlateStore.getState();
+    if (isMulti || plate.extraSelection.length > 0) {
+      await plate.deleteSelected();
+      await useObjectListStore.getState().refreshTree();
+    } else if (isObject) {
+      await useObjectListStore.getState().deleteObject(objectId);
+    } else if (volumeId !== undefined) {
+      await useObjectListStore.getState().deleteVolume(objectId, volumeId);
+    }
+  };
+
+  const handleSetExtruder = async (ext: number) => {
+    if (onSetExtruder) {
+      onSetExtruder(ext);
+      return;
+    }
+    const plate = usePlateStore.getState();
+    if (isMulti || plate.extraSelection.length > 0) {
+      const allIds = [plate.selectedObjectId, ...plate.extraSelection.map((s) => s.objectId)].filter(
+        (id): id is number => id !== null
+      );
+      for (const id of new Set(allIds)) {
+        await useObjectListStore.getState().setObjectExtruder(id, ext);
+      }
+    } else if (isObject) {
+      await useObjectListStore.getState().setObjectExtruder(objectId, ext);
+    } else if (volumeId !== undefined) {
+      await useObjectListStore.getState().setVolumeExtruder(objectId, volumeId, ext);
+    }
+  };
+
+  const handleRename = () => {
+    if (onRename) {
+      onRename();
+      return;
+    }
+    const currentName = isObject ? (targetObj?.name ?? '') : (targetVol?.name ?? '');
+    const next = typeof window !== 'undefined' && window.prompt ? window.prompt(t("Rename"), currentName) : null;
+    if (next && next.trim()) {
+      if (isObject) {
+        void useObjectListStore.getState().renameObject(objectId, next.trim());
+      } else if (volumeId !== undefined) {
+        void useObjectListStore.getState().renameVolume(objectId, volumeId, next.trim());
+      }
+    }
+  };
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) && !submenuRef.current?.contains(e.target as Node)) {
         onClose();
       }
     };
@@ -91,7 +187,6 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   ];
 
   const renderExtruderMenuItem = () => {
-    if (!onSetExtruder) return null;
     return (
       <div
         id="menu-item-extruder"
@@ -110,34 +205,19 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         <span>{t("Change Filament")}</span>
         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▶</span>
 
-        {activeSubmenu === 'extruder' && (
-          <div
-            id="submenu-extruder"
-            data-testid="submenu-extruder"
-            style={{
-              position: 'absolute',
-              left: '100%',
-              top: 0,
-              background: 'var(--panel-bg)',
-              border: '1px solid var(--control-bg)',
-              borderRadius: 6,
-              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-              minWidth: 140,
-              padding: '4px 0',
-              zIndex: 10000
-            }}
-          >
+        {activeSubmenu === 'extruder' && createPortal(
+          <div ref={submenuRef} id="submenu-extruder" data-testid="submenu-extruder" style={submenuStyle}>
             <div
               id="menu-action-extruder-0"
               data-testid="menu-action-extruder-0"
               onClick={() => {
-                onSetExtruder(0);
+                void handleSetExtruder(0);
                 onClose();
               }}
               style={{
                 padding: '6px 14px',
                 cursor: 'pointer',
-                fontWeight: currentExtruder === 0 ? 600 : 400
+                fontWeight: effectiveExtruder === 0 ? 600 : 400
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
@@ -153,7 +233,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 id={`menu-action-extruder-${slot.ext}`}
                 data-testid={`menu-action-extruder-${slot.ext}`}
                 onClick={() => {
-                  onSetExtruder(slot.ext);
+                  void handleSetExtruder(slot.ext);
                   onClose();
                 }}
                 style={{
@@ -162,7 +242,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
-                  fontWeight: currentExtruder === slot.ext ? 600 : 400
+                  fontWeight: effectiveExtruder === slot.ext ? 600 : 400
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
@@ -183,7 +263,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 <span>{t("Filament")}{slot.ext}</span>
               </div>
             ))}
-          </div>
+          </div>, document.body
         )}
       </div>
     );
@@ -194,6 +274,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       ref={menuRef}
       id="object-list-context-menu"
       data-testid="object-list-context-menu"
+      onScroll={() => setActiveSubmenu(null)}
       style={{
         position: 'fixed',
         left: Math.min(x, window.innerWidth - 220),
@@ -212,7 +293,82 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         userSelect: 'none'
       }}
     >
-      {isObject ? (
+      {isMulti ? (
+        <>
+          {renderExtruderMenuItem()}
+
+          <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
+
+          <div
+            id="menu-action-duplicate"
+            data-testid="menu-action-duplicate"
+            onClick={async () => {
+              await usePlateStore.getState().duplicateSelected();
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            {t("Clone")}
+          </div>
+
+          <div
+            id="menu-action-lock-orientation"
+            data-testid="menu-action-lock-orientation"
+            onClick={() => {
+              const plate = usePlateStore.getState();
+              const allRefs = [
+                { objectId: plate.selectedObjectId!, instanceId: plate.selectedInstanceId! },
+                ...plate.extraSelection
+              ];
+              for (const ref of allRefs) {
+                if (ref.instanceId !== undefined) {
+                  plate.toggleOrientationLock(ref.instanceId);
+                }
+              }
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            {(() => {
+              const plate = usePlateStore.getState();
+              const instId = plate.selectedInstanceId;
+              return instId && plate.isOrientationLocked(instId) ? t("Unlock Orientation") : t("Lock Orientation");
+            })()}
+          </div>
+
+          <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
+
+          <div
+            id="menu-action-delete"
+            data-testid="menu-action-delete"
+            onClick={async () => {
+              await handleDelete();
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer', color: '#f87171' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.15)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            {t("Delete")}
+          </div>
+        </>
+      ) : isObject ? (
         <>
           {addVolumeCategories.map((cat) => (
             <div
@@ -233,30 +389,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               <span>{cat.label}</span>
               <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▶</span>
 
-              {activeSubmenu === cat.type && (
-                <div
-                  id={`submenu-${cat.type}`}
-                  data-testid={`submenu-${cat.type}`}
-                  style={{
-                    position: 'absolute',
-                    left: '100%',
-                    top: 0,
-                    background: 'var(--panel-bg)',
-                    border: '1px solid var(--control-bg)',
-                    borderRadius: 6,
-                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-                    minWidth: 120,
-                    padding: '4px 0',
-                    zIndex: 10000
-                  }}
-                >
+              {activeSubmenu === cat.type && createPortal(
+                <div ref={submenuRef} id={`submenu-${cat.type}`} data-testid={`submenu-${cat.type}`} style={submenuStyle}>
                   {shapes.map(({ label, shape }) => (
                     <div
                       key={shape}
                       id={`menu-action-${cat.type}-${shape}`}
                       data-testid={`menu-action-${cat.type}-${shape}`}
                       onClick={() => {
-                        onAddVolume(objectId, cat.type, shape);
+                        handleAddVolume(objectId, cat.type, shape);
                         onClose();
                       }}
                       style={{
@@ -273,7 +414,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                       {label}
                     </div>
                   ))}
-                </div>
+                </div>, document.body
               )}
             </div>
           ))}
@@ -428,7 +569,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             id="menu-action-rename"
             data-testid="menu-action-rename"
             onClick={() => {
-              onRename();
+              handleRename();
               onClose();
             }}
             style={{ padding: '6px 14px', cursor: 'pointer' }}
@@ -447,8 +588,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           <div
             id="menu-action-delete"
             data-testid="menu-action-delete"
-            onClick={() => {
-              onDelete();
+            onClick={async () => {
+              await handleDelete();
               onClose();
             }}
             style={{ padding: '6px 14px', cursor: 'pointer', color: '#f87171' }}
@@ -479,7 +620,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 e.currentTarget.style.background = 'transparent';
               }}
             >
-              {t("🔤 Edit 3D Text")}</div>
+              {t("✏️ Edit 3D Text")}</div>
           )}
 
           <div
@@ -522,7 +663,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             id="menu-action-rename-volume"
             data-testid="menu-action-rename-volume"
             onClick={() => {
-              onRename();
+              handleRename();
               onClose();
             }}
             style={{ padding: '6px 14px', cursor: 'pointer' }}
@@ -540,8 +681,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           <div
             id="menu-action-delete-volume"
             data-testid="menu-action-delete-volume"
-            onClick={() => {
-              onDelete();
+            onClick={async () => {
+              await handleDelete();
               onClose();
             }}
             style={{ padding: '6px 14px', cursor: 'pointer', color: '#f87171' }}

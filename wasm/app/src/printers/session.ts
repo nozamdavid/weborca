@@ -12,7 +12,9 @@ function sync() {
   const store = usePrinterConnectionStore;
   const { printers, selectedPrinterId } = store.getState();
   const printer = printers.find((p) => p.id === selectedPrinterId);
-  const key = printer ? JSON.stringify(printer) : '';
+  // Saving slicer filament choices does not change the connection. Reconnecting here
+  // clears live inventory and unmounts the sync dialog while it is still applying slots.
+  const key = printer ? JSON.stringify({ ...printer, filamentPresets: undefined, filamentColors: undefined }) : '';
   if (key === currentKey) return;
 
   stop?.();

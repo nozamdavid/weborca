@@ -48,8 +48,8 @@ Jobs run strictly in submission order.
 | `selectPresets` | `{"printer": "...", "process": "...", "filaments": ["..."]}` | `{"printer", "process", "filaments"}` actually selected; error if a name is unknown. Clears option overrides |
 | `getConfig` | `{}` | `{key: serializedValue}` for the full config slicing will use (presets merged plus overrides) |
 | `getPresetConfig` | `{"kind": "printer" \| "process" \| "filament", "name": "..."}` | `{key: serializedValue}` for the options of that one preset (inheritance resolved), without selecting it or applying overrides; error if the name is unknown |
-| `setOptions` | `{"options": {key: serializedValue}}` | `{"errors": [{"key", "error"}]}`; valid keys become overrides on top of the presets; values use the same serialization as Orca profile JSON |
-| `resetOptions` | `{}` | `{}` |
+| `setOptions` | `{"options": {key: serializedValue}}` | `{"errors": [{"key", "error", "code", "fatal"}]}`; batch option overrides with atomic rollback for fatal errors (`invalid_value`, `unsupported_type`); forward-compatible unknown keys return non-fatal errors (`code: "unknown_key"`, `fatal: false`) allowing valid options in the batch to apply |
+| `resetOptions` | `{}` or `{"key": "...", "filamentIndex": n, "layoutIndex": n}` or `{"filamentIndex": n, "overrides": {key: serializedValue}, "baseline": {key: serializedValue}}` | `{}` for direct resets; `{"filamentOverrides": {key: serializedValue}}` for projecting the remaining override map |
 | `setupCalibration` | `{"mode": CalibMode, "start", "end", "step", "extruder_id", "print_numbers", "nozzle_based_resize", "vfa_layer_height", "speeds": [...], "accelerations": [...], "test_model", "freqStartX", "freqEndX", "freqStartY", "freqEndY", "shaper_type", "meshes": {"<model>.drc": "<decoded STL path>"}}` | `{"ok": true}`; ports desktop `Plater::calib_*` (CalibMode 1-3 PA, 6 temperature, 7 max volumetric speed, 8 VFA, 9 retraction, 10 input shaping frequency (`start` is the damping factor), 11 input shaping damping (`start`/`end` damping, `freqStartX/Y`, `shaper_type`), 12 cornering (`start`/`end`, `test_model` 0-2)) (wasm/engine/CalibOps.cpp): replaces the plate with the calibration model, cuts and configures it like desktop, and stores the calib params `slice` applies. The engine has no Draco decoder, so the caller decodes `resources/calib/**/*.drc` to STL first. `loadModel`, `addModel` and `openProject` reset the calib mode, as desktop does on file load |
 | `parsePreset` | `{"format": "json" \| "ini", "text": "..."}` | `{"config": {key: serializedValue}, "meta": {"name", "inherits", "type", ...}, "droppedKeys": [...]}`; loads one desktop preset file with desktop's loader (`load_from_json` / `load_from_ini_string`), including legacy key migration; unknown keys are dropped; error on malformed JSON |
 | `loadModel` | `{"path": "/models/x.stl"}` | `{"objects": [{"name", "instances", "volumes", "size": [x, y, z]}]}`; replaces the current model |
@@ -59,6 +59,14 @@ Jobs run strictly in submission order.
 | `autoOrient`, `getPlanarFacets`, `placeOnFace`, `splitObject`, `splitVolume`, `simplifyVolume`, `meshBoolean`, `addSvg`, `updateSvg`, `getSvg`, `setBrimEars`, `getBrimEars`, `clearBrimEars` | see API-edit-ops.md | object editing ops |
 
 Slicing must produce G-code identical (wasm/spike/compare_gcode.sh exit 0) to `wasm/spike/slice_driver.cpp` for the same model, presets and arrangement.
+
+For `setOptions`, batch evaluation uses atomic rollback for known options:
+- If any known option fails type checks or deserialization, the entire batch is rejected with fatal errors (`code: "invalid_value"` or `"unsupported_type"`, `fatal: true`), and existing overrides in `m_options_override` remain unchanged.
+- Unknown keys are ignored for override mutation and returned as non-fatal errors (`code: "unknown_key"`, `fatal: false`) for forward compatibility, allowing any sibling valid options in the batch to apply.
+
+For `resetOptions` with `overrides`, only the specified filament's vector cells are replaced; other slots and project-wide settings remain in the returned map. The optional `baseline` supplies effective serialized values from saved user presets. Without it, the selected system presets supply the baseline. This projection returns a map without applying it to the engine; the caller reapplies the map with its selected preset values.
+
+`mergeFilamentPresets` validates known numeric values before composing slot vectors and throws on malformed values. Unknown keys are skipped for forward compatibility. Composition does not mutate the active engine configuration.
 
 ## JavaScript (wasm/web/)
 

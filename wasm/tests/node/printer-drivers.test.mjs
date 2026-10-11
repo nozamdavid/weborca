@@ -57,6 +57,73 @@ describe('printer drivers', () => {
       assert.equal(await createPrinterApi(printerOf('moonraker', mock.port)).test(), 'Moonraker v0.9.0-mock on mockhost, Klipper ready');
     });
 
+    test('Snapmaker RFID materials preserve tool numbers, unknown spools, black colors and live unloads', async () => {
+      const snap = await startMockMoonraker({ filamentStatus: {
+        filament_detect: { info: [
+          { MAIN_TYPE: 'NONE', ARGB_COLOR: 0xffffffff },
+          { MAIN_TYPE: 'PLA', SUB_TYPE: 'Silk', VENDOR: 'Bambu Lab', ARGB_COLOR: 0xff0047bb },
+          { MAIN_TYPE: 'PLA', SUB_TYPE: 'Matte', ARGB_COLOR: 0xff000000 },
+          { MAIN_TYPE: 'PETG', ARGB_COLOR: 0xffff0000 }
+        ] },
+        'filament_feed left': { extruder0: { filament_detected: true }, extruder1: { filament_detected: true } },
+        'filament_feed right': { extruder2: { filament_detected: true }, extruder3: { filament_detected: false } }
+      } });
+      useGateway(readOnlyGateway);
+      const w = watch(createPrinterApi(printerOf('moonraker', snap.port)));
+      try {
+        await until(() => w.states.some(s => s.filaments?.length === 3), 'RFID materials from read-only object subscription');
+        assert.deepEqual(w.states.at(-1).filaments.map(s => [s.slotIndex, s.material, s.color]), [
+          [0, '', undefined], [1, 'PLA', '#0047BB'], [2, 'PLA', '#000000']
+        ]);
+        snap.push({ 'filament_feed left': { extruder0: { filament_detected: false } } });
+        await until(() => w.states.at(-1).filaments.length === 2, 'unloaded spool disappears');
+        assert.deepEqual(w.states.at(-1).filaments.map(s => s.slotIndex), [1, 2]);
+        assert.equal(snap.started.length, 0);
+        assert.equal(snap.uploads.length, 0);
+      } finally { w.stop(); await snap.close(); }
+    });
+
+    test('Snapmaker manual filament assignments fill non-RFID tools and follow edits', async () => {
+      const snap = await startMockMoonraker({ filamentStatus: {
+        filament_detect: { info: [{ MAIN_TYPE: 'NONE' }, { MAIN_TYPE: 'PLA', ARGB_COLOR: 0xff0047bb }, { MAIN_TYPE: 'PLA', ARGB_COLOR: 0xff000000 }, { MAIN_TYPE: 'NONE' }] },
+        print_task_config: { filament_type: ['PLA', 'PLA', 'PLA', 'PLA'], filament_vendor: ['Generic', 'Bambu Lab', 'Bambu Lab', 'Generic'], filament_color: [0xff8c9099, 0xff0047bb, 0xff000000, 0xffffffff], filament_exist: [true, true, true, true] },
+        'filament_feed left': { extruder0: { filament_detected: true }, extruder1: { filament_detected: true } },
+        'filament_feed right': { extruder2: { filament_detected: true }, extruder3: { filament_detected: true } }
+      } });
+      useGateway(readOnlyGateway);
+      const w = watch(createPrinterApi(printerOf('moonraker', snap.port)));
+      try {
+        await until(() => w.states.some(s => s.filaments?.length === 4), 'all four loaded tools arrive');
+        assert.deepEqual(w.states.at(-1).filaments.map(s => [s.slotIndex, s.material, s.color]), [
+          [0, 'PLA', '#8C9099'], [1, 'PLA', '#0047BB'], [2, 'PLA', '#000000'], [3, 'PLA', '#FFFFFF']
+        ]);
+        snap.push({ print_task_config: { filament_type: ['PETG', 'PLA', 'PLA', 'PLA'], filament_color: [0xff112233, 0xff0047bb, 0xff000000, 0xffffffff] } });
+        await until(() => w.states.at(-1).filaments[0].material === 'PETG', 'manual changes update inventory');
+        assert.equal(w.states.at(-1).filaments[0].color, '#112233');
+        snap.push({ print_task_config: { filament_exist: [false, true, true, true] } });
+        await until(() => w.states.at(-1).filaments.length === 3, 'removed filament is omitted even when metadata remains');
+        assert.equal(snap.started.length, 0);
+        assert.equal(snap.uploads.length, 0);
+      } finally { w.stop(); await snap.close(); }
+    });
+
+    test('Spoolman active spool reads pass the read-only gateway and follow changes and clears', async () => {
+      const spool = await startMockMoonraker({ spoolman: true, spool: { id: 12, filament: { name: 'Ocean', material: 'PETG', color_hex: '123456' } } });
+      useGateway(readOnlyGateway);
+      const w = watch(createPrinterApi(printerOf('moonraker', spool.port)));
+      try {
+        await until(() => w.states.some(s => s.filaments?.[0]?.id === 'spoolman:12'), 'active spool metadata');
+        assert.deepEqual(w.states.at(-1).filaments[0], { id: 'spoolman:12', slotIndex: 0, label: 'Spool 12 / Ocean', material: 'PETG', color: '#123456' });
+        spool.setSpool({ id: 13, filament: { material: 'PLA', color_hex: '000000' } });
+        await until(() => w.states.at(-1).filaments[0]?.id === 'spoolman:13', 'active spool change');
+        assert.equal(w.states.at(-1).filaments[0].color, '#000000');
+        spool.setSpool(null);
+        await until(() => w.states.at(-1).filaments.length === 0, 'active spool clear');
+        assert.ok(spool.spoolRequests.every(p => p.request_method === 'GET' && /^\/v1\/spool\/\d+$/.test(p.path) && !p.body));
+        assert.equal(spool.uploads.length, 0);
+      } finally { w.stop(); await spool.close(); }
+    });
+
     test('connect() builds the dashboard state, follows live updates and reconnects', async () => {
       useGateway(gateway);
       const w = watch(createPrinterApi(printerOf('moonraker', mock.port)));
@@ -142,7 +209,7 @@ describe('printer drivers', () => {
       const w = watch(api);
       await until(() => w.states.some((s) => s.webcams && s.files), 'full dashboard through the read-only gateway');
       w.stop();
-      const ALLOWED = ['server.connection.identify', 'printer.objects.list', 'printer.objects.subscribe', 'server.webcams.list', 'server.files.list', 'printer.info'];
+      const ALLOWED = ['server.connection.identify', 'printer.objects.list', 'printer.objects.subscribe', 'server.webcams.list', 'server.files.list', 'printer.info', 'server.info'];
       assert.deepEqual([...new Set(mock.rpcMethods)].sort(), ALLOWED.sort());
       assert.ok(mock.httpRequests.every((r) => r.method === 'GET'));
 

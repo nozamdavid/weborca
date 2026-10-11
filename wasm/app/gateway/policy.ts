@@ -12,13 +12,16 @@ export interface GatewayConfig {
   proxy?: string;
   /** Only allow requests that cannot change anything on the printer. */
   readOnly?: boolean;
-  /** Comma list of cloud services (keys of CLOUD_SERVICES) whose https hosts may be reached in addition to `proxy`. */
+  /** Comma list of cloud services (keys of CLOUD_SERVICES) to enable (dedicated bridges or restricted HTTPS hosts). */
   cloud?: string;
 }
 
 /** Cloud printer services the gateway can be told to reach, with the only hosts each one may use. */
 export const CLOUD_SERVICES: Record<string, string[]> = {
-  'prusa-connect': ['connect.prusa3d.com']
+  'prusa-connect': ['connect.prusa3d.com'],
+  // Dedicated cloud bridges must not open the generic HTTP proxy.
+  'bambu-cloud': [],
+  'creality-cloud': []
 };
 
 export function cloudHosts(config: GatewayConfig): Set<string> {
@@ -136,21 +139,45 @@ export async function resolveTarget(
 // Read-only mode
 // ---------------------------------------------------------------------------------------------
 
-/** Path segments of Moonraker API calls that change the printer. Checked on the first three segments only. */
+/** Path segments of Moonraker API calls that change the printer. */
 const MUTATING_SEGMENTS = new Set([
   'script', 'emergency_stop', 'restart', 'firmware_restart', 'reboot', 'shutdown', 'services',
-  'start', 'pause', 'resume', 'cancel', 'move', 'copy', 'upload'
+  'start', 'pause', 'resume', 'cancel', 'move', 'copy', 'upload',
+  'delete', 'delete_file', 'delete_directory'
 ]);
 
 /**
- * HTTP in read-only mode: only GET/HEAD/OPTIONS, and not the API paths that would act on a GET.
- * Read-only mode exists for testing against a real printer, so it errs on the side of blocking.
+ * HTTP in read-only mode: only GET/HEAD/OPTIONS (plus Flashforge POST /detail),
+ * and not the API paths that would act on a GET.
+ * Decode encoded separators and nested escaping, then inspect every segment.
+ * Check even segments followed by '..': upstream routers may normalize them
+ * differently. Decoded query/fragment characters must not hide a path suffix.
  */
 export function httpAllowedInReadOnly(method: string, path: string): boolean {
-  if (method.toUpperCase() === 'POST' && path.split('?')[0].replace(/^\/+/, '') === 'detail') return true;
-  if (!['GET', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())) return false;
-  const segments = path.split('?')[0].split('/').filter(Boolean).slice(0, 3).map((s) => s.toLowerCase());
-  return !segments.some((s) => MUTATING_SEGMENTS.has(s) || s.startsWith('delete'));
+  const methodUpper = method.toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS', 'POST'].includes(methodUpper)) return false;
+
+  let decoded = path.split(/[?#]/)[0];
+  try {
+    for (let pass = 0; pass < 8; ++pass) {
+      decoded = decodeURIComponent(decoded);
+      // A decoded literal percent in a filename is safe to inspect as-is.
+      if (!/%[0-9a-f]{2}/i.test(decoded)) break;
+    }
+  } catch {
+    return false;
+  }
+  // Refuse paths requiring more decoding than the bounded inspection permits.
+  if (/%[0-9a-f]{2}/i.test(decoded)) return false;
+
+  const normalizedPath = decoded.replace(/\\+/g, '/');
+
+  if (methodUpper === 'POST') {
+    return normalizedPath.replace(/^\/+/, '') === 'detail';
+  }
+
+  const segments = normalizedPath.split('/').filter(Boolean).map((s) => s.toLowerCase());
+  return !segments.some((s) => MUTATING_SEGMENTS.has(s) || (s.startsWith('delete') && !s.includes('.')));
 }
 
 /** Moonraker JSON-RPC methods that only read. */
@@ -162,6 +189,7 @@ export const READ_ONLY_RPC_METHODS = new Set([
   'server.history.list', 'server.history.get_job', 'server.history.totals',
   'server.webcams.list', 'server.database.list', 'server.database.get_item',
   'server.job_queue.status', 'server.temperature_store', 'server.gcode_store',
+  'server.spoolman.get_spool_id',
   'machine.system_info', 'machine.proc_stats', 'machine.update.status'
 ]);
 
@@ -186,6 +214,12 @@ export function checkRpcFrame(text: string): RpcVerdict {
   for (const request of requests) {
     const method = request && typeof request === 'object' ? (request as { method?: unknown }).method : undefined;
     if (typeof method === 'string' && READ_ONLY_RPC_METHODS.has(method)) continue;
+    // Spoolman's proxy can also write; allow only a single-spool metadata read.
+    if (method === 'server.spoolman.proxy') {
+      const params = (request as { params?: Record<string, unknown> }).params;
+      if (params && params.request_method === 'GET' && typeof params.path === 'string' && /^\/v1\/spool\/[1-9]\d*$/.test(params.path) &&
+          Object.keys(params).every(key => ['request_method', 'path', 'use_v2_response'].includes(key))) continue;
+    }
     const id = request && typeof request === 'object' ? ((request as { id?: unknown }).id ?? null) : null;
     replies.push(JSON.stringify({
       jsonrpc: '2.0',

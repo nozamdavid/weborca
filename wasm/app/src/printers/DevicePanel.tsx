@@ -9,6 +9,8 @@ import { useTranslation } from "../i18n";
 
 /** Where the printer's own web UI lives: the explicit UI address, else the host (Moonraker's API port 7125 maps to the UI on 80). */
 export function webUiUrl(printer: PhysicalPrinter): string | undefined {
+  if (printer.host_type === 'bambu-cloud') return undefined;
+  if (printer.host_type === 'creality-cloud') return printer.cloud_region === 'china' ? 'https://www.crealitycloud.cn/' : 'https://www.crealitycloud.com/';
   const address = (printer.print_host_webui || '').trim() || printer.print_host.trim();
   if (!address) return undefined;
   try {
@@ -116,7 +118,7 @@ const StatusColumn: React.FC<{ state: PrinterState | null; active: boolean }> = 
 const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ printer, active }) => {
     const { t } = useTranslation();
   const url = webUiUrl(printer);
-  const cloud = printer.host_type === 'prusaconnect';
+  const cloud = printer.host_type === 'prusaconnect' || printer.host_type === 'creality-cloud';
   // Load the UI the first time the tab shows, then keep it alive so switching tabs does not reload it.
   const [visited, setVisited] = useState(false);
   useEffect(() => {
@@ -124,7 +126,7 @@ const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ 
   }, [active]);
   useEffect(() => setVisited(active), [url]);
   // With a gateway on the user's computer the UI is framed from its own http://<label>.localhost origin, which an https page may embed.
-  const local = !!url && !!localGatewayBase(printer);
+  const local = !cloud && !!url && !!localGatewayBase(printer);
   const [session, setSession] = useState<{ url?: string; error?: string }>({});
   useEffect(() => {
     setSession({});
@@ -138,8 +140,8 @@ const WebUiColumn: React.FC<{ printer: PhysicalPrinter; active: boolean }> = ({ 
     return (
       <div className="device-ui-col" id="device-webui">
         <div className="device-notice" id="device-webui-blocked">
-          {t("Prusa Connect cannot be shown inside this page.")}{' '}
-          <a href={url} target="_blank" rel="noreferrer" id="device-webui-open">{t("Open Prusa Connect in a new tab")}</a>
+          {printer.host_type === 'prusaconnect' ? t('Prusa Connect cannot be shown inside this page.') : t('Open Creality Cloud to use its device controls.')}{' '}
+          <a href={url} target="_blank" rel="noreferrer" id="device-webui-open">{printer.host_type === 'prusaconnect' ? t('Open Prusa Connect in a new tab') : t('Open Creality Cloud in a new tab')}</a>
         </div>
       </div>
     );

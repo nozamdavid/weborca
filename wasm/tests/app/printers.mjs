@@ -14,12 +14,13 @@ import { startMockMoonraker } from '../node/lib/mockPrinters.mjs';
 import { startServer, stopServer } from './lib/dist.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = parseInt(process.env.PORT || '5111', 10);
+const PORT = parseInt(process.env.PORT || '5115', 10);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const CUBE = fs.readFileSync(path.resolve(__dirname, '../../../tests/data/20mm_cube.obj'));
 
 // The app server (vite preview) inherits this and turns its printer gateway on for private addresses.
 process.env.ORCA_PRINTER_PROXY = 'private';
+process.env.ORCA_PRINTER_CLOUD = 'bambu-cloud';
 
 const sha256 = (buffer) => createHash('sha256').update(buffer).digest('hex');
 
@@ -182,10 +183,92 @@ async function runSuite(browserType, name, mock) {
 const mock = await startMockMoonraker();
 const ffMock = await startMockFlashforge();
 await startServer(PORT, 'printers');
+async function runBambuCloudSuite(browserType, name) {
+  const browser = await browserType.launch();
+  const page = await browser.newPage({ viewport: { width: 1400, height: 850 } });
+  const log = (msg) => console.log(`[${name} Bambu Cloud] ${msg}`);
+  const text = (selector) => page.locator(selector).innerText();
+
+  try {
+    await page.route('**/_printer/bambu-cloud/api/v1/user-service/user/login', async route => {
+      const postData = JSON.parse(route.request().postData() || '{}');
+      if (postData.account === 'test@example.com' && postData.password === 'challenge') {
+        await route.fulfill({ status: 200, json: { loginType: 'verifyCode' } });
+      } else if (postData.account === 'test@example.com' && (postData.password === 'good' || postData.code === '123456')) {
+        await route.fulfill({ status: 200, json: { accessToken: 'valid_token' } });
+      } else {
+        await route.fulfill({ status: 400, json: { error: 'Bad login' } });
+      }
+    });
+
+    await page.route('**/_printer/bambu-cloud/api/v1/design-user-service/my/preference', async route => {
+      await route.fulfill({ status: 200, json: { uid: 9999 } });
+    });
+
+    await page.route('**/_printer/bambu-cloud/api/v1/iot-service/api/user/bind', async route => {
+      if (route.request().headers().authorization === 'Bearer valid_token') {
+        await route.fulfill({ status: 200, json: { devices: [{ dev_id: 'SER123', name: 'My Cloud Printer' }] } });
+      } else {
+        await route.fulfill({ status: 401, body: 'Unauthorized' });
+      }
+    });
+
+    await page.goto(BASE_URL);
+    await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
+    await page.click('#tab-device');
+    await page.click('#device-add-printer');
+    await page.waitForSelector('#printer-connection-dialog');
+
+    log('configure bambu cloud');
+    await page.fill('#pc-name', 'Mock Bambu Cloud');
+    await page.selectOption('#pc-host-type', 'bambu-cloud');
+
+    await page.fill('#pc-cloud-account', 'test@example.com');
+    await page.fill('#pc-cloud-password', 'wrong');
+    await page.click('button:has-text("Log in / Get devices")');
+    await page.waitForFunction(() => document.getElementById('pc-test-result')?.dataset.ok === 'false');
+
+    await page.fill('#pc-cloud-password', 'challenge');
+    await page.click('button:has-text("Log in / Get devices")');
+    await page.waitForFunction(() => document.getElementById('pc-test-result')?.textContent.includes('Verification code required'));
+    await page.fill('#pc-cloud-code', '123456');
+    await page.click('button:has-text("Log in / Get devices")');
+    await page.waitForFunction(() => document.getElementById('pc-test-result')?.dataset.ok === 'true');
+    assert.equal(await page.inputValue('#pc-cloud-account'), 'test@example.com', 'the email remains editable after MQTT username lookup');
+
+    await page.fill('#pc-cloud-password', 'good');
+    await page.click('button:has-text("Log in / Get devices")');
+
+    await page.waitForFunction(() => document.getElementById('pc-test-result')?.dataset.ok === 'true');
+    assert.ok((await text('#pc-test-result')).includes('Found 1 devices.'));
+
+    const serialValue = await page.inputValue('#pc-serial-select');
+    assert.equal(serialValue, 'SER123');
+
+    // Test connection with valid token
+    await page.click('#pc-test');
+    await page.waitForFunction(() => document.getElementById('pc-test-result')?.textContent.includes('Connected to My Cloud Printer'));
+
+    assert.equal(await page.inputValue('#pc-cloud-account'), 'test@example.com');
+    assert.doesNotMatch(await text('#pc-gateway-status'), /does not allow Prusa Connect/);
+    await page.evaluate(() => window.__prefsStore.getState().setGeneralPref('language', 'es'));
+    await page.waitForSelector('button:has-text("Iniciar sesión / Obtener dispositivos")');
+    assert.match(await page.locator('#pc-cloud-account').locator('..').innerText(), /Cuenta \(correo electrónico\)/);
+    await page.evaluate(() => window.__prefsStore.getState().setGeneralPref('language', 'en'));
+    log('password, code challenge, re-login and test successful');
+    await page.click('#pc-cancel');
+  } finally {
+    await browser.close();
+  }
+}
+
 try {
+  await runBambuCloudSuite(chromium, 'chromium');
+  await runBambuCloudSuite(firefox, 'firefox');
   await runSuite(chromium, 'chromium', mock);
   await runSuite(firefox, 'firefox', mock);
   await runFlashforgeSuite(chromium, 'chromium', ffMock);
+  await runFlashforgeSuite(firefox, 'firefox', ffMock);
   console.log('All printer tests passed on Chromium and Firefox.');
 } catch (err) {
   console.error('Printer tests FAILED:', err);
@@ -220,19 +303,21 @@ async function runFlashforgeSuite(browserType, name, mock) {
 
     await page.click('#pc-test');
     await page.waitForSelector('#pc-test-result');
-    if (await text('#pc-test-result') !== '✓ Flashforge printer connected') {
+    if (await text('#pc-test-result') !== '✓ Adventurer 5M Pro (fw 1.2.3) connected') {
        const res = await text('#pc-test-result');
        throw new Error(`Test connection failed: ${res}`);
     }
-    
+
     await page.click('#pc-save');
     await page.waitForSelector('#printer-connection-dialog', { state: 'detached' });
 
     log('device tab connected');
     await page.waitForSelector('#device-connection-dot[data-status="online"]');
-    
-    await page.waitForFunction(() => document.getElementById('device-state')?.textContent === 'unknown');
-    log('test passed');
+
+    await page.waitForFunction(() => document.getElementById('device-state')?.textContent === 'ready');
+    assert.equal(await text('[data-heater="bed"] .device-row span:last-child'), '60.0 / 60 °C');
+    assert.equal(await text('[data-heater="extruder"] .device-row span:last-child'), '210.0 / 210 °C');
+    log('verified status and temperatures');
 
     // Test rejection
     await page.click('#tab-device');
@@ -243,7 +328,7 @@ async function runFlashforgeSuite(browserType, name, mock) {
     const testRes = await text('#pc-test-result');
     if (!testRes.includes('Invalid credentials')) throw new Error('Did not reject invalid credentials: ' + testRes);
     await page.click('#pc-cancel');
-    
+
     await page.click('#device-edit-printer');
     await page.click('#pc-delete');
   } finally {

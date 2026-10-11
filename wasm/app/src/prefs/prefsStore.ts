@@ -30,8 +30,10 @@ export interface DisplayPreferences {
   showLabels: boolean;
   showBuildVolume: boolean;
   showWireframe: boolean;
+  showOverhang: boolean;
   showNavigator: boolean;
   cameraType: 'perspective' | 'orthographic';
+  autoPerspective: boolean;
   showSidebar: boolean;
   theme: 'dark' | 'light' | 'system';
   toolbarOrientation: 'vertical' | 'horizontal';
@@ -69,8 +71,10 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
     showLabels: false,
     showBuildVolume: true,
     showWireframe: false,
+    showOverhang: false,
     showNavigator: true,
     cameraType: 'perspective',
+    autoPerspective: false,
     showSidebar: true,
     theme: 'dark',
     toolbarOrientation: 'vertical',
@@ -159,8 +163,11 @@ export const usePrefsStore = create<PrefsStoreState>((set, get) => ({
   setCameraPref: (key, value) => {
     set((state) => {
       const nextCamera = { ...state.camera, [key]: value };
-      saveStoredPreferences({ general: state.general, camera: nextCamera, display: state.display });
-      return { camera: nextCamera };
+      const nextDisplay = key === 'defaultCameraType'
+        ? { ...state.display, cameraType: value as CameraPreferences['defaultCameraType'] }
+        : state.display;
+      saveStoredPreferences({ general: state.general, camera: nextCamera, display: nextDisplay });
+      return { camera: nextCamera, display: nextDisplay };
     });
   },
 

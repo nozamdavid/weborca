@@ -978,8 +978,15 @@ int ConfigBase::load_from_json(const std::string &file, ConfigSubstitutionContex
                 std::string value_str;
 
                 if (it.value().is_string()) {
-                    //bool test1 = (it.key() == std::string("end_gcode"));
-                    this->set_deserialize(opt_key, it.value(), substitution_context);
+                    value_str = it.value().get<std::string>();
+                    const ConfigOptionDef *option_def = config_def->get(opt_key);
+                    // JSON stores scalar strings literally, except the bed paths which
+                    // save_to_json writes in the legacy serialized representation.
+                    // Encode literal text before passing it through the INI deserializer.
+                    if (option_def != nullptr && option_def->type == coString &&
+                        opt_key != "bed_custom_texture" && opt_key != "bed_custom_model")
+                        value_str = escape_string_cstyle(value_str);
+                    this->set_deserialize(opt_key, value_str, substitution_context);
                     //some logic for special values
                     if (opt_key == "support_type") {
                         //std::string new_value = dynamic_cast<ConfigOptionString*>(this->option(opt_key))->value;

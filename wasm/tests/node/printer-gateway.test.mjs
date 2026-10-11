@@ -59,13 +59,30 @@ describe('policy', () => {
 
   test('read-only HTTP', () => {
     for (const [method, path] of [['GET', '/server/info'], ['GET', '/printer/objects/query?extruder'], ['HEAD', '/'], ['GET', '/api/job'],
-      ['GET', '/server/files/gcodes/pause.gcode'], ['GET', '/webcam/?action=stream'], ['OPTIONS', '/printer/info']]) {
+      ['GET', '/server/files/gcodes/pause.gcode'], ['GET', '/webcam/?action=stream'], ['OPTIONS', '/printer/info'],
+      ['GET', '/server/files/gcodes/delete.gcode'], ['GET', '/server/files/gcodes/delete_something.gcode'],
+      ['GET', '/server/files/gcodes/100%25_fan.gcode'], ['GET', '/server/files/gcodes/my%20model.gcode'],
+      ['GET', '/server/files/gcodes/folder/../test.gcode'],
+      ['POST', '/detail'], ['POST', '/detail?x=1'], ['POST', '/%64etail']]) {
       assert.equal(httpAllowedInReadOnly(method, path), true, `${method} ${path}`);
     }
     for (const [method, path] of [['POST', '/server/info'], ['PUT', '/api/v1/files/usb/a.gcode'], ['DELETE', '/server/files/gcodes/a.gcode'],
       ['GET', '/printer/gcode/script?script=G28'], ['GET', '/printer/print/start?filename=a'], ['GET', '/printer/emergency_stop'],
       ['GET', '/printer/restart'], ['GET', '/machine/reboot'], ['GET', '/machine/services/restart?service=klipper'],
-      ['GET', '/server/files/delete_file?path=x'], ['GET', '/server/files/move'], ['GET', '/server/job_queue/start']]) {
+      ['GET', '/server/files/delete_file?path=x'], ['GET', '/server/files/move'], ['GET', '/server/job_queue/start'],
+      ['GET', '/printer/gcode/%73cript'], ['GET', '/server/files/%64elete_file'],
+      ['GET', '/proxy/klipper/printer/emergency_stop'],
+      ['GET', '/printer/gcode/%2573cript'], ['GET', '/server/files/%2564elete_file'],
+      ['GET', '/printer/gcode/%25252573cript'],
+      ['GET', '/proxy%23/x/printer/gcode/script'], ['GET', '/proxy%3f/x/printer/gcode/script'],
+      ['GET', '/printer/emergency_stop/../../server/files/gcodes/test.gcode'],
+      ['GET', '/printer%2fgcode%2fscript'], ['GET', '/printer%5cgcode%5cscript'],
+      ['GET', '/printer%252fgcode%252fscript'],
+      ['GET', '/server/files/gcodes/../../printer/emergency_stop'],
+      ['GET', '/server/files/gcodes/%2e%2e/%2e%2e/printer/emergency_stop'],
+      ['GET', '/server/files/gcodes/%252e%252e/%252e%252e/printer/emergency_stop'],
+      ['GET', '/printer/gcode/%zzscript'], ['GET', '/printer/gcode/%'], ['GET', '/printer/gcode/%c0%afscript'],
+      ['POST', '/detail/../printer/emergency_stop'], ['POST', '/server/files/upload']]) {
       assert.equal(httpAllowedInReadOnly(method, path), false, `${method} ${path}`);
     }
   });
@@ -73,6 +90,17 @@ describe('policy', () => {
   test('read-only JSON-RPC frames', () => {
     assert.deepEqual(checkRpcFrame('{"jsonrpc":"2.0","method":"printer.objects.query","id":1}'), { forward: true, replies: [] });
     assert.equal(checkRpcFrame('[{"method":"server.info","id":1},{"method":"printer.objects.list","id":2}]').forward, true);
+    assert.equal(checkRpcFrame(JSON.stringify({ method: 'server.spoolman.get_spool_id', id: 1 })).forward, true);
+    const spoolRead = { method: 'server.spoolman.proxy', params: { request_method: 'GET', path: '/v1/spool/12', use_v2_response: true }, id: 1 };
+    assert.equal(checkRpcFrame(JSON.stringify(spoolRead)).forward, true);
+    for (const params of [
+      { ...spoolRead.params, request_method: 'POST' },
+      { ...spoolRead.params, request_method: 'DELETE' },
+      { ...spoolRead.params, path: '/v1/spool/12/../13' },
+      { ...spoolRead.params, path: '/v1/filament' },
+      { ...spoolRead.params, body: {} },
+      { ...spoolRead.params, query: 'delete=true' }
+    ]) assert.equal(checkRpcFrame(JSON.stringify({ ...spoolRead, params })).forward, false);
 
     const mutating = checkRpcFrame('{"jsonrpc":"2.0","method":"printer.gcode.script","params":{"script":"G28"},"id":7}');
     assert.equal(mutating.forward, false);
@@ -213,7 +241,10 @@ describe('gateway', () => {
     reset();
     const gw = await startGateway({ proxy: 'private' });
     const res = await fetch(`${gw.url}/_printer/http/127.0.0.1:${upstreamPort}/printer/info?x=1`, {
-      headers: { origin: 'http://evil.example', cookie: 'a=b', 'x-api-key': 'k' }
+      headers: {
+        origin: 'http://evil.example', cookie: 'a=b', 'x-api-key': 'k',
+        'x-http-method-override': 'DELETE', 'x-method-override': 'POST', 'x-http-method': 'PUT'
+      }
     });
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('x-custom'), 'yes');
@@ -224,6 +255,9 @@ describe('gateway', () => {
     assert.equal(headers.origin, undefined);
     assert.equal(headers.cookie, undefined);
     assert.equal(headers['x-api-key'], 'k');
+    assert.equal(headers['x-http-method-override'], undefined);
+    assert.equal(headers['x-method-override'], undefined);
+    assert.equal(headers['x-http-method'], undefined);
     assert.equal(headers.host, `127.0.0.1:${upstreamPort}`);
     await gw.close();
   });
@@ -285,14 +319,28 @@ describe('gateway', () => {
     const base = `${gw.url}/_printer/http/127.0.0.1:${upstreamPort}`;
     for (const [method, path] of [['POST', '/server/files/upload'], ['DELETE', '/server/files/gcodes/a.gcode'],
       ['PUT', '/api/v1/files/usb/a.gcode'], ['GET', '/printer/gcode/script?script=G28'], ['GET', '/printer/print/start?filename=a.gcode'],
-      ['GET', '/printer/emergency_stop']]) {
+      ['GET', '/printer/emergency_stop'],
+      ['GET', '/printer/gcode/%73cript'], ['GET', '/server/files/%64elete_file'],
+      ['GET', '/proxy/klipper/printer/emergency_stop'], ['GET', '/printer/gcode/%2573cript'],
+      ['GET', '/printer%2fgcode%2fscript'], ['GET', '/server/files/gcodes/../../printer/emergency_stop']]) {
       const res = await fetch(base + path, { method, body: method === 'GET' ? undefined : 'x' });
       assert.equal(res.status, 403, `${method} ${path}`);
       assert.match(await res.text(), /Read-only mode/);
     }
+    for (const [header, val] of [
+      ['x-http-method-override', 'POST'],
+      ['x-method-override', 'DELETE'],
+      ['x-http-method', 'PUT']
+    ]) {
+      const res = await fetch(`${base}/server/info`, { headers: { [header]: val } });
+      assert.equal(res.status, 403, `${header}: ${val}`);
+      assert.match(await res.text(), /Read-only mode/);
+    }
     assert.equal(seen.length, 0);
     assert.equal((await fetch(`${base}/server/info`)).status, 200);
-    assert.equal(seen.length, 1);
+    assert.equal((await fetch(`${base}/server/files/gcodes/pause.gcode`)).status, 200);
+    assert.equal((await fetch(`${base}/server/files/gcodes/delete.gcode`)).status, 200);
+    assert.equal(seen.length, 3);
     await gw.close();
   });
 
