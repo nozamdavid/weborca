@@ -20,6 +20,7 @@
 #include "3mf.hpp"
 
 #include <cstring>
+#include <string_view>
 #include <boost/spirit/home/qi/parse.hpp>
 #include <boost/spirit/home/qi/numeric/int.hpp>
 #include <cstdlib>
@@ -310,6 +311,12 @@ void XMLCALL PrusaFileParser::start_element_handler(void *userData, const char *
     if (prusa_parser != nullptr) { prusa_parser->_start_element_handler(name, attributes); }
 }
 
+void XMLCALL PrusaFileParser::end_element_handler(void *userData, const char *name)
+{
+    PrusaFileParser *prusa_parser = (PrusaFileParser *) userData;
+    if (prusa_parser != nullptr) { prusa_parser->_end_element_handler(name); }
+}
+
 void XMLCALL PrusaFileParser::characters_handler(void *userData, const XML_Char *s, int len)
 {
     PrusaFileParser *prusa_parser = (PrusaFileParser *) userData;
@@ -331,29 +338,27 @@ bool PrusaFileParser::check_3mf_from_prusa(const std::string filename)
         const std::string model_file       = "3D/3dmodel.model";
         int               model_file_index = mz_zip_reader_locate_file(&archive, model_file.c_str(), nullptr, 0);
         if (model_file_index != -1) {
-            int depth = 0;
-            m_parser  = XML_ParserCreate(nullptr);
-            XML_SetUserData(m_parser, (void *) this);
-            XML_SetElementHandler(m_parser, start_element_handler, nullptr);
-            XML_SetCharacterDataHandler(m_parser, characters_handler);
+            // The model metadata precedes its resources (3MF core specification), and the
+            // meshes in the resources can be hundreds of megabytes. Inflate and parse the
+            // file in pieces, and stop the parser once the metadata has been read.
+            if (mz_zip_reader_extract_iter_state *iter = mz_zip_reader_extract_iter_new(&archive, model_file_index, 0)) {
+                m_parser = XML_ParserCreate(nullptr);
+                XML_SetUserData(m_parser, (void *) this);
+                XML_SetElementHandler(m_parser, start_element_handler, end_element_handler);
+                XML_SetCharacterDataHandler(m_parser, characters_handler);
 
-            mz_zip_archive_file_stat stat;
-            if (!mz_zip_reader_file_stat(&archive, model_file_index, &stat)) goto EXIT;
-            // expat sizes its buffer with an int, so a larger entry cannot be parsed in one piece.
-            if (stat.m_uncomp_size > static_cast<mz_uint64>(std::numeric_limits<int>::max())) goto EXIT;
-
-            const int xml_size = static_cast<int>(stat.m_uncomp_size);
-            void *parser_buffer = XML_GetBuffer(m_parser, xml_size);
-            if (parser_buffer == nullptr) goto EXIT;
-
-            mz_bool res = mz_zip_reader_extract_file_to_mem(&archive, stat.m_filename, parser_buffer, static_cast<size_t>(xml_size), 0);
-            if (res == 0) goto EXIT;
-
-            XML_ParseBuffer(m_parser, xml_size, 1);
+                std::vector<char> buffer(1 << 16);
+                size_t            read;
+                while ((read = mz_zip_reader_extract_iter_read(iter, buffer.data(), buffer.size())) > 0 &&
+                       XML_Parse(m_parser, buffer.data(), static_cast<int>(read), 0) == XML_STATUS_OK)
+                    ;
+                mz_zip_reader_extract_iter_free(iter);
+                XML_ParserFree(m_parser);
+                m_parser = nullptr;
+            }
         }
     }
 
-EXIT:
     close_zip_reader(&archive);
     return m_from_prusa;
 }
@@ -361,18 +366,38 @@ EXIT:
 void PrusaFileParser::_characters_handler(const XML_Char *s, int len)
 {
     if (m_is_application_key) {
-        std::string str(s, len);
-        if (!str.empty() && str.find("PrusaSlicer") != std::string::npos) m_from_prusa = true;
+        // The file is parsed in pieces, so the text may arrive split over several calls.
+        static constexpr std::string_view prusa_slicer = "PrusaSlicer";
+        std::string str = m_text_tail + std::string(s, len);
+        if (str.find(prusa_slicer) != std::string::npos) {
+            m_from_prusa = true;
+            XML_StopParser(m_parser, XML_FALSE);
+        }
+        m_text_tail = str.substr(str.size() - std::min(str.size(), prusa_slicer.size() - 1));
     }
 }
 
 void PrusaFileParser::_start_element_handler(const char *name, const char **attributes)
 {
+    if (::strcmp(name, "resources") == 0) {
+        XML_StopParser(m_parser, XML_FALSE);
+        return;
+    }
     if (::strcmp(name, "metadata") == 0) {
         unsigned int num_attributes = (unsigned int) XML_GetSpecifiedAttributeCount(m_parser);
 
         std::string str_name = get_attribute_value_string(attributes, num_attributes, "name");
-        if (!str_name.empty() && str_name.find("Application") != std::string::npos) { m_is_application_key = true; }
+        m_is_application_key = str_name.find("Application") != std::string::npos;
+        m_text_tail.clear();
+    }
+}
+
+void PrusaFileParser::_end_element_handler(const char *name)
+{
+    // Only the text of the Application metadata names the application.
+    if (::strcmp(name, "metadata") == 0) {
+        m_is_application_key = false;
+        m_text_tail.clear();
     }
 }
 

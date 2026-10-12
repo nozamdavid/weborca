@@ -8,6 +8,8 @@ services:
       target: web
     restart: unless-stopped
     init: true
+    mem_limit: 512m
+    memswap_limit: 512m
     environment:
       ORCA_HOST: ${ORCA_HOST:-weborca.noz.am}
     ports:

@@ -7,6 +7,14 @@ import { fileURLToPath } from 'node:url';
 import { createEngineCore } from '../../web/engine-core.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// The mesh is in the object's own model file (desktop Save project layout).
+function meshModelPath(extractDir) {
+  const objectsDir = path.join(extractDir, '3D', 'Objects');
+  const files = fs.existsSync(objectsDir) ? fs.readdirSync(objectsDir).filter((f) => f.endsWith('.model')) : [];
+  assert.equal(files.length, 1, 'Fixture must contain one object model file');
+  return path.join(objectsDir, files[0]);
+}
 const repoRoot = path.resolve(__dirname, '../../..');
 
 const modulePath = process.env.ORCA_ENGINE_MODULE
@@ -408,8 +416,8 @@ describe('Orca WASM Engine Seam Painting Test Suite', () => {
     fs.mkdirSync(extractDir, { recursive: true });
     execFileSync('unzip', ['-q', localZip, '-d', extractDir]);
 
-    // Modify 3D/3dmodel.model: replace paint_seam="4" with split annotation "041" (split root with enforcer leaf)
-    const modelPath = path.join(extractDir, '3D', '3dmodel.model');
+    // Modify the object model file: replace paint_seam="4" with split annotation "041" (split root with enforcer leaf)
+    const modelPath = meshModelPath(extractDir);
     let modelXml = fs.readFileSync(modelPath, 'utf8');
     assert.ok(modelXml.includes('paint_seam="4"'), 'Fixture must contain paint_seam="4"');
     modelXml = modelXml.replace('paint_seam="4"', 'paint_seam="041"');
@@ -451,7 +459,7 @@ describe('Orca WASM Engine Seam Painting Test Suite', () => {
     fs.mkdirSync(resavedExtractDir, { recursive: true });
     execFileSync('unzip', ['-q', resavedZip, '-d', resavedExtractDir]);
 
-    const resavedModelXml = fs.readFileSync(path.join(resavedExtractDir, '3D', '3dmodel.model'), 'utf8');
+    const resavedModelXml = fs.readFileSync(meshModelPath(resavedExtractDir), 'utf8');
     assert.ok(
       resavedModelXml.includes('paint_seam="041"'),
       'Untouched split annotation "041" must be preserved in 3MF archive'

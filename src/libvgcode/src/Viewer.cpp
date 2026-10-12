@@ -34,6 +34,11 @@ void Viewer::shutdown()
     m_impl->shutdown();
 }
 
+void Viewer::release_cpu_render_cache()
+{
+    m_impl->release_cpu_render_cache();
+}
+
 void Viewer::reset()
 {
     m_impl->reset();
@@ -112,6 +117,11 @@ bool Viewer::is_dim_previous_layers() const
 void Viewer::set_dim_previous_layers(bool value)
 {
     m_impl->set_dim_previous_layers(value);
+}
+
+void Viewer::set_low_quality(bool enabled)
+{
+    m_impl->set_low_quality(enabled);
 }
 
 float Viewer::get_dim_previous_layers_brightness() const

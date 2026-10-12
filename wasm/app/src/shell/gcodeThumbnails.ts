@@ -353,8 +353,6 @@ export async function embedThumbnailsInGcode(
     customRenderer?: (width: number, height: number, format: string, plateIndex?: number) => Promise<string | Uint8Array | null> | string | Uint8Array | null;
   }
 ): Promise<Uint8Array> {
-  const gcodeStr = typeof gcode === 'string' ? gcode : new TextDecoder('utf-8').decode(gcode);
-
   const thumbCfg = options?.currentConfig?.thumbnails;
   const thumbFmt = options?.currentConfig?.thumbnails_format || 'PNG';
   const specs = parseThumbnailConfig(thumbCfg, thumbFmt);
@@ -375,6 +373,7 @@ export async function embedThumbnailsInGcode(
     return typeof gcode === 'string' ? new TextEncoder().encode(gcode) : gcode;
   }
 
+  const gcodeStr = typeof gcode === 'string' ? gcode : new TextDecoder('utf-8').decode(gcode);
   const finalGcodeStr = insertThumbnailBlocks(gcodeStr, allThumbnailBlocks);
   return new TextEncoder().encode(finalGcodeStr);
 }
@@ -388,6 +387,9 @@ interface CacheEntry {
   finalGcode: Uint8Array;
 }
 let cachedPayload: CacheEntry | null = null;
+let cacheGeneration = 0;
+// Undefined supports standalone callers; null means the app has no current slice.
+let currentGcode: Uint8Array | null | undefined;
 
 export function getCachedExportGcode(plateIndex?: number, rawGcode?: Uint8Array): Uint8Array | null {
   if (!cachedPayload) return null;
@@ -400,8 +402,11 @@ export function setCachedExportGcode(rawGcode: Uint8Array, plateIndex: number, f
   cachedPayload = { rawGcode, plateIndex, finalGcode };
 }
 
-export function clearExportGcodeCache(): void {
+/** Invalidates pending builds; the app can restrict future caching to its current slice. */
+export function clearExportGcodeCache(rawGcode?: Uint8Array | null): void {
+  ++cacheGeneration;
   cachedPayload = null;
+  currentGcode = rawGcode;
 }
 
 /**
@@ -420,7 +425,11 @@ export async function getOrBuildGcodeWithThumbnails(
     return cachedPayload.finalGcode;
   }
 
+  const generation = cacheGeneration;
   const finalGcode = await embedThumbnailsInGcode(rawGcode, options);
-  setCachedExportGcode(rawGcode, pIdx, finalGcode);
+  // An export may finish after its slice was replaced, or start after awaiting
+  // plate metadata for an older slice. Return its bytes without retaining them.
+  if (generation === cacheGeneration && (currentGcode === undefined || currentGcode === rawGcode))
+    setCachedExportGcode(rawGcode, pIdx, finalGcode);
   return finalGcode;
 }

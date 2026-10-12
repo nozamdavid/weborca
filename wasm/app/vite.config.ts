@@ -185,13 +185,23 @@ function orcaAssetsPlugin() {
 
       console.log('[orca-assets] Packaging engine, preview, profiles, and worker into dist/...');
 
+      const copyRuntimeAsset = (source: string, destinations: string[]) => {
+        // Native linking can temporarily truncate these files. Capture once and fail
+        // rather than silently publish an empty runtime during a concurrent build.
+        const bytes = fs.readFileSync(source);
+        if (bytes.length === 0 || (source.endsWith('.wasm') && (bytes.length < 8 || !bytes.subarray(0, 8).equals(Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]))))) {
+          throw new Error(`Invalid runtime asset ${source}; finish the native build before packaging`);
+        }
+        for (const destination of destinations) fs.writeFileSync(destination, bytes);
+      };
+
       // 1. Copy engine module into dist/engine
       const distEngine = path.join(distDir, 'engine');
       if (fs.existsSync(engineBuildDir)) {
         fs.mkdirSync(distEngine, { recursive: true });
         for (const file of fs.readdirSync(engineBuildDir)) {
           if (file.endsWith('.mjs') || file.endsWith('.wasm') || file.endsWith('.txt')) {
-            fs.copyFileSync(path.join(engineBuildDir, file), path.join(distEngine, file));
+            copyRuntimeAsset(path.join(engineBuildDir, file), [path.join(distEngine, file)]);
           }
         }
       }
@@ -202,8 +212,7 @@ function orcaAssetsPlugin() {
         fs.mkdirSync(distPreview, { recursive: true });
         for (const file of fs.readdirSync(previewBuildDir)) {
           if (file.endsWith('.js') || file.endsWith('.wasm')) {
-            fs.copyFileSync(path.join(previewBuildDir, file), path.join(distPreview, file));
-            fs.copyFileSync(path.join(previewBuildDir, file), path.join(distDir, file));
+            copyRuntimeAsset(path.join(previewBuildDir, file), [path.join(distPreview, file), path.join(distDir, file)]);
           }
         }
       }

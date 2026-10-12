@@ -34,7 +34,7 @@ function getMaxMtime(dirPath) {
 
 let serverProcess = null;
 
-async function startServer(port, testName) {
+async function startServer(port, testName, { frozenDist = false } = {}) {
   let outDir;
   if (process.env.APP_TEST_DIST) {
     outDir = path.resolve(process.env.APP_TEST_DIST);
@@ -67,7 +67,8 @@ async function startServer(port, testName) {
   );
 
   const outDirTime = getMaxMtime(outDir);
-  if (outDirTime < latestSrcTime) {
+  // Performance comparisons deliberately run a specified pre-change artifact.
+  if (outDirTime < latestSrcTime && !(frozenDist && process.env.APP_TEST_DIST)) {
     throw new Error(`The dist directory (${outDir}) is older than the source files. Refusing to run.`);
   }
 

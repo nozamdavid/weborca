@@ -54,6 +54,8 @@ set(LIBVGCODE_SOURCES
 	src/Viewer.cpp
 	src/ViewerImpl.hpp
 	src/ViewerImpl.cpp
+    src/LowQualitySegments.hpp
+    src/LowQualitySegments.cpp
 	src/ViewRange.hpp
 	src/ViewRange.cpp
 	${GLAD_SOURCES}

@@ -8,7 +8,7 @@ import { usePreviewStore } from './previewStore';
 import './PreviewControls.css';
 import { useTranslation } from "../i18n";
 
-export const MoveSlider: React.FC = () => {
+export const MoveSlider: React.FC<{ active?: boolean }> = ({ active = true }) => {
     const { t } = useTranslation();
   const minMove = usePreviewStore((s) => s.minMove);
   const maxMove = usePreviewStore((s) => s.maxMove);
@@ -36,6 +36,17 @@ export const MoveSlider: React.FC = () => {
   useEffect(() => {
     stopPlayback();
   }, [minMove, maxMove, minLayer, maxLayer, layersCount]);
+
+  // Hidden views remain mounted to preserve the camera and slider position.
+  // Playback requires an explicit restart after returning to the view or tab.
+  useEffect(() => {
+    if (!active || document.hidden) stopPlayback();
+    const onVisibilityChange = () => {
+      if (document.hidden) stopPlayback();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [active]);
 
   // Clean up timers on unmount
   useEffect(() => {

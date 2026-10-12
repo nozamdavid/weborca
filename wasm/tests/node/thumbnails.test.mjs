@@ -390,3 +390,54 @@ test('per-plate models are isolated across different plates', async () => {
   const str1 = new TextDecoder().decode(payloadPlate1);
   assert.notEqual(str0, str1, 'Plate 0 and Plate 1 payloads must differ according to per-plate model renders');
 });
+
+test('raw-only export does not decode bytes when the renderer returns no thumbnails', async () => {
+  const raw = new TextEncoder().encode('; thumbnail begin 1x1 4\n; AAAA\n; thumbnail end\nG1 X1\n');
+  const OriginalDecoder = globalThis.TextDecoder;
+  let decoded = 0;
+  globalThis.TextDecoder = class extends OriginalDecoder {
+    decode(...args) { ++decoded; return super.decode(...args); }
+  };
+  try {
+    assert.equal(await embedThumbnailsInGcode(raw, { customRenderer: () => null }), raw);
+    assert.equal(decoded, 0, 'existing thumbnails and raw bytes need no full-file decode');
+  } finally { globalThis.TextDecoder = OriginalDecoder; }
+});
+
+test('invalidated thumbnail builds cannot replace a newer cached export', async () => {
+  clearExportGcodeCache();
+  const oldRaw = new TextEncoder().encode('G1 X10\n');
+  const newRaw = new TextEncoder().encode('G1 X20\n');
+  let finishOld;
+  const oldBuild = getOrBuildGcodeWithThumbnails(oldRaw, {
+    currentConfig: { thumbnails: '1x1/PNG' },
+    customRenderer: () => new Promise(resolve => { finishOld = resolve; })
+  });
+  clearExportGcodeCache(newRaw);
+  const newExport = await getOrBuildGcodeWithThumbnails(newRaw, {
+    currentConfig: { thumbnails: '1x1/PNG' }, customRenderer: () => generateValidPng(1, 1)
+  });
+  finishOld(generateValidPng(1, 1));
+  await oldBuild;
+  assert.equal(getCachedExportGcode(0, newRaw), newExport);
+  assert.equal(getCachedExportGcode(0, oldRaw), null);
+  clearExportGcodeCache();
+});
+
+test('cleared slices reject both delayed completions and older exports starting after invalidation', async () => {
+  clearExportGcodeCache();
+  const oldRaw = new TextEncoder().encode('G1 X10\n');
+  let finish;
+  const build = getOrBuildGcodeWithThumbnails(oldRaw, {
+    currentConfig: { thumbnails: '1x1/PNG' }, customRenderer: () => new Promise(resolve => { finish = resolve; })
+  });
+  clearExportGcodeCache(null);
+  finish(generateValidPng(1, 1));
+  await build;
+  assert.equal(getCachedExportGcode(), null);
+  const newerRaw = new TextEncoder().encode('G1 X20\n');
+  clearExportGcodeCache(newerRaw);
+  await getOrBuildGcodeWithThumbnails(oldRaw, { customRenderer: () => null });
+  assert.equal(getCachedExportGcode(), null, 'an old export delayed before thumbnail work cannot resurrect the prior input');
+  clearExportGcodeCache();
+});

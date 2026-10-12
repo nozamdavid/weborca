@@ -8540,5 +8540,8 @@
   "Last saved {{seconds}} seconds ago": "Last saved {{seconds}} seconds ago",
   "1 to 9": "1 to 9",
   "Assign the selected object or part to a filament": "Assign the selected object or part to a filament",
-  "Camera views when no object is selected": "Camera views when no object is selected"
+  "Camera views when no object is selected": "Camera views when no object is selected",
+  "Low quality": "Low quality",
+  "Low quality G-code preview": "Low quality G-code preview",
+  "Reduce preview detail and resolution for faster navigation": "Reduce preview detail and resolution for faster navigation"
 }

@@ -17,6 +17,8 @@
 #include "libslic3r/GCode/GCodeProcessor.hpp"
 
 #include <string>
+#include <utility>
+#include <exception>
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -528,44 +530,80 @@ public:
 
         emscripten_webgl_make_context_current(m_ctx);
 
-        Slic3r::GCodeProcessor processor;
-        try {
-            processor.process_file(path);
-        } catch (const std::exception& e) {
-            std::fprintf(stderr, "OrcaPreview: GCodeProcessor::process_file failed on '%s': %s\n", path.c_str(), e.what());
-            char err[512];
-            std::snprintf(err, sizeof(err), "{\"error\":\"%s\"}", e.what());
-            return std::string(err);
+        // Report an inaccessible MEMFS input before entering the processor's error
+        // path, and leave the successfully loaded preview available to the caller.
+        std::FILE* input = std::fopen(path.c_str(), "rb");
+        if (input == nullptr)
+            return "{\"error\":\"Cannot open G-code file\"}";
+        std::fclose(input);
+
+        libvgcode::GCodeInputData data;
+        std::vector<std::pair<float, float>> bed_polygon;
+        float time_s = 0.0f;
+        float filament_mm = 0.0f;
+        float filament_g = 0.0f;
+        float travel_distance = 0.0f;
+        unsigned int travel_moves = 0;
+        {
+            // Keep processor storage local so it is released after conversion,
+            // before allocating the renderer's texture staging arrays.
+            m_viewer.release_cpu_render_cache();
+            Slic3r::GCodeProcessor processor;
+            try {
+                processor.process_file(path, nullptr, false);
+            } catch (const std::exception& e) {
+                std::fprintf(stderr, "OrcaPreview: GCodeProcessor::process_file failed on '%s': %s\n", path.c_str(), e.what());
+                // Exception text can contain quotes/newlines; keep the recoverable error valid JSON.
+                return "{\"error\":\"Failed to parse G-code\"}";
+            }
+
+            const Slic3r::GCodeProcessorResult& res = processor.get_result();
+
+            // An empty replacement leaves the previous data, statistics and camera intact.
+            if (res.moves.size() <= 1)
+                return "{\"error\":\"No toolpath moves in G-code\"}";
+            m_viewer.reset();
+
+            std::vector<std::string> tool_colors = res.extruder_colors;
+            if (tool_colors.empty()) {
+                tool_colors.push_back("#009688");
+            }
+            std::vector<std::string> cp_colors;
+
+            data = libvgcode::convert(res, tool_colors, cp_colors, m_viewer);
+            time_s = processor.get_time(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal);
+            // Extract filament statistics
+            for (const auto& kv : res.print_statistics.used_filaments_per_role) {
+                filament_mm += static_cast<float>(kv.second.first * 1000.0);
+                filament_g += static_cast<float>(kv.second.second);
+            }
+            if (filament_mm <= 0.0f && !res.moves.empty()) {
+                for (const auto& mv : res.moves) {
+                    if (mv.delta_extruder > 0.0f) {
+                        filament_mm += mv.delta_extruder;
+                    }
+                }
+                float density = (!res.filament_densities.empty() && res.filament_densities[0] > 0.0f) ? res.filament_densities[0] : 1.24f;
+                float diam = (!res.filament_diameters.empty() && res.filament_diameters[0] > 0.0f) ? res.filament_diameters[0] : 1.75f;
+                float r = diam * 0.5f;
+                filament_g = (filament_mm * 3.14159f * r * r * density) / 1000.0f;
+            }
+
+            // Configure bed from result if available
+            if (res.printable_area.size() >= 3) {
+                for (const auto& pt : res.printable_area) {
+                    bed_polygon.push_back({static_cast<float>(pt.x()), static_cast<float>(pt.y())});
+                }
+            }
+
+            travel_distance = res.print_statistics.total_travel_distance;
+            travel_moves = res.print_statistics.total_travel_moves;
         }
-
-        const Slic3r::GCodeProcessorResult& res = processor.get_result();
-
-        std::vector<std::string> tool_colors = res.extruder_colors;
-        if (tool_colors.empty()) {
-            tool_colors.push_back("#009688");
-        }
-        std::vector<std::string> cp_colors;
-
-        libvgcode::GCodeInputData data = libvgcode::convert(res, tool_colors, cp_colors, m_viewer);
         m_viewer.reset_default_extrusion_roles_colors();
         m_viewer.load(std::move(data));
 
-
-        // Force color ranges recalculation on the newly loaded model in OpenGL ES via public API
-        m_viewer.toggle_extrusion_role_visibility(libvgcode::EGCodeExtrusionRole::Custom);
-        render();
-        m_viewer.toggle_extrusion_role_visibility(libvgcode::EGCodeExtrusionRole::Custom);
-        render();
-
-
-        // Configure bed from result if available
-        if (res.printable_area.size() >= 3) {
-            std::vector<std::pair<float, float>> poly;
-            for (const auto& pt : res.printable_area) {
-                poly.push_back({static_cast<float>(pt.x()), static_cast<float>(pt.y())});
-            }
-            m_bed.setPolygon(poly);
-        }
+        if (!bed_polygon.empty())
+            m_bed.setPolygon(bed_polygon);
 
         // Center camera specifically on extrusion bounds (avoiding travel moves from origin)
         libvgcode::AABox bbox = m_viewer.get_bounding_box({ libvgcode::EMoveType::Extrude });
@@ -588,29 +626,8 @@ public:
 
         size_t layers_count = m_viewer.get_layers_count();
         size_t moves_count = m_viewer.get_vertices_count();
-        float time_s = processor.get_time(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal);
-        if (time_s <= 0.0f) {
+        if (time_s <= 0.0f)
             time_s = m_viewer.get_estimated_time();
-        }
-
-        // Extract filament statistics
-        float filament_mm = 0.0f;
-        float filament_g = 0.0f;
-        for (const auto& kv : res.print_statistics.used_filaments_per_role) {
-            filament_mm += static_cast<float>(kv.second.first * 1000.0);
-            filament_g += static_cast<float>(kv.second.second);
-        }
-        if (filament_mm <= 0.0f && !res.moves.empty()) {
-            for (const auto& mv : res.moves) {
-                if (mv.delta_extruder > 0.0f) {
-                    filament_mm += mv.delta_extruder;
-                }
-            }
-            float density = (!res.filament_densities.empty() && res.filament_densities[0] > 0.0f) ? res.filament_densities[0] : 1.24f;
-            float diam = (!res.filament_diameters.empty() && res.filament_diameters[0] > 0.0f) ? res.filament_diameters[0] : 1.75f;
-            float r = diam * 0.5f;
-            filament_g = (filament_mm * 3.14159f * r * r * density) / 1000.0f;
-        }
 
         // Build feature breakdown
         std::ostringstream ss;
@@ -620,8 +637,8 @@ public:
            << ",\"timeS\":" << time_s
            << ",\"filamentMm\":" << filament_mm
            << ",\"filamentG\":" << filament_g
-           << ",\"travelDistance\":" << res.print_statistics.total_travel_distance
-           << ",\"travelMoves\":" << res.print_statistics.total_travel_moves
+           << ",\"travelDistance\":" << travel_distance
+           << ",\"travelMoves\":" << travel_moves
            << ",\"features\":[";
 
         bool first_feat = true;
@@ -867,6 +884,10 @@ public:
             else if (m_last_view_type == libvgcode::EViewType::Jerk) { title = "Jerk (mm/s)"; vt_name = "Jerk"; }
 
             ss << "{\"viewType\":\"" << vt_name << "\",\"title\":\"" << title << "\",\"type\":\"range\",\"ranges\":[";
+            if (m_viewer.get_vertices_count() == 0) {
+                ss << "],\"options\":[]}";
+                break;
+            }
             const auto& range = m_viewer.get_color_range(m_last_view_type);
             const auto& pal = range.get_palette();
             const auto& vals = range.get_values();
@@ -878,13 +899,13 @@ public:
                     for (int i = static_cast<int>(pal.size()) - 1; i >= 0; --i) {
                         if (i < static_cast<int>(pal.size()) - 1) ss << ",";
                         float val = vals[i];
-                        ss << "{\"color\":\"" << to_hex(pal[i]) << "\",\"value\":" << (std::isfinite(val) ? val : 0.0f) << "}";
+                        ss << "{\"color\":\"" << to_hex(m_low_quality ? range.get_color_at(val, 8) : pal[i]) << "\",\"value\":" << (std::isfinite(val) ? val : 0.0f) << "}";
                     }
                 } else if (vals.size() == 2) {
-                    ss << "{\"color\":\"" << to_hex(pal.back()) << "\",\"value\":" << (std::isfinite(vals.back()) ? vals.back() : 0.0f) << "},";
-                    ss << "{\"color\":\"" << to_hex(pal.front()) << "\",\"value\":" << (std::isfinite(vals.front()) ? vals.front() : 0.0f) << "}";
+                    ss << "{\"color\":\"" << to_hex(m_low_quality ? range.get_color_at(vals.back(), 8) : pal.back()) << "\",\"value\":" << (std::isfinite(vals.back()) ? vals.back() : 0.0f) << "},";
+                    ss << "{\"color\":\"" << to_hex(m_low_quality ? range.get_color_at(vals.front(), 8) : pal.front()) << "\",\"value\":" << (std::isfinite(vals.front()) ? vals.front() : 0.0f) << "}";
                 } else if (vals.size() == 1) {
-                    ss << "{\"color\":\"" << to_hex(pal.front()) << "\",\"value\":" << (std::isfinite(vals.front()) ? vals.front() : 0.0f) << "}";
+                    ss << "{\"color\":\"" << to_hex(m_low_quality ? range.get_color_at(vals.front(), 8) : pal.front()) << "\",\"value\":" << (std::isfinite(vals.front()) ? vals.front() : 0.0f) << "}";
                 }
             }
             ss << "],\"options\":[";
@@ -926,6 +947,15 @@ public:
         if (m_viewer.is_option_visible(o) != visible) {
             m_viewer.toggle_option_visibility(o);
         }
+    }
+
+    void setClippingPlane(float x, float y, float z, float offset) {
+        m_viewer.set_clipping_plane({ x, y, z, offset });
+    }
+
+    void setLowQuality(bool enabled) {
+        m_low_quality = enabled;
+        m_viewer.set_low_quality(enabled);
     }
 
     void setLightTheme(bool light) {
@@ -1009,7 +1039,7 @@ public:
     }
 
     void resetCamera() {
-        if (!m_initialized) return;
+        if (!m_initialized || m_viewer.get_vertices_count() == 0) return;
         libvgcode::AABox bbox = m_viewer.get_bounding_box({ libvgcode::EMoveType::Extrude });
         if (bbox[0][0] > bbox[1][0]) {
             bbox = m_viewer.get_bounding_box();
@@ -1061,10 +1091,23 @@ public:
         do_render(view, proj);
     }
 
+    void clearGcode() {
+        if (!m_initialized) return;
+        emscripten_webgl_make_context_current(m_ctx);
+        m_viewer.reset();
+        m_cached_stats_json.clear();
+    }
+
     size_t getLayersCount() const { return m_viewer.get_layers_count(); }
     size_t getMovesCount() const { return m_viewer.get_vertices_count(); }
     float getEstimatedTime() const { return m_viewer.get_estimated_time(); }
     std::string getSliceStatistics() const { return m_cached_stats_json; }
+    std::string getRenderMemoryUsage() const {
+        char buf[128];
+        std::snprintf(buf, sizeof(buf), "{\"cpuBytes\":%zu,\"gpuBytes\":%zu}",
+                      m_viewer.get_used_cpu_memory(), m_viewer.get_used_gpu_memory());
+        return std::string(buf);
+    }
 
 private:
     void do_render(const libvgcode::Mat4x4& view, const libvgcode::Mat4x4& proj) {
@@ -1098,6 +1141,7 @@ private:
     libvgcode::Viewer m_viewer;
     BedRenderer m_bed;
     bool m_light_theme = false;
+    bool m_low_quality = false;
     EMSCRIPTEN_WEBGL_CONTEXT_HANDLE m_ctx;
     int m_width;
     int m_height;
@@ -1115,6 +1159,7 @@ EMSCRIPTEN_BINDINGS(orca_preview) {
         .constructor<>()
         .function("init", &OrcaPreview::init)
         .function("loadGcode", &OrcaPreview::loadGcode)
+        .function("clearGcode", &OrcaPreview::clearGcode)
         .function("setToolColors", &OrcaPreview::setToolColors)
         .function("setLayerRange", &OrcaPreview::setLayerRange)
         .function("setMove", &OrcaPreview::setMove)
@@ -1130,6 +1175,8 @@ EMSCRIPTEN_BINDINGS(orca_preview) {
         .function("toggleOption", &OrcaPreview::toggleOption)
         .function("setOptionVisible", &OrcaPreview::setOptionVisible)
         .function("setLightTheme", &OrcaPreview::setLightTheme)
+        .function("setLowQuality", &OrcaPreview::setLowQuality)
+        .function("setClippingPlane", &OrcaPreview::setClippingPlane)
         .function("setBed", &OrcaPreview::setBed)
         .function("setBedPolygon", &OrcaPreview::setBedPolygon)
         .function("getBedPolygon", &OrcaPreview::getBedPolygon)
@@ -1144,6 +1191,7 @@ EMSCRIPTEN_BINDINGS(orca_preview) {
         .function("getMovesCount", &OrcaPreview::getMovesCount)
         .function("getEstimatedTime", &OrcaPreview::getEstimatedTime)
         .function("getSliceStatistics", &OrcaPreview::getSliceStatistics)
+        .function("getRenderMemoryUsage", &OrcaPreview::getRenderMemoryUsage)
         ;
 }
 

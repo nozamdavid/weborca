@@ -8,6 +8,10 @@ import type { PreviewStatistics, LegendData } from './types';
 let previewModulePromise: Promise<any> | null = null;
 let previewModule: any = null;
 let previewInstance: any = null;
+let pendingFrame: number | null = null;
+let lowQuality = false;
+// This is a parse identity marker, not an owner of the potentially large source.
+let loadedGcode: WeakRef<Uint8Array> | null = null;
 let bedPolygon: [number, number][] | null = null;
 
 export async function getPreviewModule(canvas?: HTMLCanvasElement): Promise<any> {
@@ -81,12 +85,17 @@ export async function initPreview(canvas: HTMLCanvasElement): Promise<any> {
     canvas.id = 'canvas';
   }
 
+  loadedGcode = null;
   previewInstance = new mod.OrcaPreview();
   const selector = `#${canvas.id}`;
   const ok = previewInstance.init(selector);
   if (!ok) {
     throw new Error('Failed to initialize WebGL2 context on preview canvas');
   }
+
+  // Layout may size the canvas before the asynchronous native instance exists.
+  previewInstance.resize(canvas.width, canvas.height);
+  previewInstance.setLowQuality?.(lowQuality);
 
   // Also expose on window for automated verification and debugging
   (window as any).preview = previewInstance;
@@ -96,13 +105,29 @@ export async function initPreview(canvas: HTMLCanvasElement): Promise<any> {
 }
 
 export function disposePreview(): void {
+  if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+  pendingFrame = null;
   previewInstance?.delete();
   previewInstance = null;
   bedPolygon = null;
+  loadedGcode = null;
 }
 
 export function getPreviewInstance(): any {
   return previewInstance;
+}
+
+/** Discard a closed project's toolpaths while retaining the initialized viewer and bed. */
+export function clearGcode(): void {
+  if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+  pendingFrame = null;
+  previewInstance?.clearGcode();
+  loadedGcode = null;
+  if (typeof window !== 'undefined') {
+    (window as any).previewStats = null;
+    (window as any).previewLoaded = false;
+  }
+  requestRender();
 }
 
 export function loadGcode(data: Uint8Array | ArrayBuffer | string, _name = 'print.gcode'): PreviewStatistics {
@@ -119,13 +144,20 @@ export function loadGcode(data: Uint8Array | ArrayBuffer | string, _name = 'prin
     bytes = data;
   }
 
+  const previousGcode = loadedGcode;
   const vfsPath = `/preview_${Date.now()}.gcode`;
-  previewModule.FS.writeFile(vfsPath, bytes);
 
   try {
+    // The preview parser is read-only and unlinks this file below. Borrow the immutable
+    // source bytes instead of allocating another full G-code copy in MEMFS.
+    previewModule.FS.writeFile(vfsPath, bytes, { canOwn: true });
+    loadedGcode = null;
     const resStr = previewInstance.loadGcode(vfsPath);
     const stats: PreviewStatistics = JSON.parse(resStr);
     if (stats.error) {
+      // Native JSON errors are reported before replacing the old viewer. A thrown
+      // native trap or malformed response may follow mutation, so keep those invalidated.
+      loadedGcode = previousGcode;
       throw new Error(stats.error);
     }
 
@@ -139,6 +171,8 @@ export function loadGcode(data: Uint8Array | ArrayBuffer | string, _name = 'prin
     // G-code metadata describes the printable area, not the decorative bed outline.
     if (bedPolygon) previewInstance.setBedPolygon(bedPolygon);
 
+    loadedGcode = new WeakRef(bytes);
+
     // Expose stats globally for tests
     (window as any).previewStats = stats;
     (window as any).previewLoaded = true;
@@ -149,6 +183,11 @@ export function loadGcode(data: Uint8Array | ArrayBuffer | string, _name = 'prin
       previewModule.FS.unlink(vfsPath);
     } catch (_) {}
   }
+}
+
+/** The file-open action can load the same bytes before React receives its slice result. */
+export function isGcodeLoaded(bytes: Uint8Array): boolean {
+  return previewInstance !== null && loadedGcode?.deref() === bytes;
 }
 
 export function setLayerRange(minLayer: number, maxLayer: number): void {
@@ -238,7 +277,23 @@ export function resize(width: number, height: number): void {
   }
 }
 
+/** Coalesce pointer, slider, resize and UI changes into the next browser frame. */
+export function requestRender(): void {
+  if (!previewInstance || pendingFrame !== null) return;
+  pendingFrame = requestAnimationFrame(() => {
+    pendingFrame = null;
+    render();
+  });
+}
+
+export function setLowQuality(enabled: boolean): void {
+  lowQuality = enabled;
+  previewInstance?.setLowQuality?.(enabled);
+}
+
 export function render(): void {
+  if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+  pendingFrame = null;
   if (previewInstance) {
     previewInstance.setLightTheme?.(document.documentElement.dataset.theme === 'light');
     previewInstance.render();

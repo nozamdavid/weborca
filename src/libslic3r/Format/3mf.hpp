@@ -13,6 +13,7 @@ public:
 
     bool check_3mf_from_prusa(const std::string filename);
     void _start_element_handler(const char *name, const char **attributes);
+    void _end_element_handler(const char *name);
     void _characters_handler(const XML_Char *s, int len);
 
 private:
@@ -20,11 +21,13 @@ private:
     std::string get_attribute_value_string(const char **attributes, unsigned int attributes_size, const char *attribute_key);
 
     static void XMLCALL start_element_handler(void *userData, const char *name, const char **attributes);
+    static void XMLCALL end_element_handler(void *userData, const char *name);
     static void XMLCALL characters_handler(void *userData, const XML_Char *s, int len);
 private:
-    bool       m_from_prusa         = false;
-    bool       m_is_application_key = false;
-    XML_Parser m_parser;
+    bool        m_from_prusa         = false;
+    bool        m_is_application_key = false;
+    std::string m_text_tail;
+    XML_Parser  m_parser             = nullptr;
 };
 
     /* The format for saving the SLA points was changing in the past. This enum holds the latest version that is being currently used.

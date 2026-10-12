@@ -342,6 +342,14 @@ export const PreferencesDialog: React.FC = () => {
                 </label>
               </div>
 
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+                title={t("Reduce preview detail and resolution for faster navigation")}>
+                <input type="checkbox" id="pref-preview-low-quality"
+                  checked={display.previewLowQuality}
+                  onChange={(e) => setDisplayPref('previewLowQuality', e.target.checked)} />
+                <span>{t("Low quality G-code preview")}</span>
+              </label>
+
               <label htmlFor="pref-toolbar-orientation">{t("Tool bar orientation")}</label>
               <select id="pref-toolbar-orientation" value={display.toolbarOrientation}
                 onChange={(e) => setDisplayPref('toolbarOrientation', e.target.value as 'vertical' | 'horizontal')}>

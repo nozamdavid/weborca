@@ -153,7 +153,7 @@ export const App: React.FC = () => {
           <PlateView />
         </div>
         <div className="tab-page" style={{ position: 'relative' }} hidden={activeTab !== 'preview'}>
-          <PreviewView />
+          <PreviewView active={activeTab === 'preview'} />
         </div>
         <div className="tab-page" hidden={activeTab !== 'device'}>
           <DevicePanel active={activeTab === 'device'} />

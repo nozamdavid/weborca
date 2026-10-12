@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstddef>
 #include <cstring>
 #include <iterator>
 #include <cassert>
@@ -191,16 +192,27 @@ GCodeInputData convert(const Slic3r::GCodeProcessorResult& result, const std::ve
     }
 
     const std::vector<Slic3r::GCodeProcessorResult::MoveVertex>& moves = result.moves;
-    ret.vertices.reserve(2 * moves.size());
+    const auto starts_path = [](const auto& prev, const auto& curr) {
+        return prev.type != curr.type || prev.extrusion_role != curr.extrusion_role ||
+            prev.mm3_per_mm != curr.mm3_per_mm || prev.acceleration != curr.acceleration || prev.jerk != curr.jerk;
+    };
+    // Count the phantom path starts before reserving. Reserving twice the move count and then
+    // shrinking temporarily holds two large vertex arrays, which is costly for detailed files.
+    size_t vertices_count = moves.empty() ? 0 : moves.size() - 1;
+    for (size_t i = 1; i < moves.size(); ++i) {
+        const EOptionType option_type = move_type_to_option(convert(moves[i].type));
+        if ((option_type == EOptionType::COUNT || option_type == EOptionType::Travels || option_type == EOptionType::Wipes) &&
+            (i == 1 || starts_path(moves[i - 1], moves[i])))
+            ++vertices_count;
+    }
+    ret.vertices.reserve(vertices_count);
     for (size_t i = 1; i < moves.size(); ++i) {
         const Slic3r::GCodeProcessorResult::MoveVertex& curr = moves[i];
         const Slic3r::GCodeProcessorResult::MoveVertex& prev = moves[i - 1];
         const EMoveType curr_type = convert(curr.type);
         const EOptionType option_type = move_type_to_option(curr_type);
         if (option_type == EOptionType::COUNT || option_type == EOptionType::Travels || option_type == EOptionType::Wipes) {
-            if (ret.vertices.empty() || prev.type != curr.type || prev.extrusion_role != curr.extrusion_role
-                // ORCA: Split the path when a preview value changes.
-                || prev.mm3_per_mm != curr.mm3_per_mm || prev.acceleration != curr.acceleration || prev.jerk != curr.jerk) {
+            if (ret.vertices.empty() || starts_path(prev, curr)) {
                 // to allow libvgcode to properly detect the start/end of a path we need to add a 'phantom' vertex
                 // equal to the current one with the exception of the position, which should match the previous move position,
                 // and the times, which are set to zero
@@ -245,7 +257,6 @@ GCodeInputData convert(const Slic3r::GCodeProcessorResult& result, const std::ve
 #endif // VGCODE_ENABLE_COG_AND_TOOL_MARKERS
         ret.vertices.emplace_back(vertex);
     }
-    ret.vertices.shrink_to_fit();
 
     ret.spiral_vase_mode = result.spiral_vase_mode;
 

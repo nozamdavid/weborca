@@ -25,6 +25,8 @@ export interface CameraPreferences {
 }
 
 export interface DisplayPreferences {
+  /** Reduce G-code preview detail and resolution without affecting Prepare or slicing. */
+  previewLowQuality: boolean;
   showGrid: boolean;
   showAxes: boolean;
   showLabels: boolean;
@@ -66,6 +68,7 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
     defaultCameraType: 'perspective'
   },
   display: {
+    previewLowQuality: false,
     showGrid: true,
     showAxes: true,
     showLabels: false,

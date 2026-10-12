@@ -13,7 +13,24 @@ COPY wasm/build/settings/layout.json /workspace/wasm/build/settings/layout.json
 COPY resources/calib/ /workspace/resources/calib/
 COPY resources/handy_models/ /workspace/resources/handy_models/
 RUN npm run build
-RUN test -s dist/engine/orca_engine.wasm && test -s dist/orca_preview.wasm && test -s dist/profiles/index.json && test -s dist/settings/layout.json && test -s dist/engine-worker.js && test -s dist/orca-gateway.mjs
+RUN node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import { readFileSync, statSync } from 'node:fs';
+const required = [
+  'engine/orca_engine.mjs', 'engine/orca_engine.wasm',
+  'orca_preview.js', 'orca_preview.wasm',
+  'preview/orca_preview.js', 'preview/orca_preview.wasm',
+  'profiles/index.json', 'settings/layout.json', 'engine-worker.js', 'orca-gateway.mjs'
+];
+for (const file of required) {
+  const info = statSync(`dist/${file}`);
+  assert.ok(info.isFile() && info.size > 0, `Missing packaged asset: ${file}`);
+}
+for (const file of ['orca_preview.js', 'orca_preview.wasm']) {
+  assert.deepEqual(readFileSync(`dist/${file}`), readFileSync(`dist/preview/${file}`),
+    `Preview aliases differ: ${file}`);
+}
+JS
 
 FROM node:22-bookworm-slim AS web
 ENV NODE_ENV=production ORCA_HOST=weborca.noz.am

@@ -3,6 +3,7 @@ import { usePrinterConnectionStore } from '../printers/connectionStore';
 import { systemProfiles } from '../presets/systemProfiles';
 import { showToast } from '../shell/toastStore';
 import { storeRecentFile } from '../shell/recentFiles';
+import { clearExportGcodeCache } from '../shell/gcodeThumbnails';
 /**
  * @file appStore.ts
  * Zustand state store for OrcaSlicer Web.
@@ -252,6 +253,16 @@ async function runPresetManagementAction(action: () => Promise<void>): Promise<v
   try { await action(); }
   finally { useAppStore.setState({ isSelectingPreset: false }); }
 }
+
+async function storeImportedRecentFile(file: File, type: 'project' | 'model'): Promise<void> {
+  const { usePrefsStore } = await import('../prefs/prefsStore');
+  if (!usePrefsStore.getState().general.rememberRecentFiles) return;
+  // The upload buffer was transferred to the worker; reread the immutable original.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  await storeRecentFile(file.name, bytes, type);
+}
+
+let projectExportId = 0;
 
 export const useAppStore = create<AppState>((set, get) => ({
   isIsolated: typeof window !== 'undefined' ? !!window.crossOriginIsolated : false,
@@ -931,7 +942,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       showToast(`Opened project: ${file.name}`, 'success');
       try {
-        await storeRecentFile(file.name, bytes, 'project');
+        await storeImportedRecentFile(file, 'project');
       } catch (_) {}
     } catch (err: any) {
       set({
@@ -953,10 +964,20 @@ export const useAppStore = create<AppState>((set, get) => ({
             : `${modelFile.name.substring(0, modelFile.name.lastIndexOf('.')) || modelFile.name}.3mf`)
         : 'project.3mf';
       const outName = fileName || defaultName;
-      const vfsPath = `/out/${outName}`;
+      const vfsPath = `/out/web_project_export_${++projectExportId}.3mf`;
 
-      await engine.call('saveProject', { path: vfsPath });
-      const bytes = await engine.readFile(vfsPath);
+      let bytes: Uint8Array;
+      try {
+        await engine.call('saveProject', { path: vfsPath });
+        bytes = await engine.readFile(vfsPath);
+      } finally {
+        // readFile copies the worker file; downloads and recent files own those bytes.
+        try {
+          await engine.writeFile(vfsPath, new Uint8Array());
+        } catch (error) {
+          console.warn('[project] Failed to release export staging:', error);
+        }
+      }
 
       const blob = new Blob([bytes as any], {
         type: 'application/vnd.ms-package.3dmanufacturing-3dmodel+xml'
@@ -1100,8 +1121,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       showToast(`Imported ${file.name}`, 'success');
       try {
-        const buffer = await file.arrayBuffer();
-        await storeRecentFile(file.name, new Uint8Array(buffer), 'model');
+        await storeImportedRecentFile(file, 'model');
       } catch (_) {}
     } catch (err: any) {
       set({
@@ -1821,6 +1841,12 @@ usePrinterConnectionStore.subscribe((s) => {
 });
 
 useAppStore.subscribe((state, previous) => {
+  if (previous.gcodeUrl && previous.gcodeUrl !== state.gcodeUrl)
+    URL.revokeObjectURL(previous.gcodeUrl);
+  if (!state.sliceResult && state.gcodeUrl)
+    useAppStore.setState({ gcodeUrl: null });
+  if (state.sliceResult?.gcode !== previous.sliceResult?.gcode)
+    clearExportGcodeCache(state.sliceResult?.gcode ?? null);
   if (applyingDevice || !state.isEngineReady || state.isModelLoading || state.engineError) return;
   const device = selectedDevice();
   if (!device || device.preset !== state.selectedPrinter) return;

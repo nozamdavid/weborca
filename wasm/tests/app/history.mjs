@@ -424,7 +424,7 @@ async function runBrowserHistorySuite(browserType, browserName) {
 
 async function main() {
   try {
-    await startServer(PORT, 'history');
+    await startServer(PORT, 'history', { frozenDist: process.env.HISTORY_FROZEN_DIST === '1' });
 
     console.log('\nRunning Chromium suite...');
     const chromResults = await runBrowserHistorySuite(chromium, 'chromium');

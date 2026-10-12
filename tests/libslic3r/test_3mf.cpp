@@ -5,6 +5,7 @@
 #include <catch2/matchers/catch_matchers.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include "libslic3r/Model.hpp"
+#include "libslic3r/EmbossShape.hpp"
 #include "libslic3r/Format/3mf.hpp"
 #include "libslic3r/Format/bbs_3mf.hpp"
 #include "libslic3r/Format/STL.hpp"
@@ -30,6 +31,7 @@
 #include <memory>
 #include <cstdint>
 #include <ios>
+#include <iterator>
 #include <nlohmann/json.hpp>
 
 #include <boost/filesystem/operations.hpp>
@@ -1747,4 +1749,132 @@ TEST_CASE("3MF XML entries declaring more than an int can hold fail to load", "[
         PrusaFileParser parser;
         CHECK_FALSE(parser.check_3mf_from_prusa(path));
     }
+}
+
+// A single-file 3MF (no 3D/_rels/3dmodel.model.rels) is fingerprinted by the Application metadata
+// of its model file. The probe reads the file in 64 KiB pieces, so the padding moves the
+// application name across a piece boundary.
+TEST_CASE("The PrusaSlicer probe reads the application of a single-file 3MF", "[3mf]") {
+    const size_t      padding     = GENERATE(size_t(0), size_t(65450), size_t(65480), size_t(65500));
+    const std::string application = GENERATE(std::string("PrusaSlicer-2.7.1+win64"), std::string("BambuStudio-01.09.00.70"));
+    INFO("padding " << padding << ", application " << application);
+
+    const std::string xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!--" + std::string(padding, 'A') + "-->\n"
+        "<model unit=\"millimeter\" xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n"
+        " <metadata name=\"Application\">" + application + "</metadata>\n"
+        " <resources><object id=\"1\" type=\"model\"><mesh><vertices>"
+        "<vertex x=\"0\" y=\"0\" z=\"0\"/><vertex x=\"1\" y=\"0\" z=\"0\"/><vertex x=\"0\" y=\"1\" z=\"0\"/>"
+        "</vertices><triangles><triangle v1=\"0\" v2=\"1\" v3=\"2\"/></triangles></mesh></object></resources>\n"
+        " <build><item objectid=\"1\"/></build>\n</model>\n";
+    ScopedTemporaryFile temp(".3mf");
+    {
+        Zipper zip(temp.string());
+        zip.add_entry("3D/3dmodel.model", xml.data(), xml.size());
+        zip.finalize();
+    }
+
+    PrusaFileParser parser;
+    CHECK(parser.check_3mf_from_prusa(temp.string()) == boost::algorithm::starts_with(application, "PrusaSlicer"));
+}
+
+TEST_CASE("The PrusaSlicer probe reads only the text of the Application metadata", "[3mf]") {
+    // "Prusa" ends the application and "Slicer" starts the next entry: together they are not the application name.
+    const std::string xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+        "<model unit=\"millimeter\" xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n"
+        " <metadata name=\"Application\">Prusa</metadata><metadata name=\"Title\">Slicer</metadata>\n"
+        " <resources/>\n <build/>\n</model>\n";
+    ScopedTemporaryFile temp(".3mf");
+    {
+        Zipper zip(temp.string());
+        zip.add_entry("3D/3dmodel.model", xml.data(), xml.size());
+        zip.finalize();
+    }
+
+    PrusaFileParser parser;
+    CHECK_FALSE(parser.check_3mf_from_prusa(temp.string()));
+}
+
+TEST_CASE("The model compression level changes only how the mesh is stored", "[3mf]") {
+    const int level = GENERATE(-1, 0, 1, 2, 6, 10, 11);
+    INFO("model_compression_level " << level);
+
+    Model        src;
+    ModelObject* object = src.add_object();
+    object->name = "cube";
+    object->add_volume(make_cube(10., 20., 30.));
+    object->add_instance();
+
+    ScopedTemporaryFile temp(".3mf");
+    {
+        ScopedTemporaryDir backup_dir("orca_level_src");
+        src.set_backup_path(backup_dir.string());
+        DynamicPrintConfig cfg;
+        PlateData          plate;
+        plate.plate_index = 0;
+        StoreParams params;
+        params.path                    = temp.string();
+        params.model                   = &src;
+        params.config                  = &cfg;
+        params.strategy                = SaveStrategy::Zip64 | SaveStrategy::SplitModel | SaveStrategy::ShareMesh;
+        params.model_compression_level = level;
+        params.plate_data_list.push_back(&plate);
+        REQUIRE(store_bbs_3mf(params));
+    }
+
+    // The mesh is in the object's own model file, deflated at every level; out-of-range levels keep the default.
+    std::vector<mz_uint> methods;
+    mz_zip_archive       zip;
+    mz_zip_zero_struct(&zip);
+    REQUIRE(open_zip_reader(&zip, temp.string()));
+    for (mz_uint i = 0; i < mz_zip_reader_get_num_files(&zip); ++i) {
+        mz_zip_archive_file_stat stat;
+        REQUIRE(mz_zip_reader_file_stat(&zip, i, &stat));
+        if (boost::algorithm::starts_with(stat.m_filename, "3D/Objects/"))
+            methods.push_back(stat.m_method);
+    }
+    close_zip_reader(&zip);
+    REQUIRE(methods.size() == 1);
+    CHECK(methods.front() == MZ_DEFLATED);
+
+    ScopedTemporaryDir backup_dir("orca_level_dst");
+    Model              dst;
+    REQUIRE(load_project(temp.string(), dst, backup_dir));
+    REQUIRE(dst.objects.size() == 1);
+    CHECK(dst.objects.front()->volumes.front()->mesh().its.indices.size() == object->volumes.front()->mesh().its.indices.size());
+    CHECK(dst.objects.front()->raw_mesh_bounding_box().size().isApprox(Vec3d(10., 20., 30.)));
+}
+
+TEST_CASE("A failed SVG part write preserves the prior project archive", "[3mf][Regression]") {
+    ScopedTemporaryFile target(".3mf");
+    ScopedTemporaryDir backup("orca_svg_failed_save");
+    Model model;
+    model.set_backup_path(backup.string());
+    auto* object = model.add_object();
+    auto* volume = object->add_volume(make_cube(10., 20., 30.));
+    object->add_instance();
+    volume->emboss_shape.emplace();
+    auto& svg = volume->emboss_shape->svg_file.emplace();
+    svg.path_in_3mf = "3D/source.svg";
+    svg.file_data = std::make_shared<std::string>("<svg><rect width=\"10\" height=\"20\"/></svg>");
+    DynamicPrintConfig config;
+    PlateData plate;
+    plate.plate_index = 0;
+    StoreParams params;
+    params.path = target.string();
+    params.model = &model;
+    params.config = &config;
+    params.strategy = SaveStrategy::Zip64 | SaveStrategy::SplitModel | SaveStrategy::ShareMesh;
+    params.plate_data_list.push_back(&plate);
+    REQUIRE(store_bbs_3mf(params));
+    const auto read_archive = [&target] {
+        boost::nowide::ifstream input(target.string(), std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+    };
+    const std::string prior = read_archive();
+    REQUIRE_FALSE(prior.empty());
+    // ZIP part names use a 16-bit length. This forces a real miniz failure without a test hook.
+    svg.path_in_3mf = "3D/" + std::string(65536, 'a') + ".svg";
+    CHECK_FALSE(store_bbs_3mf(params));
+    CHECK(read_archive() == prior);
+    CHECK_FALSE(boost::filesystem::exists(target.string() + ".tmp"));
 }

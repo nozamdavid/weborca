@@ -122,7 +122,8 @@ async function writeAutosaveRecord(): Promise<boolean> {
     let bytes: Uint8Array | undefined;
     if (objects > 0) {
       const engine = await getEngine();
-      await engine.call('saveProject', { path: VFS_PATH });
+      // Recovery backups favor quick saves over the smallest downloadable archive.
+      await engine.call('saveProject', { path: VFS_PATH, compressionLevel: 2 });
       bytes = await engine.readFile(VFS_PATH);
     }
     if (generation !== backupGeneration) return false;
@@ -265,8 +266,8 @@ export function startAutosave(intervalMs?: number, baseline = captureAutosaveBas
     if (urgentSave) void flush();
   });
   const unsubscribePreview = usePreviewStore.subscribe((state, previous) => {
-    if (state.viewType === previous.viewType) return;
-    markDirty();
+    if (state.viewType === previous.viewType || revision === savedRevision) return;
+    // previewStore persists the choice synchronously; flush only pending project edits.
     urgentSave = true;
     void flush();
   });

@@ -40,7 +40,7 @@ compile C++ inside Docker. The following build inputs must already exist:
 - `wasm/build/web/profiles/`, including `index.json`, covers and bed assets
 - `wasm/build/settings/layout.json`
 
-Required packaged outputs are checked during the image build. The dedicated Dockerfile ignore file
+Required packaged outputs and matching root/preview module aliases are checked during the image build. The dedicated Dockerfile ignore file
 excludes native source/build trees, node_modules and environment files. Rebuild the Release engines
 before rebuilding the image when C++ slicing or preview code changes.
 
@@ -79,7 +79,8 @@ node wasm/deploy/smoke.mjs http://127.0.0.1:8080
 docker compose -f compose.staging.yaml down
 ```
 
-The smoke check verifies real WASM delivery, isolation headers, app routes, Host restrictions and
+The smoke check verifies real WASM delivery, matching preview aliases, isolation headers, app routes, Host restrictions and
 the absence of an app-server printer gateway. The container runs as a non-root user, has a health
-check and restarts automatically. Unversioned assets use revalidation caching; hashed Vite assets
+check and restarts automatically. Compose caps the static web container at 512 MiB with no extra
+swap allowance; slicing memory is allocated in the browser. Unversioned assets use revalidation caching; hashed Vite assets
 are immutable.

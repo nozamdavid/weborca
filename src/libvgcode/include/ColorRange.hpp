@@ -53,7 +53,8 @@ public:
     // Return the interpolated color at the given value.
     // Value is clamped to [get_range()[0]..get_range()[1]].
     //
-    Color get_color_at(float value) const;
+    // color_count > 1 selects a stepped palette without changing the detected values.
+    Color get_color_at(float value, size_t color_count = 0) const;
     //
     // Return the range of this ColorRange.
     // The range is detected during the call to Viewer::load().

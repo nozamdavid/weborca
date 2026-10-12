@@ -292,6 +292,9 @@ struct StoreParams
     std::vector<PlateBBoxData*> id_bboxes;
     BBLProject* project = nullptr;
     BBLProfile* profile = nullptr;
+    // Deflate level (1-10) of the model entries, which hold the meshes and dominate save time.
+    // Other values keep the default level.
+    int model_compression_level = -1;
 
     StoreParams() {}
 };

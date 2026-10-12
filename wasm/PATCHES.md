@@ -8,7 +8,10 @@
 - `src/libslic3r/Format/DRC.cpp`: Guard Draco implementation behind `SLIC3R_NO_DRACO`, providing load/store stubs that return false.
 - `src/libslic3r/Format/STEP.cpp`: Guard OpenCASCADE implementation behind `SLIC3R_NO_OCCT` while keeping `StepPreProcessor` compiled, providing stubs returning failure status.
 - `src/libslic3r/Format/STEP.hpp`: Guard OpenCASCADE headers and OCCT types behind `SLIC3R_NO_OCCT`.
-- `src/libslic3r/Format/bbs_3mf.cpp`: Guard OpenSSL MD5 header include and plate G-code MD5 calculation behind `SLIC3R_NO_OPENSSL`.
+- `src/libslic3r/Format/3mf.cpp`, `src/libslic3r/Format/3mf.hpp`: The PrusaSlicer probe of a single-file 3MF inflates and parses the model file in pieces and stops after the model metadata, instead of parsing every mesh.
+- `src/libslic3r/Format/bbs_3mf.cpp`: Guard OpenSSL MD5 header include and plate G-code MD5 calculation behind `SLIC3R_NO_OPENSSL`. Format the mesh XML of an object in parallel, passing the same bytes to the archive in the same pieces. Apply `StoreParams::model_compression_level` to the model files.
+- `src/libslic3r/Format/bbs_3mf.hpp`: Add `StoreParams::model_compression_level` (-1, the default, keeps the existing deflate level).
+- `src/libslic3r/Print.{cpp,hpp}`, `src/libslic3r/GCode.{cpp,hpp}`, `src/libslic3r/GCode/GCodeProcessor.{cpp,hpp}`: Allow web slicing exports to skip preview-only actual-speed vertex interpolation. Desktop exports and standalone G-code parsing keep interpolation enabled by default; exports with nozzle preheating also retain it because the injector consumes those moves.
 - `src/libslic3r/Format/svg.cpp`: Guard OpenCASCADE implementation behind `SLIC3R_NO_OCCT`, providing a stub `load_svg` that returns false and sets error message.
 - `src/libslic3r/ObjColorUtils.cpp`: Guard OpenCV `QuantKMeans` clustering implementation in `obj_color_deal_algo` behind `SLIC3R_NO_OPENCV`, returning false when disabled.
 - `src/libslic3r/ObjColorUtils.hpp`: Guard OpenCV includes and `QuantKMeans` class declaration behind `SLIC3R_NO_OPENCV`.

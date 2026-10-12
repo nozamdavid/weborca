@@ -8540,5 +8540,8 @@
   "Last saved {{seconds}} seconds ago": "Último guardado hace {{seconds}} segundos",
   "1 to 9": "1 a 9",
   "Assign the selected object or part to a filament": "Asignar el objeto o la pieza seleccionada a un filamento",
-  "Camera views when no object is selected": "Vistas de cámara cuando no hay ningún objeto seleccionado"
+  "Camera views when no object is selected": "Vistas de cámara cuando no hay ningún objeto seleccionado",
+  "Low quality": "Baja calidad",
+  "Low quality G-code preview": "Vista previa de G-code de baja calidad",
+  "Reduce preview detail and resolution for faster navigation": "Reduce el detalle y la resolución de la vista previa para navegar más rápido"
 }

@@ -6,6 +6,8 @@
 #include "libslic3r/NSVGUtils.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Geometry/ConvexHull.hpp"
+#include <cstddef>
+#include <memory>
 #include <string>
 
 using json = nlohmann::json;
@@ -25,6 +27,26 @@ Slic3r::ModelVolume* find_volume(const Slic3r::ModelObject* obj, size_t id) {
         if (vol->id().id == id) return vol;
     }
     return nullptr;
+}
+
+std::string unique_svg_part_path(const Slic3r::Model& model, const Slic3r::ModelVolume& volume) {
+    // Imported paths can use any spelling, and clones may share one immutable source part.
+    const std::string base = "3D/svg_" + std::to_string(volume.id().id);
+    for (std::size_t suffix = 0; ; ++suffix) {
+        const std::string candidate = base + (suffix ? "_" + std::to_string(suffix) : "") + ".svg";
+        bool occupied = false;
+        for (const auto* object : model.objects) {
+            for (const auto* existing : object->volumes) {
+                if (existing->emboss_shape && existing->emboss_shape->svg_file &&
+                    existing->emboss_shape->svg_file->path_in_3mf == candidate) {
+                    occupied = true;
+                    break;
+                }
+            }
+            if (occupied) break;
+        }
+        if (!occupied) return candidate;
+    }
 }
 
 Slic3r::ModelVolumeType parse_volume_type(const std::string& type_str) {
@@ -79,7 +101,10 @@ GeneratedSvgMesh generate_svg_geometry(
     
     if (its.empty()) {
         // ProjectZ approach
-        Slic3r::Emboss::ProjectZ projection(depth);
+        // SVG outlines use integer coordinates. Convert them to millimeters while
+        // keeping the requested extrusion depth in millimeters, as desktop does.
+        Slic3r::Emboss::ProjectScale projection(
+            std::make_unique<Slic3r::Emboss::ProjectZ>(depth / es.scale), es.scale);
         // project2volume requires projection, expolygons, ...
         // Emboss.hpp has project2volume
         its = Slic3r::Emboss::polygons2model(shapes, projection);
@@ -141,6 +166,8 @@ json addSvg(Slic3r::Model& model, const json& args) {
         new_vol->config.set_key_value("extruder", new Slic3r::ConfigOptionInt(1));
         new_vol->name = custom_name;
         new_vol->source.is_from_builtin_objects = true;
+        // Keep the editable source in project exports and recovery snapshots.
+        generated.emboss_shape.svg_file->path_in_3mf = unique_svg_part_path(model, *new_vol);
         new_vol->emboss_shape = std::move(generated.emboss_shape);
 
         if (args.contains("position") && args["position"].is_array() && args["position"].size() >= 3) {
@@ -163,6 +190,7 @@ json addSvg(Slic3r::Model& model, const json& args) {
         new_vol->name = custom_name;
         new_vol->source.is_from_builtin_objects = true;
         new_vol->config.set_key_value("extruder", new Slic3r::ConfigOptionInt(0));
+        generated.emboss_shape.svg_file->path_in_3mf = unique_svg_part_path(model, *new_vol);
         new_vol->emboss_shape = std::move(generated.emboss_shape);
         
         if (args.contains("position") && args["position"].is_array() && args["position"].size() >= 3) {
@@ -210,6 +238,7 @@ json updateSvg(Slic3r::Model& model, const json& args) {
 
     vol->set_mesh(std::move(generated.mesh));
     vol->calculate_convex_hull();
+    generated.emboss_shape.svg_file->path_in_3mf = unique_svg_part_path(model, *vol);
     vol->emboss_shape = std::move(generated.emboss_shape);
 
     if (args.contains("name") && args["name"].is_string()) {

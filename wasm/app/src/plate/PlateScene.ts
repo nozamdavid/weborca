@@ -151,6 +151,9 @@ export class PlateScene {
 
   private unsubscribePrefs: (() => void) | null = null;
   private resizeObserver: ResizeObserver;
+  private intersectionObserver: IntersectionObserver;
+  private hasVisibleSize = false;
+  private isInViewport = true;
 
   constructor(container: HTMLElement, bedConfig: BedConfig, callbacks: PlateSceneCallbacks) {
     this.container = container;
@@ -422,8 +425,15 @@ export class PlateScene {
     this.resizeObserver = new ResizeObserver(this.onWindowResize);
     this.resizeObserver.observe(container);
 
-    // Start render loop
-    this.animate();
+    // Prepare remains mounted while Preview is open. Cache visibility in observers,
+    // so hidden geometry does not consume frames or force layout in the render loop.
+    this.intersectionObserver = new IntersectionObserver(([entry]) => {
+      this.isInViewport = entry.isIntersecting && entry.intersectionRect.width > 0 && entry.intersectionRect.height > 0;
+      this.syncAnimation();
+    });
+    this.intersectionObserver.observe(container);
+    document.addEventListener('visibilitychange', this.syncAnimation);
+    this.onWindowResize();
   }
 
   private buildBed(): void {
@@ -1944,6 +1954,11 @@ export class PlateScene {
     if (!this.container || this.isDestroyed) return;
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
+    this.hasVisibleSize = width > 0 && height > 0;
+    if (!this.hasVisibleSize) {
+      this.syncAnimation();
+      return;
+    }
     const aspect = width / height;
 
     this.perspectiveCamera.aspect = aspect;
@@ -1959,11 +1974,22 @@ export class PlateScene {
     this.orthographicCamera.updateProjectionMatrix();
 
     this.renderer.setSize(width, height);
+    this.syncAnimation();
+  };
+
+  private syncAnimation = (): void => {
+    const visible = !this.isDestroyed && this.hasVisibleSize && this.isInViewport && !document.hidden;
+    if (visible && this.animationFrameId === null) {
+      this.animationFrameId = requestAnimationFrame(this.animate);
+    } else if (!visible && this.animationFrameId !== null) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
   };
 
   private animate = (): void => {
-    if (this.isDestroyed) return;
-    this.animationFrameId = requestAnimationFrame(this.animate);
+    this.animationFrameId = null;
+    if (this.isDestroyed || !this.hasVisibleSize || !this.isInViewport || document.hidden) return;
 
     this.orbitControls.update();
     this.updateSelectionOutline();
@@ -1976,6 +2002,7 @@ export class PlateScene {
     // See-through when the camera is below the bed, so parts stay visible from underneath.
     if (this.bedFloorMaterial) this.bedFloorMaterial.opacity = this.camera.position.z < 0 ? 0.25 : 1;
     this.renderer.render(this.scene, this.camera);
+    this.syncAnimation();
   };
 
   public getCameraQuaternion(): THREE.Quaternion {
@@ -2327,6 +2354,7 @@ export class PlateScene {
     this.isDestroyed = true;
     if (this.animationFrameId !== null) {
       cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
     }
 
     this.unsubscribePrefs?.();
@@ -2342,6 +2370,8 @@ export class PlateScene {
     this.renderer.domElement.removeEventListener('contextmenu', this.onContextMenu);
     window.removeEventListener('resize', this.onWindowResize);
     this.resizeObserver.disconnect();
+    this.intersectionObserver.disconnect();
+    document.removeEventListener('visibilitychange', this.syncAnimation);
 
     this.selectionOutline.geometry.dispose();
     this.selectionOutline.material.dispose();

@@ -624,3 +624,40 @@ TEST_CASE("How fast a corner is taken does not depend on how much is extruded th
                      Catch::Matchers::WithinRel(marlin, 0.02));
     }
 }
+
+TEST_CASE("Skipping actual-speed preview interpolation preserves print estimates", "[GCodeTiming]")
+{
+    const auto config = make_config(11.0, 7.0, 3.0);
+    const char* gcode =
+        "G90\nM83\nG1 X0 Y0 Z0.2 F12000\nG1 X100\nT0\n"
+        "M900 K0.03\n; FEATURE: Outer wall\nG1 X0 E5 F12000\nG1 Y100 E5\n"
+        "T1\n; FEATURE: Sparse infill\nG1 X100 E5\nG1 Y0 E5\n";
+    GCodeProcessor preview;
+    run_processor(preview, config, gcode);
+    GCodeProcessor estimates;
+    estimates.set_generate_actual_speed_moves(false);
+    run_processor(estimates, config, gcode);
+    const auto& full = preview.get_result();
+    const auto& compact = estimates.get_result();
+    REQUIRE(compact.moves.size() < full.moves.size());
+    CHECK_THAT(compact.print_statistics.modes[NORMAL].time,
+               WithinAbs(full.print_statistics.modes[NORMAL].time, 1e-5));
+    CHECK_THAT(compact.print_statistics.modes[NORMAL].prepare_time,
+               WithinAbs(full.print_statistics.modes[NORMAL].prepare_time, 1e-5));
+    CHECK(compact.print_statistics.modes[NORMAL].custom_gcode_times == full.print_statistics.modes[NORMAL].custom_gcode_times);
+    CHECK_THAT(compact.initial_layer_time, WithinAbs(full.initial_layer_time, 1e-5));
+    CHECK(compact.print_statistics.total_travel_moves == full.print_statistics.total_travel_moves);
+    CHECK_THAT(compact.print_statistics.total_travel_distance,
+               WithinAbs(full.print_statistics.total_travel_distance, 1e-5));
+    CHECK(compact.print_statistics.total_volumes_per_extruder == full.print_statistics.total_volumes_per_extruder);
+    const auto full_roles = role_times(full);
+    const auto compact_roles = role_times(compact);
+    REQUIRE(compact_roles.size() == full_roles.size());
+    for (const auto& [role, time] : full_roles)
+        CHECK_THAT(compact_roles.at(role), WithinAbs(time, 1e-5));
+    CHECK_THAT(sum_tool_change_time(compact), WithinAbs(sum_tool_change_time(full), 1e-5));
+    CHECK(compact.warnings.size() == full.warnings.size());
+    for (const auto& move : compact.moves)
+        if (move.type == EMoveType::Extrude)
+            CHECK_THAT(move.pressure_advance, WithinAbs(0.03, 1e-6));
+}

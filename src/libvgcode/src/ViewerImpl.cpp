@@ -4,10 +4,12 @@
 ///|/
 #include "ViewerImpl.hpp"
 #include "../include/GCodeInputData.hpp"
+#include "../include/ColorRange.hpp"
 #include "Shaders.hpp"
 #include "ShadersES.hpp"
 #include "OpenGLUtils.hpp"
 #include "Utils.hpp"
+#include "LowQualitySegments.hpp"
 
 #include <cstdint>
 #include "../include/Types.hpp"
@@ -17,6 +19,8 @@
 #include "../include/ColorPrint.hpp"
 #include <cfloat>
 #include <iterator>
+#include <limits>
+#include <functional>
 #include <map>
 #include <assert.h>
 #include <optional>
@@ -350,15 +354,16 @@ void ViewerImpl::TextureData::init(size_t vertices_count)
     if (vertices_count > rows_count * m_width)
         ++rows_count;
     m_height = std::min(rows_count, OpenGLWrapper::max_texture_size());
-    m_count = rows_count / m_height;
-    if (rows_count > m_count * m_height)
-        ++m_count;
+    const size_t stride = max_texture_capacity();
+    m_count = std::max<size_t>(1, (vertices_count - 1 + stride - 1) / stride);
 
     const std::pair<size_t, size_t> test = width_height(vertices_count);
     assert(test.first == m_width);
     assert(test.second == m_height);
 
     m_tex_ids = std::vector<TexIds>(m_count);
+    m_segments_ranges.resize(m_count);
+    m_options_ranges.resize(m_count);
 }
 
 void ViewerImpl::TextureData::set_positions(const std::vector<Vec4>& positions)
@@ -386,7 +391,7 @@ void ViewerImpl::TextureData::set_positions(const std::vector<Vec4>& positions)
     const size_t tex_capacity = max_texture_capacity();
     size_t remaining = positions.size();
     for (size_t i = 0; i < m_count; ++i) {
-        const auto [w, h] = width_height(std::min(remaining, tex_capacity));
+        const auto [w, h] = width_height(std::min(remaining, tex_capacity + 1));
         const size_t offset = i * tex_capacity;
 
         glsafe(glGenTextures(1, &m_tex_ids[i].positions.first));
@@ -394,7 +399,7 @@ void ViewerImpl::TextureData::set_positions(const std::vector<Vec4>& positions)
         glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
         glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
         glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0));
-        if (remaining >= tex_capacity) {
+        if (std::min(remaining, tex_capacity + 1) == w * h) {
             glsafe(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, GL_RGBA, GL_FLOAT, &positions[offset]));
             m_tex_ids[i].positions.second = w * h;
         }
@@ -414,7 +419,32 @@ void ViewerImpl::TextureData::set_positions(const std::vector<Vec4>& positions)
     glsafe(glPixelStorei(GL_UNPACK_ALIGNMENT, curr_unpack_alignment));
 }
 
-void ViewerImpl::TextureData::set_heights_widths_angles(const std::vector<Vec4>& heights_widths_angles)
+void ViewerImpl::TextureData::set_heights_widths_angles(const std::vector<Vec4>& heights_widths_angles, bool low_quality)
+{
+    if (low_quality) {
+        std::vector<HeightWidth> staging;
+        upload_heights_widths_angles(heights_widths_angles.size(), true, [&](size_t offset, size_t count) {
+            staging.clear();
+            staging.reserve(count);
+            for (size_t i = offset; i < offset + count; ++i)
+                staging.push_back({ heights_widths_angles[i][0], heights_widths_angles[i][1] });
+            return staging.front().data();
+        }, true);
+    }
+    else {
+        upload_heights_widths_angles(heights_widths_angles.size(), false,
+            [&heights_widths_angles](size_t offset, size_t) { return heights_widths_angles[offset].data(); });
+    }
+}
+
+void ViewerImpl::TextureData::stream_heights_widths_angles(size_t count, bool low_quality,
+    const std::function<const float*(size_t, size_t)>& data)
+{
+    upload_heights_widths_angles(count, low_quality, data, true);
+}
+
+void ViewerImpl::TextureData::upload_heights_widths_angles(size_t count, bool low_quality,
+    const std::function<const float*(size_t, size_t)>& data, bool chunked)
 {
     if (m_count == 0)
         return;
@@ -426,7 +456,7 @@ void ViewerImpl::TextureData::set_heights_widths_angles(const std::vector<Vec4>&
 
     m_height_width_angle_size = 0;
 
-    if (heights_widths_angles.empty())
+    if (count == 0)
         return;
 
     int curr_bound_texture = 0;
@@ -437,9 +467,12 @@ void ViewerImpl::TextureData::set_heights_widths_angles(const std::vector<Vec4>&
     glsafe(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
 
     const size_t tex_capacity = max_texture_capacity();
-    size_t remaining = heights_widths_angles.size();
+    const GLenum internal_format = low_quality ? GL_RG32F : GL_RGBA32F;
+    const GLenum format = low_quality ? GL_RG : GL_RGBA;
+    const size_t components = low_quality ? 2 : 4;
+    size_t remaining = count;
     for (size_t i = 0; i < m_count; ++i) {
-        const auto [w, h] = width_height(std::min(remaining, tex_capacity));
+        const auto [w, h] = width_height(std::min(remaining, tex_capacity + 1));
         const size_t offset = i * tex_capacity;
 
         glsafe(glGenTextures(1, &m_tex_ids[i].heights_widths_angles.first));
@@ -447,18 +480,38 @@ void ViewerImpl::TextureData::set_heights_widths_angles(const std::vector<Vec4>&
         glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
         glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
         glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0));
-        if (remaining >= tex_capacity) {
-            glsafe(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, GL_RGBA, GL_FLOAT, &heights_widths_angles[offset]));
+        const size_t entries = std::min(remaining, tex_capacity + 1);
+        if (chunked) {
+            glsafe(glTexImage2D(GL_TEXTURE_2D, 0, internal_format, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, format, GL_FLOAT, nullptr));
+            // A million texels bound staging to 8 MiB in low and 16 MiB in normal.
+            const size_t rows_per_batch = std::max<size_t>(1, (size_t(1) << 20) / w);
+            const size_t rows = entries / w;
+            for (size_t row = 0; row < rows; row += rows_per_batch) {
+                const size_t batch_rows = std::min(rows_per_batch, rows - row);
+                const float* batch = data(offset + row * w, batch_rows * w);
+                glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, static_cast<GLsizei>(row), static_cast<GLsizei>(w), static_cast<GLsizei>(batch_rows), format, GL_FLOAT, batch));
+            }
+            if (entries % w != 0) {
+                const float* batch = data(offset + rows * w, entries % w);
+                glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, static_cast<GLsizei>(rows), static_cast<GLsizei>(entries % w), 1, format, GL_FLOAT, batch));
+            }
+            m_tex_ids[i].heights_widths_angles.second = entries;
+        }
+        else if (entries == w * h) {
+            const float* source = data(offset, entries);
+            glsafe(glTexImage2D(GL_TEXTURE_2D, 0, internal_format, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, format, GL_FLOAT, source));
             m_tex_ids[i].heights_widths_angles.second = w * h;
         }
         else {
             // the last row is only partially fitted with data, send it separately
-            glsafe(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, GL_RGBA, GL_FLOAT, nullptr));
-            glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, static_cast<GLsizei>(w), static_cast<GLsizei>(h - 1), GL_RGBA, GL_FLOAT, &heights_widths_angles[offset]));
-            glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, static_cast<GLsizei>(h - 1), static_cast<GLsizei>(remaining % w), 1, GL_RGBA, GL_FLOAT, &heights_widths_angles[offset + w * (h - 1)]));
+            glsafe(glTexImage2D(GL_TEXTURE_2D, 0, internal_format, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, format, GL_FLOAT, nullptr));
+            const float* source = data(offset, w * (h - 1));
+            glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, static_cast<GLsizei>(w), static_cast<GLsizei>(h - 1), format, GL_FLOAT, source));
+            source = data(offset + w * (h - 1), remaining % w);
+            glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, static_cast<GLsizei>(h - 1), static_cast<GLsizei>(remaining % w), 1, format, GL_FLOAT, source));
             m_tex_ids[i].heights_widths_angles.second = w * (h - 1) + remaining % w;
         }
-        m_height_width_angle_size += m_tex_ids[i].heights_widths_angles.second * sizeof(Vec4);
+        m_height_width_angle_size += m_tex_ids[i].heights_widths_angles.second * components * sizeof(float);
 
         remaining = (remaining > tex_capacity) ? remaining - tex_capacity : 0;
     }
@@ -492,7 +545,7 @@ void ViewerImpl::TextureData::set_colors(const std::vector<float>& colors)
     const size_t tex_capacity = max_texture_capacity();
     size_t remaining = colors.size();
     for (size_t i = 0; i < m_count; ++i) {
-        const auto [w, h] = width_height(std::min(remaining, tex_capacity));
+        const auto [w, h] = width_height(std::min(remaining, tex_capacity + 1));
         const size_t offset = i * tex_capacity;
 
         glsafe(glGenTextures(1, &m_tex_ids[i].colors.first));
@@ -500,7 +553,7 @@ void ViewerImpl::TextureData::set_colors(const std::vector<float>& colors)
         glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
         glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
         glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0));
-        if (remaining >= tex_capacity) {
+        if (std::min(remaining, tex_capacity + 1) == w * h) {
             glsafe(glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, GL_RED, GL_FLOAT, &colors[offset]));
             m_tex_ids[i].colors.second = w * h;
         }
@@ -520,144 +573,160 @@ void ViewerImpl::TextureData::set_colors(const std::vector<float>& colors)
     glsafe(glPixelStorei(GL_UNPACK_ALIGNMENT, curr_unpack_alignment));
 }
 
-void ViewerImpl::TextureData::set_enabled_segments(const std::vector<uint32_t>& enabled_segments)
+void ViewerImpl::TextureData::set_enabled_segments(std::vector<uint32_t>&& enabled_segments)
 {
-    if (m_count == 0)
-        return;
+    m_enabled_segments = std::move(enabled_segments);
+    std::vector<SegmentEndpoints>().swap(m_low_quality_segments);
+    m_segments_are_paired = false;
+    upload_enabled_indices(false);
+}
 
+void ViewerImpl::TextureData::set_low_quality_segments(std::vector<SegmentEndpoints>&& segments)
+{
+    m_low_quality_segments = std::move(segments);
+    std::vector<uint32_t>().swap(m_enabled_segments);
+    m_segments_are_paired = true;
+    upload_enabled_indices(false);
+}
+
+void ViewerImpl::TextureData::set_enabled_options(std::vector<uint32_t>&& enabled_options)
+{
+    m_enabled_options = std::move(enabled_options);
+    upload_enabled_indices(true);
+}
+
+void ViewerImpl::TextureData::upload_enabled_indices(bool options)
+{
+    const bool paired = !options && m_segments_are_paired;
+    const std::vector<uint32_t>& enabled = options ? m_enabled_options : m_enabled_segments;
+    size_t& size_bytes = options ? m_enabled_options_size : m_enabled_segments_size;
+    size_bytes = 0;
     for (TexIds& ids : m_tex_ids) {
-        delete_textures(ids.enabled_segments.first);
-        ids.enabled_segments.second = 0;
+        auto& texture = options ? ids.enabled_options : ids.enabled_segments;
+        delete_textures(texture.first);
+        texture.second = 0;
     }
-
-    m_enabled_segments_size = 0;
-
-    if (enabled_segments.empty())
+    if (paired ? m_low_quality_segments.empty() : enabled.empty())
         return;
 
     int curr_bound_texture = 0;
     glsafe(glGetIntegerv(GL_TEXTURE_BINDING_2D, &curr_bound_texture));
     int curr_unpack_alignment = 0;
     glsafe(glGetIntegerv(GL_UNPACK_ALIGNMENT, &curr_unpack_alignment));
-
     glsafe(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
 
     const size_t tex_capacity = max_texture_capacity();
-    size_t curr_tex_id = 0;
-    std::vector<uint32_t> curr_segments;
-    for (size_t i = 0; i < enabled_segments.size(); ++i) {
-        uint32_t seg = enabled_segments[i];
-        const bool new_tex = static_cast<size_t>(seg) > (curr_tex_id + 1) * tex_capacity;
-        if (!new_tex)
-            curr_segments.push_back(seg - static_cast<uint32_t>(curr_tex_id * tex_capacity));
-        if (i + 1 == enabled_segments.size() || new_tex) {
-            const auto [w, h] = width_height(curr_segments.size());
-
-            glsafe(glGenTextures(1, &m_tex_ids[curr_tex_id].enabled_segments.first));
-            glsafe(glBindTexture(GL_TEXTURE_2D, m_tex_ids[curr_tex_id].enabled_segments.first));
-            glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-            glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-            glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0));
-            if (curr_segments.size() == tex_capacity) {
-                glsafe(glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, GL_RED_INTEGER, GL_UNSIGNED_INT, curr_segments.data()));
-                m_tex_ids[curr_tex_id].enabled_segments.second = w * h;
-            }
-            else {
-                glsafe(glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr));
-                if (h == 1) {
-                    glsafe(glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, static_cast<GLsizei>(w), 1, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, curr_segments.data()));
-                    m_tex_ids[curr_tex_id].enabled_segments.second = w;
-                }
-                else {
-                    // the last row is only partially fitted with data, send it separately
-                    glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, static_cast<GLsizei>(w), static_cast<GLsizei>(h - 1), GL_RED_INTEGER, GL_UNSIGNED_INT, curr_segments.data()));
-                    glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, static_cast<GLsizei>(h - 1), static_cast<GLsizei>(curr_segments.size() % w), 1, GL_RED_INTEGER, GL_UNSIGNED_INT, &curr_segments[w * (h - 1)]));
-                    m_tex_ids[curr_tex_id].enabled_segments.second = w * (h - 1) + curr_segments.size() % w;
-                }
-            }
-            m_enabled_segments_size += m_tex_ids[curr_tex_id].enabled_segments.second * sizeof(uint32_t);
-            if (new_tex) {
-                curr_segments.clear();
-                ++curr_tex_id;
-                curr_segments.push_back(seg - static_cast<uint32_t>(curr_tex_id * tex_capacity));
-            }
+    size_t begin = 0;
+    std::vector<uint32_t> local_indices;
+    for (size_t i = 0; i < m_count; ++i) {
+        const size_t boundary = (i + 1) * tex_capacity;
+        const size_t end = paired ? static_cast<size_t>(std::lower_bound(m_low_quality_segments.begin() + begin, m_low_quality_segments.end(), boundary,
+            [](const SegmentEndpoints& segment, size_t value) { return segment.first < value; }) - m_low_quality_segments.begin()) :
+            static_cast<size_t>(std::lower_bound(enabled.begin() + begin, enabled.end(), boundary) - enabled.begin());
+        const size_t count = end - begin;
+        if (count == 0)
+            continue;
+        const uint32_t* data = paired ? nullptr : enabled.data() + begin;
+        // Normal indices on the first page are already local. Low indices pack
+        // the local start and span into one texel on every page.
+        if (paired || i > 0) {
+            local_indices.resize(count);
+            const uint32_t offset = static_cast<uint32_t>(i * tex_capacity);
+            if (paired) {
+                const unsigned int bits = get_segment_index_bits();
+                for (size_t j = 0; j < count; ++j)
+                    local_indices[j] = pack_segment_index(m_low_quality_segments[begin + j], offset, bits);
+            } else
+                std::transform(enabled.begin() + begin, enabled.begin() + end, local_indices.begin(),
+                    [offset](uint32_t id) { return id - offset; });
+            data = local_indices.data();
         }
+        constexpr GLenum internal_format = GL_R32UI;
+        constexpr GLenum format = GL_RED_INTEGER;
+        auto& texture = options ? m_tex_ids[i].enabled_options : m_tex_ids[i].enabled_segments;
+        const auto [w, h] = width_height(count);
+        glsafe(glGenTextures(1, &texture.first));
+        glsafe(glBindTexture(GL_TEXTURE_2D, texture.first));
+        glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+        glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
+        glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0));
+        if (count == w * h)
+            glsafe(glTexImage2D(GL_TEXTURE_2D, 0, internal_format, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, format, GL_UNSIGNED_INT, data));
+        else {
+            glsafe(glTexImage2D(GL_TEXTURE_2D, 0, internal_format, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, format, GL_UNSIGNED_INT, nullptr));
+            const size_t rows = count / w;
+            if (rows > 0)
+                glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, static_cast<GLsizei>(w), static_cast<GLsizei>(rows), format, GL_UNSIGNED_INT, data));
+            const void* last_row = static_cast<const void*>(data + rows * w);
+            glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, static_cast<GLsizei>(rows), static_cast<GLsizei>(count % w), 1, format, GL_UNSIGNED_INT, last_row));
+        }
+        texture.second = count;
+        size_bytes += count * sizeof(uint32_t);
+        begin = end;
     }
-
     glsafe(glBindTexture(GL_TEXTURE_2D, curr_bound_texture));
     glsafe(glPixelStorei(GL_UNPACK_ALIGNMENT, curr_unpack_alignment));
 }
 
-void ViewerImpl::TextureData::set_enabled_options(const std::vector<uint32_t>& enabled_options)
+void ViewerImpl::TextureData::set_enabled_range(const Interval& range)
 {
-    if (m_count == 0)
-        return;
-
-    for (TexIds& ids : m_tex_ids) {
-        delete_textures(ids.enabled_options.first);
-        ids.enabled_options.second = 0;
+    m_enabled_range = range;
+    const auto select = [&range](const std::vector<uint32_t>& vertices, size_t begin, size_t count) {
+        const auto first = vertices.begin() + begin;
+        const auto last = first + count;
+        const auto from = std::lower_bound(first, last, range[0]);
+        const auto to = std::lower_bound(from, last, range[1]);
+        return std::make_pair(static_cast<size_t>(from - first), static_cast<size_t>(to - from));
+    };
+    size_t segments_begin = 0;
+    size_t options_begin = 0;
+    for (size_t i = 0; i < m_count; ++i) {
+        if (m_segments_are_paired) {
+            const auto first = m_low_quality_segments.begin() + segments_begin;
+            const auto last = first + m_tex_ids[i].enabled_segments.second;
+            const auto from = std::upper_bound(first, last, range[0], [](uint32_t value, const SegmentEndpoints& segment) { return value < segment.last; });
+            const auto to = std::lower_bound(from, last, range[1], [](const SegmentEndpoints& segment, uint32_t value) { return segment.first < value; });
+            m_segments_ranges[i] = { static_cast<size_t>(from - first), static_cast<size_t>(to - from) };
+        } else
+            m_segments_ranges[i] = select(m_enabled_segments, segments_begin, m_tex_ids[i].enabled_segments.second);
+        m_options_ranges[i] = select(m_enabled_options, options_begin, m_tex_ids[i].enabled_options.second);
+        segments_begin += m_tex_ids[i].enabled_segments.second;
+        options_begin += m_tex_ids[i].enabled_options.second;
     }
+}
 
-    m_enabled_options_size = 0;
+size_t ViewerImpl::TextureData::get_enabled_segments_offset(size_t id) const
+{
+    return m_segments_ranges[id].first;
+}
 
-    if (enabled_options.empty())
-        return;
+size_t ViewerImpl::TextureData::get_enabled_options_offset(size_t id) const
+{
+    return m_options_ranges[id].first;
+}
 
-    int curr_bound_texture = 0;
-    glsafe(glGetIntegerv(GL_TEXTURE_BINDING_2D, &curr_bound_texture));
-    int curr_unpack_alignment = 0;
-    glsafe(glGetIntegerv(GL_UNPACK_ALIGNMENT, &curr_unpack_alignment));
+void ViewerImpl::TextureData::release_cpu_indices()
+{
+    std::vector<uint32_t>().swap(m_enabled_segments);
+    std::vector<uint32_t>().swap(m_enabled_options);
+    std::vector<SegmentEndpoints>().swap(m_low_quality_segments);
+}
 
-    glsafe(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
-
-    const size_t tex_capacity = max_texture_capacity();
-    size_t curr_tex_id = 0;
-    std::vector<uint32_t> curr_options;
-    for (size_t i = 0; i < enabled_options.size(); ++i) {
-        uint32_t opt = enabled_options[i];
-        const bool new_tex = static_cast<size_t>(opt) > (curr_tex_id + 1) * tex_capacity;
-        if (!new_tex)
-            curr_options.push_back(opt - static_cast<uint32_t>(curr_tex_id * tex_capacity));
-        if (i + 1 == enabled_options.size() || new_tex) {
-            const auto [w, h] = width_height(curr_options.size());
-
-            glsafe(glGenTextures(1, &m_tex_ids[curr_tex_id].enabled_options.first));
-            glsafe(glBindTexture(GL_TEXTURE_2D, m_tex_ids[curr_tex_id].enabled_options.first));
-            glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
-            glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
-            glsafe(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0));
-            if (curr_options.size() == tex_capacity) {
-                glsafe(glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, GL_RED_INTEGER, GL_UNSIGNED_INT, curr_options.data()));
-                m_tex_ids[curr_tex_id].enabled_options.second = w * h;
-            }
-            else {
-                glsafe(glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, static_cast<GLsizei>(w), static_cast<GLsizei>(h), 0, GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr));
-                if (h == 1) {
-                    glsafe(glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, static_cast<GLsizei>(w), 1, 0, GL_RED_INTEGER, GL_UNSIGNED_INT, curr_options.data()));
-                    m_tex_ids[curr_tex_id].enabled_options.second = w;
-                }
-                else {
-                    // the last row is only partially fitted with data, send it separately
-                    glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, static_cast<GLsizei>(w), static_cast<GLsizei>(h - 1), GL_RED_INTEGER, GL_UNSIGNED_INT, curr_options.data()));
-                    glsafe(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, static_cast<GLsizei>(h - 1), static_cast<GLsizei>(curr_options.size() % w), 1, GL_RED_INTEGER, GL_UNSIGNED_INT, &curr_options[w * (h - 1)]));
-                    m_tex_ids[curr_tex_id].enabled_options.second = w * (h - 1) + curr_options.size() % w;
-                }
-            }
-            m_enabled_options_size += m_tex_ids[curr_tex_id].enabled_options.second * sizeof(uint32_t);
-            if (new_tex) {
-                curr_options.clear();
-                ++curr_tex_id;
-                curr_options.push_back(opt - static_cast<uint32_t>(curr_tex_id * tex_capacity));
-            }
-        }
-    }
-
-    glsafe(glBindTexture(GL_TEXTURE_2D, curr_bound_texture));
-    glsafe(glPixelStorei(GL_UNPACK_ALIGNMENT, curr_unpack_alignment));
+size_t ViewerImpl::TextureData::get_used_cpu_memory() const
+{
+    return (m_enabled_segments.capacity() + m_enabled_options.capacity()) * sizeof(uint32_t) +
+        m_low_quality_segments.capacity() * sizeof(SegmentEndpoints) +
+        (m_segments_ranges.capacity() + m_options_ranges.capacity()) * sizeof(std::pair<size_t, size_t>);
 }
 
 void ViewerImpl::TextureData::reset()
 {
+    std::vector<uint32_t>().swap(m_enabled_segments);
+    std::vector<SegmentEndpoints>().swap(m_low_quality_segments);
+    m_segments_are_paired = false;
+    std::vector<uint32_t>().swap(m_enabled_options);
+    m_segments_ranges.clear();
+    m_options_ranges.clear();
     for (TexIds& ids : m_tex_ids) {
         delete_textures(ids.enabled_options.first);
         delete_textures(ids.enabled_segments.first);
@@ -699,20 +768,20 @@ std::pair<unsigned int, size_t> ViewerImpl::TextureData::get_colors_tex_id(size_
 std::pair<unsigned int, size_t> ViewerImpl::TextureData::get_enabled_segments_tex_id(size_t id) const
 {
     assert(id < m_tex_ids.size());
-    return m_tex_ids[id].enabled_segments;
+    return { m_tex_ids[id].enabled_segments.first, m_segments_ranges[id].second };
 }
 
 std::pair<unsigned int, size_t> ViewerImpl::TextureData::get_enabled_options_tex_id(size_t id) const
 {
     assert(id < m_tex_ids.size());
-    return m_tex_ids[id].enabled_options;
+    return { m_tex_ids[id].enabled_options.first, m_options_ranges[id].second };
 }
 
 size_t ViewerImpl::TextureData::get_enabled_segments_count() const
 {
     size_t ret = 0;
     for (size_t i = 0; i < m_count; ++i) {
-        ret += m_tex_ids[i].enabled_segments.second;
+        ret += m_segments_ranges[i].second;
     }
     return ret;
 }
@@ -721,7 +790,7 @@ size_t ViewerImpl::TextureData::get_enabled_options_count() const
 {
     size_t ret = 0;
     for (size_t i = 0; i < m_count; ++i) {
-        ret += m_tex_ids[i].enabled_options.second;
+        ret += m_options_ranges[i].second;
     }
     return ret;
 }
@@ -755,9 +824,25 @@ void ViewerImpl::SegmentsUniforms::init(unsigned int shader_id)
     segment_index_tex      = glGetUniformLocation(shader_id, "segment_index_tex");
     reverse_order          = glGetUniformLocation(shader_id, "reverse_order");
     instances_count        = glGetUniformLocation(shader_id, "instances_count");
+    instance_offset        = glGetUniformLocation(shader_id, "instance_offset");
+    visible_vertices       = glGetUniformLocation(shader_id, "visible_vertices");
+    paired_indices         = glGetUniformLocation(shader_id, "paired_indices");
+#ifdef ENABLE_OPENGL_ES
+    index_bits             = glGetUniformLocation(shader_id, "index_bits");
+#endif
     // ORCA: section view
     clipping_plane         = glGetUniformLocation(shader_id, "clipping_plane");
 }
+
+#ifdef ENABLE_OPENGL_ES
+void ViewerImpl::SegmentsProgram::init()
+{
+    uniforms.init(id);
+    layer_colors.init(id);
+    exposure = glGetUniformLocation(id, "exposure");
+    saturation = glGetUniformLocation(id, "saturation");
+}
+#endif
 
 void ViewerImpl::init(const std::string& opengl_context_version)
 {
@@ -779,6 +864,15 @@ void ViewerImpl::init(const std::string& opengl_context_version)
     // segments shader
 #ifdef ENABLE_OPENGL_ES
     m_segments_shader_id = init_shader("segments", Segments_Vertex_Shader_ES, Segments_Fragment_Shader_ES);
+    const auto low_source = [](const char* text) {
+        std::string result(text);
+        result.insert(result.find('\n') + 1, "#define LOW_QUALITY\n");
+        return result;
+    };
+    const std::string vertex = low_source(Segments_Vertex_Shader_ES);
+    const std::string fragment = low_source(Segments_Fragment_Shader_ES);
+    m_low_quality_program.id = init_shader("segments_low_quality", vertex.c_str(), fragment.c_str());
+    m_low_quality_program.init();
 #else
     m_segments_shader_id = init_shader("segments", Segments_Vertex_Shader, Segments_Fragment_Shader);
 #endif // ENABLE_OPENGL_ES
@@ -833,6 +927,9 @@ void ViewerImpl::init(const std::string& opengl_context_version)
     // ORCA: section view
     m_uni_options_clipping_plane_id         = glGetUniformLocation(m_options_shader_id, "clipping_plane");
     m_uni_options_layer_colors.init(m_options_shader_id);
+#ifdef ENABLE_OPENGL_ES
+    m_uni_options_instance_offset_id = glGetUniformLocation(m_options_shader_id, "instance_offset");
+#endif
     glcheck();
     assert(m_uni_options_view_matrix_id != -1 &&
            m_uni_options_projection_matrix_id != -1 &&
@@ -902,6 +999,11 @@ void ViewerImpl::shutdown()
         glsafe(glDeleteProgram(m_options_shader_id));
         m_options_shader_id = 0;
     }
+#ifdef ENABLE_OPENGL_ES
+    if (m_low_quality_program.id != 0)
+        glsafe(glDeleteProgram(m_low_quality_program.id));
+    m_low_quality_program.id = 0;
+#endif
     if (m_segments_shader_id != 0) {
         glsafe(glDeleteProgram(m_segments_shader_id));
         m_segments_shader_id = 0;
@@ -918,6 +1020,21 @@ void ViewerImpl::shutdown()
     OpenGLWrapper::unload_opengl();
 }
 
+void ViewerImpl::release_cpu_render_cache()
+{
+#ifdef ENABLE_OPENGL_ES
+    if (m_vertices.empty())
+        return;
+    // GPU data remains valid, and original vertices retain their query lifetimes.
+    // Free derived buffers before a replacement parser needs a large contiguous block.
+    std::vector<float>().swap(m_vertices_colors);
+    m_texture_data.release_cpu_indices();
+    m_settings.update_colors = true;
+    m_settings_used_for_enabled_entities.reset();
+    m_settings.update_enabled_entities = true;
+#endif
+}
+
 void ViewerImpl::reset()
 {
     m_layers.reset();
@@ -927,8 +1044,15 @@ void ViewerImpl::reset()
     m_used_extruders.clear();
     m_total_time = { 0.0f, 0.0f };
     m_travels_time = { 0.0f, 0.0f };
+#ifdef ENABLE_OPENGL_ES
+    // A large replacement file is converted after reset. Return its predecessor's
+    // storage before that conversion rather than retaining two full vertex arrays.
+    std::vector<PathVertex>().swap(m_vertices);
+    std::vector<float>().swap(m_vertices_colors);
+#else
     m_vertices.clear();
     m_vertices_colors.clear();
+#endif
     // swap rather than clear: these are sized by the print, and a reset means the memory
     // should go back, not sit reserved until the next load
     for (std::vector<float>& times : m_layer_start_times)
@@ -936,17 +1060,18 @@ void ViewerImpl::reset()
     std::vector<uint32_t>().swap(m_layer_first_vertex);
     m_layers_in_vertex_order = false;
     m_valid_lines_bitset.clear();
+    m_settings_used_for_ranges.reset();
 #if VGCODE_ENABLE_COG_AND_TOOL_MARKERS
     m_cog_marker.reset();
 #endif // VGCODE_ENABLE_COG_AND_TOOL_MARKERS
 
 #ifdef ENABLE_OPENGL_ES
     m_texture_data.reset();
+    m_settings_used_for_enabled_entities.reset();
+    m_height_width_format_dirty = false;
 #else
     m_enabled_segments_count = 0;
     m_enabled_options_count = 0;
-
-    m_settings_used_for_ranges = std::nullopt;
 
     delete_textures(m_enabled_options_tex_id);
     delete_buffers(m_enabled_options_buf_id);
@@ -968,20 +1093,25 @@ void ViewerImpl::reset()
 // to position and heights_widths_angles vectors
 
 static void extract_pos_and_or_hwa(const std::vector<PathVertex>& vertices, float travels_radius, float wipes_radius, BitSet<>& valid_lines_bitset,
-    std::vector<Vec4>* positions = nullptr, std::vector<Vec4>* heights_widths_angles = nullptr, bool update_bitset = false) {
+    std::vector<Vec4>* positions = nullptr, std::vector<Vec4>* heights_widths_angles = nullptr, bool update_bitset = false,
+    std::vector<HeightWidth>* heights_widths = nullptr, size_t first = 0, size_t count = 0) {
   static constexpr const Vec3 ZERO = { 0.0f, 0.0f, 0.0f };
-    if (positions == nullptr && heights_widths_angles == nullptr)
+    if (positions == nullptr && heights_widths_angles == nullptr && heights_widths == nullptr)
         return;
     if (vertices.empty())
         return;
     if (travels_radius <= 0.0f || wipes_radius <= 0.0f)
         return;
 
+    const size_t end = count == 0 ? vertices.size() : first + count;
+    assert(first <= end && end <= vertices.size());
     if (positions != nullptr)
-        positions->reserve(vertices.size());
+        positions->reserve(end - first);
     if (heights_widths_angles != nullptr)
-        heights_widths_angles->reserve(vertices.size());
-    for (size_t i = 0; i < vertices.size(); ++i) {
+        heights_widths_angles->reserve(end - first);
+    if (heights_widths != nullptr)
+        heights_widths->reserve(end - first);
+    for (size_t i = first; i < end; ++i) {
         const PathVertex& v = vertices[i];
         const EMoveType move_type = v.type;
         const bool prev_line_valid = i > 0 && valid_lines_bitset[i - 1];
@@ -1010,7 +1140,7 @@ static void extract_pos_and_or_hwa(const std::vector<PathVertex>& vertices, floa
             positions->emplace_back(position);
         }
 
-        if (heights_widths_angles != nullptr) {
+        if (heights_widths_angles != nullptr || heights_widths != nullptr) {
             float height = 0.0f;
             float width = 0.0f;
             if (v.is_travel()) {
@@ -1026,17 +1156,20 @@ static void extract_pos_and_or_hwa(const std::vector<PathVertex>& vertices, floa
                 width = v.width;
             }
             
-            // ORCA: Set bias for wipes and options to avoid z-fighting
-            float bias = 0.0f;
-            if (v.is_wipe())
-                bias = 0.05f;
-            else if (v.is_option())
-                bias = 0.1f;
+            if (heights_widths != nullptr)
+                heights_widths->push_back({ height, width });
+            if (heights_widths_angles != nullptr) {
+                // ORCA: Set bias for wipes and options to avoid z-fighting
+                float bias = 0.0f;
+                if (v.is_wipe())
+                    bias = 0.05f;
+                else if (v.is_option())
+                    bias = 0.1f;
 
-            // the last component is a dummy float to comply with GL_RGBA32F format
-            // ORCA: Pass bias to shader
-            heights_widths_angles->push_back({ height, width,
-                std::atan2(prev_line[0] * this_line[1] - prev_line[1] * this_line[0], dot(prev_line, this_line)), bias });
+                // ORCA: Pass bias to shader in the fourth component.
+                heights_widths_angles->push_back({ height, width,
+                    std::atan2(prev_line[0] * this_line[1] - prev_line[1] * this_line[0], dot(prev_line, this_line)), bias });
+            }
         }
     }
 }
@@ -1154,13 +1287,14 @@ void ViewerImpl::load(GCodeInputData&& gcode_data)
     if (m_settings.time_mode != ETimeMode::Normal && m_total_time[static_cast<size_t>(m_settings.time_mode)] == 0.0f)
         m_settings.time_mode = ETimeMode::Normal;
 
-    // buffers to send to gpu
-    // the last component is a dummy float to comply with GL_RGBA32F format
+    // Generate positions and normal dimensions together. Low quality repacks only
+    // height/width into bounded rows during GPU upload.
     std::vector<Vec4> positions;
     std::vector<Vec4> heights_widths_angles;
     positions.reserve(m_vertices.size());
     heights_widths_angles.reserve(m_vertices.size());
-    extract_pos_and_or_hwa(m_vertices, m_travels_radius, m_wipes_radius, m_valid_lines_bitset, &positions, &heights_widths_angles, true);
+    extract_pos_and_or_hwa(m_vertices, m_travels_radius, m_wipes_radius, m_valid_lines_bitset,
+        &positions, &heights_widths_angles, true);
 
     if (!positions.empty()) {
 #ifdef ENABLE_OPENGL_ES
@@ -1168,7 +1302,8 @@ void ViewerImpl::load(GCodeInputData&& gcode_data)
         // create and fill position textures
         m_texture_data.set_positions(positions);
         // create and fill height, width and angle textures
-        m_texture_data.set_heights_widths_angles(heights_widths_angles);
+        m_texture_data.set_heights_widths_angles(heights_widths_angles, m_settings.low_quality);
+        m_height_width_format_dirty = false;
 #else
         m_positions_tex_size = positions.size() * sizeof(Vec3);
         m_height_width_angle_tex_size = heights_widths_angles.size() * sizeof(Vec3);
@@ -1213,10 +1348,13 @@ void ViewerImpl::load(GCodeInputData&& gcode_data)
 #endif // ENABLE_OPENGL_ES
     }
 
+    // Uploads copy the staging arrays, so release them before allocating enabled indices/colors.
+    std::vector<Vec4>().swap(positions);
+    std::vector<Vec4>().swap(heights_widths_angles);
     update_view_full_range();
     m_view_range.set_visible(m_view_range.get_enabled());
-    update_enabled_entities();
     update_colors();
+    update_enabled_entities();
 }
 
 void ViewerImpl::update_enabled_entities()
@@ -1245,7 +1383,26 @@ void ViewerImpl::update_enabled_entities()
             --range[0];
     }
 
-    for (size_t i = range[0]; i < range[1]; ++i) {
+#ifdef ENABLE_OPENGL_ES
+    // Visibility changes rebuild the ordered index textures. Layer and move sliders only select
+    // a contiguous slice of those indices, preserving every original segment and option.
+    const bool rebuild = !m_settings_used_for_enabled_entities.has_value() ||
+        m_settings_used_for_enabled_entities->options_visibility != m_settings.options_visibility ||
+        m_settings_used_for_enabled_entities->extrusion_roles_visibility != m_settings.extrusion_roles_visibility ||
+        m_settings_used_for_enabled_entities->low_quality != m_settings.low_quality;
+    if (!rebuild) {
+        m_texture_data.set_enabled_range(range);
+        m_settings.update_enabled_entities = false;
+        return;
+    }
+    const Interval index_range{ 0, static_cast<uint32_t>(m_vertices.size() - 1) };
+    if (!m_settings.low_quality)
+        enabled_segments.reserve(m_vertices.size() - 1);
+    LowQualitySegments low_segments(m_vertices, m_vertices_colors, m_texture_data.max_texture_capacity() + 1);
+#else
+    const Interval& index_range = range;
+#endif
+    for (size_t i = index_range[0]; i < index_range[1]; ++i) {
         const PathVertex& v = m_vertices[i];
 
         if (!m_valid_lines_bitset[i] && !v.is_option())
@@ -1271,13 +1428,24 @@ void ViewerImpl::update_enabled_entities()
 
         if (v.is_option())
             enabled_options.push_back(static_cast<uint32_t>(i));
-        else
-            enabled_segments.push_back(static_cast<uint32_t>(i));
+        else {
+#ifdef ENABLE_OPENGL_ES
+            if (m_settings.low_quality)
+                low_segments.append(static_cast<uint32_t>(i));
+            else
+#endif
+                enabled_segments.push_back(static_cast<uint32_t>(i));
+        }
     }
 
 #ifdef ENABLE_OPENGL_ES
-    m_texture_data.set_enabled_segments(enabled_segments);
-    m_texture_data.set_enabled_options(enabled_options);
+    if (m_settings.low_quality)
+        m_texture_data.set_low_quality_segments(low_segments.finish());
+    else
+        m_texture_data.set_enabled_segments(std::move(enabled_segments));
+    m_texture_data.set_enabled_options(std::move(enabled_options));
+    m_texture_data.set_enabled_range(range);
+    m_settings_used_for_enabled_entities = m_settings;
 #else
     m_enabled_segments_count = enabled_segments.size();
     m_enabled_options_count = enabled_options.size();
@@ -1392,6 +1560,8 @@ void ViewerImpl::update_colors()
 
     update_color_ranges();
     
+    m_vertices_colors.resize(m_vertices.size());
+
     // Recalculate "normal" colors of all the vertices for current view settings.
     // If some part of the preview should be rendered in dark grey, it is taken
     // care of in the shaders, see set_layer_colors(). That is to avoid the need to recalculate
@@ -1401,6 +1571,12 @@ void ViewerImpl::update_colors()
     
     update_colors_texture();
     m_settings.update_colors = false;
+#ifdef ENABLE_OPENGL_ES
+    if (m_settings.low_quality) {
+        m_settings_used_for_enabled_entities.reset();
+        m_settings.update_enabled_entities = true;
+    }
+#endif
 }
 
 void ViewerImpl::apply_pending_updates()
@@ -1408,11 +1584,19 @@ void ViewerImpl::apply_pending_updates()
     if (m_settings.update_view_full_range)
         update_view_full_range();
 
-    if (m_settings.update_enabled_entities)
-        update_enabled_entities();
-
+#ifdef ENABLE_OPENGL_ES
+    if (m_height_width_format_dirty)
+        update_heights_widths();
     if (m_settings.update_colors)
         update_colors();
+    if (m_settings.update_enabled_entities)
+        update_enabled_entities();
+#else
+    if (m_settings.update_enabled_entities)
+        update_enabled_entities();
+    if (m_settings.update_colors)
+        update_colors();
+#endif
 }
 
 void ViewerImpl::render(const Mat4x4& view_matrix, const Mat4x4& projection_matrix)
@@ -1458,12 +1642,16 @@ void ViewerImpl::set_tone(float exposure, float saturation)
 
 void ViewerImpl::set_view_type(EViewType type)
 {
+    if (m_settings.view_type == type)
+        return;
     m_settings.view_type = type;
     m_settings.update_colors = true;
 }
 
 void ViewerImpl::set_time_mode(ETimeMode mode)
 {
+    if (m_settings.time_mode == mode)
+        return;
     m_settings.time_mode = mode;
     m_settings.update_colors = true;
     // Update layer_duration for all vertices based on the new time mode
@@ -1476,6 +1664,10 @@ void ViewerImpl::set_layers_view_range(Interval::value_type min, Interval::value
 {
     min = std::clamp<Interval::value_type>(min, 0, m_layers.count() - 1);
     max = std::clamp<Interval::value_type>(max, 0, m_layers.count() - 1);
+    // Setting the same layer range still resets a scrubbed move to its layer end.
+    if (m_layers.get_view_range() == Interval{ min, max } &&
+        m_view_range.get_visible() == m_view_range.get_enabled())
+        return;
     m_layers.set_view_range(min, max);
     // force immediate update of the full range
     update_view_full_range();
@@ -1489,6 +1681,27 @@ void ViewerImpl::toggle_top_layer_only_view_range()
     update_view_full_range();
     m_view_range.set_visible(m_view_range.get_enabled());
     m_settings.update_enabled_entities = true;
+}
+
+void ViewerImpl::set_low_quality(bool enabled)
+{
+    if (m_settings.low_quality == enabled)
+        return;
+    m_settings.low_quality = enabled;
+#ifdef ENABLE_OPENGL_ES
+    m_height_width_format_dirty = true;
+    m_settings.update_enabled_entities = true;
+    switch (m_settings.view_type) {
+    case EViewType::FeatureType:
+    case EViewType::Tool:
+    case EViewType::ColorPrint:
+    case EViewType::Summary:
+        break;
+    default:
+        m_settings.update_colors = true;
+        break;
+    }
+#endif
 }
 
 // ORCA: enable/disable darkening of the layers the layer slider is not scrubbed to
@@ -1610,9 +1823,18 @@ void ViewerImpl::set_view_visible_range(Interval::value_type min, Interval::valu
 {
     // force update of the full range, to avoid clamping the visible range with full old values
     // when calling m_view_range.set_visible()
-    update_view_full_range();
+    if (m_settings.update_view_full_range)
+        update_view_full_range();
+    const Interval previous = m_view_range.get_visible();
     m_view_range.set_visible(min, max);
-    update_enabled_entities();
+    if (previous != m_view_range.get_visible() || m_settings.update_enabled_entities) {
+        m_settings.update_enabled_entities = true;
+#ifdef ENABLE_OPENGL_ES
+        apply_pending_updates();
+#else
+        update_enabled_entities();
+#endif
+    }
 }
 
 float ViewerImpl::get_estimated_time_at(size_t id) const
@@ -1640,6 +1862,15 @@ Color ViewerImpl::get_vertex_color(const PathVertex& v) const
     if ((v.is_wipe() && (m_settings.view_type != EViewType::Speed && m_settings.view_type != EViewType::ActualSpeed && m_settings.view_type != EViewType::Acceleration && m_settings.view_type != EViewType::Jerk)) || v.is_option())
         return get_option_color(move_type_to_option(v.type));
 
+#ifdef ENABLE_OPENGL_ES
+    const size_t color_count = m_settings.low_quality ? 8 : 0;
+#else
+    constexpr size_t color_count = 0;
+#endif
+    const auto range_color = [color_count](const ColorRange& range, float value) {
+        return range.get_color_at(value, color_count);
+    };
+
     switch (m_settings.view_type)
     {
     case EViewType::FeatureType:
@@ -1648,60 +1879,60 @@ Color ViewerImpl::get_vertex_color(const PathVertex& v) const
     }
     case EViewType::Height:
     {
-        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : m_height_range.get_color_at(v.height);
+        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : range_color(m_height_range, v.height);
     }
     case EViewType::Width:
     {
-        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : m_width_range.get_color_at(v.width);
+        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : range_color(m_width_range, v.width);
     }
     case EViewType::Speed:
     {
-        return m_speed_range.get_color_at(v.feedrate);
+        return range_color(m_speed_range, v.feedrate);
     }
     case EViewType::ActualSpeed:
     {
-        return m_actual_speed_range.get_color_at(v.actual_feedrate);
+        return range_color(m_actual_speed_range, v.actual_feedrate);
     }
     case EViewType::FanSpeed:
     {
-        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : m_fan_speed_range.get_color_at(v.fan_speed);
+        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : range_color(m_fan_speed_range, v.fan_speed);
     }
     case EViewType::Temperature:
     {
-        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : m_temperature_range.get_color_at(v.temperature);
+        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : range_color(m_temperature_range, v.temperature);
     }
 // ORCA: Add Pressure Advance visualization support
     case EViewType::PressureAdvance:
     {
-        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : m_pressure_advance_range.get_color_at(v.pressure_advance);
+        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : range_color(m_pressure_advance_range, v.pressure_advance);
     }
     // ORCA: Add Acceleration visualization support
     case EViewType::Acceleration:
     {
-        return m_acceleration_range.get_color_at(v.acceleration);
+        return range_color(m_acceleration_range, v.acceleration);
     }
     // ORCA: Add Jerk visualization support
     case EViewType::Jerk:
     {
-        return m_jerk_range.get_color_at(v.jerk);
+        return range_color(m_jerk_range, v.jerk);
     }
     case EViewType::VolumetricFlowRate:
     {
-        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : m_volumetric_rate_range.get_color_at(v.volumetric_rate());
+        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : range_color(m_volumetric_rate_range, v.volumetric_rate());
     }
     case EViewType::ActualVolumetricFlowRate:
     {
-        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : m_actual_volumetric_rate_range.get_color_at(v.actual_volumetric_rate());
+        return v.is_travel() ? get_option_color(move_type_to_option(v.type)) : range_color(m_actual_volumetric_rate_range, v.actual_volumetric_rate());
     }
     case EViewType::LayerTimeLinear:
     {
         return v.is_travel() ? get_option_color(move_type_to_option(v.type)) :
-            m_layer_time_range[0].get_color_at(m_layers.get_layer_time(m_settings.time_mode, static_cast<size_t>(v.layer_id)));
+            range_color(m_layer_time_range[0], m_layers.get_layer_time(m_settings.time_mode, static_cast<size_t>(v.layer_id)));
     }
     case EViewType::LayerTimeLogarithmic:
     {
         return v.is_travel() ? get_option_color(move_type_to_option(v.type)) :
-            m_layer_time_range[1].get_color_at(m_layers.get_layer_time(m_settings.time_mode, static_cast<size_t>(v.layer_id)));
+            range_color(m_layer_time_range[1], m_layers.get_layer_time(m_settings.time_mode, static_cast<size_t>(v.layer_id)));
     }
     case EViewType::Tool:
     {
@@ -1834,6 +2065,10 @@ size_t ViewerImpl::get_used_cpu_memory() const
     ret += sizeof(m_extrusion_roles_colors);
     ret += sizeof(m_options_colors);
     ret += STDVEC_MEMSIZE(m_vertices, PathVertex);
+    ret += STDVEC_MEMSIZE(m_vertices_colors, float);
+#ifdef ENABLE_OPENGL_ES
+    ret += m_texture_data.get_used_cpu_memory();
+#endif
     for (const std::vector<float>& times : m_layer_start_times)
         ret += STDVEC_MEMSIZE(times, float);
     ret += STDVEC_MEMSIZE(m_layer_first_vertex, uint32_t);
@@ -2062,10 +2297,20 @@ void ViewerImpl::update_color_ranges()
 void ViewerImpl::update_heights_widths()
 {
 #ifdef ENABLE_OPENGL_ES
+    std::vector<HeightWidth> heights_widths;
     std::vector<Vec4> heights_widths_angles;
-    heights_widths_angles.reserve(m_vertices.size());
-    extract_pos_and_or_hwa(m_vertices, m_travels_radius, m_wipes_radius, m_valid_lines_bitset, nullptr, &heights_widths_angles);
-    m_texture_data.set_heights_widths_angles(heights_widths_angles);
+    const bool low_quality = m_settings.low_quality;
+    m_texture_data.stream_heights_widths_angles(m_vertices.size(), low_quality, [&](size_t first, size_t count) {
+        if (low_quality) {
+            heights_widths.clear();
+            extract_pos_and_or_hwa(m_vertices, m_travels_radius, m_wipes_radius, m_valid_lines_bitset, nullptr, nullptr, false, &heights_widths, first, count);
+            return heights_widths.front().data();
+        }
+        heights_widths_angles.clear();
+        extract_pos_and_or_hwa(m_vertices, m_travels_radius, m_wipes_radius, m_valid_lines_bitset, nullptr, &heights_widths_angles, false, nullptr, first, count);
+        return heights_widths_angles.front().data();
+    });
+    m_height_width_format_dirty = false;
 #else
     if (m_heights_widths_angles_buf_id == 0)
         return;
@@ -2095,8 +2340,17 @@ void ViewerImpl::update_heights_widths()
 void ViewerImpl::render_segments(const Mat4x4& view_matrix, const Mat4x4& projection_matrix, const Vec3& camera_position)
 {
     // ORCA: realistic view. The shadow caster pass draws depth only.
+#ifdef ENABLE_OPENGL_ES
+    const bool low_quality = m_settings.low_quality && !m_rendering_shadow_casters;
+    const SegmentsProgram* program = low_quality ? &m_low_quality_program : nullptr;
+    const unsigned int shader_id = program ? program->id :
+        m_rendering_shadow_casters ? m_segments_caster_shader_id : m_segments_shader_id;
+    const SegmentsUniforms& uni = program ? program->uniforms :
+        m_rendering_shadow_casters ? m_uni_segments_caster : m_uni_segments;
+#else
     const unsigned int shader_id = m_rendering_shadow_casters ? m_segments_caster_shader_id : m_segments_shader_id;
     const SegmentsUniforms& uni = m_rendering_shadow_casters ? m_uni_segments_caster : m_uni_segments;
+#endif
     if (shader_id == 0)
         return;
 
@@ -2127,6 +2381,14 @@ void ViewerImpl::render_segments(const Mat4x4& view_matrix, const Mat4x4& projec
     const bool reverse_order = view_matrix[10] > 0.0f;
     glsafe(glUniform1i(uni.reverse_order, reverse_order ? 1 : 0));
     glsafe(glUniform4fv(uni.clipping_plane, 1, m_clipping_plane.data()));
+#ifdef ENABLE_OPENGL_ES
+    if (program) {
+        glsafe(glUniform1f(program->exposure, m_exposure));
+        glsafe(glUniform1f(program->saturation, m_saturation));
+
+        set_layer_colors(program->layer_colors);
+    } else
+#endif
     if (!m_rendering_shadow_casters) {
         // ORCA: realistic view
         glsafe(glUniform1i(m_uni_segments_shadow_map_id, m_shadow_map_texture_unit));
@@ -2144,7 +2406,19 @@ void ViewerImpl::render_segments(const Mat4x4& view_matrix, const Mat4x4& projec
     auto draw = [this, &uni](size_t count) {
         glsafe(glUniform1i(uni.instances_count, static_cast<int>(count)));
         if (!m_rendering_shadow_casters) {
+            // Only the ES shader supports flat ribbons. Desktop rendering is unchanged.
+#ifdef ENABLE_OPENGL_ES
+            if (m_settings.low_quality) {
+                int curr_vertex_array = 0;
+                glsafe(glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &curr_vertex_array));
+                glsafe(glBindVertexArray(m_segments_caster_vao_id));
+                glsafe(glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(6 * count)));
+                glsafe(glBindVertexArray(curr_vertex_array));
+            } else
+                m_segment_template.render(count);
+#else
             m_segment_template.render(count);
+#endif
             return;
         }
         // ORCA: realistic view. 6 vertices per caster ribbon.
@@ -2173,7 +2447,27 @@ void ViewerImpl::render_segments(const Mat4x4& view_matrix, const Mat4x4& projec
         glsafe(glBindTexture(GL_TEXTURE_2D, m_texture_data.get_colors_tex_id(i).first));
         glsafe(glActiveTexture(GL_TEXTURE3));
         glsafe(glBindTexture(GL_TEXTURE_2D, id));
-        draw(count);
+        const size_t instance_offset = m_texture_data.get_enabled_segments_offset(i);
+        const Interval& visible = m_texture_data.get_enabled_range();
+        const int offset = static_cast<int>(i * m_texture_data.max_texture_capacity());
+        glsafe(glUniform2i(uni.visible_vertices, static_cast<int>(visible[0]) - offset, static_cast<int>(visible[1]) - offset));
+        glsafe(glUniform1i(uni.paired_indices, m_settings.low_quality ? 1 : 0));
+        glsafe(glUniform1i(uni.index_bits, static_cast<int>(m_texture_data.get_segment_index_bits())));
+        if (low_quality || m_rendering_shadow_casters) {
+            // Some desktop WebGL implementations emulate attribute 0 for a shader
+            // using only gl_VertexID, allocating 16 bytes per drawn vertex. Bound
+            // each batch so a large print cannot request a giant implicit buffer.
+            constexpr size_t batch_segments = 65536;
+            for (size_t first = 0; first < count; first += batch_segments) {
+                const size_t batch_count = std::min(batch_segments, count - first);
+                const size_t offset = instance_offset + (reverse_order ? count - first - batch_count : first);
+                glsafe(glUniform1i(uni.instance_offset, static_cast<int>(offset)));
+                draw(batch_count);
+            }
+        } else {
+            glsafe(glUniform1i(uni.instance_offset, static_cast<int>(instance_offset)));
+            draw(count);
+        }
     }
 #else
     std::array<int, 4> curr_bound_texture = { 0, 0, 0, 0 };
@@ -2262,6 +2556,7 @@ void ViewerImpl::render_options(const Mat4x4& view_matrix, const Mat4x4& project
         glsafe(glBindTexture(GL_TEXTURE_2D, m_texture_data.get_colors_tex_id(i).first));
         glsafe(glActiveTexture(GL_TEXTURE3));
         glsafe(glBindTexture(GL_TEXTURE_2D, id));
+        glsafe(glUniform1i(m_uni_options_instance_offset_id, static_cast<int>(m_texture_data.get_enabled_options_offset(i))));
         m_option_template.render(count);
     }
 #else

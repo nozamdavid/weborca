@@ -186,7 +186,7 @@ self.onmessage = async (event) => {
       case 'writeFile': {
         if (!core) throw new Error('Engine not initialized');
         const { path: filePath, bytes } = args;
-        core.writeFile(filePath, new Uint8Array(bytes));
+        core.writeFile(filePath, bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
         postMessage({ id, ok: true });
         break;
       }

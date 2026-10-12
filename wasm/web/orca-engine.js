@@ -9,7 +9,7 @@
  * @property {string} [workerUrl] - URL to engine-worker.js
  * @property {string} [moduleUrl] - URL to orca_engine.mjs
  * @property {string} [profilesUrl] - Base URL to packed vendor profiles directory
- * @property {number} [threads] - Number of threads (default: Math.min(hardwareConcurrency, 8))
+ * @property {number} [threads] - Requested slicing concurrency (default: Math.min(hardwareConcurrency, 8)); the generated loader controls worker preloading
  */
 
 /**
@@ -25,7 +25,7 @@
  * @typedef {Object} SliceOptions
  * @property {(progress: { jobId: number, percent?: number, text?: string }) => void} [onProgress]
  * @property {AbortSignal} [signal]
- * @property {number} [threads]
+ * @property {number} [threads] - Requested slicing concurrency
  * @property {string} [outPath]
  * @property {number} [plateIndex]
  */
@@ -51,6 +51,7 @@ export class OrcaEngine {
     this._worker = worker;
     this._options = options;
     this._nextId = 1;
+    this._disposed = false;
     /** @type {Map<number, { resolve: Function, reject: Function, onProgress?: Function, cleanup?: Function }>} */
     this._pending = new Map();
 
@@ -135,24 +136,33 @@ export class OrcaEngine {
    * @private
    */
   _call(method, args = {}, { onProgress, signal, transfer = [] } = {}) {
+    if (this._disposed) return Promise.reject(new Error('Engine has been disposed'));
+    if (signal?.aborted) {
+      const err = new Error('canceled');
+      err.name = 'AbortError';
+      /** @type {any} */ (err).canceled = true;
+      return Promise.reject(err);
+    }
     const id = this._nextId++;
     return new Promise((resolve, reject) => {
       let cleanup = null;
 
       if (signal) {
-        if (signal.aborted) {
+        const onAbort = () => {
           this._worker.postMessage({ method: 'abort', args: { targetId: id } });
-        } else {
-          const onAbort = () => {
-            this._worker.postMessage({ method: 'abort', args: { targetId: id } });
-          };
-          signal.addEventListener('abort', onAbort, { once: true });
-          cleanup = () => signal.removeEventListener('abort', onAbort);
-        }
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        cleanup = () => signal.removeEventListener('abort', onAbort);
       }
 
       this._pending.set(id, { resolve, reject, onProgress, cleanup });
-      this._worker.postMessage({ id, method, args }, transfer);
+      try {
+        this._worker.postMessage({ id, method, args }, transfer);
+      } catch (err) {
+        this._pending.delete(id);
+        if (cleanup) cleanup();
+        reject(err);
+      }
     });
   }
 
@@ -675,11 +685,15 @@ export class OrcaEngine {
    * Disposes of the engine and terminates the background Web Worker.
    */
   dispose() {
-    try {
-      this._call('dispose', {}).catch(() => {});
-    } finally {
-      this._worker.terminate();
+    if (this._disposed) return;
+    this._disposed = true;
+    const err = new Error('Engine has been disposed');
+    for (const handler of this._pending.values()) {
+      if (handler.cleanup) handler.cleanup();
+      handler.reject(err);
     }
+    this._pending.clear();
+    this._worker.terminate();
   }
 }
 

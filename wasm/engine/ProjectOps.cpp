@@ -10,6 +10,7 @@
 
 #include <boost/filesystem.hpp>
 #include <algorithm>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -267,6 +268,18 @@ nlohmann::json op_saveProject(
     if (model.objects.empty()) {
         throw Slic3r::RuntimeError("No model loaded");
     }
+    // Undo snapshots and autosave trade some size for a much faster mesh compression.
+    int compression_level = -1;
+    if (args.contains("compressionLevel")) {
+        const auto& level = args["compressionLevel"];
+        // Compare before narrowing, so a large value cannot wrap into the range.
+        // The archive writer streams the meshes, which needs a deflate level (1-10).
+        const bool in_range = level.is_number_unsigned() ? level.get<uint64_t>() >= 1 && level.get<uint64_t>() <= 10 :
+                              level.is_number_integer()  ? level.get<int64_t>() >= 1 && level.get<int64_t>() <= 10 : false;
+        if (!in_range)
+            throw Slic3r::RuntimeError("saveProject compressionLevel must be an integer between 1 and 10");
+        compression_level = static_cast<int>(level.get<int64_t>());
+    }
 
     boost::filesystem::path p(path);
     if (p.has_parent_path()) {
@@ -339,7 +352,10 @@ nlohmann::json op_saveProject(
     store_params.export_plate_idx = -1;
     store_params.project_presets = project_presets;
     store_params.config = bundle ? &cfg : nullptr;
-    store_params.strategy = Slic3r::SaveStrategy::Zip64;
+    // The desktop Save project layout: each object in its own model file, which
+    // also lets a reopen skip the full-archive Prusa format check.
+    store_params.strategy = Slic3r::SaveStrategy::Zip64 | Slic3r::SaveStrategy::SplitModel | Slic3r::SaveStrategy::ShareMesh;
+    store_params.model_compression_level = compression_level;
 
     bool ok = Slic3r::store_bbs_3mf(store_params);
 

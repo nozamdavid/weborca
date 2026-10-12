@@ -1089,68 +1089,90 @@ void TreeSupport::detect_overhangs(bool check_support_necessity/* = false*/)
         }
     }
 
+    // The layers only read their lower layer slices, thus they are processed in parallel.
+    // The order sensitive bookkeeping is done serially below.
+    struct LayerOverhangCounts {
+        size_t num_detected{ 0 };
+        size_t num_enforced{ 0 };
+        bool   has_sharp_tails{ false };
+    };
+    std::vector<LayerOverhangCounts> layer_overhang_counts(m_object->layer_count());
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, m_object->layer_count()),
+        [&](const tbb::blocked_range<size_t>& range) {
+        for (size_t layer_nr = range.begin(); layer_nr < range.end(); layer_nr++) {
+            if (m_object->print()->canceled())
+                break;
+
+            auto layer = m_object->get_layer(layer_nr);
+            auto lower_layer = layer->lower_layer;
+
+            // add support for every 1mm height for sharp tails
+            ExPolygons sharp_tail_overhangs;
+            if (lower_layer == nullptr)
+                sharp_tail_overhangs = layer->sharp_tails;
+            else if (! layer->sharp_tails_height.empty()) {
+                ExPolygons lower_layer_expanded = offset_ex(lower_layer->lslices_extrudable, SCALED_RESOLUTION);
+                for (size_t i = 0; i < layer->sharp_tails_height.size();i++) {
+                    ExPolygons areas = diff_clipped({ layer->sharp_tails[i]}, lower_layer_expanded);
+                    float accum_height = layer->sharp_tails_height[i];
+                    if (!areas.empty() && int(accum_height * 10) % 5 == 0) {
+                        append(sharp_tail_overhangs, areas);
+                        layer_overhang_counts[layer_nr].has_sharp_tails = true;
+#ifdef SUPPORT_TREE_DEBUG_TO_SVG
+                        SVG::export_expolygons(debug_out_path("sharp_tail_%.02f.svg", layer->print_z), areas);
+#endif
+                    }
+                }
+            }
+
+            if (layer_nr < blockers.size()) {
+                // Arthur: union_ is a must because after mirroring, the blocker polygons are in left-hand coordinates, ie clockwise,
+                // which are not valid polygons, and will be removed by offset_ex. union_ can make these polygons right.
+                ExPolygons blocker = offset_ex(union_(blockers[layer_nr]), scale_(radius_sample_resolution));
+                layer->loverhangs = diff_ex(layer->loverhangs, blocker);
+                layer->cantilevers = diff_ex(layer->cantilevers, blocker);
+                sharp_tail_overhangs = diff_ex(sharp_tail_overhangs, blocker);
+            }
+
+            if (support_critical_regions_only && is_auto(stype)) {
+                layer->loverhangs.clear();  // remove oridinary overhangs, only keep cantilevers and sharp tails (added later)
+                append(layer->loverhangs, layer->cantilevers);
+            }
+
+            if (max_bridge_length > 0 && layer->loverhangs.size() > 0 && lower_layer) {
+                // do not break bridge as the interface will be poor, see #4318
+                bool break_bridge = false;
+                m_object->remove_bridges_from_contacts(lower_layer, layer, extrusion_width_scaled, &layer->loverhangs, max_bridge_length, break_bridge);
+            }
+
+            layer_overhang_counts[layer_nr].num_detected = layer->loverhangs.size();
+            // enforcers now follow same logic as normal support. See STUDIO-3692
+            if (layer_nr < enforcers.size() && lower_layer) {
+                ExPolygons enforced_overhangs   = intersection_ex(diff_ex(layer->lslices_extrudable, lower_layer->lslices_extrudable), enforcers[layer_nr]);
+                if (!enforced_overhangs.empty()) {
+                    // FIXME this is a hack to make enforcers work on steep overhangs. See STUDIO-7538.
+                    enforced_overhangs = diff_ex(offset_ex(enforced_overhangs, enforcer_overhang_offset), lower_layer->lslices_extrudable);
+                    append(layer->loverhangs, enforced_overhangs);
+                }
+            }
+            layer_overhang_counts[layer_nr].num_enforced = layer->loverhangs.size();
+
+            // add sharp tail overhangs
+            append(layer->loverhangs, sharp_tail_overhangs);
+        }
+    });
+
     int layers_with_overhangs = 0;
     int layers_with_enforcers = 0;
-    for (int layer_nr = 0; layer_nr < m_object->layer_count(); layer_nr++) {
+    for (size_t layer_nr = 0; layer_nr < m_object->layer_count(); layer_nr++) {
         if (m_object->print()->canceled())
             break;
 
         auto layer = m_object->get_layer(layer_nr);
-        auto lower_layer = layer->lower_layer;
-
-        // add support for every 1mm height for sharp tails
-        ExPolygons sharp_tail_overhangs;
-        if (lower_layer == nullptr)
-            sharp_tail_overhangs = layer->sharp_tails;
-        else {
-            ExPolygons lower_layer_expanded = offset_ex(lower_layer->lslices_extrudable, SCALED_RESOLUTION);
-            for (size_t i = 0; i < layer->sharp_tails_height.size();i++) {
-                ExPolygons areas = diff_clipped({ layer->sharp_tails[i]}, lower_layer_expanded);
-                float accum_height = layer->sharp_tails_height[i];
-                if (!areas.empty() && int(accum_height * 10) % 5 == 0) {
-                    append(sharp_tail_overhangs, areas);
-                    has_sharp_tails = true;
-#ifdef SUPPORT_TREE_DEBUG_TO_SVG
-                    SVG::export_expolygons(debug_out_path("sharp_tail_%.02f.svg", layer->print_z), areas);
-#endif
-                }
-            }
-        }
-
-        if (layer_nr < blockers.size()) {
-            // Arthur: union_ is a must because after mirroring, the blocker polygons are in left-hand coordinates, ie clockwise,
-            // which are not valid polygons, and will be removed by offset_ex. union_ can make these polygons right.
-            ExPolygons blocker = offset_ex(union_(blockers[layer_nr]), scale_(radius_sample_resolution));
-            layer->loverhangs = diff_ex(layer->loverhangs, blocker);
-            layer->cantilevers = diff_ex(layer->cantilevers, blocker);
-            sharp_tail_overhangs = diff_ex(sharp_tail_overhangs, blocker);
-        }
-
-        if (support_critical_regions_only && is_auto(stype)) {
-            layer->loverhangs.clear();  // remove oridinary overhangs, only keep cantilevers and sharp tails (added later)
-            append(layer->loverhangs, layer->cantilevers);
-        }
-
-        if (max_bridge_length > 0 && layer->loverhangs.size() > 0 && lower_layer) {
-            // do not break bridge as the interface will be poor, see #4318
-            bool break_bridge = false;
-            m_object->remove_bridges_from_contacts(lower_layer, layer, extrusion_width_scaled, &layer->loverhangs, max_bridge_length, break_bridge);
-        }
-
-		int nDetected = layer->loverhangs.size();
-        // enforcers now follow same logic as normal support. See STUDIO-3692
-        if (layer_nr < enforcers.size() && lower_layer) {
-            ExPolygons enforced_overhangs   = intersection_ex(diff_ex(layer->lslices_extrudable, lower_layer->lslices_extrudable), enforcers[layer_nr]);
-            if (!enforced_overhangs.empty()) {
-                // FIXME this is a hack to make enforcers work on steep overhangs. See STUDIO-7538.
-                enforced_overhangs = diff_ex(offset_ex(enforced_overhangs, enforcer_overhang_offset), lower_layer->lslices_extrudable);
-                append(layer->loverhangs, enforced_overhangs);
-            }
-        }
-        int nEnforced = layer->loverhangs.size();
-
-        // add sharp tail overhangs
-        append(layer->loverhangs, sharp_tail_overhangs);
+        const size_t nDetected = layer_overhang_counts[layer_nr].num_detected;
+        const size_t nEnforced = layer_overhang_counts[layer_nr].num_enforced;
+        if (layer_overhang_counts[layer_nr].has_sharp_tails)
+            has_sharp_tails = true;
 
         // fill overhang_types
         for (size_t i = 0; i < layer->loverhangs.size(); i++)

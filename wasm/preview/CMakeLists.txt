@@ -38,12 +38,13 @@ if (EMSCRIPTEN)
         -sENVIRONMENT=web,worker
         -sALLOW_MEMORY_GROWTH=1
         -sMAXIMUM_MEMORY=8GB
-        -sMALLOC=mimalloc
+        -sMALLOC=dlmalloc
         -sEXPORTED_RUNTIME_METHODS=FS
         -sSTACK_SIZE=8MB
         -sDEFAULT_PTHREAD_STACK_SIZE=8MB
         -sEXIT_RUNTIME=0
-        "-sPTHREAD_POOL_SIZE=Math.min(navigator.hardwareConcurrency,8)+2"
+        # Preview parsing, conversion and rendering are synchronous; keep one spare worker.
+        -sPTHREAD_POOL_SIZE=1
     )
 
     add_custom_command(TARGET orca_preview POST_BUILD

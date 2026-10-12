@@ -78,5 +78,5 @@ export interface HistoryStoreState {
   commitTransaction: (description: string) => Promise<void>;
   undo: () => Promise<boolean>;
   redo: () => Promise<boolean>;
-  clearHistory: () => void;
+  clearHistory: () => Promise<void>;
 }

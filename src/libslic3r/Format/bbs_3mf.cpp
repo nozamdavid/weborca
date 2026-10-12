@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <boost/algorithm/string/constants.hpp>
 #include <algorithm>
+#include <atomic>
 #include <boost/thread/lock_types.hpp>
 #include <cassert>
 #include <boost/optional/optional.hpp>
@@ -4231,7 +4232,7 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
     }
 
     // Definition of read/write method for EmbossShape
-    static void                       to_xml(std::stringstream &stream, const EmbossShape &es, const ModelVolume &volume, mz_zip_archive &archive,bool export_full_path);
+    static bool                       to_xml(std::stringstream &stream, const EmbossShape &es, const ModelVolume &volume, mz_zip_archive &archive,bool export_full_path);
     static std::optional<EmbossShape> read_emboss_shape(const char **attributes, unsigned int num_attributes);
 
     bool _BBS_3MF_Importer::_handle_start_shape_configuration(const char **attributes, unsigned int num_attributes)
@@ -5245,7 +5246,11 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
             if (has_transform)
                 volume->source.transform = Slic3r::Geometry::Transformation(volume_matrix_to_object);
 
-            volume->calculate_convex_hull();
+            // A new volume computed the hull of its mesh, unless the mesh has a single facet or it
+            // shares the mesh of another volume. Centering the mesh moved that hull rather than
+            // computing it again, so compute it from the centered mesh, as before.
+            if (!volume->get_convex_hull_shared_ptr() || volume->mesh().get_init_shift() != Vec3d::Zero())
+                volume->calculate_convex_hull();
 
             //set transform from 3mf
             Slic3r::Geometry::Transformation comp_transformatino(sub_comp.transform);
@@ -5440,7 +5445,11 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
             // stores the volume matrix taken from the metadata, if present
             if (has_transform)
                 volume->source.transform = Slic3r::Geometry::Transformation(volume_matrix_to_object);
-            volume->calculate_convex_hull();
+            // A new volume computed the hull of its mesh, unless the mesh has a single facet or it
+            // shares the mesh of another volume. Centering the mesh moved that hull rather than
+            // computing it again, so compute it from the centered mesh, as before.
+            if (!volume->get_convex_hull_shared_ptr() || volume->mesh().get_init_shift() != Vec3d::Zero())
+                volume->calculate_convex_hull();
 
             // recreate custom supports, seam and mmu segmentation from previously loaded attribute
             volume->supported_facets.reserve(triangles_count);
@@ -6072,6 +6081,7 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
         bool m_minimal_published { false }; // published 3MF: omit the project config, the embedded preset files and the slicer tags
         bool m_use_loaded_id { false };        // whether to use loaded id for identify_id
         bool m_share_mesh { false };        // whether to share mesh between objects
+        mz_uint m_model_compression_level { MZ_DEFAULT_LEVEL };
         std::string m_thumbnail_middle = PRINTER_THUMBNAIL_MIDDLE_FILE;
         std::string m_thumbnail_small  = PRINTER_THUMBNAIL_SMALL_FILE;
         std::map<void const *, std::pair<ObjectData*, ModelVolume const *>> m_shared_meshes;
@@ -6173,6 +6183,8 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
         m_minimal_published = store_params.strategy & SaveStrategy::MinimalPublished;
 
         m_use_loaded_id = store_params.strategy & SaveStrategy::UseLoadedId;
+        if (store_params.model_compression_level >= 1 && store_params.model_compression_level <= MZ_UBER_COMPRESSION)
+            m_model_compression_level = store_params.model_compression_level;
 
         if (auto info = store_params.model->model_info) {
             if (auto iter = info->metadata_items.find("Thumbnail_Small"); iter != info->metadata_items.end())
@@ -6999,9 +7011,9 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
                 // GH issue #6193.
                 (uint64_t(1) << 32) - 1,
 #if WRITE_ZIP_LANGUAGE_ENCODING
-            nullptr, nullptr, 0, MZ_DEFAULT_LEVEL, nullptr, 0, nullptr, 0)) {
+            nullptr, nullptr, 0, m_model_compression_level, nullptr, 0, nullptr, 0)) {
 #else
-            nullptr, nullptr, 0, MZ_DEFAULT_COMPRESSION, extra.c_str(), extra.length(), extra.c_str(), extra.length())) {
+            nullptr, nullptr, 0, m_model_compression_level, extra.c_str(), extra.length(), extra.c_str(), extra.length())) {
 #endif
             add_error("Unable to add model file to archive");
             BOOST_LOG_TRIVIAL(error) << __FUNCTION__ << ":" << __LINE__ << boost::format(", Unable to add model file to archive\n");
@@ -7281,34 +7293,59 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
         if (m_skip_model || write_object) return true;
 
         // write model rels
-        _add_relationships_file_to_archive(archive, MODEL_RELS_FILE, object_paths, {"http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"});
+        if (!_add_relationships_file_to_archive(archive, MODEL_RELS_FILE, object_paths, {"http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"}))
+            return false;
 
         if (!m_from_backup_save) {
             boost::mutex mutex;
-            tbb::parallel_for(tbb::blocked_range<size_t>(0, objects_data.size(), 1), [this, &mutex, &model, objects = model.objects, &objects_data, &object_paths, main = &archive, project](const tbb::blocked_range<size_t>& range) {
+            std::atomic<bool> success{true};
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, objects_data.size(), 1), [this, &mutex, &success, &model, objects = model.objects, &objects_data, &object_paths, main = &archive, project](const tbb::blocked_range<size_t>& range) {
+                const auto fail = [this, &success](const char *message) {
+                    add_error(message);
+                    success.store(false, std::memory_order_relaxed);
+                };
                 for (size_t i = range.begin(); i < range.end(); ++i) {
                     auto iter = objects_data.find(objects[i]);
                     ObjectToObjectDataMap objects_data2;
                     objects_data2.insert(*iter);
-                    auto & object = *iter->second.object;
                     mz_zip_archive archive;
                     mz_zip_zero_struct(&archive);
-                    mz_zip_writer_init_heap(&archive, 0, 1024 * 1024);
+                    void *ppBuf = nullptr;
+                    size_t pSize = 0;
+                    // Finalizing transfers the buffer to us; the memory reader only borrows it.
+                    // Declare this first so archive_cleanup destroys the reader before its input.
+                    ScopeGuard buffer_cleanup([&ppBuf] { mz_free(ppBuf); });
+                    if (!mz_zip_writer_init_heap(&archive, 0, 1024 * 1024)) {
+                        fail("Unable to initialize temporary model archive");
+                        continue;
+                    }
+                    ScopeGuard archive_cleanup([&archive] { mz_zip_end(&archive); });
                     CNumericLocalesSetter locales_setter;
-                    _add_model_file_to_archive(object_paths[i], archive, model, objects_data2, nullptr, project);
+                    if (!_add_model_file_to_archive(object_paths[i], archive, model, objects_data2, nullptr, project)) {
+                        success.store(false, std::memory_order_relaxed);
+                        continue;
+                    }
                     iter->second = objects_data2.begin()->second;
-                    void *ppBuf; size_t pSize;
-                    mz_zip_writer_finalize_heap_archive(&archive, &ppBuf, &pSize);
-                    mz_zip_writer_end(&archive);
+                    if (!mz_zip_writer_finalize_heap_archive(&archive, &ppBuf, &pSize) || !mz_zip_writer_end(&archive)) {
+                        fail("Unable to finalize temporary model archive");
+                        continue;
+                    }
                     mz_zip_zero_struct(&archive);
-                    mz_zip_reader_init_mem(&archive, ppBuf, pSize, 0);
+                    if (!mz_zip_reader_init_mem(&archive, ppBuf, pSize, 0)) {
+                        fail("Unable to read temporary model archive");
+                        continue;
+                    }
                     {
                         boost::unique_lock l(mutex);
-                        mz_zip_writer_add_from_zip_reader(main, &archive, 0);
+                        if (!mz_zip_writer_add_from_zip_reader(main, &archive, 0))
+                            fail("Unable to copy model file to archive");
                     }
-                    mz_zip_reader_end(&archive);
+                    if (!mz_zip_reader_end(&archive))
+                        fail("Unable to close temporary model archive");
                 }
             });
+            if (!success.load(std::memory_order_relaxed))
+                return false;
         }
 
         return true;
@@ -7460,9 +7497,42 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
 #endif
         };
 
+        // Formats the lines of a mesh section in parallel, then passes them to flush() one line at a
+        // time as a serial export does, so the archive receives the same bytes in the same pieces.
+        auto add_lines = [&output_buffer, &flush](size_t count, auto &&format_line) {
+            constexpr size_t block_lines = 1 << 16;
+            constexpr size_t task_lines  = 1 << 12;
+            std::vector<std::string>           texts(block_lines / task_lines);
+            std::vector<std::vector<uint32_t>> line_ends(texts.size());
+            for (size_t block_begin = 0; block_begin < count; block_begin += block_lines) {
+                const size_t block_end = std::min(count, block_begin + block_lines);
+                const size_t tasks     = (block_end - block_begin + task_lines - 1) / task_lines;
+                tbb::parallel_for(size_t(0), tasks, [&](size_t task) {
+                    CNumericLocalesSetter locales_setter;
+                    std::string &text = texts[task];
+                    text.clear();
+                    line_ends[task].clear();
+                    const size_t end = std::min(block_end, block_begin + (task + 1) * task_lines);
+                    for (size_t i = block_begin + task * task_lines; i < end; ++i) {
+                        format_line(i, text);
+                        line_ends[task].emplace_back(uint32_t(text.size()));
+                    }
+                });
+                for (size_t task = 0; task < tasks; ++task) {
+                    uint32_t line_begin = 0;
+                    for (const uint32_t line_end : line_ends[task]) {
+                        output_buffer.append(texts[task], line_begin, line_end - line_begin);
+                        line_begin = line_end;
+                        if (!flush(output_buffer, false))
+                            return false;
+                    }
+                }
+            }
+            return true;
+        };
+
         auto const & object = *object_data.object;
 
-        char buf[256];
         unsigned int vertices_count = 0;
         //unsigned int triangles_count = 0;
         for (unsigned int index = 0; index < object.volumes.size(); index++) {
@@ -7517,24 +7587,24 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
 
             vertices_count += (int)its.vertices.size();
 
-            for (size_t i = 0; i < its.vertices.size(); ++i) {
-                //don't save the volume's matrix into vertex data
-                //add the shared mesh logic
-                //Vec3f v = (matrix * its.vertices[i].cast<double>()).cast<float>();
-                Vec3f v = its.vertices[i];
-                char* ptr = buf;
-                boost::spirit::karma::generate(ptr, boost::spirit::lit("     <") << VERTEX_TAG << " x=\"");
-                ptr = format_coordinate(v.x(), ptr);
-                boost::spirit::karma::generate(ptr, "\" y=\"");
-                ptr = format_coordinate(v.y(), ptr);
-                boost::spirit::karma::generate(ptr, "\" z=\"");
-                ptr = format_coordinate(v.z(), ptr);
-                boost::spirit::karma::generate(ptr, "\"/>\n");
-                *ptr = '\0';
-                output_buffer += buf;
-                if (!flush(output_buffer, false))
-                    return false;
-            }
+            if (!add_lines(its.vertices.size(), [&its, &format_coordinate](size_t i, std::string &out) {
+                    //don't save the volume's matrix into vertex data
+                    //add the shared mesh logic
+                    //Vec3f v = (matrix * its.vertices[i].cast<double>()).cast<float>();
+                    Vec3f v = its.vertices[i];
+                    char buf[256];
+                    char* ptr = buf;
+                    boost::spirit::karma::generate(ptr, boost::spirit::lit("     <") << VERTEX_TAG << " x=\"");
+                    ptr = format_coordinate(v.x(), ptr);
+                    boost::spirit::karma::generate(ptr, "\" y=\"");
+                    ptr = format_coordinate(v.y(), ptr);
+                    boost::spirit::karma::generate(ptr, "\" z=\"");
+                    ptr = format_coordinate(v.z(), ptr);
+                    boost::spirit::karma::generate(ptr, "\"/>\n");
+                    *ptr = '\0';
+                    out += buf;
+                }))
+                return false;
         //}
 
             output_buffer += "    </";
@@ -7561,9 +7631,11 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
             //triangles_count += (int)its.indices.size();
             //unsigned int last_triangle_id = triangles_count - 1;
 
-            for (int i = 0; i < int(its.indices.size()); ++ i) {
+            if (!add_lines(its.indices.size(), [&its, volume, is_left_handed](size_t triangle, std::string &out) {
+                const int i = int(triangle);
                 {
                     const Vec3i32 &idx = its.indices[i];
+                    char  buf[256];
                     char *ptr = buf;
                     boost::spirit::karma::generate(ptr, boost::spirit::lit("     <") << TRIANGLE_TAG <<
                         " v1=\"" << boost::spirit::int_ <<
@@ -7573,62 +7645,60 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
                         idx[1],
                         idx[is_left_handed ? 0 : 2]);
                     *ptr = '\0';
-                    output_buffer += buf;
+                    out += buf;
                 }
 
                 std::string custom_supports_data_string = volume->supported_facets.get_triangle_as_string(i);
                 if (! custom_supports_data_string.empty()) {
-                    output_buffer += " ";
-                    output_buffer += CUSTOM_SUPPORTS_ATTR;
-                    output_buffer += "=\"";
-                    output_buffer += custom_supports_data_string;
-                    output_buffer += "\"";
+                    out += " ";
+                    out += CUSTOM_SUPPORTS_ATTR;
+                    out += "=\"";
+                    out += custom_supports_data_string;
+                    out += "\"";
                 }
 
                 std::string custom_seam_data_string = volume->seam_facets.get_triangle_as_string(i);
                 if (! custom_seam_data_string.empty()) {
-                    output_buffer += " ";
-                    output_buffer += CUSTOM_SEAM_ATTR;
-                    output_buffer += "=\"";
-                    output_buffer += custom_seam_data_string;
-                    output_buffer += "\"";
+                    out += " ";
+                    out += CUSTOM_SEAM_ATTR;
+                    out += "=\"";
+                    out += custom_seam_data_string;
+                    out += "\"";
                 }
 
                 std::string mmu_painting_data_string = volume->mmu_segmentation_facets.get_triangle_as_string(i);
                 if (! mmu_painting_data_string.empty()) {
-                    output_buffer += " ";
-                    output_buffer += MMU_SEGMENTATION_ATTR;
-                    output_buffer += "=\"";
-                    output_buffer += mmu_painting_data_string;
-                    output_buffer += "\"";
+                    out += " ";
+                    out += MMU_SEGMENTATION_ATTR;
+                    out += "=\"";
+                    out += mmu_painting_data_string;
+                    out += "\"";
                 }
 
                 std::string fuzzy_skin_painting_data_string = volume->fuzzy_skin_facets.get_triangle_as_string(i);
                 if (!fuzzy_skin_painting_data_string.empty()) {
-                    output_buffer += " ";
-                    output_buffer += CUSTOM_FUZZY_SKIN_ATTR;
-                    output_buffer += "=\"";
-                    output_buffer += fuzzy_skin_painting_data_string;
-                    output_buffer += "\"";
+                    out += " ";
+                    out += CUSTOM_FUZZY_SKIN_ATTR;
+                    out += "=\"";
+                    out += fuzzy_skin_painting_data_string;
+                    out += "\"";
                 }
 
                 // BBS
                 if (i < its.properties.size()) {
                     std::string prop_str = its.properties[i].to_string();
                     if (!prop_str.empty()) {
-                        output_buffer += " ";
-                        output_buffer += FACE_PROPERTY_ATTR;
-                        output_buffer += "=\"";
-                        output_buffer += prop_str;
-                        output_buffer += "\"";
+                        out += " ";
+                        out += FACE_PROPERTY_ATTR;
+                        out += "=\"";
+                        out += prop_str;
+                        out += "\"";
                     }
                 }
 
-                output_buffer += "/>\n";
-
-                if (! flush(output_buffer, false))
-                    return false;
-            }
+                out += "/>\n";
+            }))
+                return false;
             output_buffer += "    </";
             output_buffer += TRIANGLES_TAG;
             output_buffer += ">\n   </";
@@ -8170,7 +8240,10 @@ void PlateData::parse_filament_info(GCodeProcessorResult *result)
                             }
 
                             if (const std::optional<EmbossShape> &es = volume->emboss_shape; es.has_value()) {
-                                to_xml(stream, *es, *volume, archive, m_fullpath_sources);
+                                if (!to_xml(stream, *es, *volume, archive, m_fullpath_sources)) {
+                                    add_error("Unable to add SVG source file to archive");
+                                    return false;
+                                }
                             }
                     
                             if (const std::optional<TextConfiguration> &tc = volume->text_configuration;
@@ -9843,6 +9916,10 @@ bool to_xml(std::stringstream &stream, const EmbossShape::SvgFile &svg, const Mo
     }
     stream << SVG_FILE_PATH_IN_3MF_ATTR << "=\"" << xml_escape_double_quotes_attribute_value(svg.path_in_3mf) << "\" ";
 
+    // Cloned volumes may reference the same immutable SVG source part.
+    if (mz_zip_reader_locate_file(&archive, svg.path_in_3mf.c_str(), nullptr, MZ_ZIP_FLAG_CASE_SENSITIVE) >= 0)
+        return true;
+
     std::shared_ptr<std::string> file_data = svg.file_data;
     assert(file_data != nullptr);
     if (file_data == nullptr && !svg.path.empty()) file_data = read_from_disk(svg.path);
@@ -9858,12 +9935,12 @@ bool to_xml(std::stringstream &stream, const EmbossShape::SvgFile &svg, const Mo
 
 } // namespace
 
-void to_xml(std::stringstream &stream, const EmbossShape &es, const ModelVolume &volume, mz_zip_archive &archive, bool export_full_path)
+bool to_xml(std::stringstream &stream, const EmbossShape &es, const ModelVolume &volume, mz_zip_archive &archive, bool export_full_path)
 {
     stream << "   <" << SHAPE_TAG << " ";
     if (es.svg_file.has_value())
         if (!to_xml(stream, *es.svg_file, volume, archive, export_full_path)) {
-            BOOST_LOG_TRIVIAL(warning) << "Can't write svg file defiden embossed shape into 3mf";
+            return false;
         }
 
     stream << SHAPE_SCALE_ATTR << "=\"" << es.scale << "\" ";
@@ -9884,6 +9961,7 @@ void to_xml(std::stringstream &stream, const EmbossShape &es, const ModelVolume 
     stream << "\" ";
 
     stream << "/>\n"; // end SHAPE_TAG    
+    return true;
 }
 
 std::optional<EmbossShape> read_emboss_shape(const char **attributes, unsigned int num_attributes) {    

@@ -87,14 +87,17 @@ This operation reads:
 
 ### `saveProject`
 Exports the current model geometry, instance placements, per-object/per-volume overrides, active plates, project configuration, and current selected/embedded presets into a standard OrcaSlicer 3MF archive (`store_bbs_3mf`).
+Uses the desktop Save project layout: each object's mesh in its own `3D/Objects/object_<n>.model` file, with identical meshes shared.
 Does not generate or export thumbnails or sliced G-code.
 
 - **Arguments**:
   ```json
   {
-    "path": "/out/saved_project.3mf"
+    "path": "/out/saved_project.3mf",
+    "compressionLevel": 2
   }
   ```
+  `compressionLevel` (optional, 1-10) sets the deflate level of the mesh files. Omitted, it keeps the desktop default (6). Compressing the meshes takes most of the save time: on a 161 MB mesh, a save at level 2 takes about a fifth of the time of level 6, for a 20% larger archive. Level 1 is no faster there and larger still. That suits undo snapshots and autosave backups, which are rewritten often and never shared.
 
 - **Result**:
   ```json

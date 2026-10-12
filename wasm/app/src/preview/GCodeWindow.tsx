@@ -16,123 +16,25 @@ import { useAppStore } from '../store/appStore';
 import { getMoveGcodeLine } from './orcaPreviewModule';
 import { useTranslation } from "../i18n";
 
-interface ParsedLine {
-  lineNumber: number;
-  command: string;
-  parameters: string;
-  comment: string;
-  isMotion: boolean;
-}
-
-interface ParsedGcode {
-  lines: ParsedLine[];
-  layerStarts: number[];
-}
-
-function parseGcode(bytes: Uint8Array | undefined): ParsedGcode {
-  if (!bytes || bytes.length === 0) {
-    return { lines: [], layerStarts: [] };
-  }
-
-  const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-  const rawLines = text.split('\n');
-  const lines: ParsedLine[] = [];
-  const layerStarts: number[] = [];
-
-  for (let i = 0; i < rawLines.length; i++) {
-    const raw = rawLines[i].replace(/\r$/, '');
-
-    // Truncate long lines (>55 characters) matching desktop OrcaSlicer GCodeViewer
-    let display = raw;
-    if (display.length > 55) {
-      display = display.slice(0, 52) + '...';
-    }
-
-    let command = '';
-    let parameters = '';
-    let comment = '';
-
-    const semicolonIdx = display.indexOf(';');
-    if (semicolonIdx !== -1) {
-      comment = display.slice(semicolonIdx);
-      const beforeComment = display.slice(0, semicolonIdx).trim();
-      if (beforeComment) {
-        const spaceIdx = beforeComment.indexOf(' ');
-        if (spaceIdx === -1) {
-          command = beforeComment;
-        } else {
-          command = beforeComment.slice(0, spaceIdx);
-          parameters = beforeComment.slice(spaceIdx + 1).trim();
-        }
-      }
-    } else {
-      const trimmed = display.trim();
-      if (trimmed) {
-        const spaceIdx = trimmed.indexOf(' ');
-        if (spaceIdx === -1) {
-          command = trimmed;
-        } else {
-          command = trimmed.slice(0, spaceIdx);
-          parameters = trimmed.slice(spaceIdx + 1).trim();
-        }
-      }
-    }
-
-    const isMotion = /^G[0123]\b/i.test(command);
-
-    lines.push({
-      lineNumber: i + 1,
-      command,
-      parameters,
-      comment,
-      isMotion
-    });
-
-    // Detect layer start markers: find ';LAYER_CHANGE'
-    if (raw.startsWith(';LAYER_CHANGE')) {
-      layerStarts.push(i);
-    }
-  }
-
-  // Fallback to ';Z:' or 'G1 Z' if no ';LAYER_CHANGE' markers exist
-  if (layerStarts.length === 0) {
-    for (let i = 0; i < rawLines.length; i++) {
-      if (rawLines[i].startsWith(';Z:') || /^G[01]\s+.*Z/i.test(rawLines[i])) {
-        layerStarts.push(i);
-      }
-    }
-  }
-
-  if (layerStarts.length === 0) {
-    layerStarts.push(0);
-  }
-
-  return { lines, layerStarts };
-}
+import { indexGcodeLines, readGcodeLines } from './gcodeLines';
 
 export const GCodeWindow: React.FC = () => {
     const { t } = useTranslation();
   const showGcodeWindow = usePreviewStore((s) => s.showGcodeWindow);
   const toggleGcodeWindow = usePreviewStore((s) => s.toggleGcodeWindowAction);
-  const maxLayer = usePreviewStore((s) => s.maxLayer);
-  const currentMove = usePreviewStore((s) => s.currentMove);
+  const maxLayer = usePreviewStore((s) => s.showGcodeWindow ? s.maxLayer : 0);
+  const currentMove = usePreviewStore((s) => s.showGcodeWindow ? s.currentMove : 0);
 
-  const sliceResult = useAppStore((s) => s.sliceResult);
+  const gcode = useAppStore((s) => s.sliceResult?.gcode);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const currentLineRef = useRef<HTMLDivElement | null>(null);
 
-  // Parse G-code lines and layer boundaries (memoized per sliced output)
-  const { lines } = useMemo(() => {
-    return parseGcode(sliceResult?.gcode);
-  }, [sliceResult?.gcode]);
-
-  const highlightedLineNumber = getMoveGcodeLine(currentMove);
-  // Keep a bounded window around the source line, so setup commands and arcs map exactly too.
-  const layerLines = useMemo(() => {
-    const center = Math.max(0, highlightedLineNumber - 1);
-    return lines.slice(Math.max(0, center - 40), Math.min(lines.length, center + 41));
-  }, [lines, highlightedLineNumber]);
+  const lineIndex = useMemo(() => showGcodeWindow && gcode
+    ? indexGcodeLines(gcode) : null, [showGcodeWindow, gcode]);
+  const highlightedLineNumber = showGcodeWindow ? getMoveGcodeLine(currentMove) : 0;
+  const layerLines = useMemo(() => lineIndex
+    ? readGcodeLines(lineIndex, highlightedLineNumber) : [], [lineIndex, highlightedLineNumber]);
 
   // Keep highlighted line scrolled into view
   useEffect(() => {

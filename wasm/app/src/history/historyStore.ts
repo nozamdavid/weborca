@@ -27,6 +27,8 @@ let nextSnapshotSeq = 0;
 
 // Set of available slot indices [0 .. MAX_SLOTS - 1] for MEMFS 3MF storage
 const availableSlots = new Set<number>(Array.from({ length: MAX_SLOTS }, (_, i) => i));
+// Failed truncations remain owned here and cannot be reused until cleanup succeeds.
+const retiredSlots = new Set<number>();
 
 function allocateSlot(): number {
   if (availableSlots.size > 0) {
@@ -37,10 +39,42 @@ function allocateSlot(): number {
   throw new Error('No free history snapshot slot');
 }
 
-function releaseSlot(slot: number | undefined): void {
-  if (slot !== undefined && slot >= 0 && slot < MAX_SLOTS) {
-    availableSlots.add(slot);
+async function releaseSlot(slot: number | undefined, engine: Awaited<ReturnType<typeof getEngine>>): Promise<boolean> {
+  if (slot === undefined || !Number.isInteger(slot) || slot < 0 || slot >= MAX_SLOTS) return true;
+  availableSlots.delete(slot);
+  retiredSlots.add(slot);
+
+  // Remove references before truncation, including when only part of a cleanup succeeds.
+  useHistoryStore.setState((state) => {
+    const past = state.past.filter((snap) => snap.slotId !== slot);
+    const future = state.future.filter((snap) => snap.slotId !== slot);
+    const currentSnapshot = state.currentSnapshot?.slotId === slot ? null : state.currentSnapshot;
+    const retained = [...past, ...future, ...(currentSnapshot ? [currentSnapshot] : [])];
+    return {
+      past, future, currentSnapshot,
+      canUndo: past.length > 0,
+      canRedo: future.length > 0,
+      totalRetainedBytes: retained.reduce((sum, snap) => sum + (snap.byteSize || 1024), 0)
+    };
+  });
+  try {
+    // These are the only files history owns. Empty writes release MEMFS backing storage.
+    await engine.writeFile(`/out/undo_slot_${slot}.3mf`, new Uint8Array());
+  } catch (err) {
+    console.warn(`[historyStore] Failed to release Undo slot ${slot}:`, err);
+    return false;
   }
+  retiredSlots.delete(slot);
+  availableSlots.add(slot);
+  return true;
+}
+
+async function releaseSnapshots(snapshots: Array<HistorySnapshot | null>): Promise<void> {
+  const slots = new Set(retiredSlots);
+  for (const snap of snapshots) if (snap?.slotId !== undefined) slots.add(snap.slotId);
+  if (slots.size === 0) return;
+  const engine = await getEngine();
+  for (const slot of slots) await releaseSlot(slot, engine);
 }
 
 function estimateMeshBytes(): number {
@@ -179,13 +213,11 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
     return withLock(async () => {
       // Clear and release any prior slots
       const { past, future, currentSnapshot } = get();
-      for (const snap of past) releaseSlot(snap.slotId);
-      for (const snap of future) releaseSlot(snap.slotId);
-      if (currentSnapshot) releaseSlot(currentSnapshot.slotId);
+      await releaseSnapshots([...past, ...future, currentSnapshot]);
 
       availableSlots.clear();
       for (let i = 0; i < MAX_SLOTS; i++) {
-        availableSlots.add(i);
+        if (!retiredSlots.has(i)) availableSlots.add(i);
       }
 
       // Capture actual current settings and plates, not fabricated default state
@@ -237,11 +269,11 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
 
       // Reclaim discarded redo and the oldest history before writing a file.
       // A live snapshot's slot must never be reused while its metadata remains.
-      for (const snap of future) releaseSlot(snap.slotId);
+      for (const snap of future) await releaseSlot(snap.slotId, engine);
       const nextFuture: HistorySnapshot[] = [];
       const nextPast = currentSnapshot ? [...past, currentSnapshot] : [...past];
       while (!isEmpty && availableSlots.size === 0 && nextPast.length > 0) {
-        releaseSlot(nextPast.shift()?.slotId);
+        if (!await releaseSlot(nextPast.shift()?.slotId, engine)) break;
       }
 
       let slotId: number | undefined;
@@ -252,12 +284,13 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
         try {
           slotId = allocateSlot();
           filePath = `/out/undo_slot_${slotId}.3mf`;
-          await engine.call('saveProject', { path: filePath });
+          // Undo snapshots use fast compression; explicit project exports keep the default.
+          await engine.call('saveProject', { path: filePath, compressionLevel: 2 });
           byteSize = estimateMeshBytes();
         } catch (err: any) {
           console.warn('[historyStore] Failed to save project snapshot:', err);
           if (slotId !== undefined) {
-            releaseSlot(slotId);
+            await releaseSlot(slotId, engine);
           }
           // Do not record an invalid snapshot without geometry file.
           // Maintain slot consistency: future slots were released so future must be cleared.
@@ -330,7 +363,7 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
       while ((nextPast.length >= maxSnapshots || totalBytes > maxBytes) && nextPast.length > 1) {
         const evicted = nextPast.shift();
         if (evicted) {
-          releaseSlot(evicted.slotId);
+          await releaseSlot(evicted.slotId, engine);
           totalBytes -= evicted.byteSize || 1024;
         }
       }
@@ -441,17 +474,17 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
   },
 
   clearHistory: () => {
-    const { past, future, currentSnapshot } = get();
-    for (const snap of past) releaseSlot(snap.slotId);
-    for (const snap of future) releaseSlot(snap.slotId);
-    if (currentSnapshot) releaseSlot(currentSnapshot.slotId);
-    set({
-      past: [],
-      future: [],
-      currentSnapshot: null,
-      canUndo: false,
-      canRedo: false,
-      totalRetainedBytes: 0
+    return withLock(async () => {
+      const { past, future, currentSnapshot } = get();
+      await releaseSnapshots([...past, ...future, currentSnapshot]);
+      set({
+        past: [],
+        future: [],
+        currentSnapshot: null,
+        canUndo: false,
+        canRedo: false,
+        totalRetainedBytes: 0
+      });
     });
   }
 }));

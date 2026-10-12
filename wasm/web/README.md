@@ -51,7 +51,9 @@ When properly set, `window.crossOriginIsolated` will evaluate to `true` on the p
 ## 3. Architecture & API Overview
 
 ### Layer 1: `engine-core.js` (Low-Level Driver)
-Runs both in Node.js and inside a Web Worker. Drives the Embind `Engine` instance without blocking the host thread (polling every 16ms, forwarding progress snapshots, canceling on `AbortSignal`).
+Runs both in Node.js and inside a Web Worker. Drives the Embind `Engine` instance without blocking the host thread (polling with delays up to 16ms, forwarding progress snapshots, canceling on `AbortSignal`).
+
+The `threads` option selects slicing concurrency. Preloaded Web Workers use the generated loader's pool sizing expression; this option does not resize that pool.
 
 ```js
 import { createEngineCore } from './engine-core.js';

@@ -402,7 +402,7 @@ async function runBrowserHistorySaveFailureSuite(browserType, browserName) {
 async function startServerWithRetry(port, name, maxRetries = 5) {
   for (let i = 0; i < maxRetries; i++) {
     try {
-      await startServer(port, name);
+      await startServer(port, name, { frozenDist: process.env.HISTORY_FROZEN_DIST === '1' });
       return;
     } catch (e) {
       if (e.message.includes('older than the source files')) {

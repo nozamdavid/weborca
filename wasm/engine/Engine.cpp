@@ -2631,7 +2631,8 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
         try {
             print.process();
             Slic3r::GCodeProcessorResult proc_result;
-            std::string final_gcode = print.export_gcode(out_path, &proc_result, nullptr);
+            // The browser preview reparses the exported file; retain estimates without preview interpolation.
+            std::string final_gcode = print.export_gcode(out_path, &proc_result, nullptr, false);
             std::string final_path = final_gcode.empty() ? out_path : final_gcode;
             uintmax_t gcode_size = std::filesystem::file_size(final_path);
 

@@ -37,6 +37,7 @@ export interface PreviewStoreState {
   legend: LegendData;
   showStatsPanel: boolean;
   showGcodeWindow: boolean;
+  resetVersion: number;
 
   setInitialized: (val: boolean) => void;
   loadGcodeBytes: (data: Uint8Array | ArrayBuffer | string, name?: string) => Promise<PreviewStatistics>;
@@ -47,6 +48,7 @@ export interface PreviewStoreState {
   toggleOptionAction: (optId: number) => void;
   resetLayersAction: () => void;
   resetCameraAction: () => void;
+  resetGcodeAction: () => void;
   toggleStatsPanelAction: () => void;
   toggleGcodeWindowAction: () => void;
   setShowGcodeWindowAction: (val: boolean) => void;
@@ -67,6 +69,15 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
   legend: { viewType: 'FeatureType', title: 'Line Type', type: 'features', items: [], options: [] },
   showStatsPanel: true,
   showGcodeWindow: false,
+  resetVersion: 0,
+
+  resetGcodeAction: () => {
+    previewModule.clearGcode();
+    set({ stats: null, layersCount: 0, layersZs: [], minLayer: 0, maxLayer: 0,
+      minMove: 0, maxMove: 0, currentMove: 0, isLoading: false, showGcodeWindow: false,
+      legend: previewModule.getLegendData(),
+      resetVersion: get().resetVersion + 1 });
+  },
 
   setInitialized: (val: boolean) => {
     if (val) previewModule.setViewType(get().viewType);
@@ -97,7 +108,7 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
         isLoading: false
       });
 
-      previewModule.render();
+      previewModule.requestRender();
       return stats;
     } catch (err) {
       set({ isLoading: false });
@@ -107,9 +118,12 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
 
   setLayerRangeAction: (min: number, max: number) => {
     const { layersCount } = get();
+    if (layersCount === 0) return;
     const clMin = Math.max(0, Math.min(min, layersCount - 1));
     const clMax = Math.max(clMin, Math.min(max, layersCount - 1));
 
+    // Selecting the current layers again restores the full top layer after move scrubbing.
+    if (clMin === get().minLayer && clMax === get().maxLayer && get().currentMove === get().maxMove) return;
     previewModule.setLayerRange(clMin, clMax);
     const moveRange = previewModule.getMoveRange();
 
@@ -121,15 +135,16 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
       currentMove: moveRange.max
     });
 
-    previewModule.render();
+    previewModule.requestRender();
   },
 
   setMoveAction: (move: number) => {
     const { minMove, maxMove } = get();
     const clMove = Math.max(minMove, Math.min(move, maxMove));
+    if (clMove === get().currentMove) return;
     previewModule.setMove(clMove);
     set({ currentMove: clMove });
-    previewModule.render();
+    previewModule.requestRender();
   },
 
   setViewTypeAction: (viewType: PreviewViewType) => {
@@ -139,21 +154,21 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
     previewModule.setViewType(viewType);
     const legend = previewModule.getLegendData();
     set({ viewType, legend });
-    previewModule.render();
+    previewModule.requestRender();
   },
 
   toggleExtrusionRoleAction: (roleId: number) => {
     previewModule.toggleExtrusionRole(roleId);
     const legend = previewModule.getLegendData();
     set({ legend });
-    previewModule.render();
+    previewModule.requestRender();
   },
 
   toggleOptionAction: (optId: number) => {
     previewModule.toggleOption(optId);
     const legend = previewModule.getLegendData();
     set({ legend });
-    previewModule.render();
+    previewModule.requestRender();
   },
 
   resetLayersAction: () => {
@@ -168,12 +183,12 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
       maxMove: moveRange.max,
       currentMove: moveRange.max
     });
-    previewModule.render();
+    previewModule.requestRender();
   },
 
   resetCameraAction: () => {
     previewModule.resetCamera();
-    previewModule.render();
+    previewModule.requestRender();
   },
 
   toggleStatsPanelAction: () => {

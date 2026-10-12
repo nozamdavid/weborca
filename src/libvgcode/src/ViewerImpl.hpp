@@ -7,11 +7,14 @@
 
 #include "Settings.hpp"
 #include "SegmentTemplate.hpp"
+#include "LowQualitySegments.hpp"
 #include "OptionTemplate.hpp"
 #include "../include/Types.hpp"
 #include <vector>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <array>
 #if VGCODE_ENABLE_COG_AND_TOOL_MARKERS
@@ -28,8 +31,11 @@
 
 #include <string>
 #include <optional>
+#include <utility>
 
 namespace libvgcode {
+
+using HeightWidth = std::array<float, 2>;
 
 struct GCodeInputData;
 
@@ -55,6 +61,7 @@ public:
     // Reset all caches and free gpu memory.
     //
     void reset();
+    void release_cpu_render_cache();
     //
     // Setup all the variables used for visualization of the toolpaths
     // from the given gcode data.
@@ -118,6 +125,8 @@ public:
     // 0.0 = black
     bool is_dim_previous_layers() const { return m_settings.dim_previous_layers; }
     void set_dim_previous_layers(bool value);
+    // Use flat ribbons for interactive previews; disabled by default.
+    void set_low_quality(bool enabled);
     float get_dim_previous_layers_brightness() const { return m_settings.dim_previous_layers_brightness; }
     void set_dim_previous_layers_brightness(float value);
 
@@ -380,12 +389,19 @@ private:
         int segment_index_tex{ -1 };
         int reverse_order{ -1 };
         int instances_count{ -1 };
+        int instance_offset{ -1 };
+        int visible_vertices{ -1 };
+        int paired_indices{ -1 };
+#ifdef ENABLE_OPENGL_ES
+        int index_bits{ -1 };
+#endif
         int clipping_plane{ -1 };
 
         void init(unsigned int shader_id);
     };
     SegmentsUniforms m_uni_segments;
     SegmentsUniforms m_uni_segments_caster;
+
     int m_uni_segments_shadow_map_id{ -1 };
     int m_uni_segments_shadow_light_vp_id{ -1 };
     int m_uni_segments_shadow_intensity_id{ -1 };
@@ -404,6 +420,17 @@ private:
         void init(unsigned int shader_id);
     };
     LayerColorsUniforms m_uni_segments_layer_colors;
+#ifdef ENABLE_OPENGL_ES
+    struct SegmentsProgram
+    {
+        unsigned int id{ 0 };
+        SegmentsUniforms uniforms;
+        LayerColorsUniforms layer_colors;
+        int exposure{ -1 }, saturation{ -1 };
+        void init();
+    };
+    SegmentsProgram m_low_quality_program;
+#endif
     //
     // Caches for OpenGL uniforms id for options shader
     //
@@ -413,6 +440,7 @@ private:
     int m_uni_options_height_width_angle_tex_id{ -1 };
     int m_uni_options_colors_tex_id{ -1 };
     int m_uni_options_segment_index_tex_id{ -1 };
+    int m_uni_options_instance_offset_id{ -1 };
     int m_uni_options_clipping_plane_id{ -1 };
     LayerColorsUniforms m_uni_options_layer_colors;
 #if VGCODE_ENABLE_COG_AND_TOOL_MARKERS
@@ -439,10 +467,19 @@ private:
     public:
         void init(size_t vertices_count);
         void set_positions(const std::vector<Vec4>& positions);
-        void set_heights_widths_angles(const std::vector<Vec4>& heights_widths_angles);
+        void set_heights_widths_angles(const std::vector<Vec4>& heights_widths_angles, bool low_quality);
+        void stream_heights_widths_angles(size_t count, bool low_quality,
+            const std::function<const float*(size_t, size_t)>& data);
         void set_colors(const std::vector<float>& colors);
-        void set_enabled_segments(const std::vector<uint32_t>& enabled_segments);
-        void set_enabled_options(const std::vector<uint32_t>& enabled_options);
+        void release_cpu_indices();
+        void set_enabled_segments(std::vector<uint32_t>&& enabled_segments);
+        void set_enabled_options(std::vector<uint32_t>&& enabled_options);
+        void set_low_quality_segments(std::vector<SegmentEndpoints>&& segments);
+        const Interval& get_enabled_range() const { return m_enabled_range; }
+        void set_enabled_range(const Interval& range);
+        size_t get_enabled_segments_offset(size_t id) const;
+        size_t get_enabled_options_offset(size_t id) const;
+        size_t get_used_cpu_memory() const;
         void reset();
         size_t get_count() const { return m_count; }
         std::pair<unsigned int, size_t> get_positions_tex_id(size_t id) const;
@@ -454,7 +491,9 @@ private:
         size_t get_enabled_segments_count() const;
         size_t get_enabled_options_count() const;
 
-        size_t max_texture_capacity() const { return m_width * m_height; }
+        // Adjacent pages share one endpoint, so every segment can fetch id and id + 1.
+        size_t max_texture_capacity() const { return m_width * m_height > 1 ? m_width * m_height - 1 : 1; }
+        unsigned int get_segment_index_bits() const { return segment_index_bits(max_texture_capacity() + 1); }
         size_t get_used_gpu_memory() const;
 
     private:
@@ -503,10 +542,23 @@ private:
             std::pair<unsigned int, size_t> enabled_options{ 0, 0 };
         };
 
+        void upload_enabled_indices(bool options);
+        void upload_heights_widths_angles(size_t count, bool low_quality,
+            const std::function<const float*(size_t, size_t)>& data, bool chunked = false);
         std::vector<TexIds> m_tex_ids;
+        // Ordered original vertex ids; a slider selects a subrange of these GPU indices.
+        std::vector<uint32_t> m_enabled_segments;
+        std::vector<SegmentEndpoints> m_low_quality_segments;
+        bool m_segments_are_paired{ false };
+        Interval m_enabled_range{ 0, 0 };
+        std::vector<uint32_t> m_enabled_options;
+        std::vector<std::pair<size_t, size_t>> m_segments_ranges;
+        std::vector<std::pair<size_t, size_t>> m_options_ranges;
     };
 
     TextureData m_texture_data;
+    bool m_height_width_format_dirty{ false };
+    std::optional<Settings> m_settings_used_for_enabled_entities;
 #else
     //
     // OpenGL buffers to store positions

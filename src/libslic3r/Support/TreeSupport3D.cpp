@@ -3885,14 +3885,33 @@ void organic_draw_branches(
     MeshSlicingParams mesh_slicing_params;
     mesh_slicing_params.mode = MeshSlicingParams::SlicingMode::Positive;
 
-    tbb::parallel_for(tbb::blocked_range<size_t>(0, trees.size(), 1),
-        [&trees, &volumes, &config, &slicing_params, &move_bounds, &mesh_slicing_params, &interface_placer, &throw_on_cancel](const tbb::blocked_range<size_t> &range) {
+    // Slices of a single branch clipped by the collisions, before they are merged into their tree.
+    struct BranchSlices {
+        bool                  valid{ false };
+        LayerIndex            layer_begin{ 0 };
+        std::vector<Polygons> slices;
+        std::vector<Polygons> bottom_contacts;
+    };
+    // A single tree may hold most of the branches, thus the branches are sliced in parallel regardless of their tree.
+    std::vector<const Branch*> branches;
+    std::vector<size_t>        tree_first_branch;
+    tree_first_branch.reserve(trees.size() + 1);
+    for (const Tree &tree : trees) {
+        tree_first_branch.emplace_back(branches.size());
+        for (const Branch &branch : tree.branches)
+            branches.emplace_back(&branch);
+    }
+    tree_first_branch.emplace_back(branches.size());
+    std::vector<BranchSlices> branch_slices(branches.size());
+
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, branches.size(), 1),
+        [&branches, &branch_slices, &volumes, &config, &slicing_params, &move_bounds, &mesh_slicing_params, &throw_on_cancel](const tbb::blocked_range<size_t> &range) {
             indexed_triangle_set    partial_mesh;
             std::vector<float>      slice_z;
-            std::vector<Polygons>   bottom_contacts;
-            for (size_t tree_id = range.begin(); tree_id < range.end(); ++ tree_id) {
-                Tree &tree = trees[tree_id];
-                for (const Branch &branch : tree.branches) {
+            for (size_t branch_id = range.begin(); branch_id < range.end(); ++ branch_id) {
+                const Branch          &branch          = *branches[branch_id];
+                std::vector<Polygons> &bottom_contacts = branch_slices[branch_id].bottom_contacts;
+                {
                     // Triangulate the tube.
                     partial_mesh.clear();
                     std::pair<float, float> zspan = extrude_branch(branch.path, config, slicing_params, move_bounds, branch.has_root, partial_mesh);
@@ -3915,7 +3934,6 @@ void organic_draw_branches(
                     if (slices.empty())
                         continue;
 
-                    bottom_contacts.clear();
                     // ORCA: trim tiny fragments to reduce degenerate polygon booleans.
                     const double tiny_area = tiny_area_threshold();
                     //FIXME parallelize?
@@ -4061,15 +4079,34 @@ void organic_draw_branches(
 
                     }
                     // ORCA: bottom contacts provide the footprint; interface layers are built later.
+                    BranchSlices &out = branch_slices[branch_id];
+                    out.valid       = true;
+                    out.layer_begin = layer_begin;
+                    out.slices      = std::move(slices);
+                }
+            }
+        }, tbb::simple_partitioner());
 
-                    recover_pending_branch_roofs(interface_placer, branch.path, layer_begin, slices);
+    // Merge the branch slices into their trees in the order of the branches.
+    tbb::parallel_for(tbb::blocked_range<size_t>(0, trees.size(), 1),
+        [&trees, &tree_first_branch, &branches, &branch_slices, &interface_placer](const tbb::blocked_range<size_t> &range) {
+            for (size_t tree_id = range.begin(); tree_id < range.end(); ++ tree_id) {
+                Tree &tree = trees[tree_id];
+                for (size_t branch_id = tree_first_branch[tree_id]; branch_id < tree_first_branch[tree_id + 1]; ++ branch_id) {
+                    if (! branch_slices[branch_id].valid)
+                        continue;
+                    const LayerIndex       layer_begin     = branch_slices[branch_id].layer_begin;
+                    std::vector<Polygons> &slices          = branch_slices[branch_id].slices;
+                    std::vector<Polygons> &bottom_contacts = branch_slices[branch_id].bottom_contacts;
+
+                    recover_pending_branch_roofs(interface_placer, branches[branch_id]->path, layer_begin, slices);
 
                     while (! slices.empty() && slices.back().empty()) {
                         slices.pop_back();
                     }
 
                     // ORCA: recompute layer_end after trimming trailing empty slices.
-                    layer_end = layer_begin + LayerIndex(slices.size());
+                    const LayerIndex layer_end = layer_begin + LayerIndex(slices.size());
 
                     if (layer_begin < layer_end) {
                         LayerIndex new_begin = tree.first_layer_id == -1 ? layer_begin : std::min(tree.first_layer_id, layer_begin);
@@ -4118,16 +4155,20 @@ void organic_draw_branches(
         [&trees, &throw_on_cancel](const tbb::blocked_range<size_t> &range) {
         for (size_t tree_id = range.begin(); tree_id < range.end(); ++ tree_id) {
             Tree &tree = trees[tree_id];
-            for (Slice &slice : tree.slices)
-                if (slice.num_branches > 1) {
-                    // ORCA: avoid union_ on empty containers.
-                    if (!slice.polygons.empty())
-                        slice.polygons = union_(slice.polygons);
-                    if (!slice.bottom_contacts.empty())
-                        slice.bottom_contacts = union_(slice.bottom_contacts);
+            // A single tree may span most of the layers, union its slices in parallel.
+            tbb::parallel_for(tbb::blocked_range<size_t>(0, tree.slices.size()),
+                [&tree](const tbb::blocked_range<size_t> &slice_range) {
+                for (size_t slice_id = slice_range.begin(); slice_id < slice_range.end(); ++ slice_id)
+                    if (Slice &slice = tree.slices[slice_id]; slice.num_branches > 1) {
+                        // ORCA: avoid union_ on empty containers.
+                        if (!slice.polygons.empty())
+                            slice.polygons = union_(slice.polygons);
+                        if (!slice.bottom_contacts.empty())
+                            slice.bottom_contacts = union_(slice.bottom_contacts);
 
-                    slice.num_branches = 1;
-                }
+                        slice.num_branches = 1;
+                    }
+            });
 
             throw_on_cancel();
         }

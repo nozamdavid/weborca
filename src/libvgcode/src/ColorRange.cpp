@@ -59,7 +59,7 @@ void ColorRange::set_palette(const Palette& palette)
         m_palette = palette;
 }
 
-Color ColorRange::get_color_at(float value) const
+Color ColorRange::get_color_at(float value, size_t color_count) const
 {
     // Input value scaled to the colors range
     float global_t = 0.0f;
@@ -75,6 +75,10 @@ Color ColorRange::get_color_at(float value) const
     }
 
     const size_t color_max_idx = m_palette.size() - 1;
+    if (color_count > 1) {
+        const float bins = static_cast<float>(color_count - 1);
+        global_t = std::round(global_t / static_cast<float>(color_max_idx) * bins) / bins * static_cast<float>(color_max_idx);
+    }
 
     // Compute the two colors just below (low) and above (high) the input value
     const size_t color_low_idx = std::clamp<size_t>(static_cast<size_t>(global_t), 0, color_max_idx);

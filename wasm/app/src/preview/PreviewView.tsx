@@ -7,6 +7,7 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
+import { usePrefsStore } from '../prefs/prefsStore';
 import { usePreviewStore } from './previewStore';
 import * as previewModule from './orcaPreviewModule';
 import { LayerSlider } from './LayerSlider';
@@ -20,8 +21,10 @@ import { resolveBedAssets } from '../plate/bedAssets';
 import { displayBedOutline, loadBedModelOutline } from '../plate/bedModelOutline';
 import { useTranslation } from "../i18n";
 
-export const PreviewView: React.FC = () => {
+export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) => {
     const { t } = useTranslation();
+  const lowQuality = usePrefsStore((s) => s.display.previewLowQuality);
+  const setDisplayPref = usePrefsStore((s) => s.setDisplayPref);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -44,10 +47,24 @@ export const PreviewView: React.FC = () => {
   const resetCamera = usePreviewStore((s) => s.resetCameraAction);
   const showGcodeWindow = usePreviewStore((s) => s.showGcodeWindow);
   const toggleGcodeWindow = usePreviewStore((s) => s.toggleGcodeWindowAction);
+  const resetVersion = usePreviewStore((s) => s.resetVersion);
 
   const [isLoadingModule, setIsLoadingModule] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
-  const loadedGcodeRef = useRef<any>(null);
+  const loadedGcodeRef = useRef<WeakRef<Uint8Array> | null>(null);
+
+  useEffect(() => {
+    if (resetVersion === 0) return;
+    loadedGcodeRef.current = null;
+    // A successful empty-project reset clears load errors, while initialization
+    // errors remain actionable if the WebGL module never initialized.
+    if (isInitialized) setInitError(null);
+    const canvas = canvasRef.current;
+    if (canvas) {
+      delete canvas.dataset.previewReady;
+      delete canvas.dataset.sliceToFrameMs;
+    }
+  }, [resetVersion, isInitialized]);
 
   // Handle canvas size and DPR
   const updateCanvasSize = useCallback(() => {
@@ -55,7 +72,7 @@ export const PreviewView: React.FC = () => {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = usePrefsStore.getState().display.previewLowQuality ? 1 : window.devicePixelRatio || 1;
     const w = Math.floor((rect.width || 800) * dpr);
     const h = Math.floor((rect.height || 600) * dpr);
 
@@ -63,7 +80,7 @@ export const PreviewView: React.FC = () => {
       canvas.width = w;
       canvas.height = h;
       previewModule.resize(w, h);
-      previewModule.render();
+      previewModule.requestRender();
     }
   }, []);
 
@@ -79,6 +96,7 @@ export const PreviewView: React.FC = () => {
       try {
         await previewModule.getPreviewModule(canvas!);
         if (!mounted) return;
+        previewModule.setLowQuality(usePrefsStore.getState().display.previewLowQuality);
         await previewModule.initPreview(canvas!);
         if (!mounted) return;
 
@@ -103,6 +121,14 @@ export const PreviewView: React.FC = () => {
     };
   }, [setInitialized, updateCanvasSize]);
 
+  useEffect(() => {
+    previewModule.setLowQuality(lowQuality);
+    if (!isInitialized) return;
+    updateCanvasSize();
+    usePreviewStore.setState({ legend: previewModule.getLegendData() });
+    previewModule.requestRender();
+  }, [lowQuality, isInitialized, updateCanvasSize]);
+
   // Resolve the same decorative footprint as Prepare before showing the bed.
   useLayoutEffect(() => {
     setBedReady(false);
@@ -123,7 +149,7 @@ export const PreviewView: React.FC = () => {
       } catch (error) { console.warn('[Bed assets]', error); }
       if (cancelled) return;
       previewModule.setBedPolygon(outline);
-      previewModule.render();
+      previewModule.requestRender();
       setBedReady(true);
     }
     void updateBed();
@@ -133,28 +159,35 @@ export const PreviewView: React.FC = () => {
   // 2. Load G-code when slice result is available
   useEffect(() => {
     if (!isInitialized || !sliceResult?.gcode || isSlicing) return;
-    if (loadedGcodeRef.current === sliceResult.gcode && previewModule.getLayersCount() > 0) {
-      previewModule.render();
+    setInitError(null);
+    const tStart = performance.now();
+    const markFrameReady = () => {
+      updateCanvasSize();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const canvas = canvasRef.current;
+        if (!canvas || loadedGcodeRef.current?.deref() !== sliceResult.gcode) return;
+        const sliceEnd = performance.getEntriesByName('orca-slice-end').at(-1);
+        canvas.dataset.previewReady = 'true';
+        const ms = sliceEnd ? (performance.now() - sliceEnd.startTime) : (performance.now() - tStart);
+        canvas.dataset.sliceToFrameMs = String(ms);
+        (window as any)._previewFirstFrameTime = performance.now();
+      }));
+    };
+    if ((loadedGcodeRef.current?.deref() === sliceResult.gcode || previewModule.isGcodeLoaded(sliceResult.gcode))
+      && previewModule.getLayersCount() > 0) {
+      loadedGcodeRef.current = new WeakRef(sliceResult.gcode);
+      previewModule.requestRender();
+      markFrameReady();
       return;
     }
 
-    loadedGcodeRef.current = sliceResult.gcode;
+    loadedGcodeRef.current = new WeakRef(sliceResult.gcode);
 
-    const tStart = performance.now();
     loadGcodeBytes(sliceResult.gcode, 'print.gcode')
       .then((stats) => {
         const elapsed = (performance.now() - tStart).toFixed(1);
         console.log(`[OrcaPreview] Loaded G-code in ${elapsed}ms:`, stats);
-        updateCanvasSize();
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          const canvas = canvasRef.current;
-          if (!canvas || loadedGcodeRef.current !== sliceResult.gcode) return;
-          const sliceEnd = performance.getEntriesByName('orca-slice-end').at(-1);
-          canvas.dataset.previewReady = 'true';
-          const ms = sliceEnd ? (performance.now() - sliceEnd.startTime) : (performance.now() - tStart);
-          canvas.dataset.sliceToFrameMs = String(ms);
-          (window as any)._previewFirstFrameTime = performance.now();
-        }));
+        markFrameReady();
       })
       .catch((err) => {
         setInitError(err.message || String(err));
@@ -219,7 +252,7 @@ export const PreviewView: React.FC = () => {
         // Pan: Right drag, Middle drag, or Shift + Left drag
         previewModule.pan(dx, dy);
       }
-      previewModule.render();
+      previewModule.requestRender();
     };
 
     const onPointerUp = (e: PointerEvent) => {
@@ -236,7 +269,7 @@ export const PreviewView: React.FC = () => {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       previewModule.zoom(e.deltaY);
-      previewModule.render();
+      previewModule.requestRender();
     };
 
     canvas.addEventListener('contextmenu', onContextMenu);
@@ -323,6 +356,19 @@ export const PreviewView: React.FC = () => {
           }}
         >
           <span>{t("🎯")}</span> {t("Reset Camera")}</button>
+        <label
+          title={t("Reduce preview detail and resolution for faster navigation")}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', fontSize: '0.8rem', color: 'var(--text-color)', cursor: 'pointer', whiteSpace: 'nowrap' }}
+        >
+          <input
+            type="checkbox"
+            id="preview-low-quality"
+            data-testid="preview-low-quality"
+            checked={lowQuality}
+            onChange={(event) => setDisplayPref('previewLowQuality', event.target.checked)}
+          />
+          {t("Low quality")}
+        </label>
         <button
           type="button"
           id="btn-toggle-gcode-window"
@@ -464,7 +510,7 @@ export const PreviewView: React.FC = () => {
         <>
           <ViewTypeLegend />
           <SliceStatsPanel />
-          <MoveSlider />
+          <MoveSlider active={active} />
           <PlateSelectorBar style={{ bottom: 68 }} />
           <LayerSlider />
           <GCodeWindow />

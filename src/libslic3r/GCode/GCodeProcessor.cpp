@@ -185,10 +185,15 @@ static void set_option_value(ConfigOptionFloats& option, size_t id, float value)
         option.values[id] = static_cast<double>(value);
 };
 
+template <class T>
+static T get_option_value(const std::vector<T>& values, size_t id)
+{
+    return values.empty() ? T{} : values[id < values.size() ? id : 0];
+}
+
 static float get_option_value(const ConfigOptionFloats& option, size_t id)
 {
-    return option.values.empty() ? 0.0f :
-        ((id < option.values.size()) ? static_cast<float>(option.values[id]) : static_cast<float>(option.values.front()));
+    return static_cast<float>(get_option_value(option.values, id));
 }
 
 static float estimated_acceleration_distance(float initial_rate, float target_rate, float acceleration)
@@ -481,7 +486,7 @@ GCodeProcessor::TimeMachine::AdditionalBuffer GCodeProcessor::TimeMachine::merge
     return merged;
 }
 
-void GCodeProcessor::TimeMachine::calculate_time(GCodeProcessorResult& result, PrintEstimatedStatistics::ETimeMode mode, size_t keep_last_n_blocks, float additional_time, EMoveType target_move_type, bool is_final)
+void GCodeProcessor::TimeMachine::calculate_time(GCodeProcessorResult& result, PrintEstimatedStatistics::ETimeMode mode, size_t keep_last_n_blocks, float additional_time, EMoveType target_move_type, bool is_final, bool generate_actual_speed_moves)
 {
     if (!enabled)
         return;
@@ -550,12 +555,13 @@ void GCodeProcessor::TimeMachine::calculate_time(GCodeProcessorResult& result, P
             first_layer_time += block_time;
 
         // detect actual speed moves required to render toolpaths using actual speed
-        if (mode == PrintEstimatedStatistics::ETimeMode::Normal) {
+        if (mode == PrintEstimatedStatistics::ETimeMode::Normal &&
+            result.moves[block.move_id].type != EMoveType::Extrude &&
+            result.moves[block.move_id].type != EMoveType::Travel &&
+            result.moves[block.move_id].type != EMoveType::Wipe)
+            continue;
+        if (generate_actual_speed_moves && mode == PrintEstimatedStatistics::ETimeMode::Normal) {
             GCodeProcessorResult::MoveVertex& curr_move = result.moves[block.move_id];
-            if (curr_move.type != EMoveType::Extrude &&
-                curr_move.type != EMoveType::Travel &&
-                curr_move.type != EMoveType::Wipe)
-              continue;
 
             assert(curr_move.actual_feedrate == 0.0f);
 
@@ -2087,9 +2093,9 @@ void GCodeProcessor::PreCoolingInjector::process_pre_cooling_and_heating(TimePro
     auto get_nozzle_temp = [this](int filament_id, bool is_first_layer, bool from_or_to, bool consider_preheat_temperature_delta) {
         if (filament_id == -1)
             return from_or_to ? 140 : 0; // default temp
-        double temp = (is_first_layer ? filament_nozzle_temps_initial_layer[filament_id] : filament_nozzle_temps[filament_id]);
+        double temp = get_option_value(is_first_layer ? filament_nozzle_temps_initial_layer : filament_nozzle_temps, filament_id);
         if (consider_preheat_temperature_delta)
-            return (int) (temp - filament_preheat_temperature_delta[filament_id]);
+            return (int) (temp - get_option_value(filament_preheat_temperature_delta, filament_id));
         else
             return (int) (temp);
     };
@@ -2149,14 +2155,15 @@ void GCodeProcessor::PreCoolingInjector::inject_cooling_heating_command(TimeProc
     auto is_pre_cooling_valid = [&nozzle_temps = this->filament_nozzle_temps, &pre_cooling_temps = this->filament_pre_cooling_temps](int idx) -> bool {
         if (idx < 0)
             return false;
-        return pre_cooling_temps[idx] > 0 && pre_cooling_temps[idx] < nozzle_temps[idx];
+        const int cooling_temp = get_option_value(pre_cooling_temps, idx);
+        return cooling_temp > 0 && cooling_temp < get_option_value(nozzle_temps, idx);
     };
 
     auto get_partial_free_cooling_thres = [&](int idx) -> float {
         if (idx < 0)
             return 30.f;
-        float temp_in_tower = filament_nozzle_temps[idx];
-        return temp_in_tower - (float) (filament_pre_cooling_temps[idx]);
+        float temp_in_tower = get_option_value(filament_nozzle_temps, idx);
+        return temp_in_tower - static_cast<float>(get_option_value(filament_pre_cooling_temps, idx));
     };
 
     auto gcode_move_comp = [](const GCodeProcessorResult::MoveVertex& a, unsigned int gcode_id) {
@@ -2252,8 +2259,11 @@ void GCodeProcessor::PreCoolingInjector::inject_cooling_heating_command(TimeProc
         return;
 
     int extruder_id = get_valid_extruder_id(block.last_nozzle_id);
-    float ext_heating_rate = heating_rate[extruder_id];
-    float ext_cooling_rate = cooling_rate[extruder_id];
+    float ext_heating_rate = get_option_value(heating_rate, extruder_id);
+    float ext_cooling_rate = get_option_value(cooling_rate, extruder_id);
+    // Missing or disabled thermal rates cannot provide a valid injection time.
+    if (!(ext_heating_rate > 0.0f && ext_cooling_rate > 0.0f))
+        return;
 
     auto add_M104_lines = [&](int gcode_id, int target_extruder, int target_temp, int target_filament, bool skippable, int next_filament_idx, int next_nozzle_id, TimeProcessor::InsertLineType type, const std::string& comment = std::string()) {
         auto format_line_M104 = [&](int target_extruder, int target_temp, int target_filament, bool skippable, int next_filament_idx, int next_nozzle_id, const std::string& comment = std::string()) -> std::vector<std::string> {
@@ -2263,7 +2273,7 @@ void GCodeProcessor::PreCoolingInjector::inject_cooling_heating_command(TimeProc
                 std::string m632_line = "M632 S" + std::to_string(next_filament_idx);
                 if (support_dynamic_nozzle_map)
                     m632_line += " H" + std::to_string(next_nozzle_id);
-                if (extruder_max_nozzle_count[target_extruder] > 1)
+                if (get_option_value(extruder_max_nozzle_count, target_extruder) > 1)
                     m632_line += " N R";
                 m632_line += " W\n";
                 buffer.emplace_back(std::move(m632_line));
@@ -2273,7 +2283,9 @@ void GCodeProcessor::PreCoolingInjector::inject_cooling_heating_command(TimeProc
             if (handle_hotend_as_extruder) {
                 M104_line += (" I" + std::to_string(target_filament == -1 ? next_filament_idx : target_filament));
             } else if (target_extruder != -1) {
-                M104_line += (" T" + std::to_string(physical_extruder_map[target_extruder]));
+                const int physical_tool = target_extruder >= 0 && static_cast<size_t>(target_extruder) < physical_extruder_map.size() ?
+                    physical_extruder_map[target_extruder] : target_extruder;
+                M104_line += (" T" + std::to_string(physical_tool));
             }
 
             M104_line += " S" + std::to_string(target_temp);
@@ -3594,6 +3606,7 @@ void GCodeProcessor::reset()
     m_forced_height = 0.0f;
     m_mm3_per_mm = 0.0f;
     m_travel_dist = 0.0f;
+    m_pressure_advance = 0.0f;
     m_fan_speed = 0.0f;
     m_z_offset = 0.0f;
 
@@ -3682,7 +3695,7 @@ DynamicConfig GCodeProcessor::export_config_for_render() const
 
 // Load a G-code into a stand-alone G-code viewer.
 // throws CanceledException through print->throw_if_canceled() (sent by the caller as callback).
-void GCodeProcessor::process_file(const std::string& filename, std::function<void()> cancel_callback)
+void GCodeProcessor::process_file(const std::string& filename, std::function<void()> cancel_callback, bool collect_line_offsets)
 {
     CNumericLocalesSetter locales_setter;
 
@@ -3744,7 +3757,7 @@ void GCodeProcessor::process_file(const std::string& filename, std::function<voi
     m_result.id = ++s_result_id;
     initialize_result_moves();
     size_t parse_line_callback_cntr = 10000;
-    m_parser.parse_file(filename, [this, cancel_callback, &parse_line_callback_cntr](GCodeReader& reader, const GCodeReader::GCodeLine& line) {
+    auto process_line = [this, cancel_callback, &parse_line_callback_cntr](GCodeReader& reader, const GCodeReader::GCodeLine& line) {
         if (-- parse_line_callback_cntr == 0) {
             // Don't call the cancel_callback() too often, do it every at every 10000'th line.
             parse_line_callback_cntr = 10000;
@@ -3752,7 +3765,13 @@ void GCodeProcessor::process_file(const std::string& filename, std::function<voi
                 cancel_callback();
         }
         this->process_gcode_line(line, true);
-    }, m_result.lines_ends);
+    };
+    if (collect_line_offsets)
+        m_parser.parse_file(filename, process_line, m_result.lines_ends);
+    else {
+        m_result.lines_ends.clear();
+        m_parser.parse_file(filename, process_line);
+    }
 
     // Don't post-process the G-code to update time stamps.
     this->finalize(false);
@@ -7524,11 +7543,14 @@ void GCodeProcessor::process_filaments(CustomGCode::Type code)
 
 void GCodeProcessor::calculate_time(GCodeProcessorResult& result, size_t keep_last_n_blocks, float additional_time, EMoveType target_move_type, bool is_final)
 {
+    // The preheat injector uses interpolated move anchors to place commands between G-code lines.
+    // Keep those anchors whenever its finalize() gate is enabled, including exports without preview.
+    const bool generate_actual_speed_moves = m_generate_actual_speed_moves || m_enable_pre_heating;
     // calculate times
     std::vector<TimeMachine::ActualSpeedMove> actual_speed_moves;
     for (size_t i = 0; i < static_cast<size_t>(PrintEstimatedStatistics::ETimeMode::Count); ++i) {
         TimeMachine& machine = m_time_processor.machines[i];
-        machine.calculate_time(m_result, static_cast<PrintEstimatedStatistics::ETimeMode>(i), keep_last_n_blocks, additional_time, target_move_type, is_final);
+        machine.calculate_time(m_result, static_cast<PrintEstimatedStatistics::ETimeMode>(i), keep_last_n_blocks, additional_time, target_move_type, is_final, generate_actual_speed_moves);
         if (static_cast<PrintEstimatedStatistics::ETimeMode>(i) == PrintEstimatedStatistics::ETimeMode::Normal)
             actual_speed_moves = std::move(machine.actual_speed_moves);
     }

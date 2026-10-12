@@ -326,6 +326,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
     await restorePlatesOnEmptyCanvas(await getEngine());
     await useAppStore.getState().applyOptionChange('notes', '', 'print');
     useAppStore.setState({ modelFile: null, modelObjects: null, sliceResult: null, gcodeUrl: null });
+    usePreviewStore.getState().resetGcodeAction();
     await useHistoryStore.getState().initHistory();
     await (await import('./autosave')).clearAutosave();
   };

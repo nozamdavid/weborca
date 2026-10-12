@@ -15,7 +15,7 @@
  * @typedef {Object} EngineCoreOptions
  * @property {Function} [moduleFactory] - The createOrcaEngine factory function
  * @property {Function} [locateFile] - Custom locateFile handler for Emscripten
- * @property {number} [threads] - Desired thread count
+ * @property {number} [threads] - Requested slicing concurrency; the generated loader controls worker preloading
  */
 
 /**
@@ -47,7 +47,7 @@ export async function createEngineCore(options = {}) {
     moduleOverrides.locateFile = locateFile;
   }
   if (typeof threads === 'number') {
-    // 1 engine pthread + (threads - 1) TBB workers + 1 spare (matches min(hardwareConcurrency, 8) + 2 link default).
+    // Custom module factories may honor this hint. The bundled loader uses its link-time pool sizing expression.
     moduleOverrides.PTHREAD_POOL_SIZE = threads + 2;
   }
 
@@ -58,6 +58,20 @@ export async function createEngineCore(options = {}) {
   }
   if (!Module.Engine) {
     throw new Error('Module.Engine is not exported by WebAssembly module');
+  }
+
+  // MEMFS grows a file over 1 MB by 12.5% at a time, copying it each time, so
+  // writing a 130 MB G-code file copies about 1 GB. Grow by up to 32 MB at a time.
+  const MEMFS = Module.FS.filesystems && Module.FS.filesystems.MEMFS;
+  if (MEMFS && typeof MEMFS.expandFileStorage === 'function' && typeof MEMFS.getFileDataAsTypedArray === 'function') {
+    MEMFS.expandFileStorage = (node, newCapacity) => {
+      const prevCapacity = node.contents ? node.contents.length : 0;
+      if (prevCapacity >= newCapacity) return;
+      const step = prevCapacity < 1024 * 1024 ? prevCapacity : Math.min(prevCapacity, 32 * 1024 * 1024);
+      const contents = new Uint8Array(Math.max(newCapacity, prevCapacity + step, 256));
+      contents.set(MEMFS.getFileDataAsTypedArray(node));
+      node.contents = contents;
+    };
   }
 
   const engine = new Module.Engine();
@@ -116,7 +130,9 @@ export async function createEngineCore(options = {}) {
   }
 
   /**
-   * Submits a job to the engine and polls for the result every 16ms without blocking.
+   * Submits a job to the engine and polls for the result without blocking.
+   * Polling starts immediately and backs off to every 16ms, so quick ops
+   * return in about a millisecond while long ones cost one check per frame.
    * @param {string} op
    * @param {Object|string} [args={}]
    * @param {Object} [callOptions={}]
@@ -156,6 +172,7 @@ export async function createEngineCore(options = {}) {
     return new Promise((resolve, reject) => {
       let lastProgressKey = null;
       let timerId = null;
+      let pollDelay = 0;
       let onAbort = null;
 
       const cleanup = () => {
@@ -216,14 +233,15 @@ export async function createEngineCore(options = {}) {
             return;
           }
 
-          timerId = setTimeout(pollTick, 16);
+          pollDelay = pollDelay === 0 ? 1 : Math.min(pollDelay * 2, 16);
+          timerId = setTimeout(pollTick, pollDelay);
         } catch (err) {
           cleanup();
           reject(err);
         }
       };
 
-      timerId = setTimeout(pollTick, 16);
+      timerId = setTimeout(pollTick, 0);
     });
   }
 

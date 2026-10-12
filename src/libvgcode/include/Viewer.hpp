@@ -54,6 +54,8 @@ public:
     // Automatically called by load() method.
     //
     void reset();
+    // Release derived ES CPU caches while retaining vertices and GPU output.
+    void release_cpu_render_cache();
     //
     // Setup the viewer content from the given data.
     // See: GCodeInputData
@@ -126,6 +128,8 @@ public:
     //
     bool is_dim_previous_layers() const;
     void set_dim_previous_layers(bool value);
+    // Use flat ribbons for interactive previews; disabled by default.
+    void set_low_quality(bool enabled);
     float get_dim_previous_layers_brightness() const;
     void set_dim_previous_layers_brightness(float value);
     //
