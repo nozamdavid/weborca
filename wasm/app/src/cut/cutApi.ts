@@ -11,10 +11,10 @@ import type {
   CutResult
 } from './types';
 
-async function ensureInstanceOnBed(engine: any, objectId: number): Promise<void> {
+async function ensureInstanceOnBed(engine: any, objectId: number, instanceId?: number): Promise<void> {
   try {
     const store = typeof window !== 'undefined' ? (window as any).__plateStore?.getState() : null;
-    const instId = store?.objects.find((o: any) => o.id === objectId)?.instances?.[0]?.id;
+    const instId = instanceId ?? store?.objects.find((o: any) => o.id === objectId)?.instances?.[0]?.id;
     if (instId != null) {
       if (typeof engine.setInstanceTransform === 'function') {
         await engine.setInstanceTransform({ objectId, instanceId: instId });
@@ -30,7 +30,7 @@ async function ensureInstanceOnBed(engine: any, objectId: number): Promise<void>
  */
 export async function cutObject(params: CutObjectParams): Promise<CutResult> {
   const engine = await getEngine();
-  await ensureInstanceOnBed(engine, params.objectId);
+  await ensureInstanceOnBed(engine, params.objectId, params.instanceId);
   if (typeof (engine as any).cutObject === 'function') {
     const res = await (engine as any).cutObject(params);
     return {
@@ -53,7 +53,7 @@ export async function cutObjectWithConnectors(
   params: CutWithConnectorsParams
 ): Promise<CutResult> {
   const engine = await getEngine();
-  await ensureInstanceOnBed(engine, params.objectId);
+  await ensureInstanceOnBed(engine, params.objectId, params.instanceId);
   if (typeof (engine as any).cutObjectWithConnectors === 'function') {
     const res = await (engine as any).cutObjectWithConnectors(params);
     return {

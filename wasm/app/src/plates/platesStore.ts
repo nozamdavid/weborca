@@ -1,8 +1,11 @@
 import { create } from 'zustand';
+import { usePrefsStore } from '../prefs/prefsStore';
+import { resolveSlicingThreads } from '../prefs/slicingThreads';
 import { getEngine, slice } from '../engine/orcaEngine';
 import { usePlateStore } from '../plate/plateStore';
 import { useHistoryStore } from '../history';
 import { useAppStore } from '../store/appStore';
+import { slicePrerequisites } from '../shell/slicePrerequisites';
 import type { ProgressNotification, SliceResult } from '../engine/types';
 import { plateTitle } from './plateName';
 import type { PlateInfo } from './types';
@@ -133,16 +136,18 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
   },
 
   deletePlate: async (index: number, deleteObjects = false) => {
+    const app = useAppStore.getState();
+    if (get().plates.length <= 1 || !get().plates.some((p) => p.index === index)
+      || get().isLoading || app.isSlicing || app.isModelLoading || app.isSelectingPreset
+      || useHistoryStore.getState().isRestoring) return get().plates;
+    const active = get().activePlateIndex;
     try {
       set({ isLoading: true, error: null });
       const engine = await getEngine();
       await engine.call('deletePlate', { plateIndex: index, deleteObjects });
       const plates = await get().fetchPlates();
 
-      let nextActive = get().activePlateIndex;
-      if (nextActive >= plates.length) {
-        nextActive = Math.max(0, plates.length - 1);
-      }
+      const nextActive = Math.max(0, Math.min(active > index ? active - 1 : active, plates.length - 1));
       await usePlateStore.getState().refreshObjects();
       set({ activePlateIndex: nextActive, isLoading: false });
       await useHistoryStore.getState().commitTransaction('Delete plate');
@@ -179,7 +184,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
 
   slicePlate: async (plateIndex: number) => {
     const appState = useAppStore.getState();
-    if (appState.isSlicing) return false;
+    if (slicePrerequisites(appState, useHistoryStore.getState().isRestoring)) return false;
 
     const abortController = new AbortController();
     useAppStore.setState({
@@ -192,14 +197,9 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
     });
 
     try {
-      const threads = Math.min(
-        typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4,
-        8
-      );
-
       const result: SliceResult = await slice({
         plateIndex,
-        threads,
+        threads: resolveSlicingThreads(usePrefsStore.getState().general.slicingThreads),
         signal: abortController.signal,
         onProgress: (prog: ProgressNotification) => {
           const pct = Math.max(0, Math.min(100, prog.percent ?? 0));
@@ -225,6 +225,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
         slicePercent: 100,
         sliceStatusText: `Plate ${plateIndex + 1} slicing complete!`,
         sliceResult: { ...result, plateIndex },
+        sessionRecovery: 'idle',
         gcodeUrl,
         abortController: null
       });

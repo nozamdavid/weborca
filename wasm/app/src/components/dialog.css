@@ -1,0 +1,53 @@
+/* Legacy class names remain for callers and focused layout checks during migration. */
+@media (max-width: 800px), (pointer: coarse) {
+  .dialog-layer .ds-dialog .icon-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .dialog-layer .ds-dialog label:has(> input:is([type="checkbox"], [type="radio"])) {
+    min-height: 48px;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+}
+.dialog-layer .ds-dialog.modal-content,
+.dialog-layer .ds-dialog.modal-box {
+  padding: 0; background: var(--surface-2); color: var(--text-primary);
+  border-color: var(--border-default); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-4); max-width: calc(100vw - 2 * var(--space-3));
+  max-height: calc(100dvh - 2 * var(--space-3)); overflow: hidden;
+}
+.dialog-layer .ds-dialog__head { margin: 0; flex: none; padding: var(--space-3) var(--space-4); background: var(--surface-2); border-color: var(--border-default); }
+.dialog-layer .ds-dialog__body { min-height: 0; overflow-y: auto; }
+.dialog-layer .ds-dialog > .ds-dialog__body { flex: 1 1 auto; }
+/* Only a form owning the whole body supplies its own padded, scrolling slots. */
+.dialog-layer .ds-dialog__body:has(> form:only-child) { display: flex; padding: 0; overflow: hidden; }
+.dialog-layer .ds-dialog__body > form:only-child { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.dialog-layer .wizard-modal > .ds-dialog__body { padding: 0; }
+.dialog-layer .ds-dialog__foot { margin: 0; flex-wrap: wrap; }
+.dialog-layer .ds-dialog h2, .dialog-layer .ds-dialog h3 {
+  font-size: var(--text-xl); font-weight: var(--weight-semibold); overflow-wrap: anywhere;
+}
+.dialog-layer .ds-dialog__head h2, .dialog-layer .ds-dialog__head h3 { margin: 0; }
+.dialog-layer .ds-dialog :is(input:not([type=checkbox]):not([type=radio]), select, textarea) {
+  min-height: var(--ctl-h); font-size: var(--ctl-font); border-color: var(--border-input);
+}
+.dialog-layer .ds-dialog :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--focus-ring); outline-offset: 2px;
+}
+.dialog-layer .ds-dialog .close-btn { min-width: var(--ctl-h); min-height: var(--ctl-h); }
+.dialog-layer .ds-dialog__head > :first-child { min-width: 0; }
+.dialog-layer .ds-dialog__head > button { flex: none; }
+.dialog-layer .ds-scrim--confirm { z-index: var(--z-confirm, var(--z-fullscreen)); }
+.dialog-layer .dialog-message { margin: 0; color: var(--text-secondary); }
+@media (max-width: 800px) {
+  .dialog-layer .ds-dialog.modal-content, .dialog-layer .ds-dialog.modal-box {
+    width: 100%; max-width: 100%; border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+    max-height: calc(100dvh - env(safe-area-inset-top) - var(--space-6));
+  }
+}
+.dialog-layer .ds-dialog__body { display: flex; flex-direction: column; gap: var(--space-2); }
+.dialog-layer .ds-dialog label { min-width: 0; }
+.dialog-layer .ds-dialog .modal-close-btn { min-width: var(--ctl-h); min-height: var(--ctl-h); }

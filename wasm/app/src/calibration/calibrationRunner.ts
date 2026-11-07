@@ -26,6 +26,7 @@ export async function withCalibrationProjectSafety<T>(
 ): Promise<T> {
   const historyStore = useHistoryStore.getState();
   const appStore = useAppStore.getState();
+  if (!appStore.isEngineReady) throw new Error('Wait for the slicing engine to finish loading before generating a calibration plate.');
   const plateStore = usePlateStore.getState();
 
   // Snapshot pre-calibration state for rollback on failure

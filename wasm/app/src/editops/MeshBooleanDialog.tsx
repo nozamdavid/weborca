@@ -2,7 +2,7 @@ import React from 'react';
 import { useEditOpsStore } from './editOpsStore';
 import { usePlateStore } from '../plate/plateStore';
 import type { MeshBooleanMode } from './types';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { useTranslation } from "../i18n";
 
 export const MeshBooleanDialog: React.FC = () => {
@@ -29,21 +29,20 @@ export const MeshBooleanDialog: React.FC = () => {
   const toolCandidates = objects.filter((o) => o.id !== booleanTargetObjectId);
 
   return (
-    <ModalBackdrop onClose={closeBooleanDialog} role="dialog" aria-label={t("Mesh Boolean")}>
+    <Dialog onClose={closeBooleanDialog} role="dialog" aria-label={t("Mesh Boolean")}>
       <div
-        className="modal-content"
+        className="modal-content ds-dialog"
         id="mesh-boolean-dialog"
         data-testid="mesh-boolean-dialog"
-        style={{ width: 'min(480px, 92vw)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-header">
+        <div className="modal-header ds-dialog__head">
           <h2>{t("Mesh Boolean")}</h2>
           <button className="icon-btn" onClick={closeBooleanDialog} aria-label={t("Close")}>✕</button>
         </div>
 
-        <div className="modal-body">
-          {error && <div className="error-message" style={{ color: 'var(--danger-color)', fontSize: 12 }}>{error}</div>}
+        <div className="modal-body ds-dialog__body">
+          {error && <div className="error-message" style={{ color: 'var(--danger-color)', fontSize: '0.75rem' }}>{error}</div>}
 
           <div>
             <label style={{ display: 'block', marginBottom: 4, fontWeight: 500 }}>{t("Operation Mode")}</label>
@@ -113,11 +112,11 @@ export const MeshBooleanDialog: React.FC = () => {
           </label>
         </div>
 
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={closeBooleanDialog} disabled={isOperating}>
+        <div className="modal-footer ds-dialog__foot">
+          <button className="ds-btn" onClick={closeBooleanDialog} disabled={isOperating}>
             {t("Cancel")}</button>
           <button
-            className="btn btn-primary"
+            className="ds-btn ds-btn--primary"
             id="boolean-apply-btn"
             data-testid="boolean-apply-btn"
             onClick={() => void applyMeshBoolean()}
@@ -127,6 +126,6 @@ export const MeshBooleanDialog: React.FC = () => {
           </button>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

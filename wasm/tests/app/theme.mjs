@@ -29,14 +29,17 @@ async function runSuite(browserType, name) {
       const off = { appearance: un.appearance, bg: un.backgroundColor };
       el.checked = true;
       const on = getComputedStyle(el).backgroundColor;
-      const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim();
+      const probe = document.createElement('div');
+      probe.style.background = 'var(--accent-color)';
+      document.body.appendChild(probe);
+      const accent = getComputedStyle(probe).backgroundColor;
+      probe.remove();
       el.remove();
       return { off, on, accent };
     });
     assert.equal(box.off.appearance, 'none');
     assert.notEqual(box.off.bg, box.on);
-    assert.equal(box.on, 'rgb(0, 150, 136)');
-    assert.equal(box.accent.toLowerCase(), '#009688');
+    assert.equal(box.on, box.accent, 'a checked box uses the theme accent');
 
     log('Light uses a real palette and a light bed without inversion');
     await setTheme('light');

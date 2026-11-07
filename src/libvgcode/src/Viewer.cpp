@@ -69,6 +69,11 @@ void Viewer::set_light_top_dir(const Vec3& direction)
     m_impl->set_light_top_dir(direction);
 }
 
+void Viewer::set_enhanced_lighting(bool enabled)
+{
+    m_impl->set_enhanced_lighting(enabled);
+}
+
 void Viewer::set_tone(float exposure, float saturation)
 {
     m_impl->set_tone(exposure, saturation);

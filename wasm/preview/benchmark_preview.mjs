@@ -230,6 +230,10 @@ async function run(baseline, regressionOnly = false) {
     snapshot('role-hidden', () => preview.setExtrusionRoleVisible(2, false));
     snapshot('speed', () => preview.setViewType('Speed'));
     snapshot('all-again', () => { preview.setOptionVisible(0, false); preview.setOptionVisible(4, true); preview.setExtrusionRoleVisible(2, true); preview.setViewType('FeatureType'); preview.setLayerRange(firstLayer, layers - 1); });
+    snapshot('orbit', () => preview.orbit(13, -7));
+    snapshot('pan', () => preview.pan(3, 2));
+    snapshot('zoom', () => preview.zoom(-1));
+    preview.resetCamera(); preview.render();
     if (snapshots.find(item => item.name === 'all').hash !== snapshots.find(item => item.name === 'all-again').hash) throw new Error('Visibility roundtrip changed all-layer rendering');
     if (snapshots.find(item => item.name === 'all').range !== snapshots.find(item => item.name === 'all-again').range) throw new Error('Visibility roundtrip changed move range');
     const mapping = [0, 1, Math.floor(Number(preview.getMovesCount()) / 2), Number(preview.getMovesCount()) - 1].map(i => [i, preview.getMoveInfo(i), preview.getMoveGcodeLine(i)]);

@@ -72,7 +72,7 @@ export interface TextStoreState {
   boldness: number; // contour offset stroke
   skew: number; // italic CW tilt ratio (-1.0 to 1.0)
   align: TextAlignment;
-  useSurface: boolean; // conform to surface (unsupported in Web engine: forced false)
+  useSurface: boolean; // conform to surface (curved surface text wrapping)
   volumeType: TextVolumeType; // part | negative | modifier | new_object
   position: [number, number, number] | null;
   normal: [number, number, number] | null;
@@ -182,6 +182,7 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
       targetObjectId: objectId,
       targetVolumeId: null,
       volumeType: isNew ? 'new_object' : 'part',
+      useSurface: false,
       position: placement?.position ?? null,
       normal: placement?.normal ?? [0, 0, 1],
       rotation: 0.0,
@@ -263,12 +264,22 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
-    set((state) => ({
-      targetObjectId: objectId,
-      volumeType: objectId === null ? 'new_object' : state.volumeType === 'new_object' ? 'part' : state.volumeType
-    }));
+    set((state) => {
+      const isUnattached = objectId === null;
+      const nextVolumeType = isUnattached ? 'new_object' : state.volumeType === 'new_object' ? 'part' : state.volumeType;
+      const nextUseSurface = isUnattached ? false : state.useSurface;
+      let nextError = state.error;
+      if (isUnattached && state.useSurface) {
+        nextError = 'Select a model on the build plate to wrap text onto its surface.';
+      }
+      return {
+        targetObjectId: objectId,
+        volumeType: nextVolumeType,
+        useSurface: nextUseSurface,
+        error: nextError
+      };
+    });
   },
-
   setTargetVolume: (volumeId: number | null) => {
     operationSeq++;
     if (debounceTimer) {
@@ -376,14 +387,32 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
   },
 
   setUseSurface: (useSurface: boolean) => {
-    set({ useSurface });
+    const state = get();
+    if (useSurface && (state.targetObjectId === null || state.volumeType === 'new_object')) {
+      set({
+        error: 'Select a model on the build plate to wrap text onto its surface.',
+        useSurface: false
+      });
+      return;
+    }
+    set({ useSurface, error: null });
     get().debouncedUpdateText();
   },
-
   setVolumeType: (volumeType: TextVolumeType) => {
-    set({ volumeType });
+    set((state) => {
+      const isStandalone = volumeType === 'new_object';
+      const nextUseSurface = isStandalone ? false : state.useSurface;
+      let nextError = state.error;
+      if (isStandalone && state.useSurface) {
+        nextError = 'Curved surface wrapping was disabled because text is set as a standalone object.';
+      }
+      return {
+        volumeType,
+        useSurface: nextUseSurface,
+        error: nextError
+      };
+    });
   },
-
   setRotation: (rotation: number) => {
     set({ rotation });
     get().debouncedUpdateText();
@@ -433,7 +462,8 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
         boldness: state.initialConfig.boldness ?? 0.0,
         skew: state.initialConfig.skew ?? 0.0,
         align: (state.initialConfig.align as TextAlignment) ?? { horizontal: 'center', vertical: 'center' },
-        rotation: 0.0,
+        useSurface: state.initialConfig.useSurface ?? false,
+        rotation: state.initialConfig.rotation ?? 0.0,
         hasDispatchedMutation: false,
         error: null
       });
@@ -512,7 +542,8 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
         boldness: info.boldness ?? 0.0,
         skew: info.skew ?? 0.0,
         align: info.align || { horizontal: 'center', vertical: 'center' },
-        useSurface: info.useSurface ?? false
+        useSurface: info.useSurface ?? false,
+        rotation: info.rotation ?? 0.0
       };
 
       set({
@@ -570,6 +601,14 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
       const isNewObject = targetObjId === null || state.volumeType === 'new_object';
       const actualVolumeType: TextVolumeType = isNewObject ? 'new_object' : state.volumeType;
 
+      if (state.useSurface && (targetObjId === null || actualVolumeType === 'new_object')) {
+        set({
+          error: 'Select a model on the build plate to wrap text onto its surface.',
+          isLoading: false
+        });
+        return null;
+      }
+
       const params: AddTextParams = {
         objectId: !isNewObject && targetObjId !== null ? targetObjId : undefined,
         volumeType: actualVolumeType,
@@ -612,7 +651,24 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
         lastResult: result,
         targetObjectId: result.objectId,
         targetVolumeId: result.volumeId,
-        hasDispatchedMutation: false
+        hasDispatchedMutation: false,
+        initialConfig: {
+          objectId: result.objectId,
+          volumeId: result.volumeId,
+          text: params.text,
+          fontName: params.fontName,
+          fontPath: params.fontPath,
+          fontData: params.fontData,
+          size: params.size,
+          depth: params.depth,
+          charGap: params.charGap,
+          lineGap: params.lineGap,
+          boldness: params.boldness,
+          skew: params.skew,
+          align: params.align,
+          useSurface: params.useSurface,
+          rotation: params.rotation
+        }
       });
 
       // Invalidate mesh cache in plate store for affected object(s)
@@ -674,6 +730,14 @@ export const useTextStore = create<TextStoreState>((set, get) => ({
     const opId = ++operationSeq;
     const targetObjId = state.targetObjectId;
     const targetVolId = state.targetVolumeId;
+
+    if (state.useSurface && targetObjId === null) {
+      set({
+        error: 'Select a model on the build plate to wrap text onto its surface.',
+        isLoading: false
+      });
+      return null;
+    }
 
     const font = state.selectedFont || state.fonts[0];
     set({ isLoading: true, error: null });

@@ -13,8 +13,8 @@ import { printerGatewayPlugin } from './printerGateway';
  * 2. Development Mode Asset Serving:
  *    During development (`npm run dev`), we do not duplicate heavy artifacts. A custom
  *    Vite middleware plugin maps:
- *      - `/engine/*`   -> `wasm/build/orca-step-runtime/wasm/engine/*` (orca_engine.mjs, orca_engine.wasm,
- *                         OCCT license texts), falling back to `wasm/build/orca-wasm64/wasm/engine/*`
+ *      - `/engine/*`   -> `wasm/build/orca-wasm64/wasm/engine/*` (OCCT-free orca_engine.mjs, orca_engine.wasm)
+ *      - `/engine/step/*` -> `wasm/build/step-module/*` (lazily loaded STEP module + OCCT license texts)
  *      - `/preview/*`  -> `wasm/build/orca-wasm64-preview/wasm/preview/*` (orca_preview.js, orca_preview.wasm)
  *      - `/profiles/*` -> `wasm/build/web/profiles/*` (packed vendor profiles and index.json)
  *      - `/web/*`      -> `wasm/web/*` (orca-engine.js, engine-worker.js, engine-core.js)
@@ -29,7 +29,7 @@ import { printerGatewayPlugin } from './printerGateway';
  *    To ensure `dist/` is a completely self-contained static site that can be hosted on
  *    any static web server (or tested via `vite preview`), a custom `closeBundle` plugin hook
  *    copies:
- *      - the engine dir above (STEP-enabled if built) -> `dist/engine`
+ *      - the engine dir above -> `dist/engine`, the STEP module dir -> `dist/engine/step`
  *      - `wasm/build/orca-wasm64-preview/wasm/preview` -> `dist/preview` and root `dist/`
  *      - `wasm/build/web/profiles`           -> `dist/profiles`
  *      - `wasm/web` (worker & client libs)   -> `dist/web` and root `dist/`
@@ -38,26 +38,39 @@ import { printerGatewayPlugin } from './printerGateway';
  *    This allows zero-config deployment without runtime backend proxying.
  */
 
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import fs from 'node:fs';
 import { buildSync } from 'esbuild';
+import { createOctoEverywhereGateway } from './gateway/octoEverywhere';
+import { createAlphaAccess } from './gateway/alphaAccess';
 
 const repoRoot = path.resolve(__dirname, '../..');
-// The STEP-enabled engine (wasm/scripts/build_step_engine.sh) is preferred. It is always loaded
-// rather than swapped in on STEP import: swapping workers mid-session would mean serializing the
-// whole project. Measured cost: 28 MB vs 15 MB of wasm. Without it, STEP imports fail with an error.
-const stepEngineBuildDir = path.resolve(repoRoot, 'wasm/build/orca-step-runtime/wasm/engine');
-const engineBuildDir = fs.existsSync(path.join(stepEngineBuildDir, 'orca_engine.wasm'))
-  ? stepEngineBuildDir
+// The main engine is built without OpenCASCADE (SLIC3R_WITH_OCCT=OFF, wasm/scripts/build_orca.sh).
+// STEP import lazily loads the separate tessellation module (wasm/scripts/build_step_module.sh) in
+// its own worker and hands the packed mesh to the engine's loadStepMesh op.
+// ORCA_ENGINE_DIR and ORCA_STEP_MODULE_DIR point the app at other builds.
+const engineBuildDir = process.env.ORCA_ENGINE_DIR
+  ? path.resolve(process.env.ORCA_ENGINE_DIR)
   : path.resolve(repoRoot, 'wasm/build/orca-wasm64/wasm/engine');
+const stepModuleBuildDir = process.env.ORCA_STEP_MODULE_DIR
+  ? path.resolve(process.env.ORCA_STEP_MODULE_DIR)
+  : path.resolve(repoRoot, 'wasm/build/step-module');
 const previewBuildDir = path.resolve(repoRoot, 'wasm/build/orca-wasm64-preview/wasm/preview');
 const profilesBuildDir = path.resolve(repoRoot, 'wasm/build/web/profiles');
 const settingsBuildDir = path.resolve(repoRoot, 'wasm/build/settings');
 const webDir = path.resolve(repoRoot, 'wasm/web');
 const calibBuildDir = path.resolve(repoRoot, 'resources/calib');
 const handyModelsDir = path.resolve(repoRoot, 'resources/handy_models');
+
+function buildAlphaBootstrap(outfile: string, write = true) {
+  return buildSync({
+    entryPoints: [path.resolve(__dirname, 'src/alpha/bootstrap.ts')], outfile, write,
+    bundle: true, platform: 'browser', format: 'esm', target: 'es2022', logLevel: 'warning',
+    define: { 'import.meta.env.VITE_ALPHA_GATE_ENABLED': '"1"', 'process.env.NODE_ENV': '"production"' }
+  });
+}
 
 function getMimeType(filePath: string): string {
   const ext = path.extname(filePath).toLowerCase();
@@ -99,11 +112,13 @@ function serveStaticFile(reqPath: string, baseDir: string, res: any): boolean {
 
 function orcaAssetsPlugin() {
   let resolvedDistDir = path.resolve(__dirname, 'dist');
+  let alphaUiEnabled = false;
 
   return {
     name: 'orca-assets-plugin',
 
     configResolved(config: any) {
+      alphaUiEnabled = config.env?.VITE_ALPHA_GATE_ENABLED === '1';
       if (config.build?.outDir) {
         resolvedDistDir = path.resolve(config.root || __dirname, config.build.outDir);
       }
@@ -128,6 +143,12 @@ function orcaAssetsPlugin() {
         if (url.startsWith('/resources/handy_models/')) {
           const subPath = url.replace(/^\/resources\/handy_models\//, '');
           if (serveStaticFile(subPath, handyModelsDir, res)) return;
+        }
+
+        // Serve the lazily loaded STEP module at /engine/step/
+        if (url.startsWith('/engine/step/')) {
+          const subPath = url.replace(/^\/engine\/step\//, '');
+          if (serveStaticFile(subPath, stepModuleBuildDir, res)) return;
         }
 
         // Serve engine module at /engine/
@@ -168,6 +189,7 @@ function orcaAssetsPlugin() {
         // Serve worker / core / orca-engine directly at root if requested
         if (
           url === '/engine-worker.js' ||
+          url === '/step-worker.js' ||
           url === '/engine-core.js' ||
           url === '/orca-engine.js'
         ) {
@@ -206,6 +228,17 @@ function orcaAssetsPlugin() {
         }
       }
 
+      // 1b. Copy the lazily loaded STEP module (and the OCCT license texts it embeds) into dist/engine/step
+      const distStep = path.join(distEngine, 'step');
+      if (fs.existsSync(stepModuleBuildDir)) {
+        fs.mkdirSync(distStep, { recursive: true });
+        for (const file of fs.readdirSync(stepModuleBuildDir)) {
+          if (file.endsWith('.mjs') || file.endsWith('.wasm') || file.endsWith('.txt')) {
+            copyRuntimeAsset(path.join(stepModuleBuildDir, file), [path.join(distStep, file)]);
+          }
+        }
+      }
+
       // 2. Copy preview module into dist/preview and dist/ root
       const distPreview = path.join(distDir, 'preview');
       if (fs.existsSync(previewBuildDir)) {
@@ -235,7 +268,7 @@ function orcaAssetsPlugin() {
       // 4. Copy web worker & orca-engine files into dist/web and dist/ root
       const distWeb = path.join(distDir, 'web');
       fs.mkdirSync(distWeb, { recursive: true });
-      const webFiles = ['engine-worker.js', 'engine-core.js', 'orca-engine.js', 'orca-engine.d.ts'];
+      const webFiles = ['engine-worker.js', 'step-worker.js', 'engine-core.js', 'orca-engine.js', 'orca-engine.d.ts'];
       for (const file of webFiles) {
         const src = path.join(webDir, file);
         if (fs.existsSync(src)) {
@@ -268,30 +301,135 @@ function orcaAssetsPlugin() {
         fs.copyFileSync(layoutSrc, path.join(distDir, 'layout.json'));
       }
 
-      // 7. The local gateway as one file users can run on their own computer (see PRINTERS.md)
-      try {
-        buildSync({
-          entryPoints: [path.resolve(__dirname, 'gateway/local.ts')],
-          outfile: path.join(distDir, 'orca-gateway.mjs'),
-          bundle: true,
-          platform: 'node',
-          format: 'esm',
-          target: 'node20',
-          external: ['bufferutil', 'utf-8-validate'],
-          banner: { js: "import { createRequire as __orcaCreateRequire } from 'node:module'; const require = __orcaCreateRequire(import.meta.url);" },
-          logLevel: 'warning'
-        });
-      } catch (err) {
-        console.warn('[orca-assets] Could not bundle the local gateway:', err instanceof Error ? err.message : err);
+      // The hosted server loads only this restricted cloud bridge, without printer routes.
+      buildSync({
+        entryPoints: [path.resolve(__dirname, 'gateway/orcaCloud.ts')],
+        outfile: path.join(distDir, 'orca-cloud-bridge.mjs'),
+        bundle: true,
+        platform: 'node',
+        format: 'esm',
+        target: 'node20',
+        logLevel: 'warning'
+      });
+      buildSync({
+        entryPoints: [path.resolve(__dirname, 'gateway/hostedPrinterCloud.ts')],
+        outfile: path.join(distDir, 'printer-cloud-bridge.mjs'),
+        bundle: true,
+        platform: 'node',
+        format: 'esm',
+        target: 'node20',
+        external: ['bufferutil', 'utf-8-validate'],
+        banner: { js: "import { createRequire as __orcaCreateRequire } from 'node:module'; const require = __orcaCreateRequire(import.meta.url);" },
+        logLevel: 'warning'
+      });
+      buildSync({
+        entryPoints: [path.resolve(__dirname, 'gateway/alphaAccess.ts')],
+        outfile: path.join(distDir, 'alpha-access.mjs'),
+        bundle: true, platform: 'node', format: 'esm', target: 'node20', logLevel: 'warning'
+      });
+      if (alphaUiEnabled) {
+        // Independent entry: sharing the main app's vendor chunks would expose app code before login.
+        buildAlphaBootstrap(path.join(distDir, 'alpha-public/bootstrap.js'));
+        fs.copyFileSync(path.resolve(__dirname, 'alpha-bootstrap.html'), path.join(distDir, 'alpha-bootstrap.html'));
       }
+      buildSync({
+        entryPoints: [path.resolve(__dirname, 'gateway/octoEverywhere.ts')],
+        outfile: path.join(distDir, 'octoeverywhere-bridge.mjs'),
+        bundle: true, platform: 'node', format: 'esm', target: 'node20',
+        external: ['bufferutil', 'utf-8-validate'],
+        banner: { js: "import { createRequire as __orcaCreateRequire } from 'node:module'; const require = __orcaCreateRequire(import.meta.url);" },
+        logLevel: 'warning'
+      });
 
       console.log('[orca-assets] Assets successfully copied to dist/.');
     }
   };
 }
 
-export default defineConfig({
-  plugins: [react(), orcaAssetsPlugin(), printerGatewayPlugin()],
+export default defineConfig(({ mode }) => {
+  const attachAlpha = (server: any, preview = false) => {
+    const root = preview ? path.resolve(server.config.root, server.config.build.outDir) : __dirname;
+    // Dev asset mappings include paths elsewhere in the repo, beyond the HTML root.
+    const alpha = createAlphaAccess({ webRoot: root, forbiddenDataRoots: preview ? [] : [repoRoot] });
+    server.middlewares.use((req: any, res: any, next: () => void) => {
+      void alpha.guard(req, res, async html => {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.end(req.method === 'HEAD' ? undefined : html);
+      }).then(handled => {
+        if (handled) return;
+        if (!preview && alpha.enabled && /^\/alpha-public\/bootstrap\.(?:js|css)$/.test(req.url?.split('?')[0] || '')) {
+          const output = buildAlphaBootstrap(path.resolve(__dirname, 'alpha-public/bootstrap.js'), false);
+          const suffix = req.url.split('?')[0].endsWith('.css') ? '.css' : '.js';
+          const file = output.outputFiles?.find(file => file.path.endsWith(suffix));
+          if (!file) { res.statusCode = 404; res.end('Not found'); return; }
+          res.setHeader('Content-Type', suffix === '.css' ? 'text/css' : 'application/javascript');
+          res.end(req.method === 'HEAD' ? undefined : file.contents);
+          return;
+        }
+        next();
+      }).catch(() => {
+        res.statusCode = 503; res.end('Alpha unavailable');
+      });
+    });
+    // EventEmitter prependListener cannot stop later provider listeners. Intercept dispatch itself.
+    if (alpha.enabled && server.httpServer) {
+      const emit = server.httpServer.emit;
+      const close = server.httpServer.close;
+      server.httpServer.close = function (...args: any[]) {
+        alpha.close();
+        return close.apply(this, args);
+      };
+      server.httpServer.emit = function (event: string, ...args: any[]) {
+        if (event === 'upgrade' && !alpha.authorizeUpgrade(args[0], args[1])) {
+          args[1].destroy(); return false;
+        }
+        return emit.call(this, event, ...args);
+      };
+      server.httpServer.once('close', () => {
+        alpha.close();
+        server.httpServer.emit = emit;
+        server.httpServer.close = close;
+      });
+    }
+  };
+  const attachOctoEverywhere = (server: any) => {
+    const gateway = createOctoEverywhereGateway();
+    server.middlewares.use((req: any, res: any, next: () => void) => {
+      void gateway.handle(req, res).then(handled => { if (!handled) next(); });
+    });
+    // Other gateways own their upgrade listeners. Observe only this provider's route.
+    server.httpServer?.prependListener('upgrade', (req: any, socket: any, head: Buffer) => {
+      if (req.url?.startsWith('/_octoeverywhere/')) void gateway.handleUpgrade(req, socket, head);
+    });
+    server.httpServer?.once('close', () => gateway.close());
+  };
+  const env = loadEnv(mode, __dirname, 'MOBILE_');
+  const mobileSliceSteps = process.env.MOBILE_SLICE_STEPS ?? env.MOBILE_SLICE_STEPS ??
+    'layer_height,wall_loops,sparse_infill_density,sparse_infill_pattern,enable_support,support_type';
+  const mobileConfigMiddleware = (server: any) => { server.middlewares.use((req: any, res: any, next: () => void) => {
+    if (req.url?.split('?')[0] === '/orca-cloud/callback') {
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      res.setHeader('Cache-Control', 'no-store');
+      // Vite's HTML fallback sets no-cache later; callback credentials must never
+      // become cacheable, even when the fallback supplies its own header.
+      const setHeader = res.setHeader.bind(res);
+      res.setHeader = (name: string, value: string | number | readonly string[]) =>
+        setHeader(name, name.toLowerCase() === 'cache-control' ? 'no-store' : value);
+    }
+    if (req.url?.split('?')[0] !== '/app-config.json') return next();
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(JSON.stringify({ mobileSliceSteps }));
+  }); };
+  return {
+  define: { 'import.meta.env.VITE_MOBILE_SLICE_STEPS': JSON.stringify(mobileSliceSteps) },
+  plugins: [{ name: 'alpha-access', enforce: 'pre', configureServer: (server: any) => attachAlpha(server),
+    configurePreviewServer: (server: any) => attachAlpha(server, true) },
+    react(), orcaAssetsPlugin(), printerGatewayPlugin(), {
+    name: 'octoeverywhere-gateway', configureServer: attachOctoEverywhere, configurePreviewServer: attachOctoEverywhere
+  }, {
+    name: 'mobile-app-config', configureServer: mobileConfigMiddleware, configurePreviewServer: mobileConfigMiddleware
+  }],
   server: {
     allowedHosts: ['server-1.barbel-hops.ts.net', 'weborca.noz.am'],
     fs: {
@@ -310,4 +448,5 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp'
     }
   }
+  };
 });

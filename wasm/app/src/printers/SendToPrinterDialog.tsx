@@ -1,10 +1,15 @@
+import { MobileInput } from '../mobile/MobileInput';
+import { useMobile } from '../mobile/useMobile';
+import { MobileSelect } from '../mobile/MobileSelect';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/appStore';
 import { createPrinterApi } from './api';
+import { octoEverywhereCapabilities } from './octoEverywhere';
+import type { PrinterApi } from './types';
 import { usePrinterConnectionStore } from './connectionStore';
 import { useTranslation } from '../i18n';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { getExportGcodePayload } from '../shell/exportGcode';
 
 /**
@@ -13,7 +18,7 @@ import { getExportGcodePayload } from '../shell/exportGcode';
  */
 export const SendToPrinterDialog: React.FC<{ getGcode: () => Uint8Array | null; defaultFilename: string }> = ({ getGcode, defaultFilename }) => {
   const { t } = useTranslation();
-  const { sendDialogOpen, printers, selectedPrinterId, selectPrinter, closeSendDialog, openDialog } = usePrinterConnectionStore();
+  const { sendDialogOpen, printers, selectedPrinterId, selectPrinter, closeSendDialog, openDialog, liveState } = usePrinterConnectionStore();
   const preset = useAppStore((s) => s.selectedPrinter);
   const [filename, setFilename] = useState(defaultFilename);
   const [busy, setBusy] = useState(false);
@@ -21,6 +26,7 @@ export const SendToPrinterDialog: React.FC<{ getGcode: () => Uint8Array | null; 
   const [confirmPrint, setConfirmPrint] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const filenameInputRef = useRef<HTMLInputElement>(null);
+  const mobile = useMobile();
 
   useEffect(() => {
     if (!sendDialogOpen) return;
@@ -35,36 +41,44 @@ export const SendToPrinterDialog: React.FC<{ getGcode: () => Uint8Array | null; 
   }, [sendDialogOpen]);
 
   useEffect(() => {
-    if (sendDialogOpen && printers.length > 0) {
+    if (sendDialogOpen && printers.length > 0 && !mobile) {
       const timer = setTimeout(() => {
         filenameInputRef.current?.focus();
         filenameInputRef.current?.select();
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [sendDialogOpen, printers.length]);
+  }, [sendDialogOpen, printers.length, mobile]);
 
   if (!sendDialogOpen) return null;
   const printer = printers.find((p) => p.id === selectedPrinterId);
 
-  const monitorOnly = printer?.host_type === 'bambu-cloud' || printer?.host_type === 'creality-cloud';
+  const remote = printer?.octoeverywhere?.mode === 'remote';
+  const remoteCaps = remote && printer ? liveState?.octoeverywhere?.capabilities ?? octoEverywhereCapabilities(printer.host_type) : undefined;
+  const monitorOnly = !remote && (printer?.host_type === 'bambu-cloud' || printer?.host_type === 'creality-cloud' || printer?.host_type === 'snapmaker-cloud');
+  const uploadDisabled = monitorOnly || (remote && !remoteCaps?.rawGcodeUpload);
+  const printDisabled = uploadDisabled || (remote && !remoteCaps?.rawGcodeStart);
 
   const send = async (print: boolean) => {
     const rawGcode = getGcode();
-    if (!rawGcode || !printer || monitorOnly || busy) return;
+    if (!rawGcode || !printer || uploadDisabled || (print && printDisabled) || busy) return;
     setBusy(true);
     setMessage(null);
     setProgress(0);
+    let api: PrinterApi | undefined;
     try {
       const prepared = await getExportGcodePayload();
       if (!prepared || getGcode() !== rawGcode) return;
       const gcode = prepared.gcode;
-      await createPrinterApi(printer).upload({ filename: filename.trim(), gcode, print, onProgress: setProgress });
-      setMessage({ ok: true, text: print ? `Sent to ${printer.name}. The print is starting.` : `Sent to ${printer.name}.` });
+      if (usePrinterConnectionStore.getState().printers.find(p => p.id === printer.id) !== printer) return;
+      api = createPrinterApi(printer);
+      await api.upload({ filename: filename.trim(), gcode, print, onProgress: setProgress });
+      setMessage({ ok: true, text: t(print ? 'Sent to {{printer}}. The print is starting.' : 'Sent to {{printer}}.', { printer: printer.name }) });
       setConfirmPrint(false);
     } catch (e) {
       setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
+      api?.dispose?.();
       setBusy(false);
     }
   };
@@ -75,30 +89,28 @@ export const SendToPrinterDialog: React.FC<{ getGcode: () => Uint8Array | null; 
   };
 
   const dialog = (
-    <ModalBackdrop onClose={handleClose} id="send-to-printer-dialog" role="dialog" aria-modal="true" aria-label="Send to printer">
-      <div className="modal-content" style={{ minWidth: 380, maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <h3 style={{ margin: 0 }}>Send to printer</h3>
+    <Dialog className="ds-scrim" onClose={handleClose} id="send-to-printer-dialog" role="dialog" aria-modal="true" aria-label={t('Send to printer')}>
+      <div className="ds-dialog printer-sheet printer-send">
+        <header className="ds-dialog__head"><h2 className="ds-title ds-title--dialog">{t('Send to printer')}</h2></header>
+        <div className="ds-dialog__body">
         {printers.length === 0 ? (
           <>
-            <div>No printer is set up yet.</div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={handleClose}>Close</button>
-              <button className="btn btn-primary" id="send-add-printer" autoFocus onClick={() => { closeSendDialog(); openDialog(null); }}>Add a printer</button>
-            </div>
+            <div>{t('No printer is set up yet.')}</div>
           </>
         ) : (
           <>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
-              Printer
-              <select id="send-printer" value={selectedPrinterId ?? ''} onChange={(e) => { selectPrinter(e.target.value); setConfirmPrint(false); }} disabled={busy}>
+            <label className="printer-field">
+              {t('Printer')}
+              <MobileSelect className="ds-select" id="send-printer" value={selectedPrinterId ?? ''} onValueChange={(value) => { selectPrinter(value); setConfirmPrint(false); }} disabled={busy}>
                 {printers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+              </MobileSelect>
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
-              File name
-              <input
+            <label className="printer-field">
+              {t('File name')}
+              <MobileInput
                 ref={filenameInputRef}
                 id="send-filename"
+                className="ds-input"
                 autoFocus
                 value={filename}
                 onChange={(e) => setFilename(e.target.value)}
@@ -108,22 +120,29 @@ export const SendToPrinterDialog: React.FC<{ getGcode: () => Uint8Array | null; 
             {progress != null && busy && (
               <div className="device-progress" role="progressbar" aria-valuenow={Math.round(progress * 100)}><div style={{ width: `${progress * 100}%` }} /></div>
             )}
-            {message && <div id="send-result" data-ok={message.ok} style={{ color: message.ok ? '#81c784' : '#ef9a9a', fontSize: 12 }}>{message.text}</div>}
+            {message && <div id="send-result" data-ok={message.ok} className="printer-result">{message.text}</div>}
             {monitorOnly && <div id="send-monitor-only">{t('This cloud connection supports monitoring. Export the G-code to send it using the printer’s app.')}</div>}
-            {confirmPrint && <div id="send-confirm-text" style={{ color: '#ffb74d', fontSize: 12 }}>This uploads the file and starts printing on {printer?.name} right away.</div>}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" id="send-close" onClick={handleClose} disabled={busy}>Close</button>
-              <button className="btn btn-secondary" id="send-upload" onClick={() => send(false)} disabled={busy || !filename.trim() || !printer || monitorOnly}>Upload</button>
-              {confirmPrint ? (
-                <button className="btn btn-primary" id="send-print-confirm" onClick={() => send(true)} disabled={busy}>Confirm: upload and start print</button>
-              ) : (
-                <button className="btn btn-primary" id="send-print" onClick={() => setConfirmPrint(true)} disabled={busy || !filename.trim() || !printer || monitorOnly}>Upload and print</button>
-              )}
-            </div>
+            {remote && <p>{remoteCaps?.sendReason || t(uploadDisabled ? 'File transfers are not available for this remote printer.' : 'Upload stores the G-code. To start separately, use Device → Printer files.')}</p>}
+            {confirmPrint && <div id="send-confirm-text" className="printer-warning">{t('This uploads the file and starts printing on {{printer}} right away.', { printer: printer?.name ?? '' })}</div>}
           </>
         )}
+        </div>
+        <footer className="ds-dialog__foot">
+          {printers.length === 0 ? <>
+            <button className="ds-btn" onClick={handleClose}>{t('Close')}</button>
+            <button className="ds-btn ds-btn--primary" id="send-add-printer" autoFocus onClick={() => { closeSendDialog(); openDialog(null); }}>{t('Add a printer')}</button>
+          </> : <>
+              <button className="ds-btn" id="send-close" onClick={handleClose} disabled={busy}>{t("Close")}</button>
+              <button className="ds-btn" id="send-upload" onClick={() => send(false)} disabled={busy || !filename.trim() || !printer || uploadDisabled}>{t("Upload")}</button>
+              {confirmPrint ? (
+                <button className="ds-btn ds-btn--primary" id="send-print-confirm" onClick={() => send(true)} disabled={busy || printDisabled}>{t("Confirm: upload and start print")}</button>
+              ) : (
+                !remote && <button className="ds-btn ds-btn--primary" id="send-print" onClick={() => setConfirmPrint(true)} disabled={busy || !filename.trim() || !printer || printDisabled}>{t("Upload and print")}</button>
+              )}
+          </>}
+        </footer>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 
   return typeof document !== 'undefined' ? createPortal(dialog, document.body) : dialog;

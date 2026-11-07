@@ -14,6 +14,7 @@ import type {
   PhysicalPrinter,
   PrinterApi,
   PrinterFilament,
+  PrinterFilamentSlot,
   PrinterRunState,
   PrinterState,
   UploadOptions
@@ -24,7 +25,6 @@ export type CrealityRegion = 'global' | 'china';
 export interface CrealityGatewayTarget {
   cloud_region?: CrealityRegion;
   region?: CrealityRegion;
-  local_gateway?: string;
   use_gateway?: boolean;
 }
 
@@ -112,25 +112,32 @@ export function crealityCloudGatewayUrl(
 ): string {
   const reg: CrealityRegion = target.cloud_region ?? target.region ?? 'global';
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  const localBase = target.use_gateway && target.local_gateway ? target.local_gateway.replace(/\/+$/, '') : '';
-  return `${localBase}/_printer/creality-cloud/${reg}/${service}${cleanPath}`;
+  return `/_printer/creality-cloud/${reg}/${service}${cleanPath}`;
 }
 
 /**
- * Creates headers for Creality Cloud Auth endpoints (CloudAPI.js first-party contract).
- * Uses platform 14, OS_LANG 0, and DUID.
+ * CrealityPrint v6.0.3 resources/web/homepage/assets/2f55238f.js:
+ * baseHeaders/index$3 use platform 11 and a client UUID for both login modes.
+ * CloudAPI.js belongs to the Cura plugin and uses a different host/path contract.
  */
+let authDeviceId: string | undefined;
 export function createCrealityAuthHeaders(auth?: { userId?: string; token?: string; duid?: string }): Record<string, string> {
-  const duid = auth?.duid || '00000000000000000000000000000000';
+  const duid = auth?.duid || (authDeviceId ??= generateRequestId());
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'accept': 'application/json, */*',
     '__CXY_APP_ID_': 'creality_model',
     '__CXY_OS_LANG_': '0',
     '__CXY_DUID_': duid,
-    '__CXY_OS_VER_': 'Windows 10',
-    '__CXY_PLATFORM_': '14',
-    '__CXY_REQUESTID_': generateRequestId()
+    '__CXY_OS_VER_': typeof navigator === 'undefined' ? 'unknown' : navigator.userAgent || 'unknown',
+    '__CXY_PLATFORM_': '11',
+    '__CXY_BRAND_': 'creality',
+    '__CXY_APP_CH_': 'creality',
+    '__CXY_APP_VER_': '6.0.1.1375',
+    '__CXY_TIMEZONE_': String(-new Date().getTimezoneOffset() * 60),
+    '__CXY_REQUESTID_': generateRequestId(),
+    '__CXY_UID_': auth?.userId || '',
+    '__CXY_TOKEN_': auth?.token || ''
   };
   if (auth?.userId) {
     headers['__CXY_UID_'] = auth.userId;
@@ -221,11 +228,14 @@ export async function requestCrealityCloudQr(
  * Polls the state of a QR login session.
  * Returns { token, userId } once scanned and confirmed (state 3), or null if pending.
  * Requires both nonempty token and userId.
+ * confirmation belongs to one QR attempt: CrealityPrint retains state 2's
+ * confirmUserInfo until state 3 delivers the token.
  */
 export async function pollCrealityCloudQr(
   identical: string,
   target: CrealityGatewayTarget = {},
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  confirmation?: { userId?: string }
 ): Promise<CrealityCloudAuthSession | null> {
   const url = crealityCloudGatewayUrl(target, 'auth', '/api/cxy/account/v2/qrQuery');
   const timeoutSignal = AbortSignal.timeout(15_000);
@@ -253,10 +263,17 @@ export async function pollCrealityCloudQr(
   }
 
   const result = json.result;
+  if (result?.state === 2 && confirmation) {
+    const userId = result.confirmUserInfo?.userId;
+    if (typeof userId === 'string' || typeof userId === 'number') {
+      confirmation.userId = String(userId).trim();
+    }
+  }
   if (result && result.state === 3) {
     const token = typeof result.token === 'string' ? result.token.trim() : '';
-    const userId = (typeof result.userId === 'string' || typeof result.userId === 'number')
-      ? String(result.userId).trim()
+    const rawUserId = result.userId ?? confirmation?.userId;
+    const userId = (typeof rawUserId === 'string' || typeof rawUserId === 'number')
+      ? String(rawUserId).trim()
       : '';
     if (!token || !userId) {
       throw new Error('Creality Cloud QR query succeeded (state 3) but returned missing or empty userId or token.');
@@ -282,14 +299,16 @@ export async function loginCrealityCloudPassword(
     throw new Error('Enter an account identifier and password.');
   }
 
-  const url = crealityCloudGatewayUrl(target, 'auth', '/api/account/loginV2');
+  const url = crealityCloudGatewayUrl(target, 'auth', '/api/cxy/account/v2/loginV2');
   const timeoutSignal = AbortSignal.timeout(15_000);
   const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
   const res = await fetch(url, {
     method: 'POST',
     headers: createCrealityAuthHeaders(),
-    body: JSON.stringify({ type: 1, account: cleanAccount, password }),
+    // CrealityPrint login.mail/phoneAndPassword: email=2, phone=1 (country code + number).
+    // Password is passed unchanged through the first-party login request.
+    body: JSON.stringify({ type: cleanAccount.includes('@') ? 2 : 1, account: cleanAccount, password }),
     signal: combinedSignal
   });
 
@@ -304,8 +323,11 @@ export async function loginCrealityCloudPassword(
   }
 
   const token = typeof json.result.token === 'string' ? json.result.token.trim() : '';
-  const userId = (typeof json.result.userId === 'string' || typeof json.result.userId === 'number')
-    ? String(json.result.userId).trim()
+  // Packaged homepage loginSuccess reads user_info; native account_request.cpp
+  // also accepts userInfo and the older flat userId response.
+  const rawUserId = json.result.user_info?.userId ?? json.result.userInfo?.userId ?? json.result.userId;
+  const userId = (typeof rawUserId === 'string' || typeof rawUserId === 'number')
+    ? String(rawUserId).trim()
     : '';
 
   if (!token || !userId) {
@@ -343,7 +365,7 @@ export async function fetchCrealityCloudDevices(
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(text || `Failed to fetch Creality Cloud devices (${res.status}).`);
+    throw Object.assign(new Error(`Failed to fetch Creality Cloud devices (${res.status}).`), { status: res.status });
   }
 
   const json = await res.json().catch(() => null);
@@ -352,7 +374,7 @@ export async function fetchCrealityCloudDevices(
   }
 
   if (json.code === 4) {
-    throw new Error('Creality Cloud session expired (code 4): please re-authenticate.');
+    throw Object.assign(new Error('Creality Cloud session expired (code 4): please re-authenticate.'), { status: 401 });
   }
 
   if (json.code !== 0 || !json.result) {
@@ -425,7 +447,7 @@ export function normalizeFilamentColor(color: unknown): string | undefined {
 
 /**
  * Parses CFS multi-material inventory from RPC query result.
- * rfidState 0 indicates unavailable/empty slot.
+ * Legacy loaded-filament projection used by explicit Prepare sync.
  * External rackFilament is supported when material type is reported.
  */
 export function parseCfsInventory(cfsResult: unknown): PrinterFilament[] {
@@ -473,6 +495,67 @@ export function parseCfsInventory(cfsResult: unknown): PrinterFilament[] {
   }
 
   return filaments;
+}
+
+/**
+ * Read-only cloud inventory. CrealityPrint setCFSFromCxCloud uses array positions
+ * (one-based boxes, zero-based ports), not cId (a material-detail lookup key).
+ * CFSFilamentItem treats state 0 as empty and 1/2 as occupied. Missing or future
+ * states are unknown; their cached material/color must not appear as loaded.
+ * rackFilament is a reported assignment, without a physical presence sensor.
+ * See docs/creality-cloud-filaments.md for the pinned first-party consumer.
+ */
+export function parseCfsFilamentSlots(cfsResult: unknown): PrinterFilamentSlot[] | undefined {
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (!isRecord(cfsResult)) return undefined;
+  const { cfsList, rackFilament, smartRackFilament } = cfsResult;
+  if (cfsList === undefined && rackFilament === undefined && smartRackFilament === undefined) return undefined;
+  if (cfsList !== undefined && !Array.isArray(cfsList)) return undefined;
+  if (rackFilament !== undefined && !isRecord(rackFilament)) return undefined;
+  if (smartRackFilament !== undefined && !isRecord(smartRackFilament)) return undefined;
+
+  const slots: PrinterFilamentSlot[] = [];
+  for (const [boxIndex, box] of (cfsList ?? []).entries()) {
+    // Null placeholders retain subsequent physical positions; do not invent bays.
+    if (box == null) continue;
+    if (!isRecord(box) || !Array.isArray(box.portList)) return undefined;
+    for (const [portIndex, port] of box.portList.entries()) {
+      if (port == null) continue;
+      if (!isRecord(port)) return undefined;
+      const presence = port.rfidState === 0 || port.rfidState === '0' ? 'empty'
+        : [1, 2, '1', '2'].includes(port.rfidState as number | string) ? 'present' : 'unknown';
+      slots.push({
+        id: `cfs-${boxIndex + 1}-${portIndex + 1}`,
+        label: `CFS ${boxIndex + 1}-${portIndex + 1}`,
+        presence,
+        material: presence === 'present' && typeof port.filamentType === 'string' ? port.filamentType.trim() : '',
+        color: presence === 'present' ? normalizeFilamentColor(port.filamentsColor) : undefined
+      });
+    }
+  }
+  if (rackFilament !== undefined) {
+    const material = typeof rackFilament.filamentType === 'string' ? rackFilament.filamentType.trim() : '';
+    slots.push({
+      id: 'rack-1', label: 'External Spool',
+      presence: material ? 'present' : 'unknown', material,
+      color: material ? normalizeFilamentColor(rackFilament.filamentsColor) : undefined
+    });
+  }
+  if (smartRackFilament !== undefined) {
+    const detected = smartRackFilament.filamentDetected;
+    for (let inlet = 0; inlet < 2; inlet++) {
+      const presence = typeof detected === 'string' && /^[01]{2}$/.test(detected)
+        ? detected[inlet] === '1' ? 'present' : 'empty' : 'unknown';
+      slots.push({
+        id: `smart-rack-${inlet + 1}`, label: `External Spool ${inlet + 1}`, presence,
+        material: presence === 'present' && typeof smartRackFilament.filamentType === 'string'
+          ? smartRackFilament.filamentType.trim() : '',
+        color: presence === 'present' ? normalizeFilamentColor(smartRackFilament.filamentsColor) : undefined
+      });
+    }
+  }
+  return slots;
 }
 
 /**
@@ -594,6 +677,7 @@ export class CrealityCloudApi implements PrinterApi {
 
         // 4. Fetch CFS multi-material inventory if multicolor is enabled
         let filaments: PrinterFilament[] = [];
+        let filamentSlots: PrinterFilamentSlot[] | undefined;
         const isMultiColor = Number(devInfo.multicolor) === 1 || attrMap['cfsInsert'] === 1;
         if (isMultiColor) {
           try {
@@ -608,7 +692,10 @@ export class CrealityCloudApi implements PrinterApi {
             });
             if (cfsRes.ok) {
               const cfsJson = await cfsRes.json();
-              filaments = parseCfsInventory(cfsJson?.result);
+              if (cfsJson?.code === 0 || cfsJson?.code === 200) {
+                filaments = parseCfsInventory(cfsJson.result);
+                filamentSlots = parseCfsFilamentSlots(cfsJson.result);
+              }
             }
           } catch {
             // Ignore optional CFS fetch failures to keep basic state monitoring active
@@ -720,7 +807,8 @@ export class CrealityCloudApi implements PrinterApi {
           layer,
           remaining,
           file: devInfo.printInfo?.modelName || devInfo.printInfo?.gcodeName,
-          filaments: filaments.length > 0 ? filaments : undefined
+          filaments: filaments.length > 0 ? filaments : undefined,
+          filamentSlots
         };
 
         if (!closed) {
@@ -731,7 +819,7 @@ export class CrealityCloudApi implements PrinterApi {
         onError(err instanceof Error ? err : new Error(String(err)));
       } finally {
         if (!closed) {
-          const delay = options?.isActive?.() === false ? 15_000 : 3_000;
+          const delay = options?.pollIntervalMs ?? (options?.isActive?.() === false ? 15_000 : 3_000);
           timerId = setTimeout(poll, delay);
         }
       }

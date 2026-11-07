@@ -1,0 +1,21 @@
+/* Independent alpha bootstrap palette; no app bundle dependency. */
+.alpha-ui {
+  --alpha-bg: #202124;
+  --alpha-surface: #292b2f;
+  --alpha-control: #1c1e21;
+  --alpha-text: #f0f1f2;
+  --alpha-muted: #b2b8bf;
+  --alpha-border: #555b63;
+  --alpha-divider: #3b4047;
+  --alpha-focus: #7bd8d0;
+  --alpha-accent: #63c9bf;
+  --alpha-on-accent: #102b29;
+  --alpha-error: #ffaaaa;
+  --alpha-selected: #373d43;
+  --alpha-success-bg: #24413d;
+  --alpha-success-text: #a1e2d8;
+  --alpha-warning-bg: #463b2b;
+  --alpha-warning-text: #e9cf9c;
+  --alpha-radius: 6px;
+  --alpha-control-height: 42px;
+}

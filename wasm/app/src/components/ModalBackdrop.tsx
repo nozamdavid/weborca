@@ -1,6 +1,7 @@
 import { useTranslation } from "../i18n";
 import React, { useCallback, useEffect, useRef } from 'react';
 import { create } from 'zustand';
+import { Dialog } from './Dialog';
 
 /** Open modals, bottom to top. Escape only reaches the top one. */
 const stack: symbol[] = [];
@@ -9,6 +10,8 @@ const handlers = new Map<symbol, () => void>();
 if (typeof window !== 'undefined') {
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || e.defaultPrevented || stack.length === 0) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
     handlers.get(stack[stack.length - 1])?.();
   });
 }
@@ -86,15 +89,15 @@ export const ConfirmHost: React.FC = () => {
     request.resolve(ok);
   };
   return (
-    <ModalBackdrop onClose={() => answer(false)} role="alertdialog" aria-label={t(request.title)} data-testid="confirm-dialog" style={{ zIndex: 2000 }}>
-      <div className="modal-content" style={{ maxWidth: 400 }}>
-        <h3 style={{ margin: '0 0 10px' }}>{t(request.title)}</h3>
-        <p style={{ margin: 0, color: 'var(--text-muted)' }}>{request.message}</p>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" data-testid="confirm-cancel" autoFocus onClick={() => answer(false)}>{t(request.cancelLabel)}</button>
-          <button className="btn btn-primary" data-testid="confirm-ok" onClick={() => answer(true)}>{t(request.confirmLabel)}</button>
+    <Dialog onClose={() => answer(false)} role="alertdialog" aria-label={t(request.title)} data-testid="confirm-dialog" className="ds-scrim--confirm">
+      <div className="ds-dialog ds-dialog--sm">
+        <div className="ds-dialog__head"><h2 className="ds-title--dialog">{t(request.title)}</h2></div>
+        <div className="ds-dialog__body"><p className="dialog-message">{t(request.message)}</p></div>
+        <div className="ds-dialog__foot">
+          <button className="ds-btn" data-testid="confirm-cancel" autoFocus onClick={() => answer(false)}>{t(request.cancelLabel)}</button>
+          <button className="ds-btn ds-btn--primary" data-testid="confirm-ok" onClick={() => answer(true)}>{t(request.confirmLabel)}</button>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

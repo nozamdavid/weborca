@@ -23,6 +23,7 @@ import { chromium, firefox } from 'playwright';
 import draco3d from '../../app/node_modules/draco3d/draco3d.js';
 import { unzipSync, zipSync } from '../../app/node_modules/fflate/esm/index.mjs';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 5122;
@@ -148,7 +149,7 @@ async function runSuite(browserType, name) {
     }
 
     log('7. Slice and export G-code + Plate Sliced File (.gcode.3mf)...');
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.selectOption('#printer-select', 'Voron 2.4 300 0.4 nozzle');
     await page.selectOption('#filament-select', 'Generic PLA @System');
     await page.selectOption('#process-select', '0.20mm Standard @Voron');

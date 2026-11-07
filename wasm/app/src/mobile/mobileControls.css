@@ -1,0 +1,94 @@
+.object-setting-label {
+  flex: 0 0 45%; font-size: 0.8rem; color: var(--text-color);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.object-setting-input { min-width: 60px; }
+.object-setting-row { padding: 4px 8px; }
+@media (max-width: 800px) {
+  :is(.wm-sheet, .printer-sheet, .mp-sheet, .settings-dialog-modal) .wm-field,
+  .wm-sheet .settings-group .setting-row:not(:has(input[type=checkbox])),
+  .settings-dialog-modal .settings-group .setting-row:not(.custom-widget-row):not(:has(input[type=checkbox])) {
+    display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); min-width: 0; padding: 0;
+  }
+  :is(.wm-sheet, .printer-sheet, .mp-sheet, .settings-dialog-modal) .wm-field-label,
+  .wm-sheet .settings-group .setting-row:not(:has(input[type=checkbox])) > .setting-label,
+  .settings-dialog-modal .settings-group .setting-row:not(.custom-widget-row):not(:has(input[type=checkbox])) > .setting-label {
+    flex: none; max-width: 100%; margin: 0; color: var(--text-secondary);
+    font-family: var(--font-sans); font-size: var(--ctl-font); font-weight: var(--weight-regular); line-height: 1.5;
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  :is(.wm-sheet, .printer-sheet, .mp-sheet, .settings-dialog-modal) .wm-field > :is(input, select, .mobile-select),
+  :is(.wm-sheet, .settings-dialog-modal) :is(.wm-field, .settings-group) :is(.setting-control-wrapper, .inline-option-item, .multi-option-inputs) {
+    width: 100%; min-width: 0; margin: 0;
+  }
+  :is(.wm-sheet, .settings-dialog-modal) :is(.wm-field, .settings-group) .setting-control-wrapper {
+    display: flex; align-items: center; gap: var(--space-2); flex-wrap: nowrap; box-sizing: border-box;
+  }
+  :is(.wm-sheet, .settings-dialog-modal) :is(.wm-field, .settings-group) .setting-control-wrapper > :is(input:not([type=checkbox]), select, textarea, .mobile-select) {
+    flex: 1; width: 0; min-width: 0; font-size: var(--ctl-font);
+  }
+  :is(.wm-sheet, .settings-dialog-modal) :is(.wm-field, .settings-group) .setting-unit {
+    flex: 0 1 auto; margin: 0; color: var(--text-secondary); font-size: var(--ctl-font); line-height: 1.5;
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  :is(.wm-sheet, .settings-dialog-modal) :is(.wm-field, .settings-group) :is(.modified-indicator, .reset-arrow-btn) { flex-shrink: 0; }
+  :is(.wm-sheet, .settings-dialog-modal) .settings-group { margin: 0; gap: var(--space-4); }
+  :is(.wm-sheet, .settings-dialog-modal) .settings-group .group-title { margin: 0; }
+  :is(.wm-sheet, .settings-dialog-modal) .settings-group :is(.group-lines, .multi-option-inputs) { display: flex; flex-direction: column; gap: var(--space-4); }
+  .settings-dialog-modal .settings-dialog-content { gap: var(--space-6); }
+  .settings-dialog-modal .settings-group .setting-row:has(input[type=checkbox]) .setting-control-wrapper { width: auto; flex: 0 0 auto; }
+  .settings-dialog-modal .bed-assets-settings { gap: var(--space-4) !important; }
+  .settings-dialog-modal .bed-assets-settings .wm-field { align-items: stretch !important; }
+  .wm-sheet #object-settings-editor { --canvas-bg: var(--surface-2); color: var(--text-primary); }
+  .wm-sheet #object-settings-editor .object-setting-row { padding: 0; margin-bottom: var(--space-4); }
+  .wm-sheet #object-settings-editor .object-setting-label { width: 100%; max-width: none; }
+  .wm-sheet #object-settings-editor .object-setting-row.object-setting-row-bool { flex-direction: row; align-items: center !important; }
+  .wm-sheet #object-settings-editor .object-setting-row-bool .object-setting-label { width: auto; flex: 1 !important; }
+  .wm-sheet .object-setting-controls { width: 100%; min-width: 0; }
+  .wm-sheet .object-setting-controls > div { display: flex; min-width: 0; }
+  .wm-sheet .object-setting-row-bool .object-setting-controls { width: auto; flex: 0 0 auto !important; }
+  .wm-sheet .object-setting-controls :is(input:not([type=checkbox]), select) { flex: 1; width: 0 !important; min-width: 0; font-size: var(--ctl-font) !important; }
+  .wm-sheet .object-setting-controls .setting-unit { font-size: var(--ctl-font) !important; color: var(--text-secondary) !important; }
+  .wm-sheet .object-setting-controls button { flex-shrink: 0; }
+  .mobile-select.ds-dropdown, .mobile-input.ds-input, .mobile-setting .ds-input {
+    box-sizing: border-box; min-width: 0; max-width: 100%; min-height: var(--ctl-h); padding: var(--space-3); font-size: var(--ctl-font);
+    border: 1px solid var(--border-input); border-radius: var(--ctl-radius); background: var(--control-bg); color: var(--text-primary);
+  }
+  .wm-sheet .mobile-select.ds-dropdown, .mobile-select.ds-dropdown { position: relative; display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding-right: 48px; }
+  .mobile-select.ds-dropdown::after { content: none; }
+  .mobile-select .ds-dropdown__value { white-space: normal; overflow: visible; }
+  .mobile-select-chevron { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-primary); fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .mobile-select span { overflow-wrap: anywhere; min-width: 0; }
+  .mobile-input.ds-input:focus-visible, .mobile-select.ds-dropdown:focus-visible {
+    outline: none; border-color: var(--focus-ring); box-shadow: 0 0 0 1px var(--focus-ring);
+  }
+  .mobile-setting .setting-control-wrapper { width: 100%; flex-wrap: wrap; gap: var(--space-2); }
+  .mobile-setting input.mobile-input { width: auto; flex: 1; }
+  .mobile-setting .reset-arrow-btn { min-width: var(--icon-btn); min-height: var(--icon-btn); }
+  .mobile-setting-cell input.mobile-toggle { margin: 0; }
+  input.mobile-toggle.ds-switch { min-height: var(--check); margin: var(--space-3) 0; }
+  .mobile-setting .ds-input { width: 100%; }
+}
+.mobile-selector { position: fixed; inset: 0; width: 100%; height: 100dvh; z-index: var(--z-fullscreen); background: var(--surface-1); color: var(--text-primary); }
+.mobile-selector-content { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: env(safe-area-inset-top) max(var(--space-3), env(safe-area-inset-right)) env(safe-area-inset-bottom) max(var(--space-3), env(safe-area-inset-left)); }
+.mobile-selector header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; }
+.mobile-selector h2 { font-size: var(--text-xl); flex: 1; margin: 0; overflow-wrap: anywhere; }
+.mobile-selector-close.ds-btn { min-width: var(--ctl-h); min-height: var(--ctl-h); font-size: var(--text-2xl); }
+.mobile-selector-search { width: 100%; flex-shrink: 0; margin-bottom: var(--space-3); }
+.mobile-selector-list { overflow-y: auto; overscroll-behavior: contain; min-height: 0; padding: var(--space-1); }
+.mobile-selector-list [role=option] { width: 100%; min-height: var(--row-h); padding: var(--space-3); display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); text-align: left; background: transparent; color: var(--text-primary); border: 0; border-radius: var(--ctl-radius); overflow-wrap: anywhere; font: inherit; font-size: var(--ctl-font); cursor: pointer; }
+.mobile-selector-list [aria-selected=true] { background: var(--accent-subtle); color: var(--accent-text); }
+.mobile-selector-list button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.mobile-selector-list button:disabled { color: var(--text-disabled); cursor: default; }
+.mobile-selector-group { padding: var(--space-5) var(--space-3) var(--space-2); color: var(--text-secondary); font-weight: var(--weight-semibold); }
+.mobile-selector-separator { border-top: 1px solid var(--border-default); margin: var(--space-2) var(--space-3); }
+@media (max-width: 800px) {
+  /* The transparent border expands the switch hit target without enlarging its track. */
+  input.mobile-toggle.ds-switch {
+    width: calc(var(--check) * 2 + var(--space-6)); height: var(--ctl-h); min-height: var(--ctl-h);
+    border: var(--space-3) solid transparent; background-clip: padding-box; margin: 0;
+  }
+  input.mobile-toggle.ds-switch::after { border: 0; transform: none; }
+  input.mobile-toggle.ds-switch:checked::after { transform: translateX(var(--check)); }
+  .mobile-setting .setting-textarea.ds-input { padding: var(--space-3); background: var(--control-bg); color: var(--text-primary); font-size: var(--ctl-font); border-radius: var(--ctl-radius); }
+}

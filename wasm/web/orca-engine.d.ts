@@ -3,6 +3,8 @@
  */
 
 export interface CreateEngineOptions {
+  signal?: AbortSignal;
+  onProgress?: (progress: { phase: 'downloading' | 'initializing'; loaded?: number; total?: number }) => void;
   workerUrl?: string;
   moduleUrl?: string;
   profilesUrl?: string;
@@ -670,6 +672,9 @@ export class OrcaEngine {
   writeFile(path: string, bytes: Uint8Array | ArrayBuffer): Promise<void>;
 
   addModel(fileName: string, bytes: Uint8Array | ArrayBuffer, options?: { linearDeflection?: number; angleDeflection?: number }): Promise<LoadModelResult>;
+
+  /** Imports the packed mesh of the lazily loaded STEP module; the engine has no STEP reader. `replace` replaces the model (like loadModel), otherwise objects are appended (like addModel). */
+  loadStepMesh(fileName: string, packed: Uint8Array | ArrayBuffer, options?: { replace?: boolean }): Promise<LoadModelResult>;
 
   listObjects(): Promise<Array<any>>;
 

@@ -242,10 +242,10 @@ namespace Clipper2Lib {
 		inline void UpdateEdgeIntoAEL(Active *e);
 		void IntersectEdges(Active &e1, Active &e2, const Point64& pt);
 		inline void DeleteFromAEL(Active &e);
-		inline void AdjustCurrXAndCopyToSEL(const int64_t top_y);
-		void DoIntersections(const int64_t top_y);
+		inline bool AdjustCurrXAndCheckOrder(const int64_t top_y, Active*& first_top, Active*& last_top);
+		bool DoIntersections(const int64_t top_y, Active*& first_top, Active*& last_top);
 		void AddNewIntersectNode(Active &e1, Active &e2, const int64_t top_y);
-		bool BuildIntersectList(const int64_t top_y);
+		bool BuildIntersectList(const int64_t top_y, Active*& first_top, Active*& last_top);
 		void ProcessIntersectList();
 		void SwapPositionsInAEL(Active& edge1, Active& edge2);
 		OutRec* NewOutRec();
@@ -256,7 +256,7 @@ namespace Clipper2Lib {
 		void DoHorizontal(Active &horz);
 		bool ResetHorzDirection(const Active &horz, const Vertex* max_vertex,
 			int64_t &horz_left, int64_t &horz_right);
-		void DoTopOfScanbeam(const int64_t top_y);
+		void DoTopOfScanbeam(const int64_t top_y, bool top_x_ready, Active* first_top, Active* last_top);
 		Active *DoMaxima(Active &e);
 		void JoinOutrecPaths(Active &e1, Active &e2);
 		void FixSelfIntersects(OutRec* outrec);

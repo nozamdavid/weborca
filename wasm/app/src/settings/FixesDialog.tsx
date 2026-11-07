@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
 import { isNoRuleFix } from '../engine/ruleFixes';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { useTranslation } from "../i18n";
 
 export const FixesDialog: React.FC = () => {
@@ -11,10 +11,10 @@ export const FixesDialog: React.FC = () => {
   if (!pendingFixes || pendingFixes.length === 0) return null;
 
   return (
-    <ModalBackdrop onClose={() => applyFixes('no')} data-testid="fixes-dialog">
-      <div className="modal-box fixes-modal">
-        <div className="modal-header">
-          <div className="modal-title">{t("⚙️ Setting Conflict / Recommendation")}</div>
+    <Dialog onClose={() => applyFixes('no')} data-testid="fixes-dialog">
+      <div className="modal-box ds-dialog fixes-modal">
+        <div className="modal-header ds-dialog__head">
+          <h2 className="modal-title ds-title--dialog">{t("⚙️ Setting Conflict / Recommendation")}</h2>
           <button
             type="button"
             className="modal-close-btn"
@@ -25,7 +25,7 @@ export const FixesDialog: React.FC = () => {
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body ds-dialog__body">
           <p className="fix-reason-text" data-testid="fix-reason">
             {pendingFixReason || 'The engine proposes adjusting dependent settings:'}
           </p>
@@ -44,23 +44,23 @@ export const FixesDialog: React.FC = () => {
           </div>
         </div>
 
-        <div className="modal-footer">
+        <div className="modal-footer ds-dialog__foot">
           <button
             type="button"
-            className="btn btn-secondary"
+            className="ds-btn"
             data-testid="fix-no-btn"
             onClick={() => applyFixes('no')}
           >
             {t("No / Cancel")}</button>
           <button
             type="button"
-            className="btn btn-primary"
+            className="ds-btn ds-btn--primary"
             data-testid="fix-yes-btn"
             onClick={() => applyFixes('yes')}
           >
             {t("Yes / Apply")}</button>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

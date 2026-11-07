@@ -62,7 +62,7 @@ export const ViewCube: React.FC<{ getCameraQuaternion: () => THREE.Quaternion | 
             onClick={() => setCameraView(face.view)}
             style={{
               position: 'absolute', left: -HALF, top: -HALF, width: HALF * 2, height: HALF * 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
-              background: 'rgba(60, 66, 76, 0.92)', border: '1px solid rgba(255,255,255,0.35)', color: 'var(--text-color)', fontSize: 11, fontWeight: 600,
+              background: 'rgba(60, 66, 76, 0.92)', border: '1px solid rgba(255,255,255,0.35)', color: 'var(--text-color)', fontSize: '0.6875rem', fontWeight: 600,
               cursor: 'pointer', userSelect: 'none', backfaceVisibility: 'hidden'
             }}
           >

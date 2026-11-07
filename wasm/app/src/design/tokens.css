@@ -1,0 +1,398 @@
+/*
+ * Orca Web design tokens. Spec and usage rules: wasm/app/DESIGN.md.
+ *
+ * Layers:
+ *   1. Primitives (--p-*)   raw palette; never used by components directly.
+ *   2. Semantic (--*)       what components use; switch with [data-theme].
+ *   3. Density (--ctl-*)    sizes that switch between compact (desktop) and touch (mobile).
+ *   4. Domain (--gc-*, --vp-*) slicer-specific colours: G-code roles, viewport.
+ *   5. Legacy aliases       old names from shell/theme.css, so existing CSS keeps working.
+ *
+ * Imported by index.css; legacy compatibility remains until stages 3 and 4.
+ */
+
+:root {
+  font-size: calc(16px * var(--ui-font-scale));
+  --tooltip-bg: #18181b;
+  --tooltip-text: #f1f1f1;
+  --switch-thumb: #ffffff;
+  --swatch-border: rgba(127, 127, 127, 0.5);
+  --swatch-default: #888888;
+  --split-border: rgba(0, 0, 0, 0.25);
+  /* ---------- 1. primitives ---------- */
+  /* Orca teal, the desktop accent (#009688) at 500. */
+  --p-teal-50: #e0f4f2;
+  --p-teal-100: #b3e4de;
+  --p-teal-200: #80d3c9;
+  --p-teal-300: #4dc1b3;
+  --p-teal-400: #26b3a3;
+  --p-teal-500: #009688;
+  --p-teal-600: #008172;
+  --p-teal-700: #006c60;
+  --p-teal-800: #00544a;
+  --p-teal-900: #003b34;
+
+  /* Neutrals from desktop Orca's dark column (StateColor.cpp), extended to a full ramp. */
+  --p-gray-0: #ffffff;
+  --p-gray-25: #f6f6f7;
+  --p-gray-50: #ececef;
+  --p-gray-100: #e1e4e7;
+  --p-gray-200: #c4c7cc;
+  --p-gray-300: #a3a7ae;
+  --p-gray-400: #818183;
+  --p-gray-500: #65656a;
+  --p-gray-600: #4c4c55;
+  --p-gray-700: #3e3e45;
+  --p-gray-750: #36363c;
+  --p-gray-800: #2d2d31;
+  --p-gray-850: #262629;
+  --p-gray-900: #1f1f22;
+  --p-gray-950: #18181b;
+
+  --p-red-400: #f26b6b;
+  --p-red-500: #d01b1b;
+  --p-red-700: #9e1414;
+  --p-orange-400: #ffa040;
+  --p-orange-500: #ff6f00;
+  --p-orange-700: #a65000;
+  --p-amber-400: #ffc53d;
+  --p-green-400: #5ec26a;
+  --p-green-500: #4caf50;
+  --p-green-700: #2e7d32;
+  --p-blue-400: #5aa9f0;
+  --p-blue-500: #2f8be6;
+  --p-blue-700: #1c5fa8;
+
+  /* ---------- 2. semantic: dark (default) ---------- */
+  color-scheme: dark;
+
+  /* Backgrounds, from back to front. */
+  --bg-app: var(--p-gray-800);        /* window behind everything */
+  --bg-canvas: #232327;               /* 3D viewport clear colour */
+  --surface-1: var(--p-gray-800);     /* docked panels: sidebar, top bar */
+  --surface-2: var(--p-gray-750);     /* section headers, cards, raised rows */
+  --surface-3: var(--p-gray-700);     /* menus, popovers, dialogs */
+  --surface-overlay: rgba(38, 38, 41, 0.92); /* panels floating over the canvas */
+  --scrim: rgba(0, 0, 0, 0.55);       /* behind modals and sheets */
+
+  /* Controls. */
+  --control-bg: #36363d;
+  --control-bg-hover: #4d4d54;
+  --control-bg-active: #57575f;
+  --control-bg-disabled: #333337;
+
+  /* Lines. */
+  --border-subtle: #3a3a41;           /* row dividers inside a panel */
+  --border-default: #4c4c55;          /* panel edges, section separators */
+  --border-strong: #6a6a74;           /* control outlines on hover */
+  --border-input: #4a4a51;
+
+  /* Text. */
+  --text-primary: #e5e5e4;
+  --text-secondary: #b2b3b5;          /* labels, units */
+  --text-tertiary: #a5a5aa;           /* hints, placeholders */
+  --text-disabled: #818183;
+  --text-on-accent: #ffffff;
+  --text-link: var(--text-primary);
+
+  /* Neutral actions, selection and focus; domain and status colours stay independent. */
+  --accent: var(--p-gray-500);
+  --accent-hover: var(--p-gray-600);
+  --accent-active: var(--p-gray-700);
+  --accent-subtle: #45454b;
+  --accent-text: var(--text-primary);
+  --focus-ring: var(--p-gray-25);
+
+  /* Status. -fg for text/icons, -bg for banners/badges, -border for their outline. */
+  --success-fg: var(--p-green-400);
+  --success-bg: rgba(76, 175, 80, 0.14);
+  --success-border: rgba(76, 175, 80, 0.45);
+  --warning-fg: var(--p-orange-400);
+  --warning-bg: rgba(255, 111, 0, 0.14);
+  --warning-border: rgba(255, 111, 0, 0.45);
+  --warning-solid: var(--p-orange-500);     /* warning icons, sequence markers */
+  --danger-fg: var(--p-red-400);
+  --danger-bg: rgba(208, 27, 27, 0.16);
+  --danger-border: rgba(208, 27, 27, 0.5);
+  --danger-solid: var(--p-red-500);         /* destructive buttons */
+  --danger-solid-hover: var(--p-red-700);
+  --info-fg: var(--p-blue-400);
+  --info-bg: rgba(47, 139, 230, 0.14);
+  --info-border: rgba(47, 139, 230, 0.45);
+
+  /* Printer connection state (status dots, device cards). */
+  --status-online: var(--p-green-500);
+  --status-busy: var(--p-teal-400);
+  --status-connecting: var(--p-amber-400);
+  --status-error: var(--p-red-500);
+  --status-offline: #777777;
+
+  /* ---------- typography ---------- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --ui-font-scale: 1; /* Preferences > interface size */
+
+  --text-2xs: calc(10px * var(--ui-font-scale)); /* axis ticks, layer numbers */
+  --text-xs: calc(11px * var(--ui-font-scale));  /* field labels, captions, kbd */
+  --text-sm: calc(12px * var(--ui-font-scale));  /* inputs, dense tables */
+  --text-md: calc(13px * var(--ui-font-scale));  /* desktop body */
+  --text-lg: calc(15px * var(--ui-font-scale));  /* panel titles, Slice button */
+  --text-xl: calc(18px * var(--ui-font-scale));  /* dialog titles */
+  --text-2xl: calc(22px * var(--ui-font-scale)); /* wizard / empty state headings */
+  --text-3xl: calc(28px * var(--ui-font-scale)); /* hero numbers (print time) */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --leading-tight: 1.2;
+  --leading-normal: 1.4;
+  --leading-relaxed: 1.6;
+
+  /* ---------- space: 4px grid ---------- */
+  --space-0: 0;
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ---------- radius ---------- */
+  --radius-xs: 3px;    /* checkboxes, swatches */
+  --radius-sm: 4px;    /* desktop inputs and buttons */
+  --radius-md: 6px;    /* menus, floating canvas panels, cards */
+  --radius-lg: 10px;   /* dialogs */
+  --radius-xl: 12px;   /* touch controls */
+  --radius-2xl: 16px;  /* bottom sheets, segmented track on touch */
+  --radius-full: 999px;
+
+  /* ---------- elevation ---------- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);                          /* raised control */
+  --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.35);                         /* floating canvas panel */
+  --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.45);                         /* menus, popovers */
+  --shadow-4: 0 16px 48px rgba(0, 0, 0, 0.55);                        /* dialogs, sheets */
+
+  /* ---------- motion ---------- */
+  --dur-fast: 100ms;   /* hover, press */
+  --dur-base: 160ms;   /* expand/collapse, tab change */
+  --dur-slow: 240ms;   /* sheets, dialogs */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
+
+  /* ---------- layers ---------- */
+  --z-canvas-overlay: 10;  /* toolbars, sliders, view cube over the 3D view */
+  --z-sidebar: 20;
+  --z-mobile-flow: 40;
+  --z-topbar: 50;
+  --z-popover: 100;        /* menus, tooltips, context menus */
+  --z-modal: 1000;
+  --z-toast: 1100;
+  --z-fullscreen: 10000;   /* mobile full-screen selector */
+
+  /* ---------- layout ---------- */
+  --topbar-h: 40px;
+  --sidebar-w: 360px;
+  --sidebar-w-compact: 304px;
+  --canvas-inset: var(--space-3); /* gap between canvas edge and floating panels */
+
+  /* ---------- 3. density: compact (desktop, fine pointer) ---------- */
+  --ctl-h-sm: 22px;
+  --ctl-h: 26px;          /* inputs, selects, secondary buttons */
+  --ctl-h-lg: 32px;       /* primary buttons, toolbar */
+  --ctl-h-xl: 38px;       /* Slice / Print button */
+  --ctl-px: 8px;
+  --ctl-radius: var(--radius-sm);
+  --ctl-font: var(--text-sm);
+  --icon-btn: 30px;
+  --icon: 18px;
+  --row-h: 28px;          /* list rows, setting rows */
+  --check: 14px;
+
+  /* ---------- 4. domain ---------- */
+  /* Viewport. */
+  --vp-plate: #3a3a40;
+  --vp-plate-grid: #4a4a52;
+  --vp-plate-active-outline: var(--p-teal-600);
+  --vp-selection: #f5a623;          /* selected object outline */
+  --vp-hover: #ffd75e;
+  --vp-axis-x: #e5484d;
+  --vp-axis-y: #46a758;
+  --vp-axis-z: #3e63dd;
+  --vp-error: #ff3b30;              /* out of bounds, collisions */
+  --vp-support-enforcer: #3d8bff;
+  --vp-support-blocker: #ff5a5a;
+  --vp-part: #3b82f6;
+  --vp-negative: #b9bbc5;
+  --vp-modifier: #d8ad55;
+  --vp-seam: #e6e6e6;
+
+  /* G-code extrusion roles: keep in sync with DEFAULT_EXTRUSION_ROLES_COLORS
+     (src/libvgcode/src/ViewerImpl.cpp). Used for legends; the viewer owns the 3D colours. */
+  --gc-inner-wall: rgb(255 230 77);
+  --gc-outer-wall: rgb(255 125 56);
+  --gc-overhang-wall: rgb(31 31 255);
+  --gc-sparse-infill: rgb(176 48 41);
+  --gc-solid-infill: rgb(150 84 204);
+  --gc-top-surface: rgb(240 64 64);
+  --gc-bottom-surface: rgb(102 92 199);
+  --gc-ironing: rgb(255 140 105);
+  --gc-bridge: rgb(77 128 186);
+  --gc-gap-fill: rgb(255 255 255);
+  --gc-skirt: rgb(0 135 110);
+  --gc-brim: rgb(0 59 110);
+  --gc-support: rgb(0 255 0);
+  --gc-support-interface: rgb(0 128 0);
+  --gc-support-transition: rgb(0 64 0);
+  --gc-prime-tower: rgb(179 227 171);
+  --gc-custom: rgb(94 209 148);
+  --gc-travel: rgb(56 72 155);
+  --gc-wipe: rgb(255 255 0);
+  --gc-retract: rgb(205 34 214);
+  --gc-unretract: rgb(73 173 207);
+  --gc-seam: rgb(230 230 230);
+  --gc-tool-change: rgb(193 190 99);
+  /* Sequential ramp for speed / height / width / flow / temperature legends (low → high). */
+  --gc-ramp-0: #0b2c7a;
+  --gc-ramp-1: #135985;
+  --gc-ramp-2: #1c8891;
+  --gc-ramp-3: #04d60f;
+  --gc-ramp-4: #aaf200;
+  --gc-ramp-5: #fcf903;
+  --gc-ramp-6: #fa960f;
+  --gc-ramp-7: #eb4b3c;
+  --gc-ramp-8: #d1190b;
+}
+
+/* ---------- 2. semantic: light ---------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-app: var(--p-gray-25);
+  --bg-canvas: #e7e9ec;
+  --surface-1: var(--p-gray-25);
+  --surface-2: var(--p-gray-50);
+  --surface-3: var(--p-gray-0);
+  --surface-overlay: rgba(255, 255, 255, 0.94);
+  --scrim: rgba(20, 22, 26, 0.4);
+
+  --control-bg: var(--p-gray-0);
+  --control-bg-hover: var(--p-gray-100);
+  --control-bg-active: var(--p-gray-200);
+  --control-bg-disabled: var(--p-gray-50);
+
+  --border-subtle: #dcdee2;
+  --border-default: var(--p-gray-200);
+  --border-strong: #8d929a;
+  --border-input: #b4b8bf;
+
+  --text-primary: #25272a;
+  --text-secondary: #575c63;
+  --text-tertiary: #646a72;
+  --text-disabled: #858a92;
+  --text-link: var(--text-primary);
+
+  --accent-subtle: var(--p-gray-100);
+  --accent-text: var(--text-primary);
+  --focus-ring: var(--p-gray-800);
+
+  --success-fg: var(--p-green-700);
+  --success-bg: rgba(76, 175, 80, 0.12);
+  --warning-fg: var(--p-orange-700);
+  --warning-bg: rgba(255, 111, 0, 0.1);
+  --warning-solid: var(--p-orange-700);
+  --danger-fg: #bd2424;
+  --danger-bg: rgba(208, 27, 27, 0.08);
+  --info-fg: var(--p-blue-700);
+  --info-bg: rgba(47, 139, 230, 0.1);
+
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.08);
+  --shadow-2: 0 4px 12px rgba(16, 24, 40, 0.12);
+  --shadow-3: 0 8px 24px rgba(16, 24, 40, 0.16);
+  --shadow-4: 0 16px 48px rgba(16, 24, 40, 0.22);
+
+  --vp-plate: #d4d7dc;
+  --vp-plate-grid: #b9bdc4;
+}
+
+/* ---------- 3. density: touch (mobile layout or coarse pointer) ----------
+ * Applied by the media query, or forced with data-density="touch" on any subtree
+ * (e.g. the mobile flow, a bottom sheet). data-density="compact" forces desktop sizes. */
+@media (max-width: 800px), (pointer: coarse) {
+  :root:not([data-density="compact"]) {
+    --ctl-h-sm: 36px;
+    --ctl-h: 48px;
+    --ctl-h-lg: 48px;
+    --ctl-h-xl: 52px;
+    --ctl-px: 12px;
+    --ctl-radius: var(--radius-xl);
+    --ctl-font: calc(16px * var(--ui-font-scale)); /* 16px stops iOS zooming into inputs */
+    --icon-btn: 44px;
+    --icon: 22px;
+    --row-h: 52px;
+    --check: 24px;
+  }
+}
+[data-density="touch"] {
+  --ctl-h-sm: 36px;
+  --ctl-h: 48px;
+  --ctl-h-lg: 48px;
+  --ctl-h-xl: 52px;
+  --ctl-px: 12px;
+  --ctl-radius: var(--radius-xl);
+  --ctl-font: calc(16px * var(--ui-font-scale));
+  --icon-btn: 44px;
+  --icon: 22px;
+  --row-h: 52px;
+  --check: 24px;
+}
+[data-density="compact"] {
+  --ctl-h-sm: 22px;
+  --ctl-h: 26px;
+  --ctl-h-lg: 32px;
+  --ctl-h-xl: 38px;
+  --ctl-px: 8px;
+  --ctl-radius: var(--radius-sm);
+  --ctl-font: var(--text-sm);
+  --icon-btn: 30px;
+  --icon: 18px;
+  --row-h: 28px;
+  --check: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0ms; --dur-base: 0ms; --dur-slow: 0ms; }
+}
+
+/* ---------- 5. legacy aliases (shell/theme.css names) ----------
+ * Existing CSS and inline styles read these. New code uses the semantic names above. */
+:root {
+  --panel-bg: var(--surface-1);
+  --panel-header-bg: var(--surface-2);
+  --topbar-bg: var(--surface-1);
+  --canvas-bg: var(--bg-canvas);
+  --control-hover-bg: var(--control-bg-hover);
+  --control-disabled-bg: var(--control-bg-disabled);
+  --border-color: var(--border-default);
+  --input-border: var(--border-input);
+  --accent-color: var(--accent);
+  --text-color: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --text-dim: var(--text-tertiary);
+  --danger-color: var(--danger-solid);
+  --warning-color: var(--warning-solid);
+  --slice-btn-bg: var(--accent);
+  --slice-btn-hover: var(--accent-hover);
+  --bg-color: var(--surface-1);
+}
+
+/* Keep touch navigation and longpress inside the 3D canvas. */
+.ds-touch-canvas {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}

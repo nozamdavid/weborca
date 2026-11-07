@@ -1,0 +1,12 @@
+@media (max-width: 800px), (pointer: coarse) {
+  .preferences-dialog button,
+  .preferences-dialog label:has(input[type="checkbox"]) {
+    min-height: 44px;
+  }
+
+  .preferences-dialog input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+}

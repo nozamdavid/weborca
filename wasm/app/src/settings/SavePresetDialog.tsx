@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { useTranslation } from "../i18n";
 
 export const SavePresetDialog: React.FC = () => {
@@ -21,9 +21,16 @@ export const SavePresetDialog: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setSaving] = useState(false);
 
+  useEffect(() => {
+    setName(savePresetDialogTarget?.baseName || '');
+    setError(null);
+  }, [savePresetDialogTarget]);
+
   if (!savePresetDialogTarget) return null;
 
   const { kind, baseName } = savePresetDialogTarget;
+  const activeName = kind === 'filament' ? selectedFilaments[activeFilamentSlot] : activeUserPreset[kind];
+  const overwriting = name.trim() === activeName && userPresets.some(p => p.kind === kind && p.name === activeName);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,11 +76,11 @@ export const SavePresetDialog: React.FC = () => {
   };
 
   return (
-    <ModalBackdrop onClose={handleClose} dirty={name.trim() !== ''} dirtyWhat="preset name" data-testid="save-preset-dialog">
-      <div className="modal-box preset-modal" style={{ minWidth: 380 }}>
+    <Dialog onClose={handleClose} dirty={name !== baseName} dirtyWhat="preset name" data-testid="save-preset-dialog">
+      <div className="modal-box ds-dialog preset-modal">
         <form onSubmit={handleSubmit}>
-          <div className="modal-header">
-            <div className="modal-title">{t("Save Preset")}</div>
+          <div className="modal-header ds-dialog__head">
+            <h2 className="modal-title ds-title--dialog">{t("Save Preset")}</h2>
             <button
               type="button"
               className="modal-close-btn"
@@ -85,7 +92,7 @@ export const SavePresetDialog: React.FC = () => {
             </button>
           </div>
 
-          <div className="modal-body">
+          <div className="modal-body ds-dialog__body">
             <p className="preset-dialog-hint">
               {t("Based on:")}<strong>{baseName}</strong>
             </p>
@@ -94,9 +101,9 @@ export const SavePresetDialog: React.FC = () => {
                 className="preset-error-banner"
                 data-testid="preset-error-msg"
                 style={{
-                  color: '#f87171',
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: 'var(--danger-fg)',
+                  background: 'var(--danger-bg)',
+                  border: '1px solid var(--danger-border)',
                   borderRadius: 4,
                   padding: '6px 10px',
                   marginBottom: 12,
@@ -125,24 +132,24 @@ export const SavePresetDialog: React.FC = () => {
             </div>
           </div>
 
-          <div className="modal-footer">
+          <div className="modal-footer ds-dialog__foot">
             <button
               type="button"
-              className="btn btn-secondary"
+              className="ds-btn"
               onClick={handleClose}
               disabled={isSaving}
             >
               {t("Cancel")}</button>
             <button
               type="submit"
-              className="btn btn-primary"
+              className="ds-btn ds-btn--primary"
               data-testid="save-preset-confirm-btn"
               disabled={isSaving || !name.trim()}
             >
-              {t("Save Preset")}</button>
+              {t(overwriting ? "Overwrite Preset" : "Save Preset")}</button>
           </div>
         </form>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

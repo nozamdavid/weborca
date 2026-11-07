@@ -46,6 +46,26 @@ self.onmessage = async (event) => {
         const mod = await import(absModuleUrl);
         const moduleFactory = mod.createOrcaEngine || mod.default;
 
+        // Observe the generated loader's existing fetch. Keep its streaming
+        // compilation and HTTP caching; never prefetch a second WASM copy.
+        const originalFetch = globalThis.fetch;
+        globalThis.fetch = async (...args) => {
+          const response = await originalFetch(...args);
+          if (!String(args[0]).split('?')[0].endsWith('orca_engine.wasm') || !response.ok || !response.body) return response;
+          let loaded = 0;
+          const total = response.headers.get('content-encoding') ? undefined : Number(response.headers.get('content-length')) || undefined;
+          postMessage({ id, progress: { phase: 'downloading', loaded, total } });
+          const body = response.body.pipeThrough(new TransformStream({
+            transform(chunk, controller) {
+              loaded += chunk.byteLength;
+              postMessage({ id, progress: { phase: 'downloading', loaded, total } });
+              controller.enqueue(chunk);
+            },
+            flush() { postMessage({ id, progress: { phase: 'initializing' } }); }
+          }));
+          return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+        };
+        try {
         core = await createEngineCore({
           moduleFactory,
           locateFile: (path, prefix) => {
@@ -56,6 +76,7 @@ self.onmessage = async (event) => {
           },
           threads
         });
+        } finally { globalThis.fetch = originalFetch; }
 
         await core.call('init', { resourcesDir: '/resources', dataDir: '/data' });
         postMessage({ id, ok: true, result: {} });
@@ -203,6 +224,15 @@ self.onmessage = async (event) => {
         break;
       }
 
+      case 'loadStepMesh': {
+        if (!core) throw new Error('Engine not initialized');
+        const result = args?.bytes
+          ? await core.loadStepMesh(args.fileName, args.bytes, { replace: args.replace })
+          : await core.call('loadStepMesh', args || {});
+        postMessage({ id, ok: true, result });
+        break;
+      }
+
       case 'listObjects': {
         if (!core) throw new Error('Engine not initialized');
         const result = await core.call('listObjects', args || {});
@@ -213,7 +243,8 @@ self.onmessage = async (event) => {
       case 'getMesh': {
         if (!core) throw new Error('Engine not initialized');
         const objectId = typeof args === "number" ? args : (args?.objectId ?? args?.id);
-        const result = await core.call('getMesh', { objectId });
+        const meshArgs = args?.forViewer === true ? { objectId, forViewer: true } : { objectId };
+        const result = await core.call('getMesh', meshArgs);
         let meshBytes;
         try {
           meshBytes = core.readFile(result.path);
@@ -459,19 +490,10 @@ self.onmessage = async (event) => {
           };
 
           const sliceArgs = { ...(args || {}), outPath: (args && args.outPath) || '/out/plate_1.gcode' };
-          const sliceResult = await core.call('slice', sliceArgs, {
+          const sliceResult = await core.slice({ ...sliceArgs,
             onProgress,
             signal: controller.signal
           });
-
-          const outPath = args?.outPath || sliceResult?.gcodePath || '/out/plate_1.gcode';
-          let gcodeBytes;
-          try {
-            gcodeBytes = core.readFile(outPath);
-          } catch (_) {
-            gcodeBytes = new Uint8Array(0);
-          }
-          sliceResult.gcode = gcodeBytes;
 
           // Zero-copy transfer of G-code buffer to the page
           postMessage({ id, ok: true, result: sliceResult }, [sliceResult.gcode.buffer]);

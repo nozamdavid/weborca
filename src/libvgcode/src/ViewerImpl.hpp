@@ -105,6 +105,7 @@ public:
     // ORCA: section view, see Viewer::set_clipping_plane()
     void set_clipping_plane(const std::array<float, 4>& plane) { m_clipping_plane = plane; }
     void set_light_top_dir(const Vec3& direction) { m_light_top_dir = direction; }
+    void set_enhanced_lighting(bool enabled) { m_enhanced_lighting = enabled; }
 
     EViewType get_view_type() const { return m_settings.view_type; }
     void set_view_type(EViewType type);
@@ -241,6 +242,18 @@ public:
 #endif // VGCODE_ENABLE_COG_AND_TOOL_MARKERS
 
 private:
+    struct VertexColorInput {
+        const ColorRange* range = nullptr;
+        float value = 0.0f;
+        Color color = DUMMY_COLOR;
+
+        VertexColorInput(const Color& fixed_color) : color(fixed_color) {}
+        VertexColorInput(const ColorRange& color_range, float range_value)
+            : range(&color_range), value(range_value) {}
+    };
+    VertexColorInput get_vertex_color_input(const PathVertex& vertex) const;
+    Color resolve_vertex_color(const VertexColorInput& input) const;
+
     //
     // Settings used to render the toolpaths
     //
@@ -409,6 +422,7 @@ private:
     int m_uni_segments_exposure_id{ -1 };
     int m_uni_segments_saturation_id{ -1 };
     int m_uni_segments_light_top_dir_id{ -1 };
+    int m_uni_segments_enhanced_lighting_id{ -1 };
     // ORCA: the layers greyed or dimmed around the one the sliders show, in the segments and options shaders.
     struct LayerColorsUniforms
     {
@@ -558,6 +572,7 @@ private:
 
     TextureData m_texture_data;
     bool m_height_width_format_dirty{ false };
+    bool m_palette_reset_unapplied{ false };
     std::optional<Settings> m_settings_used_for_enabled_entities;
 #else
     //
@@ -617,6 +632,7 @@ private:
     float m_saturation{ 1.0f };
     // ORCA: the light the segments shader shades with, in eye space.
     Vec3 m_light_top_dir{ -0.4574957f, 0.4574957f, 0.7624929f };
+    bool m_enhanced_lighting{ true };
 
     // ORCA: section view
     std::array<float, 4> m_clipping_plane{ 0.0f, 0.0f, 0.0f, 1.0f };

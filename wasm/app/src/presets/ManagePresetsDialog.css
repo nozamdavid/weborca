@@ -1,0 +1,223 @@
+/* Scoped layout and state chrome for ManagePresetsDialog. */
+.manage-presets-panel {
+  width: 580px;
+  max-width: 92vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+.manage-presets-panel__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-input);
+  background: var(--surface-2);
+}
+.managepresets-dialog__button-38 {
+  flex: 1;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.managepresets-dialog__state-37 {
+  border-bottom: none;
+}
+.managepresets-dialog__state-36 {
+  border-bottom: 2px solid var(--accent-text);
+}
+.managepresets-dialog__state-35 {
+  color: var(--text-secondary);
+}
+.managepresets-dialog__state-34 {
+  color: var(--accent-text);
+}
+.managepresets-dialog__state-33 {
+  background: transparent;
+}
+.managepresets-dialog__state-32 {
+  background: var(--surface-1);
+}
+.managepresets-dialog__row-31 {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: var(--space-4);
+}
+.managepresets-dialog__card-30 {
+  color: var(--danger-fg);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-lg);
+}
+.managepresets-dialog__card-29 {
+  color: var(--success-fg);
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-lg);
+}
+.managepresets-dialog__label-28 {
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.managepresets-dialog__select-27 {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  padding: var(--space-1-5) 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-lg);
+}
+.managepresets-dialog__span-26 {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.managepresets-dialog__span-25 {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.managepresets-dialog__row-24 {
+  background: var(--surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-input);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.managepresets-dialog__row-23 {
+  display: flex;
+  gap: var(--space-2);
+}
+.managepresets-dialog__input-22 {
+  flex: 1;
+  background: var(--surface-1);
+  color: var(--text-on-accent);
+  border: 1px solid var(--border-default);
+}
+.managepresets-dialog__button-21 {
+}
+.managepresets-dialog__row-20 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+}
+.managepresets-dialog__div-19 {
+  font-size: var(--text-lg);
+  color: var(--danger-fg);
+}
+.managepresets-dialog__button-18 {
+}
+.managepresets-dialog__row-17 {
+  background: var(--surface-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-input);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.managepresets-dialog__row-16 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+.managepresets-dialog__div-15 {
+  font-weight: 600;
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+.managepresets-dialog__row-14 {
+  display: flex;
+  gap: var(--space-1-5);
+  flex-wrap: wrap;
+}
+.managepresets-dialog__button-13 {
+}
+.managepresets-dialog__row-12 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+.managepresets-dialog__label-11 {
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.managepresets-dialog__select-10 {
+  background: var(--surface-1);
+  color: var(--text-on-accent);
+  border: 1px solid var(--border-default);
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-lg);
+}
+.managepresets-dialog__row-9 {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+.managepresets-dialog__input-8 {
+  display: none;
+}
+.managepresets-dialog__button-7 {
+}
+.managepresets-dialog__row-6 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.managepresets-dialog__label-5 {
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+}
+.managepresets-dialog__textarea-4 {
+  width: 100%;
+  min-height: 60px;
+  max-height: 120px;
+  background: var(--surface-1);
+  color: var(--text-on-accent);
+  border: 1px solid var(--border-default);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-md);
+  font-family: monospace;
+  resize: vertical;
+}
+.managepresets-dialog__button-3 {
+  align-self: flex-start;
+}
+.managepresets-dialog__div-2 {
+  font-size: var(--text-md);
+  color: var(--text-tertiary);
+  font-style: italic;
+  margin-top: var(--space-0-5);
+}
+.managepresets-dialog__div-1 {
+  border-top: 1px solid var(--border-input);
+  padding: var(--space-3);
+}
+.manage-presets-panel.ds-dialog { width: min(580px, 100%); max-width: 100%; max-height: calc(100dvh - var(--space-6)); }
+.manage-presets-panel .ds-btn, .manage-presets-panel .ds-input { min-height: var(--ctl-h); font-size: var(--ctl-font); }
+.manage-presets-panel .ds-btn { white-space: normal; }
+.manage-presets-panel .ds-input { color: var(--text-primary); background: var(--surface-1); }
+.manage-presets-panel__tabs { flex: none; }
+.manage-presets-panel .ds-dialog__head { min-height: var(--row-h); }
+.manage-presets-panel .ds-dialog__body { min-height: 0; }
+.manage-presets-panel .managepresets-dialog__row-23 { flex-wrap: wrap; }
+.manage-presets-panel .managepresets-dialog__row-23 > .ds-input { min-width: 0; flex-basis: 160px; }
+@media (max-width: 800px) {
+  .manage-presets-panel.ds-dialog { width: 100%; }
+  .manage-presets-panel .managepresets-dialog__row-23 > .ds-input { flex-basis: 100%; }
+}

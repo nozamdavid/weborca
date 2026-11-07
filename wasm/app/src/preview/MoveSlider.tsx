@@ -158,8 +158,8 @@ export const MoveSlider: React.FC<{ active?: boolean }> = ({ active = true }) =>
           whiteSpace: 'nowrap'
         }}
       >
-        <span>{t("Move:")}</span>
-        <span style={{ color: '#38bdf8', fontWeight: 600 }} id="move-current-val">
+        <span>{t("Moves in top layer:")}</span>
+        <span className="preview-current-value" id="move-current-val">
           {currentRelative.toLocaleString()}
         </span>
         <span style={{ color: 'var(--text-dim)' }}> / {rangeSpan.toLocaleString()}</span>

@@ -17,7 +17,9 @@ export const ExplodePanel: React.FC = () => {
       className="canvas-panel"
       style={{
         position: 'absolute',
-        top: 24,
+        top: 'var(--tool-panel-top, 64px)',
+        maxHeight: 'calc(100% - var(--tool-panel-top, 64px) - var(--plate-actions-clearance, 16px))',
+        overflowY: 'auto',
         right: 24,
         width: 260,
         background: 'var(--panel-bg)',
@@ -32,7 +34,7 @@ export const ExplodePanel: React.FC = () => {
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{t("Explode view")}</h3>
+        <h3 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600 }}>{t("Explode view")}</h3>
         <button
           className="icon-btn"
           id="explode-close"
@@ -43,7 +45,7 @@ export const ExplodePanel: React.FC = () => {
         </button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
           <span>{t("Explode")}</span>
           <span id="explode-value">{Math.round(factor)}%</span>
         </div>

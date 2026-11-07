@@ -26,6 +26,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -83,12 +84,8 @@ async function runBrowserCutRepairSuite(browserType, browserName) {
     await page.goto(BASE_URL, { waitUntil: 'load' });
 
     // Wait for engine presets to initialize
-    await page.waitForFunction(() => {
-      const v = document.getElementById('vendor-select');
-      return v && v.options.length > 1;
-    }, null, { timeout: 20000 });
 
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.waitForFunction(() => {
       const p = document.getElementById('printer-select');
       return p && !p.disabled && Array.from(p.options).some((o) => o.value === 'Voron 2.4 300 0.4 nozzle');
@@ -160,8 +157,8 @@ async function runBrowserCutRepairSuite(browserType, browserName) {
     await page.keyboard.press('Escape');
     await page.waitForSelector('#cut-tool-panel', { state: 'detached', timeout: 5000 });
 
-    // Focus a select element (#vendor-select) and verify 'c' does not trigger cut
-    await page.focus('#vendor-select');
+    // Focus a select element (#printer-select) and verify 'c' does not trigger cut
+    await page.focus('#printer-select');
     await page.keyboard.press('c');
     const panelClosedAfterSelect = await page.$('#cut-tool-panel');
     assert.equal(panelClosedAfterSelect, null, 'Shortcut C must not open Cut panel when select is focused');
@@ -512,6 +509,14 @@ async function runBrowserCutRepairSuite(browserType, browserName) {
     await page.evaluate(async (objId) => {
       const engine = window.__orcaEngine;
       const origCall = engine.call.bind(engine);
+      const origCut = engine.cutObject.bind(engine);
+      let delayedCalls = 0;
+      // The app calls engine.cutObject directly, so that is the path to delay.
+      engine.cutObject = async (args) => {
+        delayedCalls++;
+        await new Promise((r) => setTimeout(r, 400));
+        return await origCut(args);
+      };
       engine.call = async (op, args) => {
         if (op === 'cutObject') {
           await new Promise((r) => setTimeout(r, 400));
@@ -528,8 +533,13 @@ async function runBrowserCutRepairSuite(browserType, browserName) {
       }, 100);
 
       await cutPromise;
+      engine.cutObject = origCut;
       engine.call = origCall;
+      window.__cutDelayedCalls = delayedCalls;
     }, secondId);
+
+    const delayedCutCalls = await page.evaluate(() => window.__cutDelayedCalls);
+    assert.equal(delayedCutCalls, 1, 'Cancel test must actually delay the engine cutObject call');
 
     const isCutActiveAfterCancel = await page.evaluate(() => window.__cutStore.getState().isCutActive);
     assert.equal(isCutActiveAfterCancel, false, 'Cut panel must remain closed after cancel during RPC');

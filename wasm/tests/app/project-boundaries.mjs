@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const port = Number(process.env.PORT || 5211);
 const cube = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../tests/data/20mm_cube.obj');
@@ -18,9 +19,8 @@ async function suite(browserType) {
     console.log(`${browserType.name()}: initialize`);
     await page.goto(`http://127.0.0.1:${port}`);
     await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
-    await page.waitForFunction(() => document.querySelector('#vendor-select')?.options.length > 1);
     console.log(`${browserType.name()}: prepare model`);
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.waitForFunction(() => Array.from(document.querySelector('#printer-select')?.options || []).some(o => o.value === 'Voron 2.4 300 0.4 nozzle'));
     await page.selectOption('#printer-select', 'Voron 2.4 300 0.4 nozzle');
     await page.setInputFiles('#model-file', cube);

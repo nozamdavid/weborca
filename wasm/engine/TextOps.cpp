@@ -89,7 +89,7 @@ indexed_triangle_set cut_surface_to_its(const ExPolygons &shapes, const Transfor
         itss_index = s_to_itss[&s - &sources.front()];
         if (itss_index == std::numeric_limits<size_t>::max()) continue;
         if (&s == biggest) continue;
-        Transform3d tr2 = s.tr * tr_inv;
+        Transform3d tr2 = tr_inv * s.tr;
         bool fix_reflected = true;
         indexed_triangle_set &its = itss[itss_index];
         its_transform(its, tr2, fix_reflected);
@@ -386,7 +386,7 @@ GeneratedTextMesh generate_text_geometry(
         bool is_outside = (volume_type != Slic3r::ModelVolumeType::NEGATIVE_VOLUME);
         its = OrcaWasm::surface::cut_surface_to_its(shapes, text_tr ? *text_tr : tr, *sources, scale, is_outside, depth);
         if (its.indices.empty()) {
-            its = Slic3r::Emboss::polygons2model(shapes, project);
+            throw Slic3r::RuntimeError("Failed to wrap text onto surface: text does not intersect target model geometry");
         }
     } else {
         its = Slic3r::Emboss::polygons2model(shapes, project);
@@ -490,6 +490,7 @@ json addText(Slic3r::Model& model, Slic3r::PlateDataPtrs& plates, const json& ar
     std::string custom_name = args.value("name", text);
 
     std::optional<OrcaWasm::surface::ModelSources> sources;
+    Slic3r::Transform3d vol_tr = Slic3r::Transform3d::Identity();
     std::optional<::Slic3r::Transform3d> text_tr;
     if (!is_new_object && target_obj) {
         OrcaWasm::surface::ModelSources src;
@@ -499,26 +500,44 @@ json addText(Slic3r::Model& model, Slic3r::PlateDataPtrs& plates, const json& ar
             if (tm.empty() || tm.its.empty()) continue;
             src.push_back({v->get_mesh_shared_ptr(), v->get_matrix()});
         }
+        if (use_surface && src.empty()) {
+            throw Slic3r::RuntimeError("Target model has no valid 3D geometry for surface text wrapping");
+        }
         sources = std::move(src);
 
-        if (args.contains("position") && args["position"].is_array() && args["position"].size() >= 3) {
-            ::Slic3r::Vec3d pos(args["position"][0].get<double>(), args["position"][1].get<double>(), args["position"][2].get<double>());
-            ::Slic3r::Vec3d norm(0.0, 0.0, 1.0);
-            if (args.contains("normal") && args["normal"].is_array() && args["normal"].size() >= 3) {
-                norm = ::Slic3r::Vec3d(args["normal"][0].get<double>(), args["normal"][1].get<double>(), args["normal"][2].get<double>());
-                if (norm.norm() > 1e-6) norm.normalize();
-                else norm = ::Slic3r::Vec3d(0.0, 0.0, 1.0);
-            }
-            ::Slic3r::Transform3d surface_trmat = Slic3r::Emboss::create_transformation_onto_surface(pos, norm, 0.9);
-            double rotation = args.value("rotation", 0.0);
-            double rot_rad = rotation * M_PI / 180.0;
-            if (std::abs(rot_rad) > 1e-6) {
-                surface_trmat *= Eigen::AngleAxisd(rot_rad, Slic3r::Vec3d::UnitZ());
-            }
-            if (!target_obj->instances.empty()) {
-                text_tr = target_obj->instances.front()->get_matrix().inverse() * surface_trmat;
-            }
+        Slic3r::Vec3d pos;
+        Slic3r::Vec3d norm(0.0, 0.0, 1.0);
+
+        if (args.contains("normal") && args["normal"].is_array() && args["normal"].size() >= 3) {
+            norm = Slic3r::Vec3d(args["normal"][0].get<double>(), args["normal"][1].get<double>(), args["normal"][2].get<double>());
+            if (norm.norm() > 1e-6) norm.normalize();
+            else norm = Slic3r::Vec3d(0.0, 0.0, 1.0);
         }
+
+        if (args.contains("position") && args["position"].is_array() && args["position"].size() >= 3) {
+            pos = Slic3r::Vec3d(args["position"][0].get<double>(), args["position"][1].get<double>(), args["position"][2].get<double>());
+        } else {
+            // Default placement on the top surface of the object instance
+            Slic3r::BoundingBoxf3 inst_bb = target_obj->instance_bounding_box(0);
+            pos = Slic3r::Vec3d(inst_bb.center().x(), inst_bb.center().y(), inst_bb.max.z());
+        }
+
+        double rotation = args.value("rotation", 0.0);
+        double rot_rad = rotation * M_PI / 180.0;
+
+        Slic3r::Transform3d surface_trmat = Slic3r::Emboss::create_transformation_onto_surface(pos, norm, 0.9);
+        if (std::abs(rot_rad) > 1e-6) {
+            surface_trmat *= Eigen::AngleAxisd(rot_rad, Slic3r::Vec3d::UnitZ());
+        }
+
+        if (!target_obj->instances.empty()) {
+            vol_tr = target_obj->instances.front()->get_matrix().inverse() * surface_trmat;
+        } else {
+            vol_tr = surface_trmat;
+        }
+        text_tr = vol_tr;
+    } else if (use_surface) {
+        throw Slic3r::RuntimeError("Curved surface text wrapping requires a selected target model");
     }
 
     GeneratedTextMesh generated = generate_text_geometry(
@@ -569,33 +588,6 @@ json addText(Slic3r::Model& model, Slic3r::PlateDataPtrs& plates, const json& ar
             {"boundingBox", {bb.min.x(), bb.min.y(), bb.min.z(), bb.max.x(), bb.max.y(), bb.max.z()}}
         };
     } else {
-        Slic3r::Vec3d pos;
-        Slic3r::Vec3d norm(0.0, 0.0, 1.0);
-
-        if (args.contains("normal") && args["normal"].is_array() && args["normal"].size() >= 3) {
-            norm = Slic3r::Vec3d(args["normal"][0].get<double>(), args["normal"][1].get<double>(), args["normal"][2].get<double>());
-            if (norm.norm() > 1e-6) norm.normalize();
-            else norm = Slic3r::Vec3d(0.0, 0.0, 1.0);
-        }
-
-        if (args.contains("position") && args["position"].is_array() && args["position"].size() >= 3) {
-            pos = Slic3r::Vec3d(args["position"][0].get<double>(), args["position"][1].get<double>(), args["position"][2].get<double>());
-        } else {
-            // Default placement on the top surface of the object instance
-            Slic3r::BoundingBoxf3 inst_bb = target_obj->instance_bounding_box(0);
-            pos = Slic3r::Vec3d(inst_bb.center().x(), inst_bb.center().y(), inst_bb.max.z());
-        }
-
-        double rotation = args.value("rotation", 0.0);
-        double rot_rad = rotation * M_PI / 180.0;
-
-        Slic3r::Transform3d surface_trmat = Slic3r::Emboss::create_transformation_onto_surface(pos, norm, 0.9);
-        if (std::abs(rot_rad) > 1e-6) {
-            surface_trmat *= Eigen::AngleAxisd(rot_rad, Slic3r::Vec3d::UnitZ());
-        }
-
-        Slic3r::Transform3d vol_tr = target_obj->instances.front()->get_matrix().inverse() * surface_trmat;
-
         // Like desktop's EmbossJob, keep the mesh in text space: centering it would be lost when the
         // transformation is set below and shift the text off its placement point.
         Slic3r::ModelVolume* new_vol = target_obj->add_volume(std::move(generated.mesh), mv_type, false);
@@ -691,6 +683,9 @@ json updateText(Slic3r::Model& model, const json& args) {
     else if (args.contains("use_surface")) use_surface = args["use_surface"].get<bool>();
 
     bool is_new_object = (obj->volumes.size() == 1 && vol->type() == Slic3r::ModelVolumeType::MODEL_PART);
+    if (use_surface && is_new_object) {
+        throw Slic3r::RuntimeError("Curved surface text wrapping requires a selected target model");
+    }
 
     std::optional<OrcaWasm::surface::ModelSources> sources;
     std::optional<::Slic3r::Transform3d> text_tr = vol->get_transformation().get_matrix();
@@ -702,6 +697,9 @@ json updateText(Slic3r::Model& model, const json& args) {
             const Slic3r::TriangleMesh &tm = v->mesh();
             if (tm.empty() || tm.its.empty()) continue;
             src.push_back({v->get_mesh_shared_ptr(), v->get_matrix()});
+        }
+        if (use_surface && src.empty()) {
+            throw Slic3r::RuntimeError("Target model has no valid 3D geometry for surface text wrapping");
         }
         sources = std::move(src);
 

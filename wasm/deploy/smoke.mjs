@@ -7,7 +7,10 @@ const host = process.env.ORCA_HOST || 'weborca.noz.am';
 function request(path, hostname = host) {
   return new Promise((resolve, reject) => {
     const url = new URL(path, base);
-    const req = (url.protocol === 'https:' ? https : http).get(url, {headers: {Host: hostname}}, res => {
+    const req = (url.protocol === 'https:' ? https : http).get(url, {
+      headers: {Host: hostname},
+      ...(url.protocol === 'https:' ? { servername: url.hostname } : {})
+    }, res => {
       const chunks = [];
       res.on('data', chunk => chunks.push(chunk));
       res.on('end', () => resolve({status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks)}));
@@ -18,7 +21,7 @@ function request(path, hostname = host) {
   });
 }
 const previewAssets = new Map();
-for (const path of ['/', '/calibration', '/engine/orca_engine.mjs', '/engine/orca_engine.wasm', '/engine-worker.js', '/orca_preview.js', '/orca_preview.wasm', '/preview/orca_preview.js', '/preview/orca_preview.wasm', '/profiles/index.json', '/settings/layout.json']) {
+for (const path of ['/', '/calibration', '/engine/orca_engine.mjs', '/engine/orca_engine.wasm', '/engine/step/step_tessellate.mjs', '/engine/step/step_tessellate.wasm', '/engine-worker.js', '/step-worker.js', '/orca_preview.js', '/orca_preview.wasm', '/preview/orca_preview.js', '/preview/orca_preview.wasm', '/profiles/index.json', '/settings/layout.json']) {
   const res = await request(path);
   assert.equal(res.status, 200, path);
   assert.equal(res.headers['cross-origin-opener-policy'], 'same-origin', path);

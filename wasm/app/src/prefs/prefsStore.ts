@@ -1,8 +1,10 @@
 import { create } from 'zustand';
+import { sanitizeSlicingThreads, type SlicingThreadsPreference } from './slicingThreads';
 
 export const PREFS_STORAGE_KEY = 'orcaslicer_preferences_v1';
 
 export interface GeneralPreferences {
+  slicingThreads: SlicingThreadsPreference;
   language: string;
   units: 'metric' | 'imperial';
   rememberRecentFiles: boolean;
@@ -27,6 +29,8 @@ export interface CameraPreferences {
 export interface DisplayPreferences {
   /** Reduce G-code preview detail and resolution without affecting Prepare or slicing. */
   previewLowQuality: boolean;
+  previewLighting: boolean;
+  previewShowFps: boolean;
   showGrid: boolean;
   showAxes: boolean;
   showLabels: boolean;
@@ -38,8 +42,10 @@ export interface DisplayPreferences {
   autoPerspective: boolean;
   showSidebar: boolean;
   theme: 'dark' | 'light' | 'system';
+  fontScale: 100 | 115 | 130 | 150;
   toolbarOrientation: 'vertical' | 'horizontal';
   sidebarWidth: number;
+  sidebarSections: Record<string, boolean>;
 }
 
 export interface PreferencesData {
@@ -50,6 +56,7 @@ export interface PreferencesData {
 
 export const DEFAULT_PREFERENCES: PreferencesData = {
   general: {
+    slicingThreads: 'auto',
     language: 'en',
     units: 'metric',
     rememberRecentFiles: true,
@@ -69,6 +76,8 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
   },
   display: {
     previewLowQuality: false,
+    previewLighting: true,
+    previewShowFps: false,
     showGrid: true,
     showAxes: true,
     showLabels: false,
@@ -80,13 +89,15 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
     autoPerspective: false,
     showSidebar: true,
     theme: 'dark',
+    fontScale: 100,
     toolbarOrientation: 'vertical',
-    sidebarWidth: 360
+    sidebarWidth: 360,
+    sidebarSections: {}
   }
 };
 
 function loadStoredPreferences(): PreferencesData {
-  if (typeof window === 'undefined' || !window.localStorage) {
+  if (typeof window === 'undefined') {
     return DEFAULT_PREFERENCES;
   }
   try {
@@ -94,9 +105,15 @@ function loadStoredPreferences(): PreferencesData {
     if (!raw) return DEFAULT_PREFERENCES;
     const parsed = JSON.parse(raw);
     return {
-      general: { ...DEFAULT_PREFERENCES.general, ...(parsed.general || {}) },
+      general: {
+        ...DEFAULT_PREFERENCES.general, ...(parsed.general || {}),
+        slicingThreads: sanitizeSlicingThreads(parsed.general?.slicingThreads)
+      },
       camera: { ...DEFAULT_PREFERENCES.camera, ...(parsed.camera || {}) },
-      display: { ...DEFAULT_PREFERENCES.display, ...(parsed.display || {}) }
+      display: {
+        ...DEFAULT_PREFERENCES.display, ...(parsed.display || {}),
+        fontScale: [100, 115, 130, 150].includes(parsed.display?.fontScale) ? parsed.display.fontScale : 100
+      }
     };
   } catch (err) {
     console.warn('[PrefsStore] Failed to load preferences from localStorage:', err);
@@ -105,7 +122,7 @@ function loadStoredPreferences(): PreferencesData {
 }
 
 function saveStoredPreferences(data: PreferencesData): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
+  if (typeof window === 'undefined') return;
   try {
     window.localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(data));
   } catch (err) {
@@ -158,6 +175,7 @@ export const usePrefsStore = create<PrefsStoreState>((set, get) => ({
   setGeneralPref: (key, value) => {
     set((state) => {
       const nextGeneral = { ...state.general, [key]: value };
+      if (key === 'slicingThreads') nextGeneral.slicingThreads = sanitizeSlicingThreads(value);
       saveStoredPreferences({ general: nextGeneral, camera: state.camera, display: state.display });
       return { general: nextGeneral };
     });

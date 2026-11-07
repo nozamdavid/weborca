@@ -1,0 +1,229 @@
+/* Scoped layout and state chrome for PaintToolsPanel. */
+.paint-tools-panel {
+  position: absolute;
+  top: var(--tool-panel-top, 64px);
+  right: var(--canvas-inset);
+  background: var(--surface-overlay);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-primary);
+  width: 270px;
+  max-height: calc(100% - var(--tool-panel-top, 64px) - var(--plate-actions-clearance, 16px));
+  overflow-y: auto;
+  font-size: var(--text-md);
+  box-shadow: var(--shadow-2);
+  z-index: var(--z-popover);
+}
+.paint-tools-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.painttools-panel__row-42 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+.painttools-panel__span-41 {
+  font-size: var(--text-xl);
+}
+.paint-tools-panel__title {
+  font-size: var(--text-lg);
+  color: var(--accent-text);
+}
+.painttools-panel__button-39 {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.painttools-panel__card-38 {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  padding: var(--space-1-5) var(--space-2);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-md);
+}
+.painttools-panel__label-37 {
+  display: block;
+  margin-bottom: 10px;
+  font-size: var(--text-md);
+}
+.painttools-panel__select-36 {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-1);
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.painttools-panel__grid-35 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(4em, 1fr));
+  gap: var(--space-1);
+}
+.painttools-panel__button-34 {
+  font-weight: 500;
+  text-align: center;
+}
+.painttools-panel__state-33 {
+  color: var(--text-on-accent);
+}
+.painttools-panel__state-32 {
+  background: var(--accent);
+}
+.painttools-panel__card-31 {
+  margin-bottom: 10px;
+  background: var(--surface-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+}
+.painttools-panel__div-30 {
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1-5);
+}
+.painttools-panel__row-29 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+}
+.painttools-panel__button-28 {
+  width: var(--icon-btn);
+  cursor: pointer;
+  color: var(--text-on-accent);
+  font-weight: 700;
+  text-shadow: 0 1px 2px var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.painttools-panel__state-27 {
+  box-shadow: none;
+}
+.painttools-panel__state-26 {
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+.painttools-panel__state-25 {
+  border: 2px solid var(--border-default);
+}
+.painttools-panel__state-24 {
+  border: 3px solid var(--accent-text);
+}
+.painttools-panel__div-23 {
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+.painttools-panel__grid-22 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(3.25rem, 1fr));
+  gap: var(--space-1);
+}
+.painttools-panel__button-21 {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-0-5);
+}
+.painttools-panel__state-20 {
+  border: 1px solid var(--border-input);
+}
+.painttools-panel__state-19 {
+  border: 1px solid var(--accent-text);
+}
+.painttools-panel__state-18 {
+  color: var(--accent-text);
+}
+.painttools-panel__state-17 {
+  background: var(--surface-2);
+}
+.painttools-panel__state-16 {
+  background: var(--accent-subtle);
+}
+.painttools-panel__span-15 {
+  font-size: var(--text-xs);
+}
+.painttools-panel__span-14 {
+  color: var(--text-tertiary);
+}
+.painttools-panel__row-13 {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-0-5);
+}
+.painttools-panel__span-12 {
+  color: var(--text-primary);
+}
+.painttools-panel__input-11 {
+  width: 100%;
+  accent-color: var(--accent-text);
+  cursor: pointer;
+}
+.painttools-panel__label-10 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-md);
+  margin-top: var(--space-1);
+  cursor: pointer;
+}
+.painttools-panel__div-9 {
+  margin-bottom: 10px;
+}
+.painttools-panel__label-8 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--text-md);
+  cursor: pointer;
+}
+.painttools-panel__input-7 {
+  accent-color: var(--accent-text);
+}
+.painttools-panel__card-6 {
+  background: var(--surface-overlay);
+  border-radius: var(--radius-md);
+  padding: var(--space-1-5) var(--space-2);
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+.painttools-panel__row-5 {
+  display: flex;
+  gap: var(--space-2);
+}
+.painttools-panel__button-4 {
+  flex: 1;
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  border: 1px solid var(--danger-border);
+  font-weight: 500;
+}
+.painttools-panel__state-3 {
+  cursor: pointer;
+}
+.painttools-panel__state-2 {
+  cursor: not-allowed;
+}
+.painttools-panel__button-1 {
+  flex: 1;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: 1px solid var(--accent-text);
+  cursor: pointer;
+  font-weight: 500;
+}
+.paint-tools-panel .ds-btn, .paint-tools-panel .ds-input { min-height: var(--ctl-h); font-size: var(--ctl-font); }
+.paint-tools-panel .ds-btn { white-space: normal; }
+.paint-tools-panel > :first-child { min-height: var(--row-h); }
+.paint-tools-panel #paint-tools-title { color: var(--text-primary); }
+.paint-tools-panel input[type="range"] { accent-color: var(--accent); min-height: var(--ctl-h); }
+.paint-tools-panel { max-width: calc(100% - 2 * var(--canvas-inset)); }
+.paint-tools-panel [id^="filament-slot-"] { width: var(--ctl-h); height: var(--ctl-h); border-radius: var(--radius-full); }

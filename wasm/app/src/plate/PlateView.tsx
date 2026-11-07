@@ -6,7 +6,7 @@ import { useObjectListStore } from '../objectlist/objectListStore';
 import { PlateContextMenu } from './PlateContextMenu';
 import { ContextMenu } from '../objectlist/ContextMenu';
 import { exportGcode } from '../shell/exportGcode';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { PlateRenameDialog } from './PlateRenameDialog';
 import { isDefaultPlateName } from '../plates/plateName';
 import { usePlatesStore } from '../plates/platesStore';
@@ -21,7 +21,7 @@ import { TextPanel, useTextStore } from '../text';
 import { CutPanel, useCutStore } from '../cut';
 import { NumericTransform } from './NumericTransform';
 import { ArrangeDialog } from './ArrangeDialog';
-import { MeasurePanel } from './MeasurePanel';
+import { MeasurePanel } from '../measure';
 import { ExplodePanel } from './ExplodePanel';
 import { ViewCube } from './ViewCube';
 import { usePrefsStore } from '../prefs/prefsStore';
@@ -34,6 +34,8 @@ import { registerCameraHandler, setCameraView } from '../shell/cameraBridge';
 import type { CameraView } from '../shell/cameraBridge';
 import { RedoIcon, UndoIcon } from '../shell/glyphs';
 import { useTranslation } from "../i18n";
+import { ChevronDown, ChevronRight } from '../objectlist/Icons';
+import './selectionPanel.css';
 
 function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
@@ -54,6 +56,7 @@ export const PlateView: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PlateScene | null>(null);
   const assigningFilament = useRef(false);
+  const [selectionCollapsed, setSelectionCollapsed] = useState(false);
 
   const showNavigator = usePrefsStore((s) => s.display.showNavigator);
   const getCameraQuaternion = useCallback(() => sceneRef.current?.getCameraQuaternion(), []);
@@ -62,6 +65,7 @@ export const PlateView: React.FC = () => {
   const objects = usePlateStore((s) => s.objects);
   const selectedObjectId = usePlateStore((s) => s.selectedObjectId);
   const selectedInstanceId = usePlateStore((s) => s.selectedInstanceId);
+  const selectedPartId = useObjectListStore((s) => s.selectedVolumeId);
   const gizmoMode = usePlateStore((s) => s.gizmoMode);
   const bedConfig = usePlateStore((s) => s.bedConfig);
   const isLoading = usePlateStore((s) => s.isLoading);
@@ -121,7 +125,7 @@ export const PlateView: React.FC = () => {
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [renamingPlate, setRenamingPlate] = useState<{ index: number; x: number; y: number; value: string } | null>(null);
-  const [plateMenu, setPlateMenu] = useState<{ x: number; y: number } | null>(null);
+  const [plateMenu, setPlateMenu] = useState<{ x: number; y: number; plateIndex: number } | null>(null);
   const [objectMenu, setObjectMenu] = useState<{
     x: number;
     y: number;
@@ -171,6 +175,10 @@ export const PlateView: React.FC = () => {
       },
       onTransformChange: (objId, instId, trafo) => {
         setInstanceTransform(objId, instId, trafo);
+      },
+      getViewerMesh: (objId) => usePlateStore.getState().getViewerMesh(objId),
+      onVolumeTransformChange: (objId, volumeId, trafo) => {
+        void usePlateStore.getState().setVolumeTransform(objId, volumeId, trafo);
       },
       getMesh: async (objId) => {
         const mesh = await getMesh(objId);
@@ -266,7 +274,9 @@ export const PlateView: React.FC = () => {
   }, [bedConfigLoading, vendor, printer, userPrinters, bedConfig, currentConfig.bed_custom_model, currentConfig.bed_custom_texture]);
 
   const objectTree = useObjectListStore((s) => s.objects);
+  const selectedRangeIndex = useObjectListStore((s) => s.selectedRangeIndex);
   useEffect(() => {
+    if (!isEngineReady) return;
     let cancelled = false;
     void getEngine().then((engine) => engine.call('getWipeTowerPreview', { plateIndex: activePlateIndex }))
       .then((tower: any) => {
@@ -274,7 +284,7 @@ export const PlateView: React.FC = () => {
         if (!cancelled) sceneRef.current?.setWipeTowerPreview(tower, origin as [number, number, number]);
       }).catch(() => { if (!cancelled) sceneRef.current?.setWipeTowerPreview({ enabled: false }); });
     return () => { cancelled = true; };
-  }, [currentConfig, activePlateIndex, objects, objectTree, paintOverlayRevision]);
+  }, [isEngineReady, currentConfig, activePlateIndex, objects, objectTree, paintOverlayRevision]);
 
   // Each part takes the colour of the filament it is assigned to (extruder 0 means the first filament).
   const filamentColours = useAppStore((s) => s.currentConfig['filament_colour']);
@@ -331,7 +341,7 @@ export const PlateView: React.FC = () => {
   // Update selection in scene and stores
   useEffect(() => {
     if (sceneRef.current) {
-      sceneRef.current.setSelection(selectedObjectId, selectedInstanceId, extraSelection);
+      sceneRef.current.setSelection(selectedObjectId, selectedInstanceId, extraSelection, selectedPartId);
       const paintState = usePaintToolsStore.getState();
       if (paintState.isActive) {
         if (!selectedObjectId || selectedObjectId !== paintState.selectedObjectId) {
@@ -352,7 +362,7 @@ export const PlateView: React.FC = () => {
     if (!useRepairStore.getState().isRepairing) {
       void useRepairStore.getState().selectObject(selectedObjectId);
     }
-  }, [selectedObjectId, selectedInstanceId, extraSelection]);
+  }, [selectedObjectId, selectedInstanceId, extraSelection, selectedPartId]);
 
   useEffect(() => {
     const layers = useLayersStore.getState();
@@ -408,6 +418,11 @@ export const PlateView: React.FC = () => {
     }
     return () => { cancelled = true; };
   }, [selectedObjectId, selectedVolumeId, paintLayer, isPaintingActive, meshRevision, paintOverlayRevision]);
+
+  useEffect(() => {
+    const targetObj = objectTree.find((o) => o.id === selectedObjectId);
+    sceneRef.current?.updateLayerRangeOverlays(selectedObjectId, targetObj?.layerRanges, selectedRangeIndex);
+  }, [selectedObjectId, objectTree, selectedRangeIndex]);
 
   useEffect(() => {
     // Cancel synchronously at the store boundary, before delayed worker replies
@@ -546,6 +561,16 @@ export const PlateView: React.FC = () => {
       }
 
       if (e.ctrlKey || e.metaKey) {
+        if (['c', 'x', 'v'].includes(e.key.toLowerCase())) {
+          const plate = usePlateStore.getState();
+          const editOps = useEditOpsStore.getState();
+          if (e.defaultPrevented || e.isComposing || e.altKey || containerRef.current?.closest('[hidden]') ||
+              app.isSelectingPreset || plate.isLoading || useObjectListStore.getState().isLoading ||
+              usePaintToolsStore.getState().isActive || useTextStore.getState().isOpen ||
+              useLayersStore.getState().isLayersActive || useCutStore.getState().isCutActive || useCutStore.getState().isCutting ||
+              useRepairStore.getState().isRepairing || editOps.isOperating || editOps.activeTool || editOps.activeDialog ||
+              document.querySelector('[role="dialog"], [role="alertdialog"], .modal-backdrop')) return;
+        }
         if (e.key === 'z' || e.key === 'Z') {
           e.preventDefault();
           if (isCutting || isRepairing || isOperatingEdit) return;
@@ -573,6 +598,7 @@ export const PlateView: React.FC = () => {
           return;
         }
         if ((e.key === 'c' || e.key === 'C') && !e.shiftKey && !isPaintingActive && !isOperatingEdit) {
+          if (document.getSelection()?.toString()) return;
           e.preventDefault();
           void usePlateStore.getState().copySelected();
           return;
@@ -937,8 +963,12 @@ export const PlateView: React.FC = () => {
     const container = containerRef.current;
     if (!container) return;
     let down: { x: number; y: number; button: number } | null = null;
-    const onDown = (e: PointerEvent) => { down = { x: e.clientX, y: e.clientY, button: e.button }; };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === 'touch' || e.target !== sceneRef.current?.renderer.domElement) return;
+      down = { x: e.clientX, y: e.clientY, button: e.button };
+    };
     const onUp = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
       if (e.button === 0 && down?.button === 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4 && container.contains(e.target as Node)) {
         // A click on a plate's title renames it; on the plate itself (off the objects) it makes that plate active.
         const scene = sceneRef.current;
@@ -958,11 +988,16 @@ export const PlateView: React.FC = () => {
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       down = null;
       if (moved > 4 || usePaintToolsStore.getState().isActive || !container.contains(e.target as Node)) return;
-
+      openMenu(e.clientX, e.clientY);
+    };
+    const openMenu = (clientX: number, clientY: number) => {
+      const e = { clientX, clientY };
       const hit = sceneRef.current?.hitTest(e.clientX, e.clientY);
       if (!hit) {
         setObjectMenu(null);
-        setPlateMenu({ x: e.clientX, y: e.clientY });
+        const plateIndex = sceneRef.current?.plateAt(e.clientX, e.clientY)
+          ?? usePlatesStore.getState().activePlateIndex;
+        setPlateMenu({ x: e.clientX, y: e.clientY, plateIndex });
         return;
       }
 
@@ -1029,14 +1064,37 @@ export const PlateView: React.FC = () => {
         isMulti: false
       });
     };
+    const onLongpress = (event: Event) => {
+      const { x, y } = (event as CustomEvent<{ x: number; y: number }>).detail;
+      openMenu(x, y);
+    };
+    const onTouchTap = (event: Event) => {
+      const { x, y } = (event as CustomEvent<{ x: number; y: number }>).detail;
+      const scene = sceneRef.current;
+      const title = scene?.titleAt(x, y);
+      if (title) {
+        const current = usePlatesStore.getState().plates.find(p => p.index === title.index)?.name ?? '';
+        setRenamingPlate({ ...title, value: isDefaultPlateName(current, title.index) ? '' : current });
+        return;
+      }
+      const plate = scene && !scene.isObjectAt(x, y) ? scene.plateAt(x, y) : null;
+      if (plate !== null && plate !== usePlatesStore.getState().activePlateIndex) {
+        pickedInView.current = true;
+        usePlatesStore.getState().setActivePlate(plate);
+      }
+    };
     const onMenu = (e: MouseEvent) => e.preventDefault();
     container.addEventListener('pointerdown', onDown);
     window.addEventListener('pointerup', onUp);
     container.addEventListener('contextmenu', onMenu);
+    container.addEventListener('canvas-longpress', onLongpress);
+    container.addEventListener('canvas-touch-tap', onTouchTap);
     return () => {
       container.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointerup', onUp);
       container.removeEventListener('contextmenu', onMenu);
+      container.removeEventListener('canvas-longpress', onLongpress);
+      container.removeEventListener('canvas-touch-tap', onTouchTap);
     };
   }, []);
 
@@ -1058,10 +1116,19 @@ export const PlateView: React.FC = () => {
       <div
         id="plate-canvas-container"
         ref={containerRef}
+        tabIndex={-1}
+        onPointerDownCapture={(e) => {
+          // Model dragging prevents the canvas's default focus change. Leave text editing when entering the viewer.
+          if (e.target instanceof HTMLCanvasElement) e.currentTarget.focus({ preventScroll: true });
+        }}
         style={{ width: '100%', height: '100%', outline: 'none', cursor: isPaintingActive ? 'crosshair' : 'grab' }}
       />
 
       <CanvasToolbar groups={toolGroups} />
+      {objects.length === 0 && !busy && <div className="desktop-prepare-empty">
+        <button className="ds-btn ds-btn--primary" onClick={() => document.getElementById('model-file')?.click()}>{t('Add model')}</button>
+        <p>{t('Or drop a model onto the plate')}</p>
+      </div>}
       <ViewButtons />
 
       <PaintToolsPanel />
@@ -1072,47 +1139,47 @@ export const PlateView: React.FC = () => {
       <BrimEarsPanel />
 
       {/* Selection Info Panel (shown when not in painting mode) */}
-      {selectedObject && !isPaintingActive && (
+      {selectedObject && !isPaintingActive && !isCutActive && !isTextActive && !measureActive && !explodeActive && !isLayersActive && !activeEditTool && (
         <div
           id="selection-panel"
-          style={{
-            position: 'absolute',
-            bottom: 64,
-            left: 76, // clear of the vertical tool bar
-            background: 'rgba(24, 24, 27, 0.9)',
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            borderRadius: 10,
-            padding: '12px 16px',
-            color: 'var(--text-color)',
-            minWidth: 260,
-            fontSize: '0.85rem',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-            zIndex: 25
-          }}
+          className="selection-panel"
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <strong id="selected-object-name" style={{ fontSize: '0.95rem', color: '#60a5fa' }}>
+          <div className="selection-panel-header">
+            <strong id="selected-object-name" title={selectedObject.name}>
               {selectedObject.name}
             </strong>
-            <span id="selection-count" style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{extraSelection.length > 0 ? `+${extraSelection.length} more selected` : `ID: ${selectedObject.id}`}</span>
+            <span id="selection-count">{extraSelection.length > 0 ? `+${extraSelection.length} more selected` : `ID: ${selectedObject.id}`}</span>
+            <button
+              id="selection-panel-toggle"
+              className="selection-panel-toggle"
+              type="button"
+              title={selectionCollapsed ? t("Expand") : t("Collapse")}
+              aria-label={selectionCollapsed ? t("Expand") : t("Collapse")}
+              aria-expanded={!selectionCollapsed}
+              aria-controls="selection-panel-body"
+              onClick={() => setSelectionCollapsed((collapsed) => !collapsed)}
+            >
+              <span aria-hidden="true">{selectionCollapsed ? <ChevronRight /> : <ChevronDown />}</span>
+            </button>
           </div>
-          <div id="selected-object-size" style={{ marginBottom: 4 }}>
-            <span style={{ color: '#94a3b8' }}>{t("Size:")}</span>
-            <span>
-              {selectedObject.size[0].toFixed(1)} × {selectedObject.size[1].toFixed(1)} ×{' '}
-              {selectedObject.size[2].toFixed(1)} {t("mm")}</span>
-          </div>
-          {selectedInstance && extraSelection.length === 0 && (
-            <>
-              <NumericTransform object={selectedObject} instance={selectedInstance} />
-            </>
-          )}
+          <div id="selection-panel-body" className="selection-panel-body" hidden={selectionCollapsed}>
+            <div id="selected-object-size">
+              <span className="selection-panel-label">{t("Size:")}</span>
+              <span>
+                {selectedObject.size[0].toFixed(1)} × {selectedObject.size[1].toFixed(1)} ×{' '}
+                {selectedObject.size[2].toFixed(1)} {t("mm")}</span>
+            </div>
+            {selectedInstance && extraSelection.length === 0 && (
+              <>
+                <NumericTransform object={selectedObject} instance={selectedInstance} />
+              </>
+            )}
 
-          {/* Mesh Health and Repair Badge */}
-          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{t("Mesh Health:")}</span>
-            <RepairBadge />
+            {/* Mesh Health and Repair Badge */}
+            <div className="selection-panel-health">
+              <span className="selection-panel-label">{t("Mesh Health:")}</span>
+              <RepairBadge />
+            </div>
           </div>
         </div>
       )}
@@ -1171,7 +1238,9 @@ export const PlateView: React.FC = () => {
           }}
         />
       )}
-      {plateMenu && <PlateContextMenu x={plateMenu.x} y={plateMenu.y} onClose={() => setPlateMenu(null)} />}
+      {plateMenu && <PlateContextMenu x={plateMenu.x} y={plateMenu.y} plateIndex={plateMenu.plateIndex}
+        busy={busy || bedConfigLoading || isLoading || isOperatingEdit || isCutting || isRepairing}
+        onClose={() => setPlateMenu(null)} />}
       {objectMenu && (
         <ContextMenu
           x={objectMenu.x}
@@ -1195,18 +1264,17 @@ export const PlateView: React.FC = () => {
         />
       )}
       {renamingItem && (
-        <ModalBackdrop
+        <Dialog
           id="item-rename-dialog"
           role="dialog"
           aria-label={t("Rename")}
           onClose={() => setRenamingItem(null)}
           dirty={false}
           dirtyWhat="name"
-          style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0, 0, 0, 0.45)' }}
         >
-          <div style={{ width: 380, padding: 20, display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--panel-bg)', border: '1px solid var(--control-bg)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0, 0, 0, 0.5)', color: 'var(--text-color)' }}>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>{renamingItem.volumeId !== undefined ? t("Rename part") : t("Rename object")}</div>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+          <div className="ds-dialog ds-dialog--sm">
+            <h2 className="ds-title--dialog">{renamingItem.volumeId !== undefined ? t("Rename part") : t("Rename object")}</h2>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               {t("Name")}<input
                 id="item-rename-input"
                 data-testid="item-rename-input"
@@ -1227,12 +1295,12 @@ export const PlateView: React.FC = () => {
                   }
                   if (e.key === 'Escape') setRenamingItem(null);
                 }}
-                style={{ padding: '8px 10px', fontSize: 14, background: 'var(--canvas-bg)', color: 'var(--text-color)', border: '1px solid var(--border-color)', borderRadius: 6, outline: 'none' }}
+                style={{ padding: '8px 10px', fontSize: '0.875rem', background: 'var(--canvas-bg)', color: 'var(--text-color)', border: '1px solid var(--border-color)', borderRadius: 6, outline: 'none' }}
               />
             </label>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-              <button className="btn btn-secondary" id="item-rename-cancel" onClick={() => setRenamingItem(null)}>{t("Cancel")}</button>
-              <button className="btn btn-primary" id="item-rename-ok" onClick={(e) => {
+            <div className="ds-dialog__foot">
+              <button className="ds-btn" id="item-rename-cancel" onClick={() => setRenamingItem(null)}>{t("Cancel")}</button>
+              <button className="ds-btn ds-btn--primary" id="item-rename-ok" onClick={(e) => {
                 const input = (e.currentTarget.parentElement?.previousElementSibling?.querySelector('input') as HTMLInputElement);
                 const val = input?.value.trim();
                 if (val) {
@@ -1246,7 +1314,7 @@ export const PlateView: React.FC = () => {
               }}>{t("OK")}</button>
             </div>
           </div>
-        </ModalBackdrop>
+        </Dialog>
       )}
 
       {/* Slicing Results & Statistics */}

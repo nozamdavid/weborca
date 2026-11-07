@@ -6,21 +6,29 @@ COPY wasm/app/package.json wasm/app/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY wasm/app/ ./
 COPY wasm/web/ /workspace/wasm/web/
-COPY wasm/build/orca-step-runtime/wasm/engine/orca_engine.mjs wasm/build/orca-step-runtime/wasm/engine/orca_engine.wasm wasm/build/orca-step-runtime/wasm/engine/*.txt /workspace/wasm/build/orca-step-runtime/wasm/engine/
+COPY wasm/build/orca-wasm64/wasm/engine/orca_engine.mjs wasm/build/orca-wasm64/wasm/engine/orca_engine.wasm /workspace/wasm/build/orca-wasm64/wasm/engine/
+COPY wasm/build/step-module/step_tessellate.mjs wasm/build/step-module/step_tessellate.wasm wasm/build/step-module/*.txt /workspace/wasm/build/step-module/
 COPY wasm/build/orca-wasm64-preview/wasm/preview/orca_preview.js wasm/build/orca-wasm64-preview/wasm/preview/orca_preview.wasm /workspace/wasm/build/orca-wasm64-preview/wasm/preview/
 COPY wasm/build/web/profiles/ /workspace/wasm/build/web/profiles/
 COPY wasm/build/settings/layout.json /workspace/wasm/build/settings/layout.json
 COPY resources/calib/ /workspace/resources/calib/
 COPY resources/handy_models/ /workspace/resources/handy_models/
+ARG MOBILE_SLICE_STEPS=layer_height,wall_loops,sparse_infill_density,sparse_infill_pattern,enable_support,support_type
+ENV MOBILE_SLICE_STEPS=${MOBILE_SLICE_STEPS}
+ARG VITE_ALPHA_GATE_ENABLED=0
+ENV VITE_ALPHA_GATE_ENABLED=${VITE_ALPHA_GATE_ENABLED}
 RUN npm run build
+COPY wasm/deploy/precompress.mjs /workspace/wasm/deploy/precompress.mjs
+RUN node /workspace/wasm/deploy/precompress.mjs dist
 RUN node --input-type=module <<'JS'
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 const required = [
   'engine/orca_engine.mjs', 'engine/orca_engine.wasm',
+  'engine/step/step_tessellate.mjs', 'engine/step/step_tessellate.wasm', 'step-worker.js',
   'orca_preview.js', 'orca_preview.wasm',
   'preview/orca_preview.js', 'preview/orca_preview.wasm',
-  'profiles/index.json', 'settings/layout.json', 'engine-worker.js', 'orca-gateway.mjs'
+  'profiles/index.json', 'settings/layout.json', 'engine-worker.js', 'orca-cloud-bridge.mjs', 'printer-cloud-bridge.mjs', 'alpha-access.mjs'
 ];
 for (const file of required) {
   const info = statSync(`dist/${file}`);

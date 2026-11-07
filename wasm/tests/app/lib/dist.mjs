@@ -34,7 +34,7 @@ function getMaxMtime(dirPath) {
 
 let serverProcess = null;
 
-async function startServer(port, testName, { frozenDist = false } = {}) {
+async function startServer(port, testName, { frozenDist = process.env.APP_TEST_FROZEN_DIST === '1' } = {}) {
   let outDir;
   if (process.env.APP_TEST_DIST) {
     outDir = path.resolve(process.env.APP_TEST_DIST);
@@ -50,11 +50,15 @@ async function startServer(port, testName, { frozenDist = false } = {}) {
 
   const srcDir = path.resolve(repoRoot, 'wasm/app/src');
   const webDir = path.resolve(repoRoot, 'wasm/web');
-  const stepEngineBuildDir = path.resolve(repoRoot, 'wasm/build/orca-step-runtime/wasm/engine');
-  const fallbackEngineBuildDir = path.resolve(repoRoot, 'wasm/build/orca-wasm64/wasm/engine');
-  const engineWasm = fs.existsSync(path.join(stepEngineBuildDir, 'orca_engine.wasm'))
-    ? path.join(stepEngineBuildDir, 'orca_engine.wasm')
-    : path.join(fallbackEngineBuildDir, 'orca_engine.wasm');
+  // Same engine and STEP module directories as wasm/app/vite.config.ts.
+  const engineBuildDir = process.env.ORCA_ENGINE_DIR
+    ? path.resolve(process.env.ORCA_ENGINE_DIR)
+    : path.resolve(repoRoot, 'wasm/build/orca-wasm64/wasm/engine');
+  const stepModuleWasm = path.join(
+    process.env.ORCA_STEP_MODULE_DIR ? path.resolve(process.env.ORCA_STEP_MODULE_DIR) : path.resolve(repoRoot, 'wasm/build/step-module'),
+    'step_tessellate.wasm'
+  );
+  const engineWasm = path.join(engineBuildDir, 'orca_engine.wasm');
 
   const appDir = path.resolve(repoRoot, 'wasm/app');
   const latestSrcTime = Math.max(
@@ -63,7 +67,8 @@ async function startServer(port, testName, { frozenDist = false } = {}) {
     getMaxMtime(path.join(appDir, 'vite.config.ts')),
     getMaxMtime(path.join(appDir, 'index.html')),
     getMaxMtime(webDir),
-    getMaxMtime(engineWasm)
+    getMaxMtime(engineWasm),
+    getMaxMtime(stepModuleWasm)
   );
 
   const outDirTime = getMaxMtime(outDir);

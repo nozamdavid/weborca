@@ -23,6 +23,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -86,11 +87,7 @@ async function runBrowserSuite(browserType, browserName) {
 
     // 2. Select Voron Presets
     console.log(`[${browserName}] Step 2: Selecting Voron presets...`);
-    await page.waitForFunction(() => {
-      const v = document.getElementById('vendor-select');
-      return v && v.options.length > 1;
-    }, null, { timeout: 15000 });
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
 
     await page.waitForFunction(() => {
       const p = document.getElementById('printer-select');

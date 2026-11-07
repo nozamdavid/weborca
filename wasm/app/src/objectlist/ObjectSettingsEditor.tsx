@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/appStore';
 import { useObjectListStore } from './objectListStore';
 import { ObjectSettingRow } from './ObjectSettingRow';
 import type { ObjectTreeNode, VolumeTreeNode } from './types';
 import { useTranslation } from "../i18n";
+import './ObjectSettingsEditor.css';
 
 const OBJECT_CATEGORIES: Record<string, string[]> = {
   Quality: [
@@ -37,6 +39,42 @@ const OBJECT_CATEGORIES: Record<string, string[]> = {
     'support_base_pattern'
   ],
   Speed: ['support_speed', 'support_interface_speed']
+};
+
+const LAYER_RANGE_CATEGORIES: Record<string, string[]> = {
+  Quality: [
+    'layer_height',
+    'ironing_type',
+    'ironing_flow',
+    'ironing_spacing',
+    'ironing_inset',
+    'bridge_flow',
+    'make_overhang_printable'
+  ],
+  Strength: [
+    'wall_loops',
+    'top_shell_layers',
+    'top_shell_thickness',
+    'bottom_shell_layers',
+    'bottom_shell_thickness',
+    'sparse_infill_density',
+    'sparse_infill_pattern',
+    'top_surface_pattern',
+    'bottom_surface_pattern',
+    'internal_solid_infill_pattern',
+    'infill_combination',
+    'infill_wall_overlap'
+  ],
+  Speed: [
+    'outer_wall_speed',
+    'inner_wall_speed',
+    'sparse_infill_speed',
+    'top_surface_speed',
+    'internal_solid_infill_speed',
+    'bridge_speed',
+    'gap_infill_speed'
+  ],
+  Extruder: ['extruder']
 };
 
 const PART_CATEGORIES: Record<string, string[]> = {
@@ -76,11 +114,43 @@ const PART_CATEGORIES: Record<string, string[]> = {
 
 export const ObjectSettingsEditor: React.FC = () => {
     const { t } = useTranslation();
-  const { objects, selectedObjectId, selectedVolumeId, setObjectConfig, resetObjectConfig } = useObjectListStore();
+  const {
+    objects,
+    selectedObjectId,
+    selectedVolumeId,
+    selectedRangeIndex,
+    setObjectConfig,
+    resetObjectConfig,
+    setLayerRangeConfig,
+    resetLayerRangeConfig,
+    editLayerRange,
+    deleteLayerRange
+  } = useObjectListStore();
   const { configDefs, currentConfig } = useAppStore();
 
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0, maxHeight: 300 });
+  const [localMinZ, setLocalMinZ] = useState<string>('');
+  const [localMaxZ, setLocalMaxZ] = useState<string>('');
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
+  const selectedObject: ObjectTreeNode | undefined = selectedObjectId !== null ? objects.find((o) => o.id === selectedObjectId) : undefined;
+  const isRange = selectedRangeIndex !== null && selectedRangeIndex !== undefined;
+  const selectedRange = isRange && selectedObject ? selectedObject.layerRanges?.[selectedRangeIndex] : undefined;
+
+  const selectedVolume: VolumeTreeNode | undefined =
+    !isRange && selectedObject && selectedVolumeId !== null ? selectedObject.volumes.find((v) => v.id === selectedVolumeId) : undefined;
+
+  const isVolume = !isRange && selectedVolume !== undefined;
+
+  React.useEffect(() => {
+    if (selectedRange) {
+      setLocalMinZ(selectedRange.minZ.toFixed(2));
+      setLocalMaxZ(selectedRange.maxZ.toFixed(2));
+      setRangeError(null);
+    }
+  }, [selectedRange?.minZ, selectedRange?.maxZ, selectedRangeIndex]);
 
   if (selectedObjectId === null) {
     return (
@@ -89,20 +159,26 @@ export const ObjectSettingsEditor: React.FC = () => {
     );
   }
 
-  const selectedObject: ObjectTreeNode | undefined = objects.find((o) => o.id === selectedObjectId);
   if (!selectedObject) return null;
 
-  const selectedVolume: VolumeTreeNode | undefined =
-    selectedVolumeId !== null ? selectedObject.volumes.find((v) => v.id === selectedVolumeId) : undefined;
+  const targetName = isRange && selectedRange
+    ? `${t("Height range")} [${selectedRange.minZ.toFixed(2)} - ${selectedRange.maxZ.toFixed(2)} mm]`
+    : isVolume
+    ? `${selectedVolume.name} (${selectedVolume.type})`
+    : selectedObject.name;
 
-  const isVolume = selectedVolume !== undefined;
-  const targetName = isVolume ? `${selectedVolume.name} (${selectedVolume.type})` : selectedObject.name;
-  const currentOverrides: Record<string, string> = isVolume ? selectedVolume.config || {} : selectedObject.config || {};
+  const currentOverrides: Record<string, string> = isRange && selectedRange
+    ? { layer_height: currentConfig['layer_height'] || '0.2', ...(selectedRange.config || {}) }
+    : isVolume
+    ? selectedVolume.config || {}
+    : selectedObject.config || {};
   const overrideKeys = Object.keys(currentOverrides);
 
   // Available option categories for this target
   const availableCategories: Record<string, string[]> = {};
-  if (isVolume) {
+  if (isRange) {
+    Object.assign(availableCategories, LAYER_RANGE_CATEGORIES);
+  } else if (isVolume) {
     Object.assign(availableCategories, PART_CATEGORIES);
   } else {
     // For object, merge both
@@ -119,23 +195,55 @@ export const ObjectSettingsEditor: React.FC = () => {
     }
   }
 
+  const handleCommitBounds = async () => {
+    if (!isRange || selectedRangeIndex === null) return;
+    const min = parseFloat(localMinZ);
+    const max = parseFloat(localMaxZ);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      setRangeError(t("Heights must be valid numbers"));
+      return;
+    }
+    try {
+      setRangeError(null);
+      await editLayerRange(selectedObjectId, selectedRangeIndex, min, max);
+    } catch (err: any) {
+      setRangeError(err.message || t("Invalid range bounds"));
+    }
+  };
+
   const handleAddOption = async (key: string) => {
     setIsAddMenuOpen(false);
     const def = configDefs[key];
     const initialVal = currentConfig[key] || def?.default || '0';
-    await setObjectConfig(selectedObjectId, isVolume ? selectedVolume.id : null, { [key]: initialVal });
+    if (isRange && selectedRangeIndex !== null) {
+      await setLayerRangeConfig(selectedObjectId, selectedRangeIndex, { [key]: initialVal });
+    } else {
+      await setObjectConfig(selectedObjectId, isVolume ? selectedVolume.id : null, { [key]: initialVal });
+    }
   };
 
   const handleChangeOption = async (key: string, value: string) => {
-    await setObjectConfig(selectedObjectId, isVolume ? selectedVolume.id : null, { [key]: value });
+    if (isRange && selectedRangeIndex !== null) {
+      await setLayerRangeConfig(selectedObjectId, selectedRangeIndex, { [key]: value });
+    } else {
+      await setObjectConfig(selectedObjectId, isVolume ? selectedVolume.id : null, { [key]: value });
+    }
   };
 
   const handleRemoveOption = async (key: string) => {
-    await resetObjectConfig(selectedObjectId, isVolume ? selectedVolume.id : null, [key]);
+    if (isRange && selectedRangeIndex !== null) {
+      await resetLayerRangeConfig(selectedObjectId, selectedRangeIndex, [key]);
+    } else {
+      await resetObjectConfig(selectedObjectId, isVolume ? selectedVolume.id : null, [key]);
+    }
   };
 
   const handleResetAll = async () => {
-    await resetObjectConfig(selectedObjectId, isVolume ? selectedVolume.id : null);
+    if (isRange && selectedRangeIndex !== null) {
+      await resetLayerRangeConfig(selectedObjectId, selectedRangeIndex);
+    } else {
+      await resetObjectConfig(selectedObjectId, isVolume ? selectedVolume.id : null);
+    }
   };
 
   return (
@@ -145,26 +253,17 @@ export const ObjectSettingsEditor: React.FC = () => {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100%',
-        overflow: 'hidden',
         background: 'var(--canvas-bg)',
         borderTop: '1px solid var(--panel-bg)'
       }}
     >
       {/* Header */}
       <div
-        style={{
-          padding: '8px 12px',
-          background: '#202023',
-          borderBottom: '1px solid var(--panel-bg)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}
+        className="object-overrides-header"
       >
         <div style={{ overflow: 'hidden' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            {isVolume ? 'Part Overrides' : 'Object Overrides'}
+            {isRange ? t('Layer Range Overrides') : isVolume ? t('Part Overrides') : t('Object Overrides')}
           </div>
           <div
             style={{
@@ -186,7 +285,13 @@ export const ObjectSettingsEditor: React.FC = () => {
             type="button"
             id="btn-add-setting"
             data-testid="btn-add-setting"
-            onClick={() => setIsAddMenuOpen(!isAddMenuOpen)}
+            onClick={(e) => {
+              const box = e.currentTarget.getBoundingClientRect();
+              const below = window.innerHeight - box.bottom - 8;
+              const height = Math.min(300, Math.max(below, box.top - 8));
+              setMenuPosition({ left: Math.max(8, box.right - 240), top: below >= height ? box.bottom + 4 : box.top - height - 4, maxHeight: height });
+              setIsAddMenuOpen(!isAddMenuOpen);
+            }}
             style={{
               background: '#009688',
               color: '#fff',
@@ -221,22 +326,19 @@ export const ObjectSettingsEditor: React.FC = () => {
           )}
 
           {/* Add Setting Popup */}
-          {isAddMenuOpen && (
+          {isAddMenuOpen && createPortal((
             <div
               id="add-setting-dropdown"
               data-testid="add-setting-dropdown"
               style={{
-                position: 'absolute',
-                right: 0,
-                top: '100%',
-                marginTop: 4,
+                position: 'fixed',
+                ...menuPosition,
                 width: 240,
-                maxHeight: 300,
                 background: 'var(--panel-bg)',
                 border: '1px solid var(--control-bg)',
                 borderRadius: 6,
                 boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-                zIndex: 100,
+                zIndex: 10000,
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden'
@@ -314,12 +416,112 @@ export const ObjectSettingsEditor: React.FC = () => {
                 })}
               </div>
             </div>
-          )}
+          ), document.body)}
         </div>
       </div>
 
+      {/* Layer range bounds editor */}
+      {isRange && selectedRange && (
+        <div
+          id="layer-range-bounds-bar"
+          data-testid="layer-range-bounds-bar"
+          style={{
+            padding: '6px 12px',
+            background: 'rgba(0, 150, 136, 0.08)',
+            borderBottom: '1px solid var(--panel-bg)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: '0.78rem'
+          }}
+        >
+          <span style={{ color: 'var(--text-muted)' }}>{t("Range:")}</span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Min Z:</span>
+            <input
+              id="range-min-z-input"
+              data-testid="range-min-z-input"
+              type="number"
+              step="0.1"
+              min="0"
+              value={localMinZ}
+              onChange={(e) => setLocalMinZ(e.target.value)}
+              onBlur={handleCommitBounds}
+              onKeyDown={(e) => e.key === 'Enter' && handleCommitBounds()}
+              style={{
+                width: 60,
+                background: 'var(--panel-bg)',
+                border: '1px solid var(--control-bg)',
+                color: '#fff',
+                borderRadius: 4,
+                padding: '2px 4px',
+                fontSize: '0.78rem'
+              }}
+            />
+          </label>
+          <span>-</span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Max Z:</span>
+            <input
+              id="range-max-z-input"
+              data-testid="range-max-z-input"
+              type="number"
+              step="0.1"
+              min="0"
+              value={localMaxZ}
+              onChange={(e) => setLocalMaxZ(e.target.value)}
+              onBlur={handleCommitBounds}
+              onKeyDown={(e) => e.key === 'Enter' && handleCommitBounds()}
+              style={{
+                width: 60,
+                background: 'var(--panel-bg)',
+                border: '1px solid var(--control-bg)',
+                color: '#fff',
+                borderRadius: 4,
+                padding: '2px 4px',
+                fontSize: '0.78rem'
+              }}
+            />
+          </label>
+          <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>mm</span>
+          <div style={{ flex: 1 }} />
+          <button
+            type="button"
+            id="btn-delete-layer-range"
+            data-testid="btn-delete-layer-range"
+            onClick={() => void deleteLayerRange(selectedObjectId, selectedRangeIndex)}
+            style={{
+              background: 'rgba(239, 68, 68, 0.15)',
+              color: '#f87171',
+              border: 'none',
+              borderRadius: 4,
+              padding: '2px 8px',
+              fontSize: '0.75rem',
+              cursor: 'pointer'
+            }}
+          >
+            {t("Delete Range")}
+          </button>
+        </div>
+      )}
+      {rangeError && (
+        <div
+          id="layer-range-error-banner"
+          data-testid="layer-range-error-banner"
+          style={{
+            padding: '4px 12px',
+            background: 'rgba(239, 68, 68, 0.2)',
+            color: '#f87171',
+            fontSize: '0.72rem',
+            borderBottom: '1px solid rgba(239, 68, 68, 0.3)'
+          }}
+        >
+          {rangeError}
+        </div>
+      )}
+
       {/* List of active overrides */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+      <div style={{ padding: '4px 0' }}>
         {overrideKeys.length === 0 ? (
           <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8rem' }}>
             {t("No custom overrides set.")}<br />

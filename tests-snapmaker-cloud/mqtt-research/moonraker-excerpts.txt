@@ -1,0 +1,335 @@
+806:std::string Moonraker_Mqtt::m_response_topic = "/response";
+807:std::string Moonraker_Mqtt::m_status_topic = "/status";
+808:std::string Moonraker_Mqtt::m_notification_topic = "/notification";
+809:std::string Moonraker_Mqtt::m_request_topic = "/request";
+810:std::string Moonraker_Mqtt::m_sn = "";
+1132:    auto& wcp_loger = GUI::WCP_Logger::getInstance();    
+1133:    wcp_loger.add_log("start connect mqtt", false, "", "Moonraker_Mqtt", "info");
+1134:
+1135:    
+1136:    if(!params.count("ca") || !params.count("cert") 
+1137:    || !params.count("key") || !params.count("port") || !params.count("clientId") || !params.count("sn")){
+1138:        BOOST_LOG_TRIVIAL(warning) << "[Moonraker_Mqtt] less TLS data and try to get approve info";
+1139:        wcp_loger.add_log("less TLS data and try to get approve info", false, "", "Moonraker_Mqtt", "info");
+1140:        bool flag = ask_for_tls_info(params);
+1141:        if (!flag) {
+1142:            BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] failed to get TLS auth info";
+1143:            wcp_loger.add_log("failed to get TLS auth info", false, "", "Moonraker_Mqtt", "error");
+1144:            return false;
+1145:        }
+1146:    }else{
+1147:        BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] using provided TLS parameters";
+1148:        wcp_loger.add_log("using provided TLS parameters", false, "", "Moonraker_Mqtt", "info");
+1149:        m_user_name = params.count("user")     ? params["user"].get<std::string>() : "";
+1150:        m_password = params.count("password") ? params["password"].get<std::string>() : "";
+1151:        m_ca = params["ca"].get<std::string>();
+1152:        m_cert = params["cert"].get<std::string>();
+1153:        m_key = params["key"].get<std::string>();
+1154:        m_port = params["port"].get<int>();
+1155:        m_client_id = params["clientId"].get<std::string>();
+1156:
+1157:        m_sn_mtx.lock();
+1158:        m_sn = params["sn"].get<std::string>();
+1159:        m_sn_mtx.unlock();
+1160:        BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] setting SN: " << m_sn;
+1161:        wcp_loger.add_log("setting SN: " + m_sn, false, "", "Moonraker_Mqtt", "info");
+1162:
+1163:        if (m_ca == "" || m_cert == "" || m_key == "") {
+1164:            bool flag = ask_for_tls_info(params);
+1165:            if (!flag) {
+1166:                BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] failed to get TLS auth info";
+1167:                wcp_loger.add_log("failed to get TLS auth info", false, "", "Moonraker_Mqtt", "error");
+1168:                return false;
+1257:    std::string mqtts_url = "mqtts://" + host_ip + ":" + std::to_string(m_port);
+1258:    BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] creating MQTTS client, URL: " << mqtts_url << ", client ID: " << m_client_id;
+1259:    wcp_loger.add_log("creating MQTTS client, URL: " + mqtts_url + ", client ID: " + m_client_id, false, "", "Moonraker_Mqtt", "info");
+1260:    std::shared_ptr<MqttClient> new_client;
+1261:    try {
+1262:        new_client = MqttClient::create(mqtts_url, m_client_id, m_ca, m_cert, m_key);
+1263:    } catch (const std::exception& e) {
+1264:        BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] failed to create MQTTS client: " << e.what();
+1265:        wcp_loger.add_log("failed to create MQTTS client: " + std::string(e.what()), false, "", "Moonraker_Mqtt", "error");
+1302:    m_sn_mtx.unlock();
+1303:
+1304:    if(tmp_sn == ""){
+1305:        BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] SN is empty, cannot subscribe to topics";
+1306:        wcp_loger.add_log("SN is empty, cannot subscribe to topics", false, "", "Moonraker_Mqtt", "error");
+1307:        return false;
+1308:    }
+1309:
+1310:    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+1311:
+1312:    std::string no_sub_msg              = "success";
+1313:    bool notification_subscribed = new_client->Subscribe(tmp_sn + m_notification_topic, 1, no_sub_msg);
+1314:
+1315:    std::string res_sub_msg         = "success";
+1316:    bool response_subscribed = new_client->Subscribe(tmp_sn + m_response_topic, 1, res_sub_msg);
+1317:    
+1318:    BOOST_LOG_TRIVIAL(warning) << "[Moonraker_Mqtt] topic subscription result - notification topic: " << (notification_subscribed ? "success" : "failed")
+1319:                           << ", response topic: " << (response_subscribed ? "success" : "failed");
+1320:    wcp_loger.add_log("topic subscription result - notification topic: " + std::string((notification_subscribed ? "success" : "failed")) + ", response topic: " + (response_subscribed ? "success" : "failed"), false, "", "Moonraker_Mqtt", "info");
+1321:    std::weak_ptr<TimeSyncManager> weak_tsm = time_sync_manager_snapshot();
+1322:    new_client->SetMessageCallback([this, weak_tsm](const std::string& topic, const std::string& payload) {
+1323:        if (weak_tsm.expired()) {
+1324:            BOOST_LOG_TRIVIAL(warning) << "[Moonraker_Mqtt] object destroyed, ignoring MQTTS message";
+1325:            return;
+1326:        }
+1327:        this->on_mqtt_tls_message_arrived(topic, payload);
+1328:    });
+1329:
+1330:    bool result = is_connect && notification_subscribed && response_subscribed;
+1331:    BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] MQTT connection flow completed, result: " << (result ? "success" : "failed");
+1332:    wcp_loger.add_log("MQTT connection flow completed, result: " + std::string((result ? "success" : "failed")), false, "", "Moonraker_Mqtt", "info");
+1402:void Moonraker_Mqtt::async_subscribe_machine_info(const std::string& hash, std::function<void(const nlohmann::json&)> callback)
+1403:{
+1404:    auto& wcp_loger = GUI::WCP_Logger::getInstance();
+1405:    BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] starting machine status subscription";
+1406:    wcp_loger.add_log("starting machine status subscription", false, "", "Moonraker_Mqtt", "info");
+1407:
+1408:    bool need_subscribe;
+1409:    {
+1410:        std::lock_guard<std::mutex> cbs_lock(m_cbs_mtx);
+1411:        need_subscribe = m_status_cbs.empty();
+1412:    }
+1413:    if (need_subscribe) {
+1414:        std::string main_layer = "+";
+1415:
+1416:        m_sn_mtx.lock();
+1417:        main_layer = m_sn;
+1418:        m_sn_mtx.unlock();
+1419:
+1420:        BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] using SN topic: " << main_layer;
+1421:        wcp_loger.add_log("using SN topic: " + main_layer, false, "", "Moonraker_Mqtt", "info");
+1422:        std::string sub_msg    = "success";
+1423:        std::shared_ptr<MqttClient> client = get_mqtt_client_tls();
+1424:        bool        res_status = client ? client->Subscribe(main_layer + m_status_topic, 1, sub_msg) : false;
+1425:        bool res_notification  = client ? client->Subscribe(main_layer + m_notification_topic, 1, sub_msg) : false;
+1426:
+1427:        if (!res_status || !res_notification) {
+1428:            BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] failed to subscribe to status topic";
+1429:            wcp_loger.add_log("failed to subscribe to status topic", false, "", "Moonraker_Mqtt", "error");
+1430:            callback(json::value_t::null);
+1431:            return;
+1432:        }
+1433:
+1434:        BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] successfully subscribed to status topic: " << main_layer + m_status_topic;
+1435:        wcp_loger.add_log("successfully subscribed to status topic: " + main_layer + m_status_topic, false, "", "Moonraker_Mqtt", "info");
+1436:    }
+1437:
+1438:    {
+1439:        std::lock_guard<std::mutex> cbs_lock(m_cbs_mtx);
+1440:        m_status_cbs.insert({hash, callback});
+1644:// Unsubscribe from printer status updates
+1645:void Moonraker_Mqtt::async_unsubscribe_machine_info(const std::string& hash, std::function<void(const nlohmann::json&)> callback)
+1646:{
+1647:    auto& wcp_loger = GUI::WCP_Logger::getInstance();
+1648:    BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] Starting unsubscribe machine status";
+1649:    wcp_loger.add_log("Starting unsubscribe machine status", false, "", "Moonraker_Mqtt", "info");
+1650:
+1651:    bool no_cbs_left;
+1652:    {
+1653:        std::lock_guard<std::mutex> cbs_lock(m_cbs_mtx);
+1654:    if (m_status_cbs.count(hash))
+1655:        m_status_cbs.erase(hash);
+1656:
+1657:    if (m_notification_cbs.count(hash))
+1658:        m_notification_cbs.erase(hash);
+1659:
+1660:        no_cbs_left = m_status_cbs.empty();
+1661:    }
+1662:
+1663:    if (no_cbs_left) {
+1664:        std::string main_layer = "+";
+1665:
+1666:        m_sn_mtx.lock();
+1667:        main_layer = m_sn;
+1668:        m_sn_mtx.unlock();
+1669:
+1670:        std::string un_sub_msg = "success";
+1671:        std::shared_ptr<MqttClient> client = get_mqtt_client_tls();
+1672:        bool        res        = client ? client->Unsubscribe(main_layer + m_status_topic, un_sub_msg) : false;
+1673:
+1674:        if (!res) {
+1675:            BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] failed to unsubscribe from status topic";
+1676:            wcp_loger.add_log("failed to unsubscribe from status topic", false, "", "Moonraker_Mqtt", "error");
+1677:            if (callback) {
+1678:                callback(json::value_t::null);
+1679:            }
+1680:            return;
+1681:        }
+1682:
+1683:        BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] successfully unsubscribed from status topic: " << main_layer + m_status_topic;
+1684:        wcp_loger.add_log("successfully unsubscribed from status topic: " + main_layer + m_status_topic, false, "", "Moonraker_Mqtt", "info");
+1685:        callback(json::object());
+1686:    } else {
+1687:        callback(json::object());
+2544:    
+2545:    json body;
+2546:    body["jsonrpc"] = "2.0";
+2547:    body["method"] = method;
+2548:
+2549:    if (!params.empty()) {
+2550:        body["params"] = params;
+2551:    }
+2552:    
+2553:
+2554:    int64_t seq_id = m_seq_generator.generate_seq_id();
+2555:    BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] generated seq id: " << seq_id;
+2556:    wcp_loger.add_log("generated seq id: " + std::to_string(seq_id), false, "", "Moonraker_Mqtt", "info");
+2557:
+2558:    if (need_response) {
+2559:        if (!add_response_target(seq_id, callback, timeout_callback)) {
+2560:            BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] failed to add response target";
+2561:            wcp_loger.add_log("failed to add response target", false, "", "Moonraker_Mqtt", "error");
+2562:            return false;
+2563:        }
+2564:        body["id"] = seq_id;
+2565:    }
+2566:
+2567:    std::shared_ptr<MqttClient> mqtt_client_tls = get_mqtt_client_tls();
+2568:    if (mqtt_client_tls) {
+2569:        std::string main_layer = "+";
+2570:        m_sn_mtx.lock();
+2571:        main_layer = m_sn;
+2572:        m_sn_mtx.unlock();
+2573:
+2574:        if (main_layer == "+" || main_layer == "") {
+2575:            BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] invalid SN, removing response target";
+2576:            wcp_loger.add_log("invalid SN, removing response target", false, "", "Moonraker_Mqtt", "error");
+2577:            delete_response_target(seq_id);
+2578:            return false;
+2579:        }
+2580:
+2581:        std::string topic = main_layer + m_request_topic;
+2582:        BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] publishing to topic: " << topic;
+2583:        wcp_loger.add_log("publishing to topic: " + topic, false, "", "Moonraker_Mqtt", "info");
+2584:
+2585:        // add time sync fields
+2586:        if (auto time_sync_manager = time_sync_manager_snapshot()) {
+2587:            time_sync_manager->addTimeFields(body);
+2588:        }
+2589:
+2590:        std::string pub_msg = "success";
+2591:        bool res = mqtt_client_tls->Publish(topic, body.dump(), 1, pub_msg);
+2592:        if (!res) {
+2593:            BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] failed to publish request, method: " << method;
+2594:            wcp_loger.add_log("failed to publish request, method: " + method, false, "", "Moonraker_Mqtt", "error");
+2595:            delete_response_target(seq_id);
+2596:        } else {
+2597:            BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] request published successfully, method: " << method;
+2598:            wcp_loger.add_log("request published successfully, method: " + method, false, "", "Moonraker_Mqtt", "info");
+2599:        }
+2600:        return res;
+2749:void Moonraker_Mqtt::on_response_arrived(const std::string& payload)
+2750:{
+2751:    // Non-throwing parse: a parse error must not escape into Paho's C
+2752:    // callback stack (uncaught exception = terminate).
+2753:    json body = json::parse(payload, nullptr, false);
+2754:    if (body.is_discarded()) {
+2755:        BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] malformed JSON in response message, ignoring";
+2756:        return;
+2757:    }
+2758:
+2759:    if (auto time_sync_manager = time_sync_manager_snapshot()) {
+2760:        time_sync_manager->updateFromResponse(body);
+2761:    }
+2762:
+2763:    if (!body.count("id")) {
+2764:        return;
+2765:    }
+2766:
+2767:    int64_t id = body["id"].get<int64_t>();
+2768:    auto cb_result = get_request_callback(id);
+2769:    auto cb         = cb_result.first;
+2770:    auto passthrough = cb_result.second;
+2771:    delete_response_target(id);
+2772:
+2773:    if (!cb) {
+2774:        BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] response callback not found, id: " << id;
+2775:        return;
+2776:    }
+2777:
+2778:    // ID 20252025 is reserved for WCP testing only and is not used in production business logic.
+2779:    if (passthrough || id == 20252025) {
+2780:        cb(body);
+2781:    } else {
+2782:        json res;
+2783:        if (!body.count("result")) {
+2784:            if (body.count("error")) {
+2785:                res["error"] = body["error"];
+2786:            }
+2787:        } else {
+2788:            res["data"] = body["result"];
+2789:        }
+2790:        res["method"] = "";
+2791:        if (body.count("method")) {
+2792:            res["method"] = body["method"];
+2793:        }
+2794:        cb(res);
+2795:    }
+2796:}
+2799:void Moonraker_Mqtt::on_status_arrived(const std::string& payload)
+2800:{
+2801:    auto& wcp_loger = GUI::WCP_Logger::getInstance();    
+2802:    wcp_loger.add_log("handling status update message", false, "", "Moonraker_Mqtt", "info");
+2803:    {
+2804:        // Non-throwing parse: a parse error must not escape into Paho's C
+2805:        // callback stack (uncaught exception = terminate).
+2806:        json body = json::parse(payload, nullptr, false);
+2807:        if (body.is_discarded()) {
+2808:            BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] malformed JSON in status message, ignoring";
+2809:            return;
+2810:        }
+2811:
+2812:        json data;
+2813:        if (body.count("params")) {
+2814:            data["data"] = body["params"];            
+2815:            wcp_loger.add_log("status update contains params", false, "", "Moonraker_Mqtt", "info");
+2816:        } else if (body.count("result") && body["result"].count("status")) {
+2817:            data["data"] = body["result"]["status"];            
+2818:            wcp_loger.add_log("status update contains result status", false, "", "Moonraker_Mqtt", "info");
+2819:        } else {            
+2820:            wcp_loger.add_log("invalid status update message format", false, "", "Moonraker_Mqtt", "info");
+2821:            return;
+2822:        }
+2823:        
+2824:        data["method"] = "";
+2825:        if (body.count("method")){
+2826:            data["method"] = body["method"];
+2827:            BOOST_LOG_TRIVIAL(info) << "[Moonraker_Mqtt] status update contains method: " << body["method"].get<std::string>();
+2828:            wcp_loger.add_log("status update contains method: " + body["method"].get<std::string>(), false, "", "Moonraker_Mqtt", "info");
+2829:        }
+2830:
+2855:void Moonraker_Mqtt::on_notification_arrived(const std::string& payload)
+2856:{
+2857:    auto& wcp_loger = GUI::WCP_Logger::getInstance();    
+2858:    wcp_loger.add_log("handling notification message, payload length: " + std::to_string(payload.length()), false, "", "Moonraker_Mqtt", "info");
+2859:    {
+2860:        // TODO: add msg notice
+2861:        // Non-throwing parse: a parse error must not escape into Paho's C
+2862:        // callback stack (uncaught exception = terminate).
+2863:        json body = json::parse(payload, nullptr, false);
+2864:        if (body.is_discarded()) {
+2865:            BOOST_LOG_TRIVIAL(error) << "[Moonraker_Mqtt] malformed JSON in notification message, ignoring";
+2866:            return;
+2867:        }
+2868:        json data;
+2869:
+2870:        if (body.count("params")) {
+2871:            data["data"] = body["params"];
+2872:            
+2873:            wcp_loger.add_log("status update contains params", false, "", "Moonraker_Mqtt", "info");
+2874:        } else if (body.count("result") && body["result"].count("status")) {
+2875:            data["data"] = body["result"]["status"];            
+2876:            wcp_loger.add_log("status update contains result status", false, "", "Moonraker_Mqtt", "info");
+2877:        } else {
+2878:            BOOST_LOG_TRIVIAL(warning) << "[Moonraker_Mqtt] invalid status update message format";
+2879:            wcp_loger.add_log("invalid status update message format", false, "", "Moonraker_Mqtt", "warning");
+2880:            return;
+2881:        }
+2882:
+2883:        data["method"] = "";
+2884:        if (body.count("method")) {
+2885:            data["method"] = body["method"];            
+2886:            wcp_loger.add_log("status update contains method: " + body["method"].get<std::string>(), false, "", "Moonraker_Mqtt", "info");
+2887:        }

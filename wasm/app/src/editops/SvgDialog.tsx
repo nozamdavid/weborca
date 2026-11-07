@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { useEditOpsStore } from './editOpsStore';
 import { usePlateStore } from '../plate/plateStore';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { useTranslation } from "../i18n";
 
 export const SvgDialog: React.FC = () => {
@@ -39,21 +39,20 @@ export const SvgDialog: React.FC = () => {
   };
 
   return (
-    <ModalBackdrop onClose={closeSvgDialog} role="dialog" aria-label={t("Add SVG")}>
+    <Dialog onClose={closeSvgDialog} role="dialog" aria-label={t("Add SVG")}>
       <div
-        className="modal-content"
+        className="modal-content ds-dialog"
         id="svg-dialog"
         data-testid="svg-dialog"
-        style={{ width: 'min(460px, 92vw)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-header">
+        <div className="modal-header ds-dialog__head">
           <h2>{t("Add SVG")}</h2>
           <button className="icon-btn" onClick={closeSvgDialog} aria-label={t("Close")}>✕</button>
         </div>
 
-        <div className="modal-body">
-          {error && <div className="error-message" style={{ color: 'var(--danger-color)', fontSize: 12 }}>{error}</div>}
+        <div className="modal-body ds-dialog__body">
+          {error && <div className="error-message" style={{ color: 'var(--danger-color)', fontSize: '0.75rem' }}>{error}</div>}
 
           <div>
             <label style={{ display: 'block', marginBottom: 6, fontWeight: 500 }}>{t("SVG File")}</label>
@@ -69,13 +68,13 @@ export const SvgDialog: React.FC = () => {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="ds-btn"
                 id="svg-choose-file-btn"
                 data-testid="svg-choose-file-btn"
                 onClick={() => fileInputRef.current?.click()}
               >
                 {t("Choose SVG...")}</button>
-              <span style={{ fontSize: 13, color: svgFileName ? 'var(--text-color)' : 'var(--text-muted)' }}>
+              <span style={{ fontSize: '0.8125rem', color: svgFileName ? 'var(--text-color)' : 'var(--text-muted)' }}>
                 {svgFileName || 'No file selected'}
               </span>
             </div>
@@ -125,11 +124,11 @@ export const SvgDialog: React.FC = () => {
           )}
         </div>
 
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={closeSvgDialog} disabled={isOperating}>
+        <div className="modal-footer ds-dialog__foot">
+          <button className="ds-btn" onClick={closeSvgDialog} disabled={isOperating}>
             {t("Cancel")}</button>
           <button
-            className="btn btn-primary"
+            className="ds-btn ds-btn--primary"
             id="svg-apply-btn"
             data-testid="svg-apply-btn"
             onClick={() => void applyAddSvg()}
@@ -139,6 +138,6 @@ export const SvgDialog: React.FC = () => {
           </button>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

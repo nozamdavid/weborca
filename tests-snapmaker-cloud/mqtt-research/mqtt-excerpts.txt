@@ -1,0 +1,258 @@
+21:// Constructor: Initialize MQTT client with server address and client ID
+22:// @param server_address: Address of the MQTT broker
+23:// @param client_id: Unique identifier for this client
+24:// @param clean_session: Whether to start with a clean session
+25:MqttClient::MqttClient(const std::string& server_address, const std::string& client_id, const std::string& username, const std::string& password,  bool clean_session)
+26:    : server_address_(server_address)
+27:    , client_id_(client_id)
+28:    , client_(nullptr)
+29:    , connOpts_()
+30:    , subListener_("Subscription")
+31:    , connected_(false)            
+32:    , is_reconnecting(false)
+33:    , connection_failure_callback_(nullptr)
+34:    , pending_reconnect_checks{0}  
+35:    , ever_connected_(false)  
+36:{
+37:    BOOST_LOG_TRIVIAL(info) << "[MQTT_INFO] initializing MQTT connection, server_address: " << server_address << ", client_id: " << client_id;
+38:
+39:    try {
+40:        client_ = std::make_unique<mqtt::async_client>(server_address_, client_id_);
+41:
+42:        // Configure connection options    
+43:        connOpts_.set_clean_session(false);
+44:        connOpts_.set_keep_alive_interval(30);
+45:        connOpts_.set_connect_timeout(10);
+46:        // auto-reconnect enabled only after first successful connection
+47:        connOpts_.set_automatic_reconnect(std::chrono::seconds(0), std::chrono::seconds(0));
+48:        client_->set_callback(*this);
+49:
+50:        // set authentication info
+51:        if (!username.empty()) {
+52:            connOpts_.set_user_name(username);
+64:MqttClient::MqttClient(const std::string& server_address, 
+65:                      const std::string& client_id,
+66:                      const std::string& ca_content,        
+67:                      const std::string& cert_content,
+68:                      const std::string& key_content,
+69:                      const std::string& username,
+70:                      const std::string& password,
+71:                      bool clean_session)
+72:    : MqttClient(server_address, client_id, username, password, clean_session)
+73:{
+74:    BOOST_LOG_TRIVIAL(info) << "[MQTT_INFO] initializing MQTT SSL connection, server_address: " << server_address << ", client_id: " << client_id
+75:                            << ", ca_content: " << ca_content << ", cert_content: " << cert_content << ", username: " << username
+76:                            << ", password: " << password;
+77:
+78:    if (!client_) {
+79:        BOOST_LOG_TRIVIAL(error) << "[MQTT_INFO] skip SSL initialization because MQTT client was not created";
+80:        return;
+81:    }
+82:    
+83:    try {
+84:        boost::filesystem::path temp_dir = boost::filesystem::temp_directory_path();
+85:
+86:        boost::filesystem::path ca_path = temp_dir / ("ca_" + client_id + std::to_string(int64_t(this)) + ".pem");
+87:        if (!ca_content.empty()) {
+88:            boost::filesystem::ofstream ca_file(ca_path);
+89:            ca_file << ca_content;
+90:            ca_file.close();
+91:            if (!ca_file) {
+92:                BOOST_LOG_TRIVIAL(error) << "[MQTT_INFO] failed to save CA certificate: " << ca_path;
+93:                throw std::runtime_error("Failed to write CA certificate temporary file");
+94:            }
+95:            BOOST_LOG_TRIVIAL(debug) << "[MQTT_INFO] CA certificate saved to: " << ca_path;
+96:        }
+97:        
+98:        boost::filesystem::path cert_path = temp_dir / ("cert_" + client_id + std::to_string(int64_t(this)) + ".pem");
+99:        if (!cert_content.empty()) {
+100:            boost::filesystem::ofstream cert_file(cert_path);
+101:            cert_file << cert_content;
+102:            cert_file.close();
+103:            if (!cert_file) {
+104:                BOOST_LOG_TRIVIAL(error) << "[MQTT_INFO] failed to save client certificate: " << cert_path;
+105:                throw std::runtime_error("Failed to write client certificate temporary file");
+106:            }
+107:            BOOST_LOG_TRIVIAL(debug) << "[MQTT_INFO] client certificate saved to: " << cert_path;
+108:        }
+109:        
+110:        boost::filesystem::path key_path = temp_dir / ("key_" + client_id + std::to_string(int64_t(this)) + ".pem");
+111:        if (!key_content.empty()) {
+112:            boost::filesystem::ofstream key_file(key_path);
+113:            key_file << key_content;
+114:            key_file.close();
+115:            if (!key_file) {
+116:                BOOST_LOG_TRIVIAL(error) << "[MQTT_INFO] failed to save private key: " << key_path;
+117:                throw std::runtime_error("Failed to write private key temporary file");
+118:            }
+119:            BOOST_LOG_TRIVIAL(debug) << "[MQTT_INFO] private key saved to: " << key_path;
+120:        }
+121:        
+122:        mqtt::ssl_options ssl_opts;                
+123:        ssl_opts.set_verify(false);
+124:        ssl_opts.set_enable_server_cert_auth(true);
+125:                
+126:        if (!ca_content.empty()) {
+127:            ssl_opts.set_trust_store(ca_path.string());
+128:        }
+129:        if (!cert_content.empty() && !key_content.empty()) {
+130:            ssl_opts.set_key_store(cert_path.string());
+131:            ssl_opts.set_private_key(key_path.string());
+132:        }
+133:
+134:        ssl_opts.set_ssl_version(MQTT_SSL_VERSION_TLS_1_2);                
+135:        connOpts_.set_ssl(ssl_opts);             
+136:        temp_ca_path_ = ca_path;
+137:        temp_cert_path_ = cert_path;
+138:        temp_key_path_ = key_path;
+139:    } catch (const std::exception& e) {
+140:        cleanup_temp_files();
+233:bool MqttClient::Disconnect(std::string& msg)
+234:{
+235:    connected_.store(false, std::memory_order_release);
+236:
+237:    if (!client_) {
+238:        BOOST_LOG_TRIVIAL(info) << "[MQTT_INFO] Disconnect completed (no client)";
+239:        msg = "success";
+240:        return true;
+241:    }
+242:
+243:    // Always call disconnect(): even if already down, C lib clears shouldBeConnected
+244:    // (stops auto-reconnect) then returns MQTTASYNC_DISCONNECTED which C++ throws.
+245:    try {
+246:        auto disctok = client_->disconnect();
+247:        if (!disctok->wait_for(std::chrono::seconds(5))) {
+248:            BOOST_LOG_TRIVIAL(error) << "[MQTT_INFO] MQTT disconnect timeout";
+249:        }
+250:    } catch (const mqtt::exception& e) {
+251:        if (is_soft_disconnect_error(e)) {
+252:            BOOST_LOG_TRIVIAL(warning) << "[MQTT_INFO] MQTT disconnect soft error (already disconnected), rc="
+253:                                      << e.get_return_code();
+254:            msg = "success";
+255:            return true;
+256:        }
+257:        BOOST_LOG_TRIVIAL(error) << "[MQTT_INFO] MQTT disconnect failed: " << e.what()
+258:                                 << ", rc=" << e.get_return_code();
+259:        msg = e.what();
+260:        return false;
+261:    } catch (const std::exception& e) {
+262:        BOOST_LOG_TRIVIAL(error) << "[MQTT_INFO] General exception during disconnect: " << e.what();
+263:        msg = e.what();
+264:        return false;
+265:    }
+266:
+267:    BOOST_LOG_TRIVIAL(info) << "[MQTT_INFO] Disconnect completed";
+276:bool MqttClient::Subscribe(const std::string& topic, int qos, std::string& msg)
+277:{
+278:    if (!CheckConnected()) {
+279:        BOOST_LOG_TRIVIAL(error) << "[MQTT_INFO] Cannot subscribe: client not connected";
+280:
+281:        msg = "client not connected";
+282:        return false;
+283:    }
+284:
+285:    try {
+286:        BOOST_LOG_TRIVIAL(info) << "[MQTT_INFO] Subscribing to MQTT topic '" << topic << "' with QoS " << qos;
+287:        mqtt::token_ptr subtok = client_->subscribe(topic, qos, nullptr, subListener_);
+288:        if (!subtok->wait_for(std::chrono::seconds(5))) {
+289:            BOOST_LOG_TRIVIAL(error) << "[MQTT_INFO] Subscribe timeout for topic: " << topic;
+290:            msg = "subscribe timeout";
+291:            return false;
+292:        }
+293:        add_topic_to_resubscribe(topic, qos);
+294:        msg = "success";
+345:bool MqttClient::Publish(const std::string& topic, const std::string& payload, int qos, std::string& msg)
+346:{
+347:    if (!CheckConnected()) {
+348:        msg = "client not connect";
+349:        return false;
+350:    }
+351:
+352:    try {
+353:        mqtt::message_ptr pubmsg = mqtt::make_message(topic, payload);
+354:        pubmsg->set_qos(qos);
+355:
+356:        BOOST_LOG_TRIVIAL(debug) << "[MQTT_INFO] Publishing message to topic '" << topic << "' with QoS " << qos;
+357:        mqtt::token_ptr pubtok = client_->publish(pubmsg);
+358:        /*if (!pubtok->wait_for(std::chrono::seconds(5))) {
+591:void MqttClient::connected(const std::string& cause)
+592:{
+593:
+594:    connected_.store(true, std::memory_order_release);
+595:    is_reconnecting.store(false, std::memory_order_release);
+596:    
+597:    ever_connected_.store(true, std::memory_order_release);
+598:        
+599:    connOpts_.set_automatic_reconnect(std::chrono::seconds(2), std::chrono::seconds(30));
+600:    BOOST_LOG_TRIVIAL(info) << "[MQTT_INFO] auto-reconnect enabled after successful connection";
+601:}
+602:
+603:void MqttClient::resubscribe_topics() {
+604:    if (!client_) {
+605:        return;
+606:    }
+607:
+608:    // Snapshot the map: subscribing can block for seconds per topic, so the
+609:    // lock must not be held while waiting on the broker.
+610:    std::map<std::string, int> topics;
+611:    {
+612:        std::lock_guard<std::mutex> lock(topics_mtx_);
+613:        topics = topics_to_resubscribe_;
+614:    }
+615:    if (topics.empty()) {
+616:        return;
+617:    }
+618:
+619:    for (const auto& topic_pair : topics) {
+620:        try {
+621:            auto tok = client_->subscribe(topic_pair.first, topic_pair.second, nullptr,  subListener_);
+622:            if (!tok->wait_for(std::chrono::seconds(5))) {
+623:                BOOST_LOG_TRIVIAL(info) << "[MQTT_INFO] Subscribe timeout for topic: " << topic_pair.first;
+624:                continue;
+625:            }
+626:            if (!tok->is_complete() || tok->get_return_code() != 0) {
+627:                BOOST_LOG_TRIVIAL(info) << "[MQTT_INFO] Failed to resubscribe to topic: " << topic_pair.first;
+628:            }
+629:        } catch (const std::exception& e) {
+630:            BOOST_LOG_TRIVIAL(error) << "[MQTT_INFO] Error resubscribing to topic '" << topic_pair.first << "': " << e.what();
+631:        }
+632:    }
+662:    //    torn apart — one of the sources of STATUS_HEAP_CORRUPTION crashes.
+663:    {
+664:        std::lock_guard<std::mutex> lock(cb_mtx_);
+665:        message_callback_            = nullptr;
+666:        message_callback1_           = nullptr;
+667:        connection_failure_callback_ = nullptr;
+668:    }
+669:
+670:    connected_.store(false, std::memory_order_release);
+671:    is_reconnecting.store(false, std::memory_order_release);
+672:
+673:    // 2. Wait briefly for the detached reconnect-check threads to finish so
+674:    //    they do not call Disconnect() on a client being destroyed.
+675:    int timeout_count = 0;
+676:    const int max_timeout = 20; // max 2s (20 * 100ms)
+677:    while (pending_reconnect_checks.load(std::memory_order_acquire) > 0 && timeout_count < max_timeout) {
+678:        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+679:        timeout_count++;
+680:    }
+681:
+682:    if (timeout_count >= max_timeout) {
+683:        BOOST_LOG_TRIVIAL(warning) << "[MQTT_INFO] timeout waiting for reconnect checks, forcing destruction";
+684:    }
+685:
+686:    // 3. Disconnect: clears shouldBeConnected in the C lib, stopping the
+687:    //    auto-reconnect cycle before the client is destroyed.
+688:    if (client_) {
+689:        // Reuse Disconnect: soft-catches already-disconnected and clears shouldBeConnected.
+690:        std::string dc_msg;
+691:        Disconnect(dc_msg);
+692:    }
+693:
+694:    // 4. Destroy the async client. ~async_client calls MQTTAsync_destroy(),
+695:    //    which stops the Paho send/receive threads; doing this BEFORE our own
+696:    //    members are destroyed (end of destructor) closes the window in which
+697:    //    a Paho thread could call back into this object after teardown.
+698:    client_.reset();
+699:
+700:    {

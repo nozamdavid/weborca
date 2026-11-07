@@ -1,12 +1,15 @@
 import React from 'react';
 import { usePrefsStore, type PrefsTabId } from './prefsStore';
-import { ModalBackdrop } from '../components/ModalBackdrop';
-import { useTranslation } from "../i18n";
+import { sanitizeSlicingThreads } from './slicingThreads';
+import { Dialog } from '../components/Dialog';
+import { useTranslation, SUPPORTED_LANGUAGES } from "../i18n";
+import { openCloudAccount } from '../orcaCloud/account';
+import './PreferencesDialog.css';
 
 const TABS: Array<{ id: PrefsTabId; label: string }> = [
   { id: 'general', label: "General" },
   { id: 'camera', label: "Camera" },
-  { id: 'display', label: "Display" }
+  { id: 'display', label: "Appearance" }
 ];
 
 export const PreferencesDialog: React.FC = () => {
@@ -28,24 +31,18 @@ export const PreferencesDialog: React.FC = () => {
   if (!dialogOpen) return null;
 
   return (
-    <ModalBackdrop onClose={close}
+    <Dialog onClose={close}
       role="dialog"
       aria-modal="true"
       aria-labelledby="preferences-dialog-title"
     >
       <div
-        className="modal-content"
-        style={{
-          width: 'min(580px, 94vw)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 14
-        }}
+        className="modal-content ds-dialog preferences-dialog"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="modal-header" style={{ marginBottom: 4 }}>
-          <h2 id="preferences-dialog-title" style={{ margin: 0, fontSize: 16 }}>
+        <div className="modal-header ds-dialog__head" style={{ marginBottom: 4 }}>
+          <h2 id="preferences-dialog-title" style={{ margin: 0, fontSize: '1rem' }}>
             {t("Preferences")}</h2>
           <button
             type="button"
@@ -74,7 +71,7 @@ export const PreferencesDialog: React.FC = () => {
               aria-selected={activeTab === tab.id}
               aria-controls={`pref-panel-${tab.id}`}
               className={`tab ${activeTab === tab.id ? 'active' : ''}`}
-              style={{ padding: '6px 16px', fontSize: 13 }}
+              style={{ padding: '6px 16px', fontSize: '0.8125rem' }}
               onClick={() => setActiveTab(tab.id)}
             >
               {t(tab.label)}
@@ -83,7 +80,7 @@ export const PreferencesDialog: React.FC = () => {
         </div>
 
         {/* Body */}
-        <div className="modal-body" style={{ minHeight: 240, gap: 14 }}>
+        <div className="modal-body ds-dialog__body" style={{ gap: 14 }}>
           {/* General Tab */}
           {activeTab === 'general' && (
             <div
@@ -92,8 +89,9 @@ export const PreferencesDialog: React.FC = () => {
               aria-labelledby="pref-tab-general"
               style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
             >
+              <button id="preferences-orca-cloud" onClick={() => { close(); openCloudAccount(); }}>{t('Cloud account and sync')}</button>
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label htmlFor="pref-language" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <label htmlFor="pref-language" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                   {t("Language")}</label>
                 <select
                   id="pref-language"
@@ -101,9 +99,25 @@ export const PreferencesDialog: React.FC = () => {
                   value={general.language}
                   onChange={(e) => setGeneralPref('language', e.target.value)}
                 >
-                  <option value="en">{t("English")}</option>
-                  <option value="es">{t("Español")}</option>
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.name}
+                    </option>
+                  ))}
                 </select>
+              </div>
+
+              <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label htmlFor="pref-slicing-threads">{t("Slicing threads")}</label>
+                <select id="pref-slicing-threads" value={general.slicingThreads}
+                  aria-describedby="pref-slicing-threads-help"
+                  onChange={(e) => setGeneralPref('slicingThreads', sanitizeSlicingThreads(Number(e.target.value)))}>
+                  <option value="auto">{t("Auto")}</option>
+                  {[1, 2, 4, 8, 16].map((threads) => <option key={threads} value={threads}>{threads}</option>)}
+                </select>
+                <span id="pref-slicing-threads-help" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {t("Higher counts use more CPU and apply to the next slice.")}
+                </span>
               </div>
 
               <label htmlFor="pref-autosave-interval">{t("Autosave interval (seconds)")}</label>
@@ -112,7 +126,7 @@ export const PreferencesDialog: React.FC = () => {
                 onChange={(e) => setGeneralPref('autosaveIntervalSeconds', Math.max(5, Math.min(3600, Number(e.target.value) || 60)))} />
 
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label htmlFor="pref-units" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <label htmlFor="pref-units" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                   {t("Units")}</label>
                 <select
                   id="pref-units"
@@ -228,7 +242,7 @@ export const PreferencesDialog: React.FC = () => {
               </div>
 
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                   <label htmlFor="pref-rotate-sensitivity">{t("Rotate sensitivity")}</label>
                   <span>{camera.rotateSensitivity.toFixed(1)}x</span>
                 </div>
@@ -245,7 +259,7 @@ export const PreferencesDialog: React.FC = () => {
               </div>
 
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                   <label htmlFor="pref-zoom-speed">{t("Zoom speed")}</label>
                   <span>{camera.zoomSpeed.toFixed(1)}x</span>
                 </div>
@@ -262,7 +276,7 @@ export const PreferencesDialog: React.FC = () => {
               </div>
 
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <label htmlFor="pref-default-camera-type" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <label htmlFor="pref-default-camera-type" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                   {t("Default camera type")}</label>
                 <select
                   id="pref-default-camera-type"
@@ -285,6 +299,14 @@ export const PreferencesDialog: React.FC = () => {
               aria-labelledby="pref-tab-display"
               style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
             >
+              <label htmlFor="pref-font-scale">{t("Interface font size")}</label>
+              <select id="pref-font-scale" value={display.fontScale}
+                onChange={(e) => setDisplayPref('fontScale', Number(e.target.value) as 100 | 115 | 130 | 150)}>
+                <option value="100">{t("100% (default)")}</option>
+                <option value="115">115%</option>
+                <option value="130">130%</option>
+                <option value="150">150%</option>
+              </select>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input
@@ -357,7 +379,7 @@ export const PreferencesDialog: React.FC = () => {
                 <option value="horizontal">{t("Horizontal")}</option>
               </select>
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
-                <label htmlFor="pref-theme" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                <label htmlFor="pref-theme" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                   {t("Theme")}</label>
                 <select
                   id="pref-theme"
@@ -375,11 +397,11 @@ export const PreferencesDialog: React.FC = () => {
         </div>
 
         {/* Footer */}
-        <div className="modal-footer" style={{ borderTop: '1px solid var(--border-color)', paddingTop: 10, marginTop: 6 }}>
+        <div className="modal-footer ds-dialog__foot" style={{ borderTop: '1px solid var(--border-color)', paddingTop: 10, marginTop: 6 }}>
           <button
             type="button"
             id="pref-reset-btn"
-            className="btn btn-secondary"
+            className="ds-btn"
             onClick={resetDefaults}
             style={{ marginRight: 'auto' }}
           >
@@ -387,12 +409,12 @@ export const PreferencesDialog: React.FC = () => {
           <button
             type="button"
             id="pref-close-btn"
-            className="btn btn-primary"
+            className="ds-btn ds-btn--primary"
             onClick={close}
           >
             {t("Close")}</button>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

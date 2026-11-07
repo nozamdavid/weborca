@@ -21,6 +21,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -77,12 +78,8 @@ async function runBrowserTestSuite(browserType, browserName) {
     await page.goto(BASE_URL, { waitUntil: 'load' });
 
     // Wait for engine presets to initialize
-    await page.waitForFunction(() => {
-      const v = document.getElementById('vendor-select');
-      return v && v.options.length > 1;
-    }, null, { timeout: 25000 });
 
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.waitForFunction(() => {
       const p = document.getElementById('printer-select');
       return p && !p.disabled && Array.from(p.options).some((o) => o.value === 'Voron 2.4 300 0.4 nozzle');

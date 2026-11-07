@@ -1,304 +1,106 @@
-/**
- * @file presetStorage.ts
- * Persistence for user presets using OPFS (navigator.storage.getDirectory)
- * with transparent localStorage fallback and staleness reconciliation.
- */
-
-import type { UserPreset, PresetKind } from './types';
-
-const OPFS_FILE_NAME = 'user_presets.json';
-const LOCAL_STORAGE_KEY = 'orca_user_presets';
-const LOCAL_STORAGE_TS_KEY = 'orca_user_presets_ts';
-
-interface StoredPresetEnvelope {
-  version: number;
-  updatedAt: number;
-  presets: UserPreset[];
-}
-
-let storageLock = Promise.resolve();
-
-function withStorageLock<T>(fn: () => Promise<T>): Promise<T> {
-  const result = storageLock.then(fn, fn);
-  storageLock = result.then(() => {}, () => {});
+/** Presets and cloud journals commit together in one OPFS/localStorage envelope. */
+import type { UserPreset, PresetKind } from './types.ts';
+import type { PresetStorageEnvelope } from '../orcaCloud/types.ts';
+import { journalLocalChanges } from '../orcaCloud/journal.ts';
+const FILE = 'user_presets.json';
+const KEY = 'orca_user_presets';
+let queue = Promise.resolve();
+async function lock<T>(work: () => Promise<T>): Promise<T> {
+  const run = async (): Promise<T> => {
+    if (typeof navigator !== 'undefined' && navigator.locks) return await navigator.locks.request('orca-user-presets', work);
+    return await work();
+  };
+  const result = queue.then(run, run);
+  queue = result.then(() => {}, () => {});
   return result;
 }
-
-async function getOpfsHandle(create = false): Promise<FileSystemFileHandle | null> {
-  if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory) {
-    return null;
-  }
-  try {
-    const root = await navigator.storage.getDirectory();
-    return await root.getFileHandle(OPFS_FILE_NAME, { create });
-  } catch (_) {
-    return null;
-  }
+async function handle(create: boolean): Promise<FileSystemFileHandle | null> {
+  try { return await navigator.storage.getDirectory().then(root => root.getFileHandle(FILE, { create })); }
+  catch { return null; }
 }
-
-/**
- * Loads all user presets from OPFS or localStorage.
- * Reconciles timestamps to prevent stale OPFS data from resurrecting
- * over newer localStorage data if an OPFS write failed previously.
- */
-export async function loadUserPresets(): Promise<UserPreset[]> {
-  let opfsPresets: UserPreset[] | null = null;
-  let opfsTimestamp = 0;
-
-  // 1. Try OPFS
-  try {
-    const handle = await getOpfsHandle(false);
-    if (handle) {
-      const file = await handle.getFile();
-      const text = await file.text();
-      if (text.trim()) {
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed)) {
-          opfsPresets = parsed;
-          opfsTimestamp = file.lastModified || 0;
-        } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.presets)) {
-          opfsPresets = parsed.presets;
-          opfsTimestamp = typeof parsed.updatedAt === 'number' ? parsed.updatedAt : (file.lastModified || 0);
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('[presetStorage] OPFS read failed:', err);
-  }
-
-  // 2. Read localStorage
-  let localPresets: UserPreset[] | null = null;
-  let localTimestamp = 0;
-  if (typeof localStorage !== 'undefined') {
-    try {
-      const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-      const rawTs = localStorage.getItem(LOCAL_STORAGE_TS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          localPresets = parsed;
-          localTimestamp = rawTs ? Number(rawTs) : 0;
-        } else if (parsed && typeof parsed === 'object' && Array.isArray(parsed.presets)) {
-          localPresets = parsed.presets;
-          localTimestamp = typeof parsed.updatedAt === 'number' ? parsed.updatedAt : (rawTs ? Number(rawTs) : 0);
-        }
-      }
-    } catch (err) {
-      console.warn('[presetStorage] localStorage read failed:', err);
-    }
-  }
-
-  // 3. Prevent resurrecting stale OPFS:
-  // If localStorage has newer data than OPFS, choose localStorage
-  if (localPresets && (!opfsPresets || localTimestamp > opfsTimestamp)) {
-    // Attempt healing OPFS in background with serialized storage lock
-    if (localTimestamp > opfsTimestamp) {
-      withStorageLock(async () => {
-        try {
-          const handle = await getOpfsHandle(true);
-          if (handle) {
-            // Guard against timestamp conflict / race: verify OPFS hasn't been updated to >= localTimestamp
-            let currentOpfsTs = 0;
-            try {
-              const file = await handle.getFile();
-              const text = await file.text();
-              if (text.trim()) {
-                const parsed = JSON.parse(text);
-                if (parsed && typeof parsed === 'object' && typeof parsed.updatedAt === 'number') {
-                  currentOpfsTs = parsed.updatedAt;
-                } else if (file.lastModified) {
-                  currentOpfsTs = file.lastModified;
-                }
-              }
-            } catch (_) {}
-
-            if (currentOpfsTs < localTimestamp) {
-              const writable = await handle.createWritable();
-              const envelope: StoredPresetEnvelope = {
-                version: 1,
-                updatedAt: localTimestamp,
-                presets: localPresets!
-              };
-              await writable.write(JSON.stringify(envelope, null, 2));
-              await writable.close();
-            }
-          }
-        } catch (_) {}
-      });
-    }
-    return localPresets;
-  }
-
-  if (opfsPresets) {
-    // Sync to localStorage copy
-    if (typeof localStorage !== 'undefined') {
-      try {
-        const envelope: StoredPresetEnvelope = {
-          version: 1,
-          updatedAt: opfsTimestamp,
-          presets: opfsPresets
-        };
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(envelope, null, 2));
-        localStorage.setItem(LOCAL_STORAGE_TS_KEY, String(opfsTimestamp));
-      } catch (_) {}
-    }
-    return opfsPresets;
-  }
-
-  if (localPresets) {
-    return localPresets;
-  }
-
-  return [];
+function envelope(raw: string, timestamp = 0): PresetStorageEnvelope {
+  const value = JSON.parse(raw);
+  const state = Array.isArray(value) ? { presets: value, updatedAt: timestamp } : value;
+  if (!Array.isArray(state.presets)) throw new Error('Invalid preset storage.');
+  return { version: 2, updatedAt: state.updatedAt || timestamp, presets: state.presets, cloud: state.cloud ?? { accounts: {} } };
 }
-
-/**
- * Writes user presets to OPFS and localStorage.
- * Throws if both storage mechanisms fail. Retains fallback if one works.
- */
-export async function persistUserPresets(presets: UserPreset[]): Promise<void> {
-  return withStorageLock(async () => {
-    const timestamp = Date.now();
-    let opfsSuccess = false;
-    let opfsError: any = null;
-    let localSuccess = false;
-    let localError: any = null;
-
-    // 1. Save to OPFS
-    try {
-      const handle = await getOpfsHandle(true);
-      if (handle) {
-        const writable = await handle.createWritable();
-        const envelope: StoredPresetEnvelope = {
-          version: 1,
-          updatedAt: timestamp,
-          presets
-        };
-        await writable.write(JSON.stringify(envelope, null, 2));
-        await writable.close();
-        opfsSuccess = true;
-      } else {
-        opfsError = new Error('OPFS handle unavailable');
-      }
-    } catch (err: any) {
-      opfsError = err;
-      console.warn('[presetStorage] OPFS write failed, relying on localStorage:', err);
+async function read(): Promise<PresetStorageEnvelope> {
+  let opfs: PresetStorageEnvelope | undefined, fallback: PresetStorageEnvelope | undefined;
+  try { const h = await handle(false); if (h) { const file = await h.getFile(); opfs = envelope(await file.text(), file.lastModified); } } catch { /* fallback */ }
+  try { const raw = localStorage.getItem(KEY); if (raw) fallback = envelope(raw, Number(localStorage.getItem('orca_user_presets_ts')) || 0); } catch { /* OPFS */ }
+  return fallback && (!opfs || fallback.updatedAt > opfs.updatedAt) ? fallback : opfs ?? fallback ?? { version: 2, updatedAt: 0, presets: [], cloud: { accounts: {} } };
+}
+async function write(state: PresetStorageEnvelope) {
+  state.updatedAt = Math.max(Date.now(), state.updatedAt + 1);
+  const text = JSON.stringify(state);
+  let saved = false;
+  try {
+    const h = await handle(true);
+    if (h) { const stream = await h.createWritable(); await stream.write(text); await stream.close(); saved = true; }
+  } catch { /* use fallback; never publish a checkpoint after both writes fail */ }
+  try { localStorage.setItem(KEY, text); saved = true; } catch { /* OPFS may have committed */ }
+  if (!saved) throw new Error('Unable to save presets and cloud journal durably.');
+}
+export async function transactPresetStorage<T>(work: (state: PresetStorageEnvelope) => Promise<T> | T): Promise<T> {
+  return lock(async () => {
+    const state = await read();
+    if (typeof navigator !== 'undefined' && !navigator.locks && (state.cloud.activeAccount || Object.keys(state.cloud.accounts).length)) {
+      throw new Error('Cloud sync requires browser Web Locks. Use a supported HTTPS browser.');
     }
-
-    // 2. Save to localStorage
-    if (typeof localStorage !== 'undefined') {
-      try {
-        const envelope: StoredPresetEnvelope = {
-          version: 1,
-          updatedAt: timestamp,
-          presets
-        };
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(envelope, null, 2));
-        localStorage.setItem(LOCAL_STORAGE_TS_KEY, String(timestamp));
-        localSuccess = true;
-      } catch (err: any) {
-        localError = err;
-        console.warn('[presetStorage] localStorage write failed:', err);
-      }
-    } else {
-      localError = new Error('localStorage unavailable');
+    const result = await work(state);
+    if (typeof navigator !== 'undefined' && !navigator.locks && Object.keys(state.cloud.accounts).length) {
+      throw new Error('Cloud sync requires browser Web Locks. Use a supported HTTPS browser.');
     }
-
-    if (!opfsSuccess && !localSuccess) {
-      throw new Error(
-        `Failed to persist presets to both OPFS (${opfsError?.message || 'failed'}) and localStorage (${localError?.message || 'failed'})`
-      );
-    }
+    await write(state);
+    return result;
   });
 }
-
-/**
- * Saves or updates a user preset.
- */
+export async function loadUserPresets(): Promise<UserPreset[]> { return lock(async () => (await read()).presets); }
+export async function persistUserPresets(presets: UserPreset[]): Promise<void> {
+  await transactPresetStorage(state => journalLocalChanges(state, structuredClone(presets)));
+}
 export async function saveUserPreset(preset: UserPreset): Promise<UserPreset[]> {
-  const trimmedName = preset.name.trim();
-  if (!trimmedName) {
-    throw new Error('Preset name cannot be empty');
-  }
-  const existing = await loadUserPresets();
-  const idx = existing.findIndex((p) => p.kind === preset.kind && p.name === trimmedName);
-  const updatedPreset = { ...preset, name: trimmedName };
-  if (idx >= 0) {
-    existing[idx] = updatedPreset;
-  } else {
-    existing.push(updatedPreset);
-  }
-  await persistUserPresets(existing);
-  return existing;
+  return transactPresetStorage(state => {
+    const name = preset.name.trim();
+    if (!name) throw new Error('Preset name cannot be empty');
+    const next = structuredClone(state.presets);
+    const i = next.findIndex(p => p.kind === preset.kind && p.name === name);
+    const p = { ...preset, name, cloudRef: preset.cloudRef ?? next[i]?.cloudRef };
+    if (i < 0) next.push(p); else next[i] = p;
+    journalLocalChanges(state, next); return next;
+  });
 }
-
-/**
- * Deletes a user preset.
- */
 export async function deleteUserPreset(kind: PresetKind, name: string): Promise<UserPreset[]> {
-  const existing = await loadUserPresets();
-  const filtered = existing.filter((p) => !(p.kind === kind && p.name === name));
-  await persistUserPresets(filtered);
-  return filtered;
+  return transactPresetStorage(state => {
+    if (state.presets.some(p => p.kind === kind && p.inherits === name)) throw new Error(`Cannot delete '${name}': other presets inherit from it.`);
+    const next = state.presets.filter(p => p.kind !== kind || p.name !== name);
+    journalLocalChanges(state, next); return next;
+  });
 }
-
-/**
- * Renames a user preset.
- */
 export async function renameUserPreset(kind: PresetKind, oldName: string, newName: string): Promise<UserPreset[]> {
-  const trimmedNewName = newName.trim();
-  if (!trimmedNewName) {
-    throw new Error('Preset name cannot be empty');
-  }
-  const existing = await loadUserPresets();
-  const collision = existing.find((p) => p.kind === kind && p.name === trimmedNewName && p.name !== oldName);
-  if (collision) {
-    throw new Error(`Preset '${trimmedNewName}' already exists`);
-  }
-  const item = existing.find((p) => p.kind === kind && p.name === oldName);
-  if (!item) {
-    throw new Error(`User preset '${oldName}' not found`);
-  }
-  item.name = trimmedNewName;
-  await persistUserPresets(existing);
-  return existing;
+  return transactPresetStorage(state => {
+    const name = newName.trim();
+    if (!name) throw new Error('Preset name cannot be empty');
+    if (state.presets.some(p => p.kind === kind && p.name === name && p.name !== oldName)) throw new Error(`Preset '${name}' already exists`);
+    const next = structuredClone(state.presets);
+    const p = next.find(p => p.kind === kind && p.name === oldName);
+    if (!p) throw new Error(`User preset '${oldName}' not found`);
+    p.name = name;
+    for (const child of next) if (child.kind === kind && child.inherits === oldName) child.inherits = name;
+    journalLocalChanges(state, next); return next;
+  });
 }
-
-/**
- * Duplicates a user preset.
- */
 export async function duplicateUserPreset(kind: PresetKind, sourceName: string, newName: string): Promise<UserPreset[]> {
-  const trimmedNewName = newName.trim();
-  if (!trimmedNewName) {
-    throw new Error('Preset name cannot be empty');
-  }
-  if (trimmedNewName === sourceName) {
-    throw new Error('Copying requires a distinct name');
-  }
-  const existing = await loadUserPresets();
-  const collision = existing.find((p) => p.kind === kind && p.name === trimmedNewName);
-  if (collision) {
-    throw new Error(`Preset '${trimmedNewName}' already exists`);
-  }
-  const source = existing.find((p) => p.kind === kind && p.name === sourceName);
-  if (!source) {
-    throw new Error(`Source user preset '${sourceName}' not found`);
-  }
-  const newPreset: UserPreset = {
-    name: trimmedNewName,
-    kind,
-    inherits: source.inherits,
-    values: { ...source.values }
-  };
-  existing.push(newPreset);
-  await persistUserPresets(existing);
-  return existing;
+  return transactPresetStorage(state => {
+    const name = newName.trim();
+    if (!name || name === sourceName) throw new Error('Copying requires a distinct name');
+    if (state.presets.some(p => p.kind === kind && p.name === name)) throw new Error(`Preset '${name}' already exists`);
+    const source = state.presets.find(p => p.kind === kind && p.name === sourceName);
+    if (!source) throw new Error(`Source user preset '${sourceName}' not found`);
+    const next = [...state.presets, { name, kind, inherits: source.inherits, values: { ...source.values } }];
+    journalLocalChanges(state, next); return next;
+  });
 }
-
-/**
- * Persists a full batch of user presets to durable storage (OPFS / localStorage).
- */
 export async function saveUserPresetsBatch(presets: UserPreset[]): Promise<UserPreset[]> {
-  await persistUserPresets(presets);
-  return presets;
+  await persistUserPresets(presets); return presets;
 }

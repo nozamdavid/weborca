@@ -1,0 +1,13 @@
+.object-overrides-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 12px;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-default);
+  color: var(--text-primary);
+}
+
+.object-overrides-header > :first-child { min-width: 0; }

@@ -5,7 +5,8 @@
  * vertical layer slider, horizontal move slider, legend, and statistics.
  */
 
-import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react';
+import { bindCanvasTouch } from '../components/canvasTouch';
 import { useAppStore } from '../store/appStore';
 import { usePrefsStore } from '../prefs/prefsStore';
 import { usePreviewStore } from './previewStore';
@@ -20,10 +21,17 @@ import { GCodeWindow } from './GCodeWindow';
 import { resolveBedAssets } from '../plate/bedAssets';
 import { displayBedOutline, loadBedModelOutline } from '../plate/bedModelOutline';
 import { useTranslation } from "../i18n";
+import { useMobile } from '../mobile/useMobile';
+import { MobilePreview } from './MobilePreview';
+import { Icon } from '../shell/Icon';
+import './PreviewPerformance.css';
 
 export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) => {
+  const mobile = useMobile();
     const { t } = useTranslation();
   const lowQuality = usePrefsStore((s) => s.display.previewLowQuality);
+  const lightingEnabled = usePrefsStore((s) => s.display.previewLighting);
+  const showFps = usePrefsStore((s) => s.display.previewShowFps);
   const setDisplayPref = usePrefsStore((s) => s.setDisplayPref);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -44,10 +52,44 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
   const setInitialized = usePreviewStore((s) => s.setInitialized);
   const loadGcodeBytes = usePreviewStore((s) => s.loadGcodeBytes);
   const layersCount = usePreviewStore((s) => s.layersCount);
-  const resetCamera = usePreviewStore((s) => s.resetCameraAction);
+  const resetCameraAction = usePreviewStore((s) => s.resetCameraAction);
+  const resetCamera = useCallback(() => {
+    resetCameraAction();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    // Native framing uses vertical FOV; a portrait canvas needs more distance
+    // to keep the same bounds inside its narrower horizontal FOV.
+    if (mobile && rect?.width && rect.height > rect.width) {
+      previewModule.zoom(1000 * (rect.height / rect.width - 1));
+      previewModule.requestRender();
+    }
+  }, [mobile, resetCameraAction]);
   const showGcodeWindow = usePreviewStore((s) => s.showGcodeWindow);
   const toggleGcodeWindow = usePreviewStore((s) => s.toggleGcodeWindowAction);
   const resetVersion = usePreviewStore((s) => s.resetVersion);
+
+  const observePerformance = useCallback((notify: () => void) => {
+    let unsubscribe: (() => void) | undefined;
+    const observe = () => {
+      unsubscribe?.();
+      unsubscribe = undefined;
+      if (showFps && active && isInitialized && !document.hidden) {
+        unsubscribe = previewModule.subscribePerformance(notify);
+      }
+    };
+    observe();
+    document.addEventListener('visibilitychange', observe);
+    return () => {
+      document.removeEventListener('visibilitychange', observe);
+      unsubscribe?.();
+    };
+  }, [showFps, active, isInitialized, mobile]);
+  const performanceSample = useSyncExternalStore(observePerformance, previewModule.getPerformanceSnapshot);
+
+  const performanceOverlay = showFps && active && <div className="preview-performance" data-testid="preview-performance"
+    title={t('Completed Preview draws per second and CPU render submission time; GPU time is not measured')}>
+    <span>{performanceSample.idle ? t('Idle') : performanceSample.fps === null ? '— FPS' : `${performanceSample.fps.toFixed(0)} FPS`}</span>
+    <span>CPU {performanceSample.cpuMs === null ? '—' : performanceSample.cpuMs.toFixed(1)} ms</span>
+  </div>;
 
   const [isLoadingModule, setIsLoadingModule] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
@@ -97,6 +139,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
         await previewModule.getPreviewModule(canvas!);
         if (!mounted) return;
         previewModule.setLowQuality(usePrefsStore.getState().display.previewLowQuality);
+        previewModule.setLightingEnabled(usePrefsStore.getState().display.previewLighting);
         await previewModule.initPreview(canvas!);
         if (!mounted) return;
 
@@ -116,10 +159,12 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
 
     return () => {
       mounted = false;
+      loadedGcodeRef.current = null;
+      usePreviewStore.getState().resetGcodeAction();
       previewModule.disposePreview();
       setInitialized(false);
     };
-  }, [setInitialized, updateCanvasSize]);
+  }, [setInitialized, updateCanvasSize, mobile]);
 
   useEffect(() => {
     previewModule.setLowQuality(lowQuality);
@@ -128,6 +173,11 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
     usePreviewStore.setState({ legend: previewModule.getLegendData() });
     previewModule.requestRender();
   }, [lowQuality, isInitialized, updateCanvasSize]);
+
+  useEffect(() => {
+    previewModule.setLightingEnabled(lightingEnabled);
+    if (isInitialized) previewModule.requestRender();
+  }, [lightingEnabled, isInitialized]);
 
   // Resolve the same decorative footprint as Prepare before showing the bed.
   useLayoutEffect(() => {
@@ -158,7 +208,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
 
   // 2. Load G-code when slice result is available
   useEffect(() => {
-    if (!isInitialized || !sliceResult?.gcode || isSlicing) return;
+    if (!isInitialized || !sliceResult?.gcode || isSlicing || (mobile && !active)) return;
     setInitError(null);
     const tStart = performance.now();
     const markFrameReady = () => {
@@ -175,6 +225,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
     };
     if ((loadedGcodeRef.current?.deref() === sliceResult.gcode || previewModule.isGcodeLoaded(sliceResult.gcode))
       && previewModule.getLayersCount() > 0) {
+      if (mobile && loadedGcodeRef.current?.deref() !== sliceResult.gcode) resetCamera();
       loadedGcodeRef.current = new WeakRef(sliceResult.gcode);
       previewModule.requestRender();
       markFrameReady();
@@ -187,6 +238,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
       .then((stats) => {
         const elapsed = (performance.now() - tStart).toFixed(1);
         console.log(`[OrcaPreview] Loaded G-code in ${elapsed}ms:`, stats);
+        if (mobile) resetCamera();
         markFrameReady();
       })
       .catch((err) => {
@@ -194,14 +246,26 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
         loadedGcodeRef.current = null;
         console.error('[OrcaPreview] Failed to load G-code data:', err);
       });
-  }, [isInitialized, sliceResult, isSlicing, loadGcodeBytes, updateCanvasSize]);
+  }, [isInitialized, sliceResult, isSlicing, loadGcodeBytes, updateCanvasSize, mobile, resetCamera, active]);
 
   // 3. Resize listener
+  useLayoutEffect(() => {
+    const view = containerRef.current;
+    const controls = view?.querySelector<HTMLElement>('#preview-top-controls');
+    if (!view || !controls) return;
+    const reserveControls = () => view.style.setProperty('--preview-controls-clearance', `${controls.offsetTop + controls.offsetHeight + 12}px`);
+    reserveControls();
+    const observer = new ResizeObserver(reserveControls);
+    observer.observe(controls);
+    return () => { observer.disconnect(); view.style.removeProperty('--preview-controls-clearance'); };
+  }, [mobile]);
+
   useEffect(() => {
     const observer = new ResizeObserver(updateCanvasSize);
     if (containerRef.current) observer.observe(containerRef.current);
+    if (canvasRef.current) observer.observe(canvasRef.current);
     return () => observer.disconnect();
-  }, [updateCanvasSize]);
+  }, [updateCanvasSize, mobile]);
 
   // Keyboard shortcut: 'C' toggles G-code window matching desktop OrcaSlicer
   useEffect(() => {
@@ -226,10 +290,21 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
     let dragButton = 0;
     let lastX = 0;
     let lastY = 0;
+    const disposeTouch = bindCanvasTouch(canvas, {
+      move: (dx, dy, ratio, fingers) => {
+        if (fingers === 1) previewModule.orbit(-dx, dy);
+        else {
+          previewModule.zoom((1 / ratio - 1) * 1000);
+          previewModule.pan(dx, dy);
+        }
+        previewModule.requestRender();
+      }
+    });
 
     const onContextMenu = (e: MouseEvent) => e.preventDefault();
 
     const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
       isDragging = true;
       dragButton = e.button;
       lastX = e.clientX;
@@ -238,6 +313,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
     };
 
     const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
       if (!isDragging) return;
       const dx = e.clientX - lastX;
       const dy = e.clientY - lastY;
@@ -256,6 +332,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
     };
 
     const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
       isDragging = false;
       try {
         canvas.releasePointerCapture(e.pointerId);
@@ -277,23 +354,37 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
     canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerup', onPointerUp);
     canvas.addEventListener('pointercancel', onPointerCancel);
+    canvas.addEventListener('lostpointercapture', onPointerCancel);
+    window.addEventListener('blur', onPointerCancel);
     canvas.addEventListener('wheel', onWheel, { passive: false });
 
     return () => {
+      disposeTouch();
       canvas.removeEventListener('contextmenu', onContextMenu);
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerCancel);
+      canvas.removeEventListener('lostpointercapture', onPointerCancel);
+      window.removeEventListener('blur', onPointerCancel);
       canvas.removeEventListener('wheel', onWheel);
     };
-  }, []);
+  }, [mobile]);
+
+  if (mobile) return <div ref={containerRef} id="orca-preview-view" className="preview-view mobile-preview mp-root">
+    <MobilePreview active={active} loading={isLoadingModule} error={initError} resetCamera={resetCamera} canvas={
+      <><canvas id="canvas" data-testid="preview-canvas" aria-label={t('G-code toolpaths')} ref={canvasRef}
+        style={{ width: '100%', height: '100%', display: 'block', outline: 'none', visibility: bedReady || layersCount > 0 ? 'visible' : 'hidden', cursor: 'grab', touchAction: 'none' }} />
+      {performanceOverlay}</>
+    } />
+    <CustomGcodeDialog />
+  </div>;
 
   return (
     <div
       ref={containerRef}
       id="orca-preview-view"
-      className="preview-view"
+      className={`preview-view ${mobile ? 'mobile-preview' : ''}`}
       style={{
         position: 'relative',
         width: '100%',
@@ -319,6 +410,8 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
         }}
       />
 
+      {performanceOverlay}
+
       {/* Floating Toolbar Controls (Top Center) */}
       <div
         id="preview-top-controls"
@@ -329,9 +422,9 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
           transform: 'translateX(-50%)',
           display: 'flex',
           gap: 8,
-          background: 'rgba(24, 24, 27, 0.85)',
+          background: 'var(--surface-overlay)',
           backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          border: '1px solid var(--border-subtle)',
           borderRadius: 8,
           padding: '4px 8px',
           zIndex: 15
@@ -355,7 +448,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
             gap: 4
           }}
         >
-          <span>{t("🎯")}</span> {t("Reset Camera")}</button>
+          <Icon name="toolbar_orient" size={16} /> {t("Reset Camera")}</button>
         <label
           title={t("Reduce preview detail and resolution for faster navigation")}
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px', fontSize: '0.8rem', color: 'var(--text-color)', cursor: 'pointer', whiteSpace: 'nowrap' }}
@@ -369,6 +462,20 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
           />
           {t("Low quality")}
         </label>
+        <label className="preview-lighting-toggle">
+          <input
+            type="checkbox"
+            id="preview-lighting"
+            checked={lightingEnabled}
+            onChange={(event) => setDisplayPref('previewLighting', event.target.checked)}
+          />
+          {t("Lighting & shadows")}
+        </label>
+        <label className="preview-fps-toggle">
+          <input type="checkbox" id="preview-show-fps" checked={showFps}
+            onChange={event => setDisplayPref('previewShowFps', event.target.checked)} />
+          {t('Show FPS')}
+        </label>
         <button
           type="button"
           id="btn-toggle-gcode-window"
@@ -377,8 +484,8 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
           disabled={layersCount === 0}
           title={showGcodeWindow ? 'Hide G-code Window (C)' : 'Show G-code Window (C)'}
           style={{
-            background: showGcodeWindow ? 'rgba(234, 88, 12, 0.35)' : 'transparent',
-            border: showGcodeWindow ? '1px solid rgba(234, 88, 12, 0.6)' : 'none',
+            background: showGcodeWindow ? 'var(--accent-subtle)' : 'transparent',
+            border: showGcodeWindow ? '1px solid var(--accent)' : 'none',
             color: layersCount === 0 ? 'var(--text-dim)' : 'var(--text-color)',
             padding: '4px 8px',
             fontSize: '0.8rem',
@@ -390,7 +497,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
             opacity: layersCount === 0 ? 0.6 : 1
           }}
         >
-          <span>{t("📄")}</span> {t("G-code")}</button>
+          <Icon name="save" size={16} /> {t("G-code")}</button>
       </div>
 
       {/* Outdated Slice Result Banner (prompting re-slice after layer events change) */}
@@ -405,14 +512,14 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
             display: 'flex',
             alignItems: 'center',
             gap: 12,
-            background: 'rgba(234, 88, 12, 0.92)',
+            background: 'var(--warning-bg)',
             backdropFilter: 'blur(8px)',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
+            border: '1px solid var(--warning-border)',
             borderRadius: 8,
             padding: '6px 14px',
-            color: '#fff',
+            color: 'var(--warning-fg)',
             zIndex: 25,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)'
+            boxShadow: 'var(--shadow-2)'
           }}
         >
           <span style={{ fontSize: '0.85rem', fontWeight: 500 }}>
@@ -423,8 +530,8 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
             data-testid="btn-reslice"
             onClick={() => startSlice()}
             style={{
-              background: '#fff',
-              color: '#ea580c',
+              background: 'var(--surface-1)',
+              color: 'var(--text-primary)',
               border: 'none',
               borderRadius: 4,
               padding: '4px 10px',
@@ -446,10 +553,10 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            background: 'rgba(0, 0, 0, 0.8)',
+            background: 'var(--surface-overlay)',
             padding: '16px 24px',
             borderRadius: 8,
-            color: '#fff',
+            color: 'var(--text-primary)',
             display: 'flex',
             alignItems: 'center',
             gap: 12,
@@ -469,10 +576,10 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            background: 'rgba(185, 28, 28, 0.9)',
+            background: 'var(--danger-bg)',
             padding: '16px 24px',
             borderRadius: 8,
-            color: '#fff',
+            color: 'var(--danger-fg)',
             maxWidth: 400,
             textAlign: 'center',
             zIndex: 30
@@ -487,33 +594,23 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
       {isInitialized && layersCount === 0 && !isLoadingModule && !initError && (
         <div
           id="preview-empty-prompt"
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            textAlign: 'center',
-            color: '#94a3b8',
-            pointerEvents: 'none',
-            zIndex: 10
-          }}
+          className="desktop-preview-empty"
         >
-          <div style={{ fontSize: '2.5rem', marginBottom: 8 }}>{t("🧵")}</div>
-          <p style={{ margin: '0 0 4px', fontSize: '1rem', fontWeight: 500, color: '#e2e8f0' }}>
+          <p>
             {t("No G-code toolpaths loaded")}</p>
-          <span style={{ fontSize: '0.8rem' }}>{t("Slice a model in Prepare screen to preview toolpaths")}</span>
+          <span>{t("Slice a model in Prepare screen to preview toolpaths")}</span>
+          <button className="ds-btn ds-btn--primary" onClick={() => document.getElementById('tab-prepare')?.click()}>{t('Go to Prepare')}</button>
         </div>
       )}
 
       {/* Interactive Controls & Panels */}
       {isInitialized && layersCount > 0 && (
         <>
-          <ViewTypeLegend />
-          <SliceStatsPanel />
-          <MoveSlider active={active} />
-          <PlateSelectorBar style={{ bottom: 68 }} />
+          {!mobile && <ViewTypeLegend />}
+          <div className="preview-detail-panels"><GCodeWindow /><SliceStatsPanel /></div>
+          {!mobile && <MoveSlider active={active} />}
+          {!mobile && <PlateSelectorBar style={{ bottom: 68 }} />}
           <LayerSlider />
-          <GCodeWindow />
         </>
       )}
 

@@ -23,3 +23,22 @@ export async function systemProfiles(vendor: string, directory: 'machine' | 'pro
   const files = await pending;
   return Object.entries(files).filter(([path]) => path.includes(`/${directory}/`) && path.endsWith('.json')).map(([, json]) => JSON.parse(json) as SystemProfile);
 }
+
+/** Verify the exact parent in packaged metadata before loading a vendor into native state. */
+export async function findSystemProfileVendor(
+  directory: 'machine' | 'process' | 'filament',
+  name: string,
+  vendors: string[],
+  preferredVendor?: string,
+): Promise<string | undefined> {
+  const priority = (vendor: string) =>
+    name.toLowerCase().startsWith(vendor.toLowerCase()) || (vendor === 'BBL' && name.startsWith('Bambu'))
+      ? 2 : Number(vendor === preferredVendor);
+  const candidates = [...vendors].sort((a, b) => priority(b) - priority(a));
+  // Serial fallback bounds concurrent bundle downloads and reuses the metadata cache.
+  for (const vendor of candidates) {
+    const profiles = await systemProfiles(vendor, directory).catch(() => []);
+    if (profiles.some(profile => profile.name === name)) return vendor;
+  }
+  return undefined;
+}

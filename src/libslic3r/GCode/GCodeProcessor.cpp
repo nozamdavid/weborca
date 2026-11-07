@@ -3160,6 +3160,8 @@ void GCodeProcessor::apply_config(const PrintConfig& config)
     if (z_offset != nullptr)
         m_z_offset = z_offset->value;
 
+    invalidate_move_state_cache();
+
 }
 
 void GCodeProcessor::apply_config(const DynamicPrintConfig& config)
@@ -3561,6 +3563,7 @@ void GCodeProcessor::apply_config(const DynamicPrintConfig& config)
     // streaming export uses the PrintConfig overload and hands the live grouping over separately, so
     // it is intentionally not touched here.
     ensure_nozzle_group_result(static_cast<int>(m_result.filaments_count));
+    invalidate_move_state_cache();
 }
 
 void GCodeProcessor::enable_stealth_time_estimator(bool enabled)
@@ -3671,6 +3674,7 @@ void GCodeProcessor::reset()
     m_seams_count = 0;
     m_preheat_time = 0.f;
     m_preheat_steps = 1;
+    invalidate_move_state_cache();
 }
 
 static inline const char* skip_whitespaces(const char *begin, const char *end) {
@@ -4006,6 +4010,9 @@ void GCodeProcessor::process_gcode_line(const GCodeReader::GCodeLine& line, bool
     m_start_position = m_end_position;
 
     const std::string_view cmd = line.cmd();
+    // Invalidate move acceleration/jerk cache on non-motion commands or comments (covers firmware mutations, producer/flavor updates, virtual commands, tools and tags).
+    if (cmd.size() != 2 || (cmd[0] != 'G' && cmd[0] != 'g') || cmd[1] < '0' || cmd[1] > '3')
+        invalidate_move_state_cache();
     if (m_flavor == gcfKlipper)
     {
         if (ascii_iequals(cmd, "SET_VELOCITY_LIMIT"))
@@ -7092,11 +7099,51 @@ void GCodeProcessor::process_filament_change(int id)
     m_machine_config_idx = get_machine_config_idx();
 }
 
+void GCodeProcessor::update_move_state_cache()
+{
+    const auto normal_mode = PrintEstimatedStatistics::ETimeMode::Normal;
+    const size_t normal_mode_id = static_cast<size_t>(normal_mode);
+    const float junction_deviation = get_option_value(m_time_processor.machine_limits.machine_max_junction_deviation, normal_mode_id);
+    const bool use_jd_jerk = (m_flavor == gcfMarlinFirmware && junction_deviation > 0.0f);
+
+    const float travel_acc = get_travel_acceleration(normal_mode);
+    const float retract_acc = get_retract_acceleration(normal_mode);
+    const float print_acc = get_acceleration(normal_mode);
+
+    auto compute_bucket = [this, use_jd_jerk, normal_mode](float acc) -> CachedMoveState {
+        CachedMoveState state;
+        state.acceleration = acc;
+        auto axis_jerk = [this, use_jd_jerk, acc](Axis axis) {
+            return use_jd_jerk ? get_axis_max_jerk_with_jd(normal_mode, axis, acc) : get_axis_max_jerk(normal_mode, axis);
+        };
+        state.jerk_x = axis_jerk(X);
+        state.jerk_y = axis_jerk(Y);
+        state.jerk_z = axis_jerk(Z);
+        state.jerk_e = axis_jerk(E);
+        state.jerk_xy_min = std::min(state.jerk_x, state.jerk_y);
+        return state;
+    };
+
+    const CachedMoveState travel_bucket = compute_bucket(travel_acc);
+    m_move_state_cache[static_cast<size_t>(MoveCacheBucket::Travel)] = travel_bucket;
+    if (use_jd_jerk) {
+        m_move_state_cache[static_cast<size_t>(MoveCacheBucket::Retract)] = compute_bucket(retract_acc);
+        m_move_state_cache[static_cast<size_t>(MoveCacheBucket::Print)] = compute_bucket(print_acc);
+    } else {
+        CachedMoveState retract_bucket = travel_bucket;
+        retract_bucket.acceleration = retract_acc;
+        m_move_state_cache[static_cast<size_t>(MoveCacheBucket::Retract)] = retract_bucket;
+
+        CachedMoveState print_bucket = travel_bucket;
+        print_bucket.acceleration = print_acc;
+        m_move_state_cache[static_cast<size_t>(MoveCacheBucket::Print)] = print_bucket;
+    }
+    m_move_state_cache_valid = true;
+}
+
 void GCodeProcessor::store_move_vertex(EMoveType type, EMovePathType path_type, bool internal_only)
 {
     int filament_id = get_filament_id();
-    const auto normal_mode = PrintEstimatedStatistics::ETimeMode::Normal;
-    const size_t normal_mode_id = static_cast<size_t>(normal_mode);
     const float delta_x = std::abs(m_end_position[X] - m_start_position[X]);
     const float delta_y = std::abs(m_end_position[Y] - m_start_position[Y]);
     const float delta_z = std::abs(m_end_position[Z] - m_start_position[Z]);
@@ -7105,27 +7152,24 @@ void GCodeProcessor::store_move_vertex(EMoveType type, EMovePathType path_type, 
     const bool has_y = delta_y > 0.0f;
     const bool has_z = delta_z > 0.0f;
     const bool has_e = delta_e > 0.0f;
-    const float move_acceleration =
-        (type == EMoveType::Travel) ? get_travel_acceleration(normal_mode) :
-        ((type == EMoveType::Retract || type == EMoveType::Unretract) ? get_retract_acceleration(normal_mode) :
-                                                                    get_acceleration(normal_mode));
-    const float junction_deviation = get_option_value(m_time_processor.machine_limits.machine_max_junction_deviation, normal_mode_id);
-    const bool use_jd_jerk = (m_flavor == gcfMarlinFirmware && junction_deviation > 0.0f);
-    const auto axis_jerk_for_preview = [this, use_jd_jerk, move_acceleration](Axis axis) {
-        return use_jd_jerk ? get_axis_max_jerk_with_jd(normal_mode, axis, move_acceleration) : get_axis_max_jerk(normal_mode, axis);
-    };
-    const float jerk_x = axis_jerk_for_preview(X);
-    const float jerk_y = axis_jerk_for_preview(Y);
-    const float jerk_z = axis_jerk_for_preview(Z);
-    const float jerk_e = axis_jerk_for_preview(E);
+
+    if (!m_move_state_cache_valid)
+        update_move_state_cache();
+
+    const MoveCacheBucket bucket =
+        (type == EMoveType::Travel) ? MoveCacheBucket::Travel :
+        ((type == EMoveType::Retract || type == EMoveType::Unretract) ? MoveCacheBucket::Retract :
+                                                                    MoveCacheBucket::Print);
+    const CachedMoveState& state = m_move_state_cache[static_cast<size_t>(bucket)];
+    const float move_acceleration = state.acceleration;
     const float move_jerk =
-        (has_e && !has_x && !has_y && !has_z) ? jerk_e :
-        (has_z && !has_x && !has_y) ? jerk_z :
-        (has_x && has_y) ? std::min(jerk_x, jerk_y) :
-        has_x ? jerk_x :
-        has_y ? jerk_y :
-        has_z ? jerk_z :
-                std::min(jerk_x, jerk_y);
+        (has_e && !has_x && !has_y && !has_z) ? state.jerk_e :
+        (has_z && !has_x && !has_y) ? state.jerk_z :
+        (has_x && has_y) ? state.jerk_xy_min :
+        has_x ? state.jerk_x :
+        has_y ? state.jerk_y :
+        has_z ? state.jerk_z :
+                state.jerk_xy_min;
     m_last_line_id = (type == EMoveType::Color_change || type == EMoveType::Pause_Print || type == EMoveType::Custom_GCode) ?
         m_line_id + 1 :
         ((type == EMoveType::Seam) ? m_last_line_id : m_line_id);
@@ -7445,6 +7489,7 @@ void GCodeProcessor::set_retract_acceleration(PrintEstimatedStatistics::ETimeMod
         m_time_processor.machines[id].retract_acceleration = (m_time_processor.machines[id].max_retract_acceleration == 0.0f) ? value :
             // Clamp the acceleration with the maximum.
             std::min(value, m_time_processor.machines[id].max_retract_acceleration);
+        invalidate_move_state_cache();
     }
 }
 
@@ -7461,6 +7506,7 @@ void GCodeProcessor::set_acceleration(PrintEstimatedStatistics::ETimeMode mode, 
         m_time_processor.machines[id].acceleration = (m_time_processor.machines[id].max_acceleration == 0.0f) ? value :
             // Clamp the acceleration with the maximum.
             std::min(value, m_time_processor.machines[id].max_acceleration);
+        invalidate_move_state_cache();
     }
 }
 
@@ -7477,6 +7523,7 @@ void GCodeProcessor::set_travel_acceleration(PrintEstimatedStatistics::ETimeMode
         m_time_processor.machines[id].travel_acceleration = (m_time_processor.machines[id].max_travel_acceleration == 0.0f) ? value :
             // Clamp the acceleration with the maximum.
             std::min(value, m_time_processor.machines[id].max_travel_acceleration);
+        invalidate_move_state_cache();
     }
 }
 

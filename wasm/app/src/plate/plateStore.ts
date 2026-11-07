@@ -1,9 +1,10 @@
 import { usePlatesStore } from '../plates/platesStore';
 import { create } from 'zustand';
-import { getEngine } from '../engine/orcaEngine';
+import { addModel as addEngineModel, getEngine } from '../engine/orcaEngine';
+import { isStepFileName } from '../engine/stepModule';
 import { useAppStore } from '../store/appStore';
 import { useHistoryStore } from '../history';
-import type { PlateObject, MeshBufferData, BedConfig, GizmoMode } from './types';
+import type { PlateObject, MeshBufferData, ViewerMeshData, BedConfig, GizmoMode } from './types';
 import type { StepImportOptions } from '../engine/types';
 
 export function parseMeshBuffer(bytes: Uint8Array): MeshBufferData {
@@ -83,6 +84,9 @@ export interface PlateStoreState {
   bedConfig: BedConfig;
   isLoading: boolean;
   meshCache: Map<number, MeshBufferData>;
+  viewerMeshCache: Map<number, ViewerMeshData>;
+  getViewerMesh: (objectId: number) => Promise<ViewerMeshData>;
+  setVolumeTransform: (objectId: number, volumeId: number, transform: InstanceTransform & { mirror?: [number, number, number] }) => Promise<void>;
 
   lockedOrientations: number[];
   toggleOrientationLock: (instanceId: number) => void;
@@ -103,7 +107,7 @@ export interface PlateStoreState {
     }
   ) => Promise<void>;
   toggleSelect: (objectId: number, instanceId: number) => void;
-  selectAll: () => void;
+  selectAll: (plateIndex?: number) => void;
   copySelected: (cut?: boolean) => Promise<void>;
   cutSelected: () => Promise<void>;
   pasteClipboard: () => Promise<void>;
@@ -118,6 +122,8 @@ export interface PlateStoreState {
   deleteSelected: () => Promise<void>;
   deleteObject: (objectId: number) => Promise<void>;
   duplicateSelected: () => Promise<void>;
+  mergeSelected: () => Promise<void>;
+  convertVolumeType: (objectId: number, volumeId: number, type: 'part' | 'negative' | 'modifier' | 'support_blocker' | 'support_enforcer') => Promise<void>;
   arrange: (useBed?: boolean) => Promise<void>;
   arrangeSettings: ArrangeSettings;
   setArrangeSettings: (settings: Partial<ArrangeSettings>) => void;
@@ -167,6 +173,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   },
   isLoading: false,
   meshCache: new Map(),
+  viewerMeshCache: new Map(),
 
   initBedConfig: (printableArea?: string, printableHeight?: string) => {
     let points: [number, number][] = [
@@ -220,6 +227,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   },
 
   refreshObjects: async () => {
+    set({ viewerMeshCache: new Map() });
     try {
       const engine = await getEngine();
       let objs: PlateObject[];
@@ -229,6 +237,8 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
         objs = await engine.call('listObjects', {});
       }
 
+      // Publish objects with current native membership after every completed mutation.
+      await usePlatesStore.getState().fetchPlates();
       set({ objects: objs });
 
       // Update selection if previously selected object was removed
@@ -290,8 +300,12 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     }
   },
 
-  selectAll: () => {
-    const refs = get().objects.flatMap((o) => o.instances.map((i) => ({ objectId: o.id, instanceId: i.id })));
+  selectAll: (plateIndex) => {
+    const members = plateIndex === undefined ? null
+      : usePlatesStore.getState().plates.find((p) => p.index === plateIndex)?.instances ?? [];
+    const refs = get().objects.flatMap((o) => o.instances
+      .filter((i) => members === null || members.some((m) => m.objectId === o.id && m.instanceId === i.id))
+      .map((i) => ({ objectId: o.id, instanceId: i.id })));
     const [first, ...rest] = refs;
     set({ selectedObjectId: first?.objectId ?? null, selectedInstanceId: first?.instanceId ?? null, extraSelection: rest });
   },
@@ -403,6 +417,31 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     return parsed;
   },
 
+  getViewerMesh: async (objectId) => {
+    const cache = get().viewerMeshCache;
+    if (cache.has(objectId)) return cache.get(objectId)!;
+    const engine = await getEngine();
+    const result = await engine.call('getMesh', { objectId, forViewer: true });
+    if (!result.volumes?.every((volume: any) => Array.isArray(volume.offset) && Number.isInteger(volume.firstVertex))) {
+      throw new Error('The browser engine worker did not forward the viewer mesh request');
+    }
+    const bytes = result.buffer instanceof Uint8Array ? result.buffer : await engine.readFile(result.path);
+    const parsed = { ...parseMeshBuffer(bytes), volumes: result.volumes } as ViewerMeshData;
+    cache.set(objectId, parsed);
+    return parsed;
+  },
+
+  setVolumeTransform: async (objectId, volumeId, transform) => {
+    const engine = await getEngine();
+    await engine.call('setVolumeTransform', { objectId, volumeId, ...transform });
+    const cache = new Map(get().meshCache);
+    cache.delete(objectId);
+    set({ meshCache: cache });
+    await get().refreshObjects();
+    useAppStore.getState().invalidateSlicePreview();
+    await useHistoryStore.getState().commitTransaction('Transform part');
+  },
+
   setInstanceTransform: async (objectId, instanceId, transform) => {
     const engine = await getEngine();
     if (typeof (engine as any).setInstanceTransform === 'function') {
@@ -465,6 +504,62 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     await get().refreshObjects();
     try {
       await useHistoryStore.getState().commitTransaction('Delete object');
+    } catch (_) {}
+  },
+
+  mergeSelected: async () => {
+    const { selectedObjectId, selectedInstanceId, extraSelection } = get();
+    if (selectedObjectId === null || selectedInstanceId === null) return;
+    const instances = [{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection];
+    if (instances.length < 2) return;
+
+    const engine = await getEngine();
+    const result: any = await engine.call('mergeObjects', { instances });
+
+    const { meshCache, viewerMeshCache } = get();
+    const newMeshCache = new Map(meshCache);
+    const newViewerCache = new Map(viewerMeshCache);
+    for (const inst of instances) {
+      newMeshCache.delete(inst.objectId);
+      newViewerCache.delete(inst.objectId);
+    }
+    set({ meshCache: newMeshCache, viewerMeshCache: newViewerCache });
+
+    await get().refreshObjects();
+    const objStore = (await import('../objectlist/objectListStore')).useObjectListStore.getState();
+    await objStore.refreshTree();
+
+    const mergedId = result?.objectId ?? result?.id;
+    if (mergedId !== undefined) {
+      const updated = get().objects.find((o) => o.id === mergedId);
+      const newInstId = updated?.instances?.[0]?.id ?? null;
+      get().selectObject(mergedId, newInstId);
+      objStore.selectItem(mergedId, null);
+    }
+
+    useAppStore.getState().invalidateSlicePreview();
+    try {
+      await useHistoryStore.getState().commitTransaction('Merge to multipart object');
+    } catch (_) {}
+  },
+
+  convertVolumeType: async (objectId: number, volumeId: number, type: 'part' | 'negative' | 'modifier' | 'support_blocker' | 'support_enforcer') => {
+    const engine = await getEngine();
+    await engine.call('setVolumeType', { objectId, volumeId, type });
+    const { meshCache, viewerMeshCache } = get();
+    const newMeshCache = new Map(meshCache);
+    const newViewerCache = new Map(viewerMeshCache);
+    newMeshCache.delete(objectId);
+    newViewerCache.delete(objectId);
+    set({ meshCache: newMeshCache, viewerMeshCache: newViewerCache });
+
+    await get().refreshObjects();
+    const objStore = (await import('../objectlist/objectListStore')).useObjectListStore.getState();
+    await objStore.refreshTree();
+    objStore.selectItem(objectId, volumeId);
+    useAppStore.getState().invalidateSlicePreview();
+    try {
+      await useHistoryStore.getState().commitTransaction('Change part type');
     } catch (_) {}
   },
 
@@ -540,7 +635,10 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
       const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
 
-      if (typeof (engine as any).addModel === 'function') {
+      if (isStepFileName(file.name)) {
+        // The engine has no STEP reader; the STEP module tessellates it first.
+        await addEngineModel(file.name, bytes, options);
+      } else if (typeof (engine as any).addModel === 'function') {
         await (engine as any).addModel(file.name, bytes, options);
       } else if (typeof (engine as any).loadModel === 'function' && get().objects.length === 0) {
         await (engine as any).loadModel(file.name, bytes, options);

@@ -23,7 +23,9 @@ export const BrimEarsPanel: React.FC = () => {
       className="canvas-panel"
       style={{
         position: 'absolute',
-        top: 24,
+        top: 'var(--tool-panel-top, 64px)',
+        maxHeight: 'calc(100% - var(--tool-panel-top, 64px) - var(--plate-actions-clearance, 16px))',
+        overflowY: 'auto',
         right: 24,
         width: 280,
         background: 'var(--panel-bg)',
@@ -38,17 +40,17 @@ export const BrimEarsPanel: React.FC = () => {
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{t("Brim Ears")}</h3>
+        <h3 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600 }}>{t("Brim Ears")}</h3>
         <button className="icon-btn" onClick={stopBrimEars} aria-label={t("Close")}>✕</button>
       </div>
 
-      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>
+      <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
         {t("Click near model corners on the bed to place mouse ear discs. Click an existing ear to remove it.")}</p>
 
-      {error && <div style={{ color: 'var(--danger-color)', fontSize: 12 }}>{error}</div>}
+      {error && <div style={{ color: 'var(--danger-color)', fontSize: '0.75rem' }}>{error}</div>}
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <label htmlFor="brim-ear-radius-input" style={{ fontSize: 13, fontWeight: 500 }}>
+        <label htmlFor="brim-ear-radius-input" style={{ fontSize: '0.8125rem', fontWeight: 500 }}>
           {t("Ear Radius (mm)")}</label>
         <input
           type="number"
@@ -65,7 +67,7 @@ export const BrimEarsPanel: React.FC = () => {
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
           {t("Ear Discs (")}{brimPoints.length})
         </span>
         <button
@@ -74,7 +76,7 @@ export const BrimEarsPanel: React.FC = () => {
           data-testid="brim-ears-clear-btn"
           onClick={() => void clearBrimEars()}
           disabled={brimPoints.length === 0}
-          style={{ padding: '3px 8px', fontSize: 11 }}
+          style={{ padding: '3px 8px', fontSize: '0.6875rem' }}
         >
           {t("Clear All")}</button>
       </div>
@@ -91,7 +93,7 @@ export const BrimEarsPanel: React.FC = () => {
                 padding: '4px 8px',
                 background: 'var(--control-bg)',
                 borderRadius: 4,
-                fontSize: 11
+                fontSize: '0.6875rem'
               }}
             >
               <span>
@@ -99,7 +101,7 @@ export const BrimEarsPanel: React.FC = () => {
               <button
                 className="icon-btn"
                 onClick={() => void removeBrimEar(i)}
-                style={{ padding: 2, fontSize: 11 }}
+                style={{ padding: 2, fontSize: '0.6875rem' }}
                 title={t("Remove ear")}
               >
                 ✕

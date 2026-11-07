@@ -1,102 +1,78 @@
-# CLAUDE.md
+# Commiting work to Tangled (git)
 
-OrcaSlicer — open-source C++17 3D slicer. wxWidgets GUI, CMake build system.
+Use user: noz.am, email: did:plc:lmkzmvv6sdxntwtyxpg7fqqq, and use the tangled.pub ssh key in ~/.ssh/ to sign the commits.
 
-## Build Commands
+# Commiting work to Github (git)
 
-Build the Release configuration unless asked otherwise.
+Use user: nozamdavid, email: davidmarcosg98@gmail.com, and use the ssh key in ~/.ssh/ to sign the commits.
 
-```bash
-# macOS
-cmake --build build/arm64 --config Release --target all --
+# Commiting work to any git provider
 
-# Linux
-cmake --build build --config Release --target all --
+- Don't add yourself as author, sole author is noz.am/nozamdavid, don't add any collaboration line either.
+- Never add Claude as a commit author, committer, or co-author, and never add Claude or Anthropic attribution trailers. Use the Git identity explicitly requested by the user.
 
-# Windows
-cmake --build . --config Release --target ALL_BUILD -- -m
-```
+## Execution
+- Infer routine intent from the request and conversation, then carry authorized work through implementation and verification. Ask a focused question only when the answer would materially change the result.
+- Treat requests for action as authorization to complete safe, in-scope work. Prepare concrete, reviewable results before requesting any decision that is still required.
+- User instructions take precedence over this file. If an instruction here changes or blocks the requested work, identify the exact instruction and explain why.
+- never use python/ruby/node to do file edits or writes, use your tools instead
+- use whitespace where appropriate to maintain clear hierarchy
+- For each code edit, run its focused test(s) and compile the affected translation unit(s).
+- For browser verification, use one incremental integrated UI build per completed feature batch when needed. Reuse the verified immutable candidate for QA or harness retries, and rebuild only after source or build-input changes.
 
-## Testing
+# Work delegation
 
-Catch2 framework. Tests in `tests/`; see [tests/AGENTS.md](tests/AGENTS.md) for where a new test belongs and the conventions to follow.
+- As the main agent, you own planning and coordination of subagents. Delegate non-planning work, including implementation, research, testing, and review.
+- Use T3 Code’s `delegate_task` for all subagents, including same-provider tasks.
+- Manage them through `task_status` and `task_cancel`.
+- Do not use native subagent tools such as `spawn_agent`.
+- Allow up to 20 concurrent T3 delegated tasks, respecting the provider/model caps below.
+- Native Codex concurrency metadata does not define T3 delegation limits. Use limits actually reported by `delegate_task`.
+- Run independent work in parallel across the configured providers.
+- If you are a subagent, don't delegate work further.
+- On a confirmed rate-limit failure, ensure the failed task has stopped and preserve any partial edits before retrying with the next provider.
+- Spread tasks across different instances ensuring they don't overwrite each other's work.
+- The main agent must specify the minimal changes needed in each delegation. For documentation-only edits, check links and referenced commands without running builds or test suites. If a new test is needed, name the target and specific behavior; do not ask the subagent to survey existing test patterns.
+- Include this scope instruction in every delegation prompt: "Implement only the assigned change. Keep changes and tests minimal; avoid unrelated improvements, speculative abstractions, and elaborate test infrastructure. Once finished, report changed files and stop. Add or broaden a check only to investigate a concrete failure or correctness risk, and explain why."
+- Retain each returned `taskId`, and check task completion and results before declaring the parent work complete.
+- Check on running subagents that take longer than 10 minutes. If there's a stale subagent, fix and replace.
 
-```bash
-cd build && ctest -C Release --output-on-failure    # all tests
-ctest --test-dir ./tests/libslic3r -C Release       # individual suite
-ctest --test-dir ./tests/fff_print -C Release
-```
+# Work delegation models
 
-## Documentation
+Use the following models for task delegation with `delegate_task`, in order of preference. Switch to next model in the list if the provider reports usage limits exhausted.
 
-- Docs live in `docs/`; the high-level design of a subsystem goes in `docs/HLSD/<subsystem>.md`.
-- Describe the design as it stands — what the subsystem does, why it exists, and the constraints that shape it. Not the route that got there: no phases, task lists, status markers, or "before/after this PR" framing.
-- Planning and investigation output (brainstorms, superpowers design and plan docs) stays in `docs/superpowers/`, which is gitignored. Never commit it.
-- Write a doc only when the design is not evident from the code, and when a change invalidates an existing one, update it in the same PR.
+Use no model that isn't in this list, even if memory or earlier instructions say otherwise, unless user explicitly specified a different model for this turn. This list overrides remembered preferences.
 
-## Code Style
+Once the concurrency cap for an entry is full, move down the list. `(N) (diff)` N being the most concurrent running subagents for that provider-model combination, and diff being the difficulty of tasks it can do.
 
-- C++17, selective C++20. PascalCase classes, snake_case functions/variables
-- `#pragma once` for headers. Smart pointers and RAII preferred
-- Include what you use: include the header for every symbol a file uses, and keep headers compilable on their own. Never rely on the precompiled header or a transitive include. The `clang-tidy` CI job enforces this on changed lines; run the same check locally with `scripts/run_clang_tidy.sh` (`scripts\run_clang_tidy.ps1` on Windows), which sets up everything it needs
-- Parallelization via TBB — be mindful of shared state
-- Always use `SetSizerAndFit(sizer)` instead of `SetSizer(sizer)` on top level window. Unless `SetSizer` must be called before the full layout is built, call `sizer->SetSizeHints(window)` afterwards in this case.
+- providerInstanceId: codex, model: gpt-6.1-sol (medium reasoning) (2) (mid-hard)
+- providerInstanceId: acpRegistry_qoder_cli, model: dfmodel (medium) (2) (mid)
+- providerInstanceId: acpRegistry_mistral_vibe, model: zai-glm-5-3-flash (medium) (3) (easy-mid)
+- providerInstanceId: codex, model: gpt-6.1-terra (medium reasoning) (2) (mid)
+- providerInstanceId: claudeAgent_Antigravity, model: claude-sonnet-5-5-high (2) (mid)
+- providerInstanceId: claudeAgent_Antigravity, model: gemini-3.8-flash-high (8) (easy)
+- providerInstanceId: claudeAgent_Antigravity, model: gemini-4-argon-high (1) (hard)
+- providerInstanceId: opencode, model: opencode-go/deepseek-v4.1-flash (2) (easy-mid)
+- providerInstanceId: opencode, model: opencode-go/glm-5.3-flash (2) (easy-mid)
+- providerInstanceId: muse, model: muse-wonder-1.0 (low reasoning) (1) (mid-hard)
 
-## Key Entry Points
+## Communication and verification
 
-- App startup: `src/OrcaSlicer.cpp`
-- Slicing pipeline: `src/libslic3r/Print.cpp`
-- All print/printer/material settings: `src/libslic3r/PrintConfig.cpp`
-- GUI: `src/slic3r/GUI/`
-- Core algorithms: `src/libslic3r/` (GCode/, Fill/, Support/, Geometry/, Format/, Arachne/)
-- Printer profiles: `resources/profiles/[manufacturer].json`
+- Avoid using slop words or phrases like "Bottom Line:" in conclusions, "delve," "foster," "leverage," "it's worth noting," "importantly," "Question? Answer." or "This isn't about X. It's about Y.", "genuinely" or hyphenated compound descriptions and adjectives. Do not use concluding summary statements such as "In short:..", "The simplest mental model is:...\".
+- State the intended action directly. Avoid adding what you won't do, what will remain unchanged, or how you'll separate or categorize results. Do not use contrastive framing such as "X, not Y" or "X—not Y". Avoid invented compound labels like "exact-head checks" and "editorial-row layouts", vague qualifiers, and canned transitions.
+- Lead with the outcome. Use concise paragraphs, short sentences, plain language, and only as much formatting and technical detail as the user needs.
+- When a visual would better explain a reply, use T3 Code self-contained HTML renders: preview with html_preview then publish with html_render, following the current theme and responsive layout.
 
-## Critical Constraints
+## Project tracking (Taproot)
 
-- **Backward compatibility required** for .3mf project files and printer profiles
-- **Cross-platform** — all changes must work on Windows, macOS, and Linux
-- Profile/format changes need version migration handling
-- Dependencies built separately in `deps/build/`, then linked to main app
+The canonical WebOrca project map lives in Taproot at http://192.168.0.199:8789/p/YPttwK6VZASSDf (project id `YPttwK6VZASSDf`). Use it for future work.
 
-## Code review focus areas
+- The write token is stored outside the repo at `~/.config/taproot/webslicer.token` (mode 600). Never commit it or paste it into reports.
+- The tree is the current work state. `Shipped baseline` holds verified work; the other branches hold open work with evidence paths.
+- When a task finishes, mark its node done and add the evidence (metric, report path, commit or run id) in the same update. Add a node when new work appears. Mark work done instead of deleting it.
+- Update the tree when a milestone lands, not after every command.
+- After Taproot milestone updates recursively collapse branches whose subtasks are all complete, including nested branches, preserving completion statuses.
+- Use the configured Taproot MCP server `taproot` first (`tools.taproot.*` in Code Mode): `get_project`, `update_node`, `set_done`, `add_nodes`, `apply_ops`. Other clients can use `http://192.168.0.199:8789/mcp` (Streamable HTTP): initialize with protocol version `2025-06-18`, then `tools/call`, with `Authorization: Bearer $(cat ~/.config/taproot/webslicer.token)` and `Accept: application/json, text/event-stream`. The server is stateless; no session header is needed.
+- REST `/api/v1/projects/YPttwK6VZASSDf/ops` with `{"ops":[{"op":"update","id":"<node>","patch":{"done":true,"notes":"..."}}]}` is the fallback for operations the MCP does not expose.
+- Keep `README.md` and the tree consistent when current state changes; the README is the reader-facing summary, Taproot is the work map.
 
-- Changes must not cause regressions in existing functionality, defaults, profiles, or project compatibility.
-- Features gated by options must not affect existing behavior when those options are disabled.
-- Changes should follow the existing code style and architecture. Architectural changes should be justified in code comments and the PR description.
-- Add helper functions or utilities only when existing code cannot reasonably be reused. Avoid duplication.
-- Keep code concise and clear. Manually simplify AI generated bloated codes before review.
-- Include targeted tests or documented verification for behavior changes, especially in slicing logic, profiles, formats, and GUI defaults.
-- For profile changes (`resources/profiles/<Vendor>/**`), check that `version` in the sibling `resources/profiles/<Vendor>.json` was bumped.
-- For translation changes (`localization/i18n/**/*.po`), check that recurring terms match the [Localization glossary](https://github.com/OrcaSlicer/OrcaSlicer_WIKI/blob/main/developer_reference/localization_glossary.md) for that language.
-
-## Localization & translations
-
-Catalogs live in `localization/i18n/<lang>/OrcaSlicer_<lang>.po`; the template is `OrcaSlicer.pot`.
-See the [Localization guide](https://github.com/OrcaSlicer/OrcaSlicer_WIKI/blob/main/developer_reference/localization_guide.md) for the human-facing version of these principles.
-
-### Terminology
-
-- Use the [Localization glossary](https://github.com/OrcaSlicer/OrcaSlicer_WIKI/blob/main/developer_reference/localization_glossary.md) as the source of truth for recurring terms, so the same English term is always rendered the same way within a language, and terms that must stay in English (brand/product names, acronyms, materials, file formats, G-code tokens, macros/variables/identifiers) are not translated.
-- If a term's established translation changes, update both the affected `.po` files and the glossary (`localization_glossary.tsv`, then regenerate) so they stay in sync.
-- Translate the *meaning*, not the words. Check what the string actually controls before translating it — English reuses one word for different things. `Flow ratio` (multiplier), `Flow Rate` (throughput) and `Flow Dynamics` (pressure compensation) are three different terms; `extruder` may mean the toolhead, the feeder motor, or the nozzle depending on the string.
-- Reuse one template per recurring message shape (`Failed to connect to …`, `Are you sure you want to …?`), even where the English wording varies.
-
-### Editing rules
-
-- Only edit `msgstr` — **never** change `msgid`, and never "fix" wrong English in the translation alone. Report the source string instead.
-- Preserve exactly: placeholders (`%s`, `%d`, `%1%`, `%zu`, `%%`), every `\n` (count *and* position, including leading/trailing), leading/trailing spaces, HTML tags, `℃`, and the file's encoding and line endings.
-- **Never reorder positional arguments** in a `c-format` string. If the msgid is `%d` then `%s`, that order must hold — swapping them breaks at runtime.
-- `msgctxt` separates homonyms — always read it. `Back`/`Camera View` is the rear view of the 3D navigator, while `Back`/`Navigation` is the go-back button; `Top` exists in the *Alignment*, *Layers* and *Camera View* senses.
-- When a string needs disambiguating, add context in the source (`_L_CONTEXT`/`_u8L_CONTEXT`), don't work around it in the translation.
-- A literal `%` inside a string xgettext flagged `possible-c-format` will fail `msgfmt`. Fix it with a `// xgettext:no-c-format, no-boost-format` comment above the string in the source — do not mangle the translation or use `%%` in text that is never passed through printf.
-- Plural entries: read `nplurals` from the catalog's `Plural-Forms` header (it is **not** always 2 — ja/ko/zh/th/vi use 1, ru/cs/pl/lt use 3, uk uses 4). Each form must be genuinely inflected for its quantity; repeating one sentence across all forms is a bug in Slavic/Baltic languages, though it is correct for Turkish and Hungarian.
-- An entry whose `msgstr` equals its `msgid` is untranslated even though it is not empty; a plural entry with any empty form is likewise incomplete.
-- Mark machine-produced translations with an `# AI Translated` translator comment. Don't add it to a human translation you didn't actually rewrite.
-- When you can't be sure of a machine translation's meaning or UI wording, also add `# Needs human review: <what to check>`. Never use `fuzzy` for this — fuzzy entries are hidden from users.
-- Don't reflow or re-wrap unrelated entries — keep the diff limited to the strings you changed.
-
-### Verifying
-
-- `scripts/run_gettext.bat --full` (Windows) regenerates the template, merges every catalog and compiles the `.mo` files. It must exit 0.
-- Or check a single catalog with `msgfmt --check-format -o <out>.mo localization/i18n/<lang>/OrcaSlicer_<lang>.po`.
-- Fuzzy entries are not shown to users. If you correct one, clear its `fuzzy` flag, otherwise the fix never ships.

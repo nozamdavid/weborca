@@ -816,10 +816,6 @@ namespace Clipper2Lib {
       std::stable_sort(minima_list_.begin(), minima_list_.end(), LocMinSorter()); //#594
       minima_list_sorted_ = true;
     }
-    LocalMinimaList::const_reverse_iterator i;
-    for (i = minima_list_.rbegin(); i != minima_list_.rend(); ++i)
-      InsertScanline((*i)->vertex->pt.y);
-
     current_locmin_iter_ = minima_list_.begin();
     actives_ = nullptr;
     sel_ = nullptr;
@@ -888,8 +884,19 @@ namespace Clipper2Lib {
 
   bool ClipperBase::PopScanline(int64_t& y)
   {
-    if (scanline_list_.empty()) return false;
+    const bool has_min = current_locmin_iter_ != minima_list_.end();
+    if (scanline_list_.empty())
+    {
+      if (!has_min) return false;
+      y = (*current_locmin_iter_)->vertex->pt.y;
+      return true;
+    }
     y = scanline_list_.top();
+    if (has_min && (*current_locmin_iter_)->vertex->pt.y > y)
+    {
+      y = (*current_locmin_iter_)->vertex->pt.y;
+      return true;
+    }
     scanline_list_.pop();
     while (!scanline_list_.empty() && y == scanline_list_.top())
       scanline_list_.pop();  // Pop duplicates.
@@ -2136,20 +2143,34 @@ namespace Clipper2Lib {
   }
 
 
-  inline void ClipperBase::AdjustCurrXAndCopyToSEL(const int64_t top_y)
+  inline bool ClipperBase::AdjustCurrXAndCheckOrder(const int64_t top_y,
+    Active*& first_top, Active*& last_top)
   {
     Active* e = actives_;
-    sel_ = e;
+    e->curr_x = TopX(*e, top_y);
+    if (e->top.y == top_y)
+    {
+      if (!first_top) first_top = e;
+      last_top = e;
+    }
+    int64_t prev_x = e->curr_x;
+    bool ordered = true;
+    e = e->next_in_ael;
     while (e)
     {
-      e->prev_in_sel = e->prev_in_ael;
-      e->next_in_sel = e->next_in_ael;
-      e->jump = e->next_in_sel;
       // it is safe to ignore 'joined' edges here because
       // if necessary they will be split in IntersectEdges()
       e->curr_x = TopX(*e, top_y);
+      if (e->top.y == top_y)
+      {
+        if (!first_top) first_top = e;
+        last_top = e;
+      }
+      ordered &= prev_x <= e->curr_x;
+      prev_x = e->curr_x;
       e = e->next_in_ael;
     }
+    return ordered;
   }
 
   bool ClipperBase::ExecuteInternal(ClipType ct, FillRule fillrule, bool use_polytrees)
@@ -2173,8 +2194,10 @@ namespace Clipper2Lib {
       }
       bot_y_ = y;  // bot_y_ == bottom of scanbeam
       if (!PopScanline(y)) break;  // y new top of scanbeam
-      DoIntersections(y);
-      DoTopOfScanbeam(y);
+      Active* first_top = nullptr;
+      Active* last_top = nullptr;
+      const bool top_x_ready = DoIntersections(y, first_top, last_top);
+      DoTopOfScanbeam(y, top_x_ready, first_top, last_top);
       while (PopHorz(e)) DoHorizontal(*e);
     }
     if (succeeded_) ProcessHorzJoins();
@@ -2370,13 +2393,21 @@ namespace Clipper2Lib {
     }
   }
 
-  void ClipperBase::DoIntersections(const int64_t top_y)
+  bool ClipperBase::DoIntersections(const int64_t top_y,
+    Active*& first_top, Active*& last_top)
   {
-    if (BuildIntersectList(top_y))
+    bool top_x_ready = actives_ && actives_->next_in_ael;
+#ifdef USINGZ
+    // A later Z callback may change floating-point rounding before TopX.
+    top_x_ready = top_x_ready && !zCallback_;
+#endif
+    if (BuildIntersectList(top_y, first_top, last_top))
     {
       ProcessIntersectList();
       intersect_nodes_.clear();
+      return false;
     }
+    return top_x_ready;
   }
 
   void ClipperBase::AddNewIntersectNode(Active& e1, Active& e2, int64_t top_y)
@@ -2413,13 +2444,27 @@ namespace Clipper2Lib {
     intersect_nodes_.emplace_back(&e1, &e2, ip);
   }
 
-  bool ClipperBase::BuildIntersectList(const int64_t top_y)
+  bool ClipperBase::BuildIntersectList(const int64_t top_y,
+    Active*& first_top, Active*& last_top)
   {
     if (!actives_ || !actives_->next_in_ael) return false;
 
     //Calculate edge positions at the top of the current scanbeam, and from this
     //we will determine the intersections required to reach these new positions.
-    AdjustCurrXAndCopyToSEL(top_y);
+    // Already ordered rounded X positions generate no intersection nodes in
+    // the stable merge below. Equal positions keep their existing order.
+    if (AdjustCurrXAndCheckOrder(top_y, first_top, last_top)) return !intersect_nodes_.empty();
+
+    // Only the unordered fallback consumes SEL links; initialize all of them
+    // after computing every TopX value in the original AEL order.
+    sel_ = actives_;
+    for (Active* e = actives_; e; e = e->next_in_ael)
+    {
+      e->prev_in_sel = e->prev_in_ael;
+      e->next_in_sel = e->next_in_ael;
+      e->jump = e->next_in_sel;
+    }
+
     //Find all edge intersections in the current scanbeam using a stable merge
     //sort that ensures only adjacent edges are intersecting. Intersect info is
     //stored in FIntersectList ready to be processed in ProcessIntersectList.
@@ -2437,6 +2482,13 @@ namespace Clipper2Lib {
         l_end = right;
         r_end = right->jump;
         left->jump = r_end;
+        // These rounded-X runs are already ordered, including equal keys.
+        if (right->prev_in_sel->curr_x <= right->curr_x)
+        {
+          prev_base = curr_base;
+          left = r_end;
+          continue;
+        }
         while (left != l_end && right != r_end)
         {
           if (right->curr_x < left->curr_x)
@@ -2731,11 +2783,13 @@ namespace Clipper2Lib {
     UpdateEdgeIntoAEL(&horz); // end of an intermediate horiz.
   }
 
-  void ClipperBase::DoTopOfScanbeam(const int64_t y)
+  void ClipperBase::DoTopOfScanbeam(const int64_t y, bool top_x_ready,
+    Active* first_top, Active* last_top)
   {
     sel_ = nullptr;  // sel_ is reused to flag horizontals (see PushHorz below)
-    Active* e = actives_;
-    while (e)
+    Active* e = top_x_ready ? first_top : actives_;
+    Active* const stop = top_x_ready && last_top ? last_top->next_in_ael : nullptr;
+    while (e != stop)
     {
       //nb: 'e' will never be horizontal here
       if (e->top.y == y)
@@ -2755,7 +2809,7 @@ namespace Clipper2Lib {
             PushHorz(*e);  // horizontals are processed later
         }
       }
-      else // i.e. not the top of the edge
+      else if (!top_x_ready) // i.e. not the top of the edge
         e->curr_x = TopX(*e, y);
 
       e = e->next_in_ael;

@@ -33,14 +33,14 @@ export const IsolationNotice: React.FC = () => {
           boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)'
         }}
       >
-        <div style={{ fontSize: '48px', marginBottom: '16px' }}>{t("🚫")}</div>
-        <h1 style={{ fontSize: '22px', fontWeight: 'bold', color: '#f87171', marginBottom: '16px' }}>
+        <div style={{ fontSize: '3rem', marginBottom: '16px' }}>{t("🚫")}</div>
+        <h1 style={{ fontSize: '1.375rem', fontWeight: 'bold', color: '#f87171', marginBottom: '16px' }}>
           {t("Cross-Origin Isolation Required")}</h1>
-        <p style={{ fontSize: '14px', lineHeight: '1.6', color: '#d1d5db', marginBottom: '20px' }}>
+        <p style={{ fontSize: '0.875rem', lineHeight: '1.6', color: '#d1d5db', marginBottom: '20px' }}>
           {t("OrcaSlicer Web runs the C++ slicing engine locally in WebAssembly with multi-threading\n          via SharedArrayBuffer.")}</p>
-        <p style={{ fontSize: '14px', lineHeight: '1.6', color: '#d1d5db', marginBottom: '24px' }}>
+        <p style={{ fontSize: '0.875rem', lineHeight: '1.6', color: '#d1d5db', marginBottom: '24px' }}>
           {t("The current environment reports")}<code style={{ background: '#374151', padding: '2px 6px', borderRadius: '4px', color: '#fbbf24' }}>{t("crossOriginIsolated: false")}</code>{t(".\n          The web server must send Cross-Origin Opener Policy (")}<code style={{ color: '#60a5fa' }}>{t("COOP: same-origin")}</code>{t(")\n          and Cross-Origin Embedder Policy (")}<code style={{ color: '#60a5fa' }}>{t("COEP: require-corp")}</code>{t(") headers.")}</p>
-        <div style={{ fontSize: '12px', color: '#9ca3af' }}>
+        <div style={{ fontSize: '0.75rem', color: '#9ca3af' }}>
           {t("Please verify server headers or launch the app via Vite preview / dev server.")}</div>
       </div>
     </div>

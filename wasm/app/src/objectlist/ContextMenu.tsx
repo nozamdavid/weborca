@@ -4,19 +4,22 @@ import { createPortal } from 'react-dom';
 import type { PrimitiveShape, VolumeType } from './types';
 import { usePaintToolsStore } from '../paint-tools';
 import { usePlateStore } from '../plate/plateStore';
-import { useTextStore } from '../text';
+import { usePlatesStore } from '../plates/platesStore';
+import { getText, useTextStore } from '../text';
 import { useLayersStore } from '../layers';
 import { useCutStore } from '../cut';
 import { useRepairStore } from '../repair';
 import { useEditOpsStore } from '../editops';
 import { useAppStore } from '../store/appStore';
 import { useTranslation } from "../i18n";
+import './ContextMenu.css';
 
 export interface ContextMenuProps {
   x: number;
   y: number;
   isObject: boolean;
   objectId: number;
+  groupIds?: number[];
   volumeId?: number;
   volumeType?: VolumeType;
   currentExtruder?: number;
@@ -45,10 +48,80 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const focusSubmenu = useRef(false);
   const [activeSubmenu, setActiveSubmenu] = useState<string | null>(null);
   const [submenuPosition, setSubmenuPosition] = useState({ left: 0, top: 0 });
   const selectedFilaments = useAppStore((s) => s.selectedFilaments);
   const currentConfig = useAppStore((s) => s.currentConfig);
+  const plates = usePlatesStore((s) => s.plates);
+  const [isTextVolume, setIsTextVolume] = useState<boolean>(false);
+  useLayoutEffect(() => {
+    if (!returnFocus.current) returnFocus.current = document.activeElement as HTMLElement | null;
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    return () => {
+      const active = document.activeElement;
+      const trigger = returnFocus.current;
+      if ((active === document.body || menuRef.current?.contains(active) || submenuRef.current?.contains(active)) && trigger?.isConnected)
+        trigger.focus();
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    if (focusSubmenu.current && activeSubmenu && submenuRef.current) {
+      submenuRef.current.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+      focusSubmenu.current = false;
+    }
+  }, [activeSubmenu]);
+
+  const handleMenuKey = (event: React.KeyboardEvent) => {
+    if (event.key === 'Tab') { onClose(); return; }
+    const item = (event.target as HTMLElement).closest<HTMLElement>('[role="menuitem"]');
+    if (!item) return;
+    const root = item.closest('[role="menu"]');
+    const items = Array.from(root?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([aria-disabled="true"])') ?? []);
+    const index = items.indexOf(item);
+    let next = index;
+    if (event.key === 'ArrowDown') next = (index + 1) % items.length;
+    else if (event.key === 'ArrowUp') next = (index - 1 + items.length) % items.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = items.length - 1;
+    else if (event.key === 'ArrowLeft' && activeSubmenu) {
+      menuRef.current?.querySelector<HTMLElement>(`#menu-item-${activeSubmenu}`)?.focus();
+      setActiveSubmenu(null);
+    } else if ((event.key === 'ArrowRight' || event.key === 'Enter' || event.key === ' ') && item.id.startsWith('menu-item-')) {
+      const name = item.id.slice('menu-item-'.length);
+      if (name === activeSubmenu) submenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+      else { focusSubmenu.current = true; setActiveSubmenu(name); }
+    } else if ((event.key === 'Enter' || event.key === ' ') && item.tagName !== 'BUTTON') {
+      item.click();
+    } else return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (next !== index) { items[next]?.focus(); items[next]?.scrollIntoView({ block: 'nearest' }); }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsTextVolume(false);
+
+    if (!isObject && volumeId !== undefined) {
+      getText({ objectId, volumeId })
+        .then((res) => {
+          if (!cancelled && res && res.text !== undefined) {
+            setIsTextVolume(true);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setIsTextVolume(false);
+          }
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [isObject, objectId, volumeId]);
 
   const objectTree = useObjectListStore((s) => s.objects);
   const targetObj = objectTree.find((o) => o.id === objectId);
@@ -157,7 +230,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (activeSubmenu) {
+          menuRef.current?.querySelector<HTMLElement>(`#menu-item-${activeSubmenu}`)?.focus();
+          setActiveSubmenu(null);
+        } else onClose();
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -166,7 +246,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [onClose]);
+  }, [onClose, activeSubmenu]);
 
   const shapes: { label: string; shape: PrimitiveShape }[] = [
     { label: t("Cube"), shape: 'cube' },
@@ -186,10 +266,108 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     { label: t("Add Support Enforcer"), type: 'support_enforcer' }
   ];
 
+  const selectedObjectId = usePlateStore((s) => s.selectedObjectId);
+  const selectedInstanceId = usePlateStore((s) => s.selectedInstanceId);
+  const extraSelection = usePlateStore((s) => s.extraSelection);
+  const allSelectedRefs = [
+    ...(selectedObjectId !== null && selectedInstanceId !== null
+      ? [{ objectId: selectedObjectId, instanceId: selectedInstanceId }]
+      : []),
+    ...extraSelection
+  ];
+  let canMerge = allSelectedRefs.length >= 2;
+  let mergeDisabledReason: string | null = null;
+  if (canMerge) {
+    let firstPlateIdx: number | null = null;
+    for (const ref of allSelectedRefs) {
+      const pIdx = plates.find((p) => p.instances.some((i) => i.objectId === ref.objectId && i.instanceId === ref.instanceId))?.index ?? null;
+      if (firstPlateIdx === null) {
+        firstPlateIdx = pIdx;
+      } else if (pIdx !== null && pIdx !== firstPlateIdx) {
+        canMerge = false;
+        mergeDisabledReason = t("Cannot merge instances from different plates");
+        break;
+      }
+    }
+  }
+
+  const isMultiMenu = isMulti || (isObject && allSelectedRefs.length >= 2);
+
+  const renderChangeTypeMenuItem = () => {
+    if (isObject || volumeId === undefined) return null;
+    const isSolidPart = targetVol?.type === 'part';
+    const solidPartsCount = targetObj?.volumes?.filter((v) => v.type === 'part').length ?? 0;
+    const isLastSolidPart = isSolidPart && solidPartsCount <= 1;
+
+    const volumeTypes: { label: string; type: VolumeType }[] = [
+      { label: t("Part"), type: 'part' },
+      { label: t("Negative Part"), type: 'negative' },
+      { label: t("Modifier"), type: 'modifier' },
+      { label: t("Support Blocker"), type: 'support_blocker' },
+      { label: t("Support Enforcer"), type: 'support_enforcer' }
+    ];
+
+    return (
+      <div
+        id="menu-item-change-type" role="menuitem" tabIndex={-1} aria-haspopup="menu" aria-expanded={activeSubmenu === "change-type"}
+        data-testid="menu-item-change-type"
+        onMouseEnter={() => setActiveSubmenu('change-type')}
+        onClick={() => setActiveSubmenu((curr) => curr === 'change-type' ? null : 'change-type')}
+        style={{
+          position: 'relative',
+          padding: '6px 14px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          background: activeSubmenu === 'change-type' ? 'rgba(255, 255, 255, 0.08)' : 'transparent'
+        }}
+      >
+        <span>{t("Change Type")}</span>
+        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▶</span>
+
+        {activeSubmenu === 'change-type' && createPortal(
+          <div ref={submenuRef} role="menu" id="submenu-change-type" data-testid="submenu-change-type" style={submenuStyle}>
+            {volumeTypes.map(({ label, type }) => {
+              const disabled = isLastSolidPart && type !== 'part';
+              return (
+                <button type="button" role="menuitem" tabIndex={-1}
+                  key={type}
+                  id={`menu-action-type-${type}`}
+                  data-testid={`menu-action-type-${type}`}
+                  title={disabled ? t("The type of the last solid object part cannot be changed.") : undefined}
+                  aria-disabled={disabled}
+                  onClick={async () => {
+                    if (disabled) return;
+                    await usePlateStore.getState().convertVolumeType(objectId, volumeId, type);
+                    onClose();
+                  }}
+                  style={{
+                    padding: '6px 14px',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    opacity: disabled ? 0.4 : 1,
+                    fontWeight: targetVol?.type === type ? 600 : 400
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!disabled) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>, menuRef.current?.closest("[role=dialog]") ?? document.body
+        )}
+      </div>
+    );
+  };
   const renderExtruderMenuItem = () => {
     return (
       <div
-        id="menu-item-extruder"
+        id="menu-item-extruder" role="menuitem" tabIndex={-1} aria-haspopup="menu" aria-expanded={activeSubmenu === "extruder"}
         data-testid="menu-item-extruder"
         onMouseEnter={() => setActiveSubmenu('extruder')}
         style={{
@@ -206,8 +384,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▶</span>
 
         {activeSubmenu === 'extruder' && createPortal(
-          <div ref={submenuRef} id="submenu-extruder" data-testid="submenu-extruder" style={submenuStyle}>
-            <div
+          <div ref={submenuRef} role="menu" id="submenu-extruder" data-testid="submenu-extruder" style={submenuStyle}>
+            <button type="button" role="menuitem" tabIndex={-1}
               id="menu-action-extruder-0"
               data-testid="menu-action-extruder-0"
               onClick={() => {
@@ -226,9 +404,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 e.currentTarget.style.background = 'transparent';
               }}
             >
-              {t("Default (Inherit)")}</div>
+              {t("Default (Inherit)")}</button>
             {slotItems.map((slot) => (
-              <div
+              <button type="button" role="menuitem" tabIndex={-1}
                 key={slot.ext}
                 id={`menu-action-extruder-${slot.ext}`}
                 data-testid={`menu-action-extruder-${slot.ext}`}
@@ -261,9 +439,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                   }}
                 />
                 <span>{t("Filament")}{slot.ext}</span>
-              </div>
+              </button>
             ))}
-          </div>, document.body
+          </div>, menuRef.current?.closest("[role=dialog]") ?? document.body
         )}
       </div>
     );
@@ -274,6 +452,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       ref={menuRef}
       id="object-list-context-menu"
       data-testid="object-list-context-menu"
+      role="menu"
+      onKeyDown={handleMenuKey}
+      onClick={(event) => {
+        const item = (event.target as HTMLElement).closest('[id^="menu-item-"]');
+        if (item && item.id !== 'menu-item-change-type') setActiveSubmenu(item.id.slice('menu-item-'.length));
+      }}
       onScroll={() => setActiveSubmenu(null)}
       style={{
         position: 'fixed',
@@ -293,13 +477,38 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
         userSelect: 'none'
       }}
     >
-      {isMulti ? (
+      {isMultiMenu ? (
         <>
           {renderExtruderMenuItem()}
 
           <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
+            id="menu-action-merge"
+            data-testid="menu-action-merge"
+            aria-disabled={!canMerge}
+            onClick={async () => {
+              if (!canMerge) return;
+              await usePlateStore.getState().mergeSelected();
+              onClose();
+            }}
+            title={mergeDisabledReason ?? undefined}
+            style={{
+              padding: '6px 14px',
+              cursor: canMerge ? 'pointer' : 'not-allowed',
+              opacity: canMerge ? 1 : 0.4
+            }}
+            onMouseEnter={(e) => {
+              if (canMerge) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            {t("Merge to multipart object")}
+          </button>
+
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-duplicate"
             data-testid="menu-action-duplicate"
             onClick={async () => {
@@ -315,9 +524,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             }}
           >
             {t("Clone")}
-          </div>
+          </button>
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-lock-orientation"
             data-testid="menu-action-lock-orientation"
             onClick={() => {
@@ -346,11 +555,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               const instId = plate.selectedInstanceId;
               return instId && plate.isOrientationLocked(instId) ? t("Unlock Orientation") : t("Lock Orientation");
             })()}
-          </div>
+          </button>
 
           <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-delete"
             data-testid="menu-action-delete"
             onClick={async () => {
@@ -366,14 +575,14 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
             }}
           >
             {t("Delete")}
-          </div>
+          </button>
         </>
       ) : isObject ? (
         <>
           {addVolumeCategories.map((cat) => (
             <div
               key={cat.type}
-              id={`menu-item-${cat.type}`}
+              id={`menu-item-${cat.type}`} role="menuitem" tabIndex={-1} aria-haspopup="menu" aria-expanded={activeSubmenu === cat.type}
               data-testid={`menu-item-${cat.type}`}
               onMouseEnter={() => setActiveSubmenu(cat.type)}
               style={{
@@ -390,9 +599,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>▶</span>
 
               {activeSubmenu === cat.type && createPortal(
-                <div ref={submenuRef} id={`submenu-${cat.type}`} data-testid={`submenu-${cat.type}`} style={submenuStyle}>
+                <div ref={submenuRef} role="menu" id={`submenu-${cat.type}`} data-testid={`submenu-${cat.type}`} style={submenuStyle}>
                   {shapes.map(({ label, shape }) => (
-                    <div
+                    <button type="button" role="menuitem" tabIndex={-1}
                       key={shape}
                       id={`menu-action-${cat.type}-${shape}`}
                       data-testid={`menu-action-${cat.type}-${shape}`}
@@ -412,12 +621,35 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                       }}
                     >
                       {label}
-                    </div>
+                    </button>
                   ))}
-                </div>, document.body
+                </div>, menuRef.current?.closest("[role=dialog]") ?? document.body
               )}
             </div>
           ))}
+
+          <button type="button" role="menuitem" tabIndex={-1}
+            id="menu-action-height-range"
+            data-testid="menu-action-height-range"
+            onClick={async () => {
+              console.log("[DEBUG] clicked menu-action-height-range for objectId:", objectId);
+              try {
+                await useObjectListStore.getState().addLayerRange(objectId);
+              } catch (err: any) {
+                console.error("Failed to add height range:", err);
+              }
+              onClose();
+            }}
+            style={{ padding: '6px 14px', cursor: 'pointer' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            {t("Height range Modifier")}
+          </button>
 
           <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
@@ -425,7 +657,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
           <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-cut"
             data-testid="menu-action-cut"
             onClick={async () => {
@@ -448,9 +680,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("✂️ Cut")}</div>
+            {t("✂️ Cut")}</button>
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-repair"
             data-testid="menu-action-repair"
             onClick={async () => {
@@ -473,9 +705,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("🔧 Repair Non-Manifold")}</div>
+            {t("🔧 Repair Non-Manifold")}</button>
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-split-objects"
             data-testid="menu-action-split-objects"
             onClick={() => {
@@ -490,9 +722,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("Split to Objects")}</div>
+            {t("Split to Objects")}</button>
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-split-parts"
             data-testid="menu-action-split-parts"
             onClick={() => {
@@ -507,9 +739,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("Split to Parts")}</div>
+            {t("Split to Parts")}</button>
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-simplify"
             data-testid="menu-action-simplify"
             onClick={() => {
@@ -524,11 +756,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("Simplify...")}</div>
+            {t("Simplify...")}</button>
 
           <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-add-text"
             data-testid="menu-action-add-text"
             onClick={() => {
@@ -543,12 +775,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("🔤 Add 3D Text")}</div>
+            {t("🔤 Add 3D Text")}</button>
 
           <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
           {(['support', 'seam', 'color', 'fuzzy'] as const).map((layer) => (
-            <div key={layer} id={`menu-action-paint-${layer}`}
+            <button type="button" role="menuitem" tabIndex={-1} key={layer} id={`menu-action-paint-${layer}`}
               onClick={() => {
                 const plate = usePlateStore.getState();
                 const instanceId = plate.objects.find((obj) => obj.id === objectId)?.instances[0]?.id ?? null;
@@ -560,12 +792,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               }}
               style={{ padding: '6px 14px', cursor: 'pointer' }}>
               {`${layer[0].toUpperCase()}${layer.slice(1)} painting`}
-            </div>
+            </button>
           ))}
 
           <div style={{ height: 1, background: 'var(--control-bg)', margin: '4px 0' }} />
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-rename"
             data-testid="menu-action-rename"
             onClick={() => {
@@ -580,12 +812,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("Rename")}</div>
+            {t("Rename")}</button>
 
-          <div id="menu-action-move-up" data-testid="menu-action-move-up" onClick={() => { const objs = useObjectListStore.getState().objects; const idx = objs.findIndex(o => o.id === objectId); if (idx > 0) useObjectListStore.getState().moveObject(objectId, idx - 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Up")}</div>
-          <div id="menu-action-move-down" data-testid="menu-action-move-down" onClick={() => { const objs = useObjectListStore.getState().objects; const idx = objs.findIndex(o => o.id === objectId); if (idx >= 0 && idx < objs.length - 1) useObjectListStore.getState().moveObject(objectId, idx + 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Down")}</div>
-          <div id="menu-action-lock-orientation" data-testid="menu-action-lock-orientation" onClick={() => { const plate = usePlateStore.getState(); const instId = (plate.selectedObjectId === objectId ? plate.selectedInstanceId : null) ?? plate.objects.find(o => o.id === objectId)?.instances[0]?.id; if (instId !== undefined) { plate.toggleOrientationLock(instId); } onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{(() => { const plate = usePlateStore.getState(); const instId = (plate.selectedObjectId === objectId ? plate.selectedInstanceId : null) ?? plate.objects.find(o => o.id === objectId)?.instances[0]?.id; return instId && plate.isOrientationLocked(instId) ? t("Unlock Orientation") : t("Lock Orientation"); })()}</div>
-          <div
+          <button type="button" role="menuitem" tabIndex={-1} id="menu-action-move-up" data-testid="menu-action-move-up" onClick={() => { const objs = useObjectListStore.getState().objects; const idx = objs.findIndex(o => o.id === objectId); if (idx > 0) useObjectListStore.getState().moveObject(objectId, idx - 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Up")}</button>
+          <button type="button" role="menuitem" tabIndex={-1} id="menu-action-move-down" data-testid="menu-action-move-down" onClick={() => { const objs = useObjectListStore.getState().objects; const idx = objs.findIndex(o => o.id === objectId); if (idx >= 0 && idx < objs.length - 1) useObjectListStore.getState().moveObject(objectId, idx + 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Down")}</button>
+          <button type="button" role="menuitem" tabIndex={-1} id="menu-action-lock-orientation" data-testid="menu-action-lock-orientation" onClick={() => { const plate = usePlateStore.getState(); const instId = (plate.selectedObjectId === objectId ? plate.selectedInstanceId : null) ?? plate.objects.find(o => o.id === objectId)?.instances[0]?.id; if (instId !== undefined) { plate.toggleOrientationLock(instId); } onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{(() => { const plate = usePlateStore.getState(); const instId = (plate.selectedObjectId === objectId ? plate.selectedInstanceId : null) ?? plate.objects.find(o => o.id === objectId)?.instances[0]?.id; return instId && plate.isOrientationLocked(instId) ? t("Unlock Orientation") : t("Lock Orientation"); })()}</button>
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-delete"
             data-testid="menu-action-delete"
             onClick={async () => {
@@ -600,18 +832,19 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("Delete")}</div>
+            {t("Delete")}</button>
         </>
       ) : (
         <>
-          {volumeId !== undefined && (
-            <div
+          {isTextVolume && (
+            <button type="button" role="menuitem" tabIndex={-1}
               id="menu-action-edit-text"
               data-testid="menu-action-edit-text"
               onClick={() => {
-                void useTextStore.getState().openForEdit(objectId, volumeId);
+                if (volumeId !== undefined) { void useTextStore.getState().openForEdit(objectId, volumeId); }
                 onClose();
               }}
+
               style={{ padding: '6px 14px', cursor: 'pointer' }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
@@ -620,10 +853,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
                 e.currentTarget.style.background = 'transparent';
               }}
             >
-              {t("✏️ Edit 3D Text")}</div>
-          )}
+              {t("✏️ Edit 3D Text")}</button>
 
-          <div
+          )}
+          {renderChangeTypeMenuItem()}
+
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-split-parts"
             data-testid="menu-action-split-parts"
             onClick={() => {
@@ -638,9 +873,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("Split to Parts")}</div>
+            {t("Split to Parts")}</button>
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-simplify"
             data-testid="menu-action-simplify"
             onClick={() => {
@@ -655,11 +890,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("Simplify...")}</div>
+            {t("Simplify...")}</button>
 
           {renderExtruderMenuItem()}
 
-          <div
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-rename-volume"
             data-testid="menu-action-rename-volume"
             onClick={() => {
@@ -674,11 +909,11 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("Rename")}</div>
+            {t("Rename")}</button>
 
-          <div id="menu-action-move-up-vol" data-testid="menu-action-move-up-vol" onClick={() => { const objs = useObjectListStore.getState().objects; const obj = objs.find(o => o.id === objectId); const idx = obj?.volumes?.findIndex(v => v.id === volumeId); if (idx !== undefined && idx > 0) useObjectListStore.getState().moveVolume(objectId, volumeId!, idx - 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Up")}</div>
-          <div id="menu-action-move-down-vol" data-testid="menu-action-move-down-vol" onClick={() => { const objs = useObjectListStore.getState().objects; const obj = objs.find(o => o.id === objectId); const idx = obj?.volumes?.findIndex(v => v.id === volumeId); if (idx !== undefined && obj?.volumes && idx < obj.volumes.length - 1) useObjectListStore.getState().moveVolume(objectId, volumeId!, idx + 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Down")}</div>
-          <div
+          <button type="button" role="menuitem" tabIndex={-1} id="menu-action-move-up-vol" data-testid="menu-action-move-up-vol" onClick={() => { const objs = useObjectListStore.getState().objects; const obj = objs.find(o => o.id === objectId); const idx = obj?.volumes?.findIndex(v => v.id === volumeId); if (idx !== undefined && idx > 0) useObjectListStore.getState().moveVolume(objectId, volumeId!, idx - 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Up")}</button>
+          <button type="button" role="menuitem" tabIndex={-1} id="menu-action-move-down-vol" data-testid="menu-action-move-down-vol" onClick={() => { const objs = useObjectListStore.getState().objects; const obj = objs.find(o => o.id === objectId); const idx = obj?.volumes?.findIndex(v => v.id === volumeId); if (idx !== undefined && obj?.volumes && idx < obj.volumes.length - 1) useObjectListStore.getState().moveVolume(objectId, volumeId!, idx + 1); onClose(); }} style={{ padding: "6px 14px", cursor: "pointer" }}>{t("Move Down")}</button>
+          <button type="button" role="menuitem" tabIndex={-1}
             id="menu-action-delete-volume"
             data-testid="menu-action-delete-volume"
             onClick={async () => {
@@ -693,7 +928,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
               e.currentTarget.style.background = 'transparent';
             }}
           >
-            {t("Delete")}</div>
+            {t("Delete")}</button>
         </>
       )}
     </div>

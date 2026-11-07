@@ -1,6 +1,6 @@
 import { InputShapingDialogs } from './InputShapingDialogs';
 import { useState, useEffect } from 'react';
-import { CalibrationDialogWrapper as DialogWrapper } from './CalibrationDialogWrapper';
+import { CalibrationDialogWrapper as DialogWrapper, useCalibrationError } from './CalibrationDialogWrapper';
 import { useOtherCalibrationStore } from './otherCalibrationStore';
 import { runOtherCalibration } from './calibrationUtils';
 import { useTranslation } from "../i18n";
@@ -23,7 +23,7 @@ function PACalibrationDialog({ onClose, initialMode }: { onClose: () => void, in
   const [accelerations, setAccelerations] = useState('');
   const [speeds, setSpeeds] = useState('');
   
-  const [error, setError] = useState<string | null>(null);
+  const { error, errorId, setError, clearError, field } = useCalibrationError();
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -41,8 +41,13 @@ function PACalibrationDialog({ onClose, initialMode }: { onClose: () => void, in
   }, [mode, extruder]);
 
   const handleOk = async () => {
-    if (start < 0 || step < 10 * Number.EPSILON || end < start + step) {
-      return setError('Please input valid values:\n(0 <= Start < End), Step > 0');
+    const invalid = [
+      !Number.isFinite(start) || start < 0 ? 'start' : '',
+      !Number.isFinite(step) || step < 10 * Number.EPSILON ? 'step' : '',
+      !Number.isFinite(end) || end < start + step ? 'end' : ''
+    ].filter(Boolean);
+    if (invalid.length) {
+      return setError('Please input valid values:\n(0 <= Start < End), Step > 0', invalid);
     }
 
     setError(null);
@@ -87,7 +92,7 @@ function PACalibrationDialog({ onClose, initialMode }: { onClose: () => void, in
   };
 
   return (
-    <DialogWrapper title={t("PA Calibration")} onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
+    <DialogWrapper title={t("PA Calibration")} onClose={onClose} onOk={handleOk} error={error} errorId={errorId} onEdit={clearError} isLoading={isLoading}>
       <div className="field-row">
         <label>{t("Method:")}<select value={mode} onChange={(e) => setMode(e.target.value as any)}>
           <option value="line">{t("Line")}</option>
@@ -102,13 +107,13 @@ function PACalibrationDialog({ onClose, initialMode }: { onClose: () => void, in
         </select></label>
       </div>
       <div className="field-row">
-        <label>{t("Start PA:")}<input aria-label={t("Start PA")} type="number" step="0.001" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
+        <label>{t("Start PA:")}<input {...field('start')} aria-label={t("Start PA")} type="number" step="0.001" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>{t("End PA:")}<input aria-label={t("End PA")} type="number" step="0.001" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
+        <label>{t("End PA:")}<input {...field('end')} aria-label={t("End PA")} type="number" step="0.001" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
-        <label>{t("PA step:")}<input aria-label={t("PA step")} type="number" step="0.001" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /></label>
+        <label>{t("PA step:")}<input {...field('step')} aria-label={t("PA step")} type="number" step="0.001" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /></label>
       </div>
       <div className="field-row">
         <label>{t("Print numbers:")}<input type="checkbox" checked={printNumbers} disabled={mode === 'tower'} onChange={(e) => setPrintNumbers(e.target.checked)} /></label>
@@ -132,13 +137,13 @@ function TempTowerDialog({ onClose }: { onClose: () => void }) {
   const [start, setStart] = useState(230);
   const [end, setEnd] = useState(190);
   const step = 5;
-  const [error, setError] = useState<string | null>(null);
+  const { error, errorId, setError, clearError, field } = useCalibrationError();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleOk = async () => {
-    if (start > 500) return setError('Start must be <= 500');
-    if (end < 155) return setError('End must be >= 155');
-    if (start < end + 5) return setError('Start must be >= End + 5');
+    if (!Number.isFinite(start) || start > 500) return setError('Start must be <= 500', ['start']);
+    if (!Number.isFinite(end) || end < 155) return setError('End must be >= 155', ['end']);
+    if (start < end + 5) return setError('Start must be >= End + 5', ['start', 'end']);
 
     setError(null);
     setIsLoading(true);
@@ -161,15 +166,15 @@ function TempTowerDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <DialogWrapper title={t("Temperature Tower")} onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
+    <DialogWrapper title={t("Temperature Tower")} onClose={onClose} onOk={handleOk} error={error} errorId={errorId} onEdit={clearError} isLoading={isLoading}>
       <div className="field-row">
-        <label>{t("Start Temperature:")}<input aria-label={t("Start Temperature")} type="number" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
+        <label>{t("Start Temperature:")}<input {...field('start', 'temp-start-unit')} aria-label={t("Start Temperature")} type="number" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /><span id="temp-start-unit" className="calibration-unit">°C</span></label>
       </div>
       <div className="field-row">
-        <label>{t("End Temperature:")}<input aria-label={t("End Temperature")} type="number" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
+        <label>{t("End Temperature:")}<input {...field('end', 'temp-end-unit')} aria-label={t("End Temperature")} type="number" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /><span id="temp-end-unit" className="calibration-unit">°C</span></label>
       </div>
       <div className="field-row">
-        <label>{t("Step:")}<input aria-label={t("Step")} type="number" value={step} disabled /></label>
+        <label>{t("Step:")}<input {...field('step', 'temp-step-unit')} aria-label={t("Step")} type="number" value={step} disabled /><span id="temp-step-unit" className="calibration-unit">°C</span></label>
       </div>
     </DialogWrapper>
   );
@@ -180,11 +185,16 @@ function VFADialog({ onClose }: { onClose: () => void }) {
   const [start, setStart] = useState(40);
   const [end, setEnd] = useState(200);
   const [step, setStep] = useState(10);
-  const [error, setError] = useState<string | null>(null);
+  const { error, errorId, setError, clearError, field } = useCalibrationError();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleOk = async () => {
-    if (start < 0 || step <= 0 || end < start + step) return setError('Invalid values');
+    const invalid = [
+      !Number.isFinite(start) || start < 0 ? 'start' : '',
+      !Number.isFinite(step) || step <= 0 ? 'step' : '',
+      !Number.isFinite(end) || end < start + step ? 'end' : ''
+    ].filter(Boolean);
+    if (invalid.length) return setError('Invalid values', invalid);
 
     setError(null);
     setIsLoading(true);
@@ -208,15 +218,15 @@ function VFADialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <DialogWrapper title={t("VFA")} onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
+    <DialogWrapper title={t("VFA")} onClose={onClose} onOk={handleOk} error={error} errorId={errorId} onEdit={clearError} isLoading={isLoading}>
       <div className="field-row">
-        <label>{t("Start Speed:")}<input aria-label={t("Start Speed")} type="number" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
+        <label>{t("Start Speed:")}<input {...field('start', 'vfa-start-unit')} aria-label={t("Start Speed")} type="number" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /><span id="vfa-start-unit" className="calibration-unit">mm/s</span></label>
       </div>
       <div className="field-row">
-        <label>{t("End Speed:")}<input aria-label={t("End Speed")} type="number" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
+        <label>{t("End Speed:")}<input {...field('end', 'vfa-end-unit')} aria-label={t("End Speed")} type="number" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /><span id="vfa-end-unit" className="calibration-unit">mm/s</span></label>
       </div>
       <div className="field-row">
-        <label>{t("Step:")}<input aria-label={t("Step")} type="number" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /></label>
+        <label>{t("Step:")}<input {...field('step', 'vfa-step-unit')} aria-label={t("Step")} type="number" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /><span id="vfa-step-unit" className="calibration-unit">mm/s</span></label>
       </div>
     </DialogWrapper>
   );
@@ -224,18 +234,18 @@ function VFADialog({ onClose }: { onClose: () => void }) {
 
 function GenericCalibrationDialog({ 
   title, mode, defaultStart, defaultEnd, defaultStep, 
-  validate, drcFile, drcUrl, onClose 
+  validate, unit, drcFile, drcUrl, onClose
 }: any) {
     const { t } = useTranslation();
   const [start, setStart] = useState(defaultStart);
   const [end, setEnd] = useState(defaultEnd);
   const [step, setStep] = useState(defaultStep);
-  const [error, setError] = useState<string | null>(null);
+  const { error, errorId, setError, clearError, field } = useCalibrationError();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleOk = async () => {
     const err = validate(start, end, step);
-    if (err) return setError(err);
+    if (err) return setError(err.message, [err.field]);
 
     setError(null);
     setIsLoading(true);
@@ -257,15 +267,15 @@ function GenericCalibrationDialog({
   };
 
   return (
-    <DialogWrapper title={title} onClose={onClose} onOk={handleOk} error={error} isLoading={isLoading}>
+    <DialogWrapper title={title} onClose={onClose} onOk={handleOk} error={error} errorId={errorId} onEdit={clearError} isLoading={isLoading}>
       <div className="field-row">
-        <label>{t("Start:")}<input aria-label={t("Start")} type="number" step="0.1" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /></label>
+        <label>{t("Start:")}<input {...field('start', 'cal-start-unit')} aria-label={t("Start")} type="number" step="0.1" value={start} onChange={(e) => setStart(parseFloat(e.target.value))} /><span id="cal-start-unit" className="calibration-unit">{unit}</span></label>
       </div>
       <div className="field-row">
-        <label>{t("End:")}<input aria-label={t("End")} type="number" step="0.1" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /></label>
+        <label>{t("End:")}<input {...field('end', 'cal-end-unit')} aria-label={t("End")} type="number" step="0.1" value={end} onChange={(e) => setEnd(parseFloat(e.target.value))} /><span id="cal-end-unit" className="calibration-unit">{unit}</span></label>
       </div>
       <div className="field-row">
-        <label>{t("Step:")}<input aria-label={t("Step")} type="number" step="0.1" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /></label>
+        <label>{t("Step:")}<input {...field('step', 'cal-step-unit')} aria-label={t("Step")} type="number" step="0.1" value={step} onChange={(e) => setStep(parseFloat(e.target.value))} /><span id="cal-step-unit" className="calibration-unit">{unit}</span></label>
       </div>
     </DialogWrapper>
   );
@@ -291,13 +301,14 @@ function OtherCalibrationsDialogsInner() {
         <GenericCalibrationDialog
           title={t("Max Volumetric Speed")}
           mode={7} // Calib_Vol_speed_Tower
+          unit="mm³/s"
           defaultStart={5}
           defaultEnd={20}
           defaultStep={0.5}
           validate={(s: number, e: number, st: number) => {
-            if (s <= 0) return 'Start must be > 0';
-            if (st <= 0) return 'Step must be > 0';
-            if (e < s + st) return 'End must be >= Start + Step';
+            if (!Number.isFinite(s) || s <= 0) return { message: 'Start must be > 0', field: 'start' };
+            if (!Number.isFinite(st) || st <= 0) return { message: 'Step must be > 0', field: 'step' };
+            if (!Number.isFinite(e) || e < s + st) return { message: 'End must be >= Start + Step', field: 'end' };
             return null;
           }}
           drcFile="SpeedTestStructure.drc"
@@ -312,13 +323,14 @@ function OtherCalibrationsDialogsInner() {
         <GenericCalibrationDialog
           title={t("Retraction")}
           mode={9} // Calib_Retraction_tower
+          unit="mm"
           defaultStart={0}
           defaultEnd={2}
           defaultStep={0.1}
           validate={(s: number, e: number, st: number) => {
-            if (s < 0) return 'Start must be >= 0';
-            if (st <= 0) return 'Step must be > 0';
-            if (e < s + st) return 'End must be >= Start + Step';
+            if (!Number.isFinite(s) || s < 0) return { message: 'Start must be >= 0', field: 'start' };
+            if (!Number.isFinite(st) || st <= 0) return { message: 'Step must be > 0', field: 'step' };
+            if (!Number.isFinite(e) || e < s + st) return { message: 'End must be >= Start + Step', field: 'end' };
             return null;
           }}
           drcFile="retraction_tower.drc"

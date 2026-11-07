@@ -156,19 +156,51 @@ static const char* BED_VS =
     "layout(location = 1) in vec4 a_color;\n"
     "uniform mat4 u_mvp;\n"
     "out vec4 v_color;\n"
+    "out vec3 v_position;\n"
     "void main() {\n"
     "    v_color = a_color;\n"
+    "    v_position = a_pos;\n"
     "    gl_Position = u_mvp * vec4(a_pos, 1.0);\n"
     "}\n";
 
 static const char* BED_FS =
     "#version 300 es\n"
-    "precision mediump float;\n"
+    "precision highp float;\n"
+    "precision highp sampler2D;\n"
     "in vec4 v_color;\n"
+    "in vec3 v_position;\n"
     "uniform float u_alpha;\n"
+    "uniform sampler2D u_shadow_map;\n"
+    "uniform mat4 u_light_vp;\n"
+    "uniform float u_shadow_intensity;\n"
+    "float shadow_sample(ivec2 p, float receiver_depth) {\n"
+    "    ivec2 size = textureSize(u_shadow_map, 0);\n"
+    "    if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, size))) return 0.0;\n"
+    "    return receiver_depth > texelFetch(u_shadow_map, p, 0).r ? 1.0 : 0.0;\n"
+    "}\n"
+    "float filtered_shadow(vec2 uv, float receiver_depth) {\n"
+    "    vec2 p = uv * vec2(textureSize(u_shadow_map, 0)) - 0.5;\n"
+    "    ivec2 i = ivec2(floor(p));\n"
+    "    vec2 f = fract(p);\n"
+    "    return mix(mix(shadow_sample(i, receiver_depth), shadow_sample(i + ivec2(1, 0), receiver_depth), f.x),\n"
+    "               mix(shadow_sample(i + ivec2(0, 1), receiver_depth), shadow_sample(i + ivec2(1, 1), receiver_depth), f.x), f.y);\n"
+    "}\n"
+    "float shadow() {\n"
+    "    if (u_shadow_intensity <= 0.0) return 1.0;\n"
+    "    vec4 lp = u_light_vp * vec4(v_position, 1.0);\n"
+    "    if (lp.w <= 0.0) return 1.0;\n"
+    "    vec3 p = lp.xyz / lp.w * 0.5 + 0.5;\n"
+    "    if (any(lessThan(p, vec3(0.0))) || any(greaterThan(p, vec3(1.0)))) return 1.0;\n"
+    "    float sum = 0.0;\n"
+    "    vec2 texel = 1.0 / vec2(textureSize(u_shadow_map, 0));\n"
+    "    for (int x = -1; x <= 1; ++x)\n"
+    "        for (int y = -1; y <= 1; ++y)\n"
+    "            sum += filtered_shadow(p.xy + vec2(float(x), float(y)) * texel, p.z - 0.00126);\n"
+    "    return 1.0 - u_shadow_intensity * sum / 9.0;\n"
+    "}\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
-    "    fragColor = vec4(v_color.rgb, v_color.a * u_alpha);\n"
+    "    fragColor = vec4(v_color.rgb * shadow(), v_color.a * u_alpha);\n"
     "}\n";
 
 } // namespace
@@ -223,6 +255,9 @@ public:
 
         m_u_mvp = glGetUniformLocation(m_program, "u_mvp");
         m_u_alpha = glGetUniformLocation(m_program, "u_alpha");
+        m_u_shadow_map = glGetUniformLocation(m_program, "u_shadow_map");
+        m_u_light_vp = glGetUniformLocation(m_program, "u_light_vp");
+        m_u_shadow_intensity = glGetUniformLocation(m_program, "u_shadow_intensity");
 
         glGenVertexArrays(1, &m_vao);
         glGenBuffers(1, &m_vbo);
@@ -278,12 +313,16 @@ public:
     }
 
     // alpha < 1 draws the bed see-through (used when the camera is below it).
-    void render(const libvgcode::Mat4x4& mvp, float alpha = 1.0f) {
+    void render(const libvgcode::Mat4x4& mvp, float alpha = 1.0f,
+                const libvgcode::Mat4x4& light_vp = {}, float shadow_intensity = 0.0f) {
         if (!m_initialized || m_program == 0) return;
 
         glUseProgram(m_program);
         glUniformMatrix4fv(m_u_mvp, 1, GL_FALSE, mvp.data());
         glUniform1f(m_u_alpha, alpha);
+        glUniform1i(m_u_shadow_map, 4);
+        glUniformMatrix4fv(m_u_light_vp, 1, GL_FALSE, light_vp.data());
+        glUniform1f(m_u_shadow_intensity, shadow_intensity);
         glBindVertexArray(m_vao);
 
         if (m_floor_count > 0) {
@@ -419,6 +458,9 @@ private:
     GLuint m_program;
     GLint m_u_mvp;
     GLint m_u_alpha = -1;
+    GLint m_u_shadow_map = -1;
+    GLint m_u_light_vp = -1;
+    GLint m_u_shadow_intensity = -1;
     GLuint m_vao;
     GLuint m_vbo;
     GLsizei m_floor_count;
@@ -443,7 +485,11 @@ public:
     }
 
     ~OrcaPreview() {
+        if (m_ctx > 0)
+            emscripten_webgl_make_context_current(m_ctx);
         if (m_initialized) {
+            if (m_shadow_fbo) glDeleteFramebuffers(1, &m_shadow_fbo);
+            if (m_shadow_texture) glDeleteTextures(1, &m_shadow_texture);
             m_bed.cleanup();
             m_viewer.shutdown();
         }
@@ -562,6 +608,7 @@ public:
             // An empty replacement leaves the previous data, statistics and camera intact.
             if (res.moves.size() <= 1)
                 return "{\"error\":\"No toolpath moves in G-code\"}";
+            m_extrusion_bounds_valid = false;
             m_viewer.reset();
 
             std::vector<std::string> tool_colors = res.extruder_colors;
@@ -607,6 +654,10 @@ public:
 
         // Center camera specifically on extrusion bounds (avoiding travel moves from origin)
         libvgcode::AABox bbox = m_viewer.get_bounding_box({ libvgcode::EMoveType::Extrude });
+        // Raw extrusion positions only change on replacement or clear. Keep the
+        // unexpanded box even when ranges, visibility or the camera change.
+        m_extrusion_bounds = bbox;
+        m_extrusion_bounds_valid = true;
         if (bbox[0][0] > bbox[1][0]) {
             bbox = m_viewer.get_bounding_box();
         }
@@ -1091,9 +1142,13 @@ public:
         do_render(view, proj);
     }
 
+    void setShadowsEnabled(bool enabled) { m_shadows_enabled = enabled; }
+    void setLightingEnabled(bool enabled) { m_lighting_enabled = enabled; }
+
     void clearGcode() {
         if (!m_initialized) return;
         emscripten_webgl_make_context_current(m_ctx);
+        m_extrusion_bounds_valid = false;
         m_viewer.reset();
         m_cached_stats_json.clear();
     }
@@ -1110,8 +1165,145 @@ public:
     }
 
 private:
+    bool render_shadows(libvgcode::Mat4x4& light_vp) {
+        if (!m_lighting_enabled || !m_shadows_enabled || m_low_quality || m_shadow_failed || !m_extrusion_bounds_valid || m_viewer.get_vertices_count() == 0)
+            return false;
+
+        auto bounds = m_extrusion_bounds;
+        for (int axis = 0; axis < 3; ++axis)
+            if (!std::isfinite(bounds[0][axis]) || !std::isfinite(bounds[1][axis]) || bounds[0][axis] > bounds[1][axis])
+                return false;
+        // Include the receiving plane and enough space for the projected silhouette on it.
+        bounds[0][2] = std::min(bounds[0][2], -0.05f);
+        const float height = std::max(0.0f, bounds[1][2]);
+        for (int axis = 0; axis < 2; ++axis) {
+            const float shift = -height * LIGHT_DIRECTION[axis] / LIGHT_DIRECTION[2];
+            bounds[0][axis] += std::min(shift, 0.0f) - 2.0f;
+            bounds[1][axis] += std::max(shift, 0.0f) + 2.0f;
+        }
+        libvgcode::Vec3 center{};
+        float radius_sq = 0.0f;
+        for (int axis = 0; axis < 3; ++axis) {
+            center[axis] = 0.5f * (bounds[0][axis] + bounds[1][axis]);
+            const float extent = bounds[1][axis] - bounds[0][axis];
+            radius_sq += extent * extent;
+        }
+        const float distance = std::max(10.0f, std::sqrt(radius_sq) + 10.0f);
+        if (!std::isfinite(distance)) return false;
+        const libvgcode::Vec3 light_position = {
+            center[0] + distance * LIGHT_DIRECTION[0],
+            center[1] + distance * LIGHT_DIRECTION[1],
+            center[2] + distance * LIGHT_DIRECTION[2]};
+        const auto light_view = compute_lookat(light_position, center, {0.0f, 0.0f, 1.0f});
+        libvgcode::Vec3 lo{INFINITY, INFINITY, INFINITY}, hi{-INFINITY, -INFINITY, -INFINITY};
+        for (int corner = 0; corner < 8; ++corner) {
+            libvgcode::Vec3 p{bounds[corner & 1][0], bounds[(corner >> 1) & 1][1], bounds[(corner >> 2) & 1][2]};
+            for (int row = 0; row < 3; ++row) {
+                const float v = light_view[row] * p[0] + light_view[4 + row] * p[1] + light_view[8 + row] * p[2] + light_view[12 + row];
+                lo[row] = std::min(lo[row], v - 2.0f);
+                hi[row] = std::max(hi[row], v + 2.0f);
+            }
+        }
+        libvgcode::Mat4x4 light_proj{};
+        light_proj[0] = 2.0f / (hi[0] - lo[0]);
+        light_proj[5] = 2.0f / (hi[1] - lo[1]);
+        light_proj[10] = -2.0f / (hi[2] - lo[2]);
+        light_proj[12] = -(hi[0] + lo[0]) / (hi[0] - lo[0]);
+        light_proj[13] = -(hi[1] + lo[1]) / (hi[1] - lo[1]);
+        light_proj[14] = (hi[2] + lo[2]) / (hi[2] - lo[2]);
+        light_proj[15] = 1.0f;
+        light_vp = multiply_mat4(light_proj, light_view);
+        for (float value : light_vp)
+            if (!std::isfinite(value)) return false;
+
+        GLint draw_fbo, read_fbo, viewport[4], depth_func, active_texture, texture;
+        GLboolean color_mask[4], depth_mask;
+        GLfloat clear_depth;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fbo);
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fbo);
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        glGetIntegerv(GL_DEPTH_FUNC, &depth_func);
+        glGetBooleanv(GL_COLOR_WRITEMASK, color_mask);
+        glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
+        glGetFloatv(GL_DEPTH_CLEAR_VALUE, &clear_depth);
+        const GLboolean depth_test = glIsEnabled(GL_DEPTH_TEST), blend = glIsEnabled(GL_BLEND);
+        const GLboolean cull = glIsEnabled(GL_CULL_FACE), scissor = glIsEnabled(GL_SCISSOR_TEST);
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &active_texture);
+        glActiveTexture(GL_TEXTURE4);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
+
+        if (!m_shadow_fbo) {
+            GLint max_size;
+            glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_size);
+            m_shadow_size = std::min(2048, max_size);
+            glGenTextures(1, &m_shadow_texture);
+            glBindTexture(GL_TEXTURE_2D, m_shadow_texture);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, m_shadow_size, m_shadow_size, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+            glGenFramebuffers(1, &m_shadow_fbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, m_shadow_fbo);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_shadow_texture, 0);
+            const GLenum none = GL_NONE;
+            glDrawBuffers(1, &none);
+            glReadBuffer(GL_NONE);
+            m_shadow_failed = glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE;
+            if (m_shadow_failed)
+                std::fprintf(stderr, "OrcaPreview: depth framebuffer unsupported; using unshadowed lighting\n");
+        }
+        if (!m_shadow_failed) {
+            glBindFramebuffer(GL_FRAMEBUFFER, m_shadow_fbo);
+            // Do not sample the attached depth texture during the caster pass.
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glViewport(0, 0, m_shadow_size, m_shadow_size);
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+            glDepthMask(GL_TRUE);
+            glEnable(GL_DEPTH_TEST);
+            glDepthFunc(GL_LESS);
+            glDisable(GL_BLEND);
+            glDisable(GL_SCISSOR_TEST);
+            glClearDepthf(1.0f);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            m_viewer.render_shadow_casters(light_view, light_proj, light_position);
+        }
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo);
+        glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+        glColorMask(color_mask[0], color_mask[1], color_mask[2], color_mask[3]);
+        glDepthMask(depth_mask);
+        glDepthFunc(depth_func);
+        glClearDepthf(clear_depth);
+        if (depth_test) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+        if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+        if (cull) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+        if (scissor) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glActiveTexture(active_texture);
+        return !m_shadow_failed;
+    }
+
     void do_render(const libvgcode::Mat4x4& view, const libvgcode::Mat4x4& proj) {
         emscripten_webgl_make_context_current(m_ctx);
+
+        libvgcode::Mat4x4 light_vp{};
+        const bool shadows = render_shadows(light_vp);
+        libvgcode::Vec3 eye_light{};
+        for (int row = 0; row < 3; ++row)
+            eye_light[row] = view[row] * LIGHT_DIRECTION[0] + view[4 + row] * LIGHT_DIRECTION[1] + view[8 + row] * LIGHT_DIRECTION[2];
+        m_viewer.set_light_top_dir(eye_light);
+        m_viewer.set_enhanced_lighting(m_lighting_enabled);
+        m_viewer.set_shadow_map(4, light_vp, shadows ? 0.65f : 0.0f, m_shadow_size > 0 ? 1.0f / m_shadow_size : 0.0f);
+        GLint active_texture, texture;
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &active_texture);
+        glActiveTexture(GL_TEXTURE4);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
+        glBindTexture(GL_TEXTURE_2D, m_shadow_texture);
+        glActiveTexture(active_texture);
 
         glViewport(0, 0, m_width, m_height);
         if (m_light_theme) glClearColor(0.91f, 0.92f, 0.93f, 1.0f);
@@ -1133,15 +1325,27 @@ private:
             glDepthMask(GL_TRUE);
             glDisable(GL_BLEND);
         } else {
-            m_bed.render(mvp);
+            m_bed.render(mvp, 1.0f, light_vp, shadows ? 0.30f : 0.0f);
             m_viewer.render(view, proj);
         }
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glActiveTexture(active_texture);
     }
 
     libvgcode::Viewer m_viewer;
+    libvgcode::AABox m_extrusion_bounds{};
+    bool m_extrusion_bounds_valid = false;
     BedRenderer m_bed;
     bool m_light_theme = false;
     bool m_low_quality = false;
+    static constexpr libvgcode::Vec3 LIGHT_DIRECTION{-0.4574957f, 0.4574957f, 0.7624929f};
+    bool m_shadows_enabled = true;
+    bool m_lighting_enabled = true;
+    bool m_shadow_failed = false;
+    GLuint m_shadow_fbo = 0;
+    GLuint m_shadow_texture = 0;
+    int m_shadow_size = 0;
     EMSCRIPTEN_WEBGL_CONTEXT_HANDLE m_ctx;
     int m_width;
     int m_height;
@@ -1176,6 +1380,8 @@ EMSCRIPTEN_BINDINGS(orca_preview) {
         .function("setOptionVisible", &OrcaPreview::setOptionVisible)
         .function("setLightTheme", &OrcaPreview::setLightTheme)
         .function("setLowQuality", &OrcaPreview::setLowQuality)
+        .function("setShadowsEnabled", &OrcaPreview::setShadowsEnabled)
+        .function("setLightingEnabled", &OrcaPreview::setLightingEnabled)
         .function("setClippingPlane", &OrcaPreview::setClippingPlane)
         .function("setBed", &OrcaPreview::setBed)
         .function("setBedPolygon", &OrcaPreview::setBedPolygon)

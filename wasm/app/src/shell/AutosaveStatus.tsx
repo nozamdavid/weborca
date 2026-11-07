@@ -22,5 +22,5 @@ export const AutosaveStatus: React.FC = () => {
   const text = saving || now < startedAt + 2000
     ? t('Auto saving...')
     : t('Last saved {{seconds}} seconds ago', { seconds: Math.max(0, Math.floor((now - savedAt!) / 1000)) });
-  return <span id="autosave-status" style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', marginRight: 12 }}>{text}</span>;
+  return <span id="autosave-status" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap', marginRight: 12 }}>{text}</span>;
 };

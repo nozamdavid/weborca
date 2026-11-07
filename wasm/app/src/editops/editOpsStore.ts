@@ -18,6 +18,15 @@ import type {
 export type ActiveEditTool = 'flatten' | 'brimears' | null;
 export type ActiveEditDialog = 'boolean' | 'simplify' | 'svg' | null;
 
+// An offer threshold, not an import limit. Small meshes need no extra decision.
+export const IMPORT_SIMPLIFY_TRIANGLES = 100_000;
+interface ImportedMesh {
+  objectId: number;
+  volumeId: number;
+  name: string;
+  triangleCount: number;
+}
+
 export interface EditOpsState {
   activeTool: ActiveEditTool;
   activeDialog: ActiveEditDialog;
@@ -43,6 +52,7 @@ export interface EditOpsState {
   simplifyTargetCount: number;
   simplifyKeepPainting: boolean;
   currentTriangleCount: number;
+  importedMeshes: ImportedMesh[];
 
   // Brim Ears
   brimEarsObjectId: number | null;
@@ -73,6 +83,9 @@ export interface EditOpsState {
 
   openSimplifyDialog: (objectId?: number, volumeId?: number) => Promise<void>;
   closeSimplifyDialog: () => void;
+  offerImportSimplification: (objectIds: number[]) => Promise<void>;
+  chooseImportedMesh: (objectId: number, volumeId: number) => void;
+  keepImportedMesh: () => void;
   setSimplifyMethod: (method: 'ratio' | 'target') => void;
   setSimplifyRatio: (ratio: number) => void;
   setSimplifyTargetCount: (count: number) => void;
@@ -171,6 +184,7 @@ export const useEditOpsStore = create<EditOpsState>((set, get) => ({
   simplifyRatio: 0.5,
   simplifyTargetCount: 1000,
   simplifyKeepPainting: true,
+  importedMeshes: [],
   currentTriangleCount: 0,
 
   brimEarsObjectId: null,
@@ -420,6 +434,7 @@ export const useEditOpsStore = create<EditOpsState>((set, get) => ({
     }
 
     set({
+      importedMeshes: [],
       activeDialog: 'simplify',
       simplifyObjectId: targetObjId,
       simplifyVolumeId: targetVolId ?? null,
@@ -432,7 +447,56 @@ export const useEditOpsStore = create<EditOpsState>((set, get) => ({
     });
   },
 
-  closeSimplifyDialog: () => set({ activeDialog: null }),
+  closeSimplifyDialog: () => {
+    if (!get().isOperating) set({ activeDialog: null, importedMeshes: [] });
+  },
+
+  offerImportSimplification: async (objectIds) => {
+    try {
+      const { getEngine } = await import('../engine/orcaEngine');
+      const { getMeshHealth } = await import('../repair/repairApi');
+      const engine = await getEngine();
+      const tree = await engine.call('getObjectTree', {});
+      const candidates: ImportedMesh[] = [];
+      for (const object of (tree.objects ?? []) as import('../objectlist/types').ObjectTreeNode[]) {
+        if (!objectIds.includes(object.id)) continue;
+        for (const volume of object.volumes) {
+          const health = await getMeshHealth(object.id, volume.id);
+          if (health.facetsCount >= IMPORT_SIMPLIFY_TRIANGLES) {
+            candidates.push({ objectId: object.id, volumeId: volume.id,
+              name: object.volumes.length > 1 ? `${object.name} / ${volume.name}` : object.name,
+              triangleCount: health.facetsCount });
+          }
+        }
+      }
+      const { useAppStore } = await import('../store/appStore');
+      if (!candidates.length || useAppStore.getState().isSlicing || useHistoryStore.getState().isRestoring) return;
+      const state = get();
+      if (state.activeDialog && !state.importedMeshes.length) return;
+      const pending = [...state.importedMeshes, ...candidates.filter(c => !state.importedMeshes.some(m => m.objectId === c.objectId && m.volumeId === c.volumeId))];
+      set({ importedMeshes: pending });
+      if (!state.importedMeshes.length) get().chooseImportedMesh(pending[0].objectId, pending[0].volumeId);
+    } catch (error) {
+      console.warn('[Import] Could not inspect meshes for simplification:', error);
+    }
+  },
+
+  chooseImportedMesh: (objectId, volumeId) => {
+    if (get().isOperating) return;
+    const mesh = get().importedMeshes.find(m => m.objectId === objectId && m.volumeId === volumeId);
+    if (!mesh) return;
+    set({ activeDialog: 'simplify', simplifyObjectId: objectId, simplifyVolumeId: volumeId,
+      currentTriangleCount: mesh.triangleCount, simplifyMethod: 'ratio', simplifyRatio: 0.5,
+      simplifyTargetCount: Math.floor(mesh.triangleCount / 2), simplifyKeepPainting: true, error: null });
+  },
+
+  keepImportedMesh: () => {
+    if (get().isOperating) return;
+    const state = get();
+    const pending = state.importedMeshes.filter(m => m.objectId !== state.simplifyObjectId || m.volumeId !== state.simplifyVolumeId);
+    set({ importedMeshes: pending, activeDialog: null });
+    if (pending.length) get().chooseImportedMesh(pending[0].objectId, pending[0].volumeId);
+  },
 
   setSimplifyMethod: (method) => set({ simplifyMethod: method }),
 
@@ -480,7 +544,8 @@ export const useEditOpsStore = create<EditOpsState>((set, get) => ({
       }
 
       await refreshAndCommit('Simplify mesh', [simplifyObjectId], simplifyObjectId);
-      set({ isOperating: false, activeDialog: null });
+      set({ isOperating: false });
+      get().keepImportedMesh();
       return true;
     } catch (err: any) {
       set({ isOperating: false, error: err?.message || 'Simplification failed' });

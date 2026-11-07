@@ -5,6 +5,7 @@
  */
 
 import { create } from 'zustand';
+import { effectivePreset } from '../presets/effectivePreset';
 import { getEngine, getConfig, selectPresets, evaluateRules } from '../engine/orcaEngine';
 import { usePlateStore } from '../plate/plateStore';
 import { useObjectListStore } from '../objectlist/objectListStore';
@@ -195,7 +196,12 @@ function restoreSelectionSafely(snap: HistorySnapshot, objects: PlateObject[]): 
       : (matchedObj.instances[0]?.id ?? null);
 
   plateStore.selectObject(matchedObj.id, instId);
-  objStore.selectItem(matchedObj.id, snap.selection.volumeId ?? null);
+  // Native 3MF restore allocates new IDs; snapshot order identifies the same part.
+  const volumes = objStore.objects.find(obj => obj.id === matchedObj.id)?.volumes ?? [];
+  const volume = snap.selection.volumeIndex !== undefined
+    ? volumes[snap.selection.volumeIndex]
+    : volumes.find(v => v.id === snap.selection?.volumeId);
+  objStore.selectItem(matchedObj.id, volume?.id ?? null);
 }
 
 export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
@@ -325,7 +331,9 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
             objectName: obj.name,
             objectIndex: objIdx,
             instanceIndex: instIdx >= 0 ? instIdx : 0,
-            volumeId: selVolId ?? undefined
+            volumeId: selVolId ?? undefined,
+            volumeIndex: selVolId === null ? undefined : useObjectListStore.getState().objects
+              .find(tree => tree.id === obj.id)?.volumes.findIndex(volume => volume.id === selVolId)
           };
         }
       }
@@ -342,6 +350,10 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
 
       const plateState = capturePlateState();
       const settings = captureSettingsState();
+      const layerRanges = useObjectListStore.getState().objects.map((o, idx) => ({
+        objectIndex: idx,
+        ranges: o.layerRanges || []
+      })).filter((x) => x.ranges.length > 0);
 
       const newSnapshot: HistorySnapshot = {
         id: `snap_${++nextSnapshotSeq}_${Date.now()}`,
@@ -355,7 +367,8 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
         paintState,
         modelFileName: useAppStore.getState().modelFile?.name || null,
         plateState,
-        settings
+        settings,
+        layerRanges
       };
 
       // Enforce bounds by count & total bytes
@@ -552,7 +565,7 @@ async function restoreSettingsOnEmptyCanvas(engine: any, settings?: HistorySetti
 
     if (needPresetSelect && settings.printer && settings.process) {
       const systemName = (kind: 'printer' | 'process' | 'filament', name: string) =>
-        app.userPresets.find(preset => preset.kind === kind && preset.name === name)?.inherits || name;
+        effectivePreset(kind, name, app.userPresets).preset;
       await selectPresets({
         printer: systemName('printer', settings.printer),
         process: systemName('process', settings.process),
@@ -714,6 +727,14 @@ async function restoreSnapshotInternal(snap: HistorySnapshot): Promise<void> {
   // Refresh plate store & object list store from engine
   const refreshedObjects = await usePlateStore.getState().refreshObjects();
   await useObjectListStore.getState().refreshTree();
+  if (snap.layerRanges) {
+    const listStore = useObjectListStore.getState();
+    const updated = listStore.objects.map((o, idx) => {
+      const match = snap.layerRanges?.find((lr) => lr.objectIndex === idx);
+      return { ...o, layerRanges: match ? match.ranges : [] };
+    });
+    useObjectListStore.setState({ objects: updated });
+  }
 
   try {
     await usePlatesStore.getState().fetchPlates();

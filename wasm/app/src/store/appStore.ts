@@ -1,6 +1,8 @@
 import { isNoRuleFix } from '../engine/ruleFixes';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
-import { systemProfiles } from '../presets/systemProfiles';
+import { findSystemProfileVendor, systemProfiles } from '../presets/systemProfiles';
+import { loadPrinterCatalog, usePrinterCatalog } from '../presets/printerCatalog';
+import { slicePrerequisites } from '../shell/slicePrerequisites';
 import { showToast } from '../shell/toastStore';
 import { storeRecentFile } from '../shell/recentFiles';
 import { clearExportGcodeCache } from '../shell/gcodeThumbnails';
@@ -10,9 +12,12 @@ import { clearExportGcodeCache } from '../shell/gcodeThumbnails';
  */
 
 import { create } from 'zustand';
+import { resolveSlicingThreads } from '../prefs/slicingThreads';
 import type { PlateObject } from '../plate/types';
 import {
   getEngine,
+  disposeEngine,
+  onEngineLoadProgress,
   loadVendors,
   listPresets,
   getCompatiblePresets,
@@ -41,6 +46,7 @@ import type {
 import type { SettingsLayout, SettingsMode } from '../settings/types';
 import type { UserPreset, PresetKind, ConflictStrategy, PresetBundle, ImportBundleResult } from '../presets/types';
 import { loadUserPresets } from '../presets/presetStorage';
+import { effectivePreset } from '../presets/effectivePreset';
 import {
   saveCurrentUserPresetHelper,
   duplicateUserPresetHelper,
@@ -56,6 +62,12 @@ export function pendingOptionKey(kind: 'print' | 'filament' | 'printer', key: st
 }
 
 let optionRequestId = 0;
+let startupGeneration = 0;
+export function stopAppStartup(): void {
+  startupGeneration++;
+  disposeEngine();
+  useAppStore.setState({ isEngineReady: false, isEngineInitializing: false });
+}
 
 export interface AppState {
   // Cross-origin isolation
@@ -64,6 +76,7 @@ export interface AppState {
   // Engine lifecycle
   isEngineInitializing: boolean;
   isEngineReady: boolean;
+  engineLoad: { phase: 'downloading' | 'initializing'; loaded?: number; total?: number };
   engineError: string | null;
   setEngineError: (error: string | null) => void;
 
@@ -89,6 +102,7 @@ export interface AppState {
   slicePercent: number;
   sliceStatusText: string;
   sliceResult: SliceResult | null;
+  sessionRecovery: 'idle' | 'restoring' | 'restored';
   gcodeUrl: string | null;
   abortController: AbortController | null;
 
@@ -164,7 +178,7 @@ export interface AppState {
   stepImportState: { file: File } | null;
   setStepImportState: (state: { file: File } | null) => void;
   requestImportFile: (file: File) => void;
-  importModelFile: (file: File, options?: StepImportOptions, inArchive?: boolean) => Promise<void>;
+  importModelFile: (file: File, options?: StepImportOptions, inArchive?: boolean, context?: { source: 'builtin-handy' }) => Promise<void>;
   openProjectFile: (file: File) => Promise<void>;
   saveProjectFile: (fileName?: string) => Promise<Uint8Array | null>;
   openGcodeFile: (file: File) => Promise<void>;
@@ -194,17 +208,14 @@ function resolveSystemPreset(
   name: string,
   userPresets: UserPreset[]
 ): string {
-  if (!name) return '';
-  const user = userPresets.find((p) => p.kind === kind && p.name === name);
-  return user ? user.inherits : name;
+  return effectivePreset(kind, name, userPresets).preset;
 }
 
 /** Merge each user filament into its own slot using the desktop config composer. */
 async function reapplyPresetOverrides(filaments: string[], overrides: Record<string, string>): Promise<void> {
   const users = useAppStore.getState().userPresets;
   const slots = filaments.map(name => {
-    const preset = users.find(user => user.kind === 'filament' && user.name === name);
-    return { preset: preset?.inherits || name, values: preset?.values || {} };
+    return effectivePreset('filament', name, users);
   });
   const userValues = slots.some(slot => Object.keys(slot.values).length)
     ? await (await getEngine()).call('mergeFilamentPresets', { slots }) as Record<string, string>
@@ -224,8 +235,7 @@ async function computeBaselineConfig(
   const printer = userPresets.find(preset => preset.kind === 'printer' && preset.name === active.printer);
   const process = userPresets.find(preset => preset.kind === 'process' && preset.name === active.process);
   const slots = filaments.map(name => {
-    const preset = userPresets.find(user => user.kind === 'filament' && user.name === name);
-    return { preset: preset?.inherits || name, values: preset?.values || {} };
+    return effectivePreset('filament', name, userPresets);
   });
   const userValues = slots.some(slot => Object.keys(slot.values).length)
     ? await (await getEngine()).call('mergeFilamentPresets', { slots }) as Record<string, string>
@@ -240,8 +250,8 @@ async function computeBaselineConfig(
       }
     }
   };
-  mergeKnown(printer?.values);
-  mergeKnown(process?.values);
+  if (printer) mergeKnown(effectivePreset('printer', printer.name, userPresets).values);
+  if (process) mergeKnown(effectivePreset('process', process.name, userPresets).values);
   mergeKnown(userValues);
   return baseline;
 }
@@ -269,6 +279,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   isEngineInitializing: false,
   isEngineReady: false,
+  engineLoad: { phase: 'downloading' },
   engineError: null,
   setEngineError: (error) => set({ engineError: error }),
 
@@ -291,6 +302,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   slicePercent: 0,
   sliceStatusText: '',
   sliceResult: null,
+  sessionRecovery: 'idle',
   gcodeUrl: null,
   abortController: null,
 
@@ -384,7 +396,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { layout } = get();
     if (!layout) return;
 
-    for (const tab of layout.tabs) {
+    const currentDialog = get().activeDialog;
+    const preferredTabId = currentDialog === 'printer' ? 'printer' : currentDialog === 'filament' ? 'filament' : 'print';
+    const sortedTabs = [...layout.tabs].sort((a, b) => (a.id === preferredTabId ? -1 : b.id === preferredTabId ? 1 : 0));
+
+    for (const tab of sortedTabs) {
       for (const page of tab.pages) {
         for (const group of page.groups) {
           for (const line of group.lines) {
@@ -398,7 +414,9 @@ export const useAppStore = create<AppState>((set, get) => ({
                 set({ activeDialog: 'filament', activeFilamentPage: page.title, highlightedKey: key });
               }
               setTimeout(() => {
-                const el = document.getElementById(`setting-row-${key}`);
+                const el = document.getElementById(`setting-row-${key}`) ||
+                  document.getElementById(`setting-input-${key}`)?.closest('.setting-row') ||
+                  document.querySelector(`[data-testid="setting-row-${key}"]`);
                 if (el) {
                   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
@@ -412,47 +430,55 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   initApp: async () => {
+    if (get().isEngineInitializing || get().isEngineReady) return;
+    const current = ++startupGeneration;
+    const check = () => { if (current !== startupGeneration) throw new Error('Startup canceled'); };
     const isIsolated = typeof window !== 'undefined' ? !!window.crossOriginIsolated : false,
       setIsolated = isIsolated;
     set({ isIsolated: setIsolated });
     if (!isIsolated) return;
 
-    set({ isEngineInitializing: true, engineError: null });
+    set({ isEngineInitializing: true, engineError: null, engineLoad: { phase: 'downloading' } });
+    onEngineLoadProgress(engineLoad => set({ engineLoad }));
 
     try {
-      await getEngine();
-
-      // Fetch layout and configDefs in parallel
-      const [indexRes, layoutRes, configDefs, userPresets] = await Promise.all([
-        fetch('/profiles/index.json').then((r) => r.json()),
-        fetch('/settings/layout.json').then((r) => r.json()),
-        getConfigDef(),
-        loadUserPresets()
-      ]);
-
-      const vendors: VendorInfo[] = (indexRes as VendorInfo[]).filter((v) => v.name !== 'OrcaFilamentLibrary');
-
-      set({
-        vendors,
-        layout: layoutRes as SettingsLayout,
-        configDefs,
-        userPresets
+      // None of these need the engine, so they download while the WASM module loads.
+      const layoutFetch = fetch('/settings/layout.json').then((r) => r.json());
+      const userPresetsLoad = loadUserPresets();
+      // A failure surfaces through the awaits below; this only avoids an unhandled rejection while the engine loads.
+      const metadata = Promise.all([layoutFetch, userPresetsLoad]).then(([layout, userPresets]) => {
+        check();
+        set({ layout: layout as SettingsLayout, userPresets });
       });
+      metadata.catch(() => undefined);
+      await Promise.all([getEngine(), metadata]);
+      check();
+      set({ engineLoad: { phase: 'initializing' } });
+      const configDefs = await getConfigDef();
+      check();
+      set({ configDefs });
 
       try {
         const { useHistoryStore } = await import('../history');
         await useHistoryStore.getState().initHistory();
       } catch (_) {}
+      check();
 
       // Pick default vendor
-      const defaultVendor = vendors.some((v) => v.name === 'Voron')
-        ? 'Voron'
-        : vendors[0]?.name || '';
+      const defaultVendor = 'Voron';
 
       // The last used device decides the printer; otherwise the default vendor's.
       const device = selectedDevice();
       const deviceVendor = device ? await resolveDeviceVendor(device) : undefined;
-      const startVendor = device?.preset && deviceVendor && vendors.some((v) => v.name === deviceVendor) ? deviceVendor : defaultVendor;
+      check();
+      let savedVendor: string | undefined;
+      if (!device?.preset) {
+        let saved: { printer?: string; vendor?: string } | null = null;
+        try { saved = JSON.parse(localStorage.getItem('orca.lastSetup') || 'null'); } catch {}
+        if (saved?.printer) savedVendor = await resolveDeviceVendor({ id: '', ...saved, preset: saved.printer });
+      }
+      check();
+      const startVendor = device?.preset && deviceVendor ? deviceVendor : savedVendor || defaultVendor;
       if (startVendor) {
         await get().chooseVendor(startVendor);
       }
@@ -461,10 +487,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().choosePrinter(userPrinter?.inherits || device.preset);
         if (userPrinter) await get().selectUserPreset('printer', device.preset);
       }
+      if (!device?.preset) await restoreLastSetup();
       await restoreDeviceFilaments();
+      check();
+      if (get().engineError) throw new Error(get().engineError!);
       applyingDevice = false;
       set({ isEngineReady: true, isEngineInitializing: false });
     } catch (err: any) {
+      if (current !== startupGeneration) return;
+      disposeEngine();
       set({
         isEngineInitializing: false,
         engineError: `Engine initialization failed: ${err.message || String(err)}`
@@ -474,11 +505,14 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   chooseVendor: async (vendor: string) => {
     if (!vendor) return;
+    const current = startupGeneration;
     set({ selectedVendor: vendor, engineError: null });
 
     try {
       await loadVendors([vendor]);
+      if (current !== startupGeneration) return;
       const printers = await listPresets('printer', { compatibleOnly: false });
+      if (current !== startupGeneration) return;
 
       let chosenPrinter = printers[0]?.name || '';
       if (vendor === 'Voron' && printers.some((p) => p.name === 'Voron 2.4 300 0.4 nozzle')) {
@@ -487,18 +521,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         chosenPrinter = 'Bambu Lab X1 Carbon 0.4 nozzle';
       }
 
-      set({ printers, selectedPrinter: chosenPrinter });
+      set(state => ({ printers, selectedPrinter: chosenPrinter,
+        vendors: state.vendors.some(v => v.name === vendor) ? state.vendors : [...state.vendors, { name: vendor, bytes: 0 }] }));
 
       if (chosenPrinter) {
         await get().choosePrinter(chosenPrinter);
       }
     } catch (err: any) {
+      if (current !== startupGeneration) return;
       set({ engineError: `Failed to load vendor '${vendor}': ${err.message || String(err)}` });
     }
   },
 
   choosePrinter: async (printer: string) => {
     if (!printer) return;
+    const current = startupGeneration;
     set({ selectedPrinter: printer, engineError: null });
 
     try {
@@ -506,6 +543,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const everyProcess = await listPresets('process', { compatibleOnly: false });
       const everyFilament = await listPresets('filament', { compatibleOnly: false });
       const compatible = await getCompatiblePresets({ printer });
+      if (current !== startupGeneration) return;
       const onlyCompatible = <T extends { name: string }>(all: T[], names: string[]) => {
         const kept = all.filter((p) => names.includes(p.name));
         return kept.length > 0 ? kept : all;
@@ -572,6 +610,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
 
         let filaments = await listPresets('filament', { compatibleOnly: true });
+        if (current !== startupGeneration) return;
         if (filaments.length === 0) filaments = allFilaments;
         if (!filaments.some((f) => f.name === defaultFilament)) {
           defaultFilament = filaments[0]?.name || defaultFilament;
@@ -593,6 +632,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
       }
     } catch (err: any) {
+      if (current !== startupGeneration) return;
       set({ engineError: `Failed to select printer '${printer}': ${err.message || String(err)}` });
     }
   },
@@ -805,18 +845,30 @@ export const useAppStore = create<AppState>((set, get) => ({
     const currentList = selectedFilaments && selectedFilaments.length > 0 ? [...selectedFilaments] : [selectedFilament];
     if (currentList.length <= 1) return;
 
-    let nextList: string[];
-    if (typeof slotIndex === 'number' && slotIndex >= 0 && slotIndex < currentList.length) {
-      nextList = currentList.filter((_, i) => i !== slotIndex);
-    } else {
-      nextList = currentList.slice(0, -1);
-    }
+    const removedSlot = Number.isInteger(slotIndex) && slotIndex! >= 0 && slotIndex! < currentList.length
+      ? slotIndex! : currentList.length - 1;
+    const nextList = currentList.filter((_, i) => i !== removedSlot);
+    const previousActive = get().activeFilamentSlot;
+    const nextActive = Math.min(previousActive > removedSlot ? previousActive - 1 : previousActive, nextList.length - 1);
+    const nextUserPreset = {
+      ...get().activeUserPreset,
+      filament: userPresets.some(p => p.kind === 'filament' && p.name === nextList[0]) ? nextList[0] : null
+    };
     if (nextList.length === 0) return;
     if (get().isSlicing) get().cancelSlice();
     get().invalidateSlicePreview();
 
     try {
       if (selectedPrinter && selectedProcess) {
+        // Project while native still knows the old slot count and typed strides.
+        const { processOverrides, printerOverrides, filamentOverrides } = get();
+        // Imported/project colors can live in native project_config rather than
+        // the override map. They still belong to their surviving slot.
+        const colors = filamentOverrides.filament_colour || get().currentConfig.filament_colour;
+        const projected = await resetOptions({ filamentIndex: removedSlot,
+          overrides: { ...filamentOverrides, ...(colors ? { filament_colour: colors } : {}) }, removeFilamentSlot: true });
+        if (!projected.filamentOverrides) throw new Error('Engine did not project filament overrides');
+        const nextFilOverrides = projected.filamentOverrides;
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
         const systemFilaments = nextList.map((f) => resolveSystemPreset('filament', f, userPresets));
@@ -827,24 +879,19 @@ export const useAppStore = create<AppState>((set, get) => ({
           filaments: systemFilaments
         });
 
-        const baselineConfig = await computeBaselineConfig(nextList, userPresets);
-
-        const { processOverrides, printerOverrides, filamentOverrides } = get();
-        const nextFilOverrides = { ...filamentOverrides };
-        if (nextFilOverrides['filament_colour']) {
-          const colors = nextFilOverrides['filament_colour'].split(';').slice(0, nextList.length);
-          nextFilOverrides['filament_colour'] = colors.join(';');
-        }
+        const baselineConfig = await computeBaselineConfig(nextList, userPresets, nextUserPreset);
         const activeOverrides = { ...processOverrides, ...printerOverrides, ...nextFilOverrides };
         await reapplyPresetOverrides(nextList, activeOverrides);
 
         const effectiveConfig = await getConfig();
 
-        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 });
+        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: nextActive });
 
         set({
           selectedFilaments: nextList,
           selectedFilament: nextList[0],
+          activeFilamentSlot: nextActive,
+          activeUserPreset: nextUserPreset,
           filamentOverrides: nextFilOverrides,
           presetConfig: baselineConfig,
           currentConfig: effectiveConfig,
@@ -857,7 +904,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       } else {
         set({
           selectedFilaments: nextList,
-          selectedFilament: nextList[0]
+          selectedFilament: nextList[0],
+          activeFilamentSlot: nextActive,
+          activeUserPreset: nextUserPreset
         });
       }
     } catch (err: any) {
@@ -873,6 +922,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   stepImportState: null,
   setStepImportState: (state) => set({ stepImportState: state }),
   requestImportFile: (file: File) => {
+    if (!get().isEngineReady) { showToast('Wait for the current operation to finish.', 'error'); return; }
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (ext === "step" || ext === "stp") {
       get().setStepImportState({ file });
@@ -881,6 +931,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   openProjectFile: async (file: File) => {
+    if (!get().isEngineReady) { showToast('Wait for the current operation to finish.', 'error'); return; }
     if (!file) return;
     set({
       isModelLoading: true,
@@ -910,9 +961,34 @@ export const useAppStore = create<AppState>((set, get) => ({
             selectedFilament: loadedFilaments[0] || state.selectedFilament
           };
         });
-        try {
-          const cfg = await getConfig(); set({ currentConfig: cfg });
-        } catch (_) {}
+        // Native project loading replaces edited presets and clears native overrides.
+        // Rebuild the web maps too, or the next preset selection reapplies the
+        // previous project's edits and drops the newly imported ones.
+        const importedConfig = await getConfig();
+        const loaded = get();
+        const selection = { printer: loaded.selectedPrinter, process: loaded.selectedProcess, filaments: loaded.selectedFilaments };
+        const [processConfig, printerConfig, filamentConfig] = await Promise.all([
+          engine.call('getPresetConfig', { kind: 'process', name: selection.process }),
+          engine.call('getPresetConfig', { kind: 'printer', name: selection.printer }),
+          engine.call('getPresetConfig', { kind: 'filament', name: selection.filaments[0] })
+        ]);
+        await selectPresets(selection);
+        const baselineConfig = await getConfig();
+        const processOverrides: Record<string, string> = {};
+        const filamentOverrides: Record<string, string> = {};
+        const printerOverrides: Record<string, string> = {};
+        const importedOverrides: Record<string, string> = {};
+        for (const [key, value] of Object.entries(importedConfig)) {
+          if (value === baselineConfig[key]) continue;
+          importedOverrides[key] = value;
+          const target = key === 'filament_colour' || key in filamentConfig ? filamentOverrides
+            : key in printerConfig && !(key in processConfig) ? printerOverrides : processOverrides;
+          target[key] = value;
+        }
+        await setOptions(importedOverrides);
+        set({ currentConfig: await getConfig(), presetConfig: baselineConfig,
+          processOverrides, filamentOverrides, printerOverrides,
+          activeFilamentSlot: 0, activeUserPreset: { printer: null, process: null, filament: null } });
       }
 
       try {
@@ -970,6 +1046,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       try {
         await engine.call('saveProject', { path: vfsPath });
         bytes = await engine.readFile(vfsPath);
+        try {
+          const { useObjectListStore } = await import('../objectlist/objectListStore');
+          const { buildLayerConfigRangesXml } = await import('../objectlist/layerRangeSync');
+          const objects = useObjectListStore.getState().objects;
+          const xml = buildLayerConfigRangesXml(objects);
+          if (xml) {
+            const { unzipSync, zipSync, strToU8 } = await import('fflate');
+            const unzipped = unzipSync(bytes);
+            unzipped['Metadata/layer_config_ranges.xml'] = strToU8(xml);
+            bytes = zipSync(unzipped);
+          }
+        } catch (err) {
+          console.warn('[project] Failed to inject layer ranges to saved 3MF:', err);
+        }
       } finally {
         // readFile copies the worker file; downloads and recent files own those bytes.
         try {
@@ -1002,6 +1092,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   openGcodeFile: async (file: File) => {
+    if (!get().isEngineReady) { showToast('Wait for the current operation to finish.', 'error'); return; }
     if (!file) return;
     if (get().isSlicing) get().cancelSlice();
     try {
@@ -1025,11 +1116,12 @@ export const useAppStore = create<AppState>((set, get) => ({
           gcodePath: file.name,
           gcodeBytes: bytes.byteLength,
           layers: stats?.layers || 0,
-          printTimeS: stats?.printTimeS || 0,
+          printTimeS: stats?.timeS ?? stats?.printTimeS ?? 0,
           filamentMm: stats?.filamentMm || 0,
           filamentG: stats?.filamentG || 0,
           warnings: []
         },
+        sessionRecovery: 'idle',
         modelFile: { name: file.name, size: file.size }
       });
 
@@ -1042,9 +1134,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  importModelFile: async (file: File, options?: StepImportOptions, inArchive = false) => {
+  importModelFile: async (file: File, options?: StepImportOptions, inArchive = false, context?: { source: 'builtin-handy' }) => {
+    if (!get().isEngineReady) { showToast('Wait for the current operation to finish.', 'error'); return; }
     if (!file) return;
     if (!inArchive && /\.zip$/i.test(file.name)) {
+      const { usePlateStore } = await import('../plate/plateStore');
+      const knownArchiveIds = new Set(usePlateStore.getState().objects.map(o => o.id));
       set({ isModelLoading: true, engineError: null, sliceResult: null, sliceStatusText: `Opening ${file.name}...` });
       let imported = 0;
       try {
@@ -1052,7 +1147,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const models = await readArchiveModels(new Uint8Array(await file.arrayBuffer()));
         for (const [index, model] of models.entries()) {
           set({ sliceStatusText: `Importing ${index + 1}/${models.length}: ${model.name}` });
-          await get().importModelFile(new File([model.bytes as BlobPart], model.name), options, true);
+          await get().importModelFile(new File([model.bytes as BlobPart], model.name), options, true, context);
           if (get().engineError) throw new Error(get().engineError!);
           imported++;
         }
@@ -1066,6 +1161,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
         set({ engineError: `ZIP import failed after ${imported} models: ${error instanceof Error ? error.message : String(error)}`, sliceStatusText: 'ZIP import failed' });
       } finally { set({ isModelLoading: false }); }
+      if (imported && context?.source !== 'builtin-handy') {
+        const { useEditOpsStore } = await import('../editops/editOpsStore');
+        void useEditOpsStore.getState().offerImportSimplification(usePlateStore.getState().objects.filter(o => !knownArchiveIds.has(o.id)).map(o => o.id));
+      }
       return;
     }
     const knownObjectIds = new Set((await import('../plate/plateStore')).usePlateStore.getState().objects.map((o) => o.id));
@@ -1120,6 +1219,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       } catch (_) {}
 
       showToast(`Imported ${file.name}`, 'success');
+      if (!inArchive && context?.source !== 'builtin-handy') {
+        const { useEditOpsStore } = await import('../editops/editOpsStore');
+        void useEditOpsStore.getState().offerImportSimplification(added.map((obj: PlateObject) => obj.id));
+      }
       try {
         await storeImportedRecentFile(file, 'model');
       } catch (_) {}
@@ -1144,14 +1247,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       if (get().engineError) return;
     }
-    try {
-      const { useHistoryStore } = await import('../history');
-      if (useHistoryStore.getState().isRestoring) {
-        return;
-      }
-    } catch (_) {}
-    const { isEngineReady, isSlicing, modelFile, selectedPrinter, selectedProcess, selectedFilament, selectedFilaments } = get();
-    if (!isEngineReady || isSlicing || !modelFile || !selectedPrinter || !selectedProcess || (!selectedFilament && (!selectedFilaments || selectedFilaments.length === 0))) {
+    const { useHistoryStore: history } = await import('../history');
+    if (slicePrerequisites(get(), history.getState().isRestoring)) {
       return;
     }
 
@@ -1176,10 +1273,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       }
       if (abortController.signal.aborted) throw new DOMException('Slicing canceled', 'AbortError');
-      const threads = Math.min(
-        typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4,
-        8
-      );
 
       let currentPlateIndex: number | undefined;
       try {
@@ -1190,9 +1283,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       } catch (_) {}
 
+      try {
+        const { useObjectListStore } = await import('../objectlist/objectListStore');
+        const listState = useObjectListStore.getState();
+        const hasRanges = listState.objects.some((o) => o.layerRanges && o.layerRanges.length > 0);
+        if (hasRanges) {
+          const { syncLayerRangesToEngine } = await import('../objectlist/layerRangeSync');
+          await syncLayerRangesToEngine(listState.objects);
+        }
+      } catch (err) {
+        console.warn('[slice] syncLayerRangesToEngine before slice failed:', err);
+      }
+
       const result = await slice({
         plateIndex: currentPlateIndex,
-        threads,
+        threads: resolveSlicingThreads(usePrefsStore.getState().general.slicingThreads),
         signal: abortController.signal,
         onProgress: (prog: ProgressNotification) => {
           const pct = Math.max(0, Math.min(100, prog.percent ?? 0));
@@ -1220,6 +1325,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         slicePercent: 100,
         sliceStatusText: 'Slicing complete!',
         sliceResult: { ...result, plateIndex: currentPlateIndex ?? 0 },
+        sessionRecovery: 'idle',
         gcodeUrl,
         abortController: null
       });
@@ -1540,6 +1646,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     try {
+      const systemParent = resolveSystemPreset(kind, name, userPresets);
+      const loadedParents = await listPresets(kind, { compatibleOnly: false });
+      const loadedParent = loadedParents.find(parent => parent.name === systemParent);
+      let parentVendor = loadedParent?.vendor;
+      if (loadedParent && kind === 'printer' && !get().vendors.some(vendor => vendor.name === parentVendor)) {
+        // Native vendor display names can differ from packaged bundle identifiers (for example BBL).
+        parentVendor = await findSystemProfileVendor('machine', systemParent, get().vendors.map(vendor => vendor.name));
+      }
+      if (!loadedParent) {
+        parentVendor = await findSystemProfileVendor(
+          kind === 'printer' ? 'machine' : kind, systemParent,
+          get().vendors.map(vendor => vendor.name), get().selectedVendor,
+        );
+        if (!parentVendor) throw new Error(`Unknown ${kind} preset: ${systemParent}`);
+        // Loading a dependency must not choose defaults or clear saved overrides.
+        await loadVendors([parentVendor]);
+      }
+
       if (kind === 'process') {
         const targetActive = { ...prevState.activeUserPreset, process: name };
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
@@ -1549,12 +1673,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         await selectPresets({
           printer: systemPrinter,
-          process: preset.inherits,
+          process: systemParent,
           filaments: systemFilaments
         });
 
         const baselineConfig = await computeBaselineConfig(filamentsList, userPresets, targetActive);
-        const nextProcessOverrides = { ...preset.values };
+        const nextProcessOverrides = effectivePreset(kind, name, userPresets).values;
         const { filamentOverrides, printerOverrides } = get();
         const allOverrides = { ...nextProcessOverrides, ...filamentOverrides, ...printerOverrides };
         await reapplyPresetOverrides(filamentsList, allOverrides);
@@ -1649,13 +1773,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         const systemFilaments = filamentsList.map((f) => resolveSystemPreset('filament', f, userPresets));
 
         await selectPresets({
-          printer: preset.inherits,
+          printer: systemParent,
           process: systemProcess,
           filaments: systemFilaments
         });
 
         const baselineConfig = await computeBaselineConfig(filamentsList, userPresets, targetActive);
-        const nextPrinterOverrides = { ...preset.values };
+        const nextPrinterOverrides = effectivePreset(kind, name, userPresets).values;
         const { processOverrides, filamentOverrides } = get();
         const allOverrides = { ...processOverrides, ...filamentOverrides, ...nextPrinterOverrides };
         await reapplyPresetOverrides(filamentsList, allOverrides);
@@ -1671,12 +1795,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: get().activeFilamentSlot || 0 });
 
         // Update compatible processes and filaments for this printer base
-        const [compProcesses, compFilaments] = await Promise.all([
+        const [compProcesses, compFilaments, printers] = await Promise.all([
           listPresets('process', { compatibleOnly: true }),
-          listPresets('filament', { compatibleOnly: true })
+          listPresets('filament', { compatibleOnly: true }),
+          listPresets('printer', { compatibleOnly: false })
         ]);
 
         set({
+          selectedVendor: parentVendor || get().selectedVendor,
+          printers,
           ...(compProcesses.length > 0 ? { processes: compProcesses } : {}),
           ...(compFilaments.length > 0 ? { filaments: compFilaments } : {}),
           activeUserPreset: targetActive,
@@ -1743,6 +1870,10 @@ if (typeof window !== 'undefined') {
   (window as any).__appStore = useAppStore;
 }
 
+usePrinterCatalog.subscribe(({ vendors }) => {
+  if (vendors.length) useAppStore.setState({ vendors });
+});
+
 const selectedDevice = () => {
   const { printers, selectedPrinterId } = usePrinterConnectionStore.getState();
   return printers.find((p) => p.id === selectedPrinterId);
@@ -1754,23 +1885,65 @@ let applyingDevice = true;
 export async function resolveDeviceVendor(device: { id: string; preset?: string; vendor?: string }): Promise<string | undefined> {
   if (device.vendor || !device.preset) return device.vendor;
   const state = useAppStore.getState();
-  const userPreset = state.userPresets.find((p) => p.kind === 'printer' && p.name === device.preset);
-  const targetPreset = userPreset ? userPreset.inherits : device.preset;
-  const candidates = [...state.vendors].sort((a, b) => {
-    const matches = (vendor: string) => targetPreset.toLowerCase().startsWith(vendor.toLowerCase()) ||
-      (vendor === 'BBL' && targetPreset.startsWith('Bambu'));
-    return Number(matches(b.name)) - Number(matches(a.name));
-  });
-  for (const vendor of candidates) {
-    const profiles = await systemProfiles(vendor.name, 'machine').catch(() => []);
-    if (!profiles.some((p) => p.name === targetPreset)) continue;
+  const targetPreset = resolveSystemPreset('printer', device.preset, state.userPresets);
+  // New selections remember their vendor. Older browser data can usually be
+  // resolved from one named bundle, without downloading the discovery index.
+  let saved: { printer?: string; vendor?: string } | null = null;
+  try { saved = JSON.parse(localStorage.getItem('orca.lastSetup') || 'null'); } catch {}
+  const hint = saved?.printer === device.preset && saved.vendor ? saved.vendor :
+    targetPreset.startsWith('Bambu ') ? 'BBL' : targetPreset.startsWith('Original Prusa ') ? 'Prusa' : targetPreset.split(' ')[0];
+  const matches = await systemProfiles(hint, 'machine').catch(() => []);
+  // The index fallback migrates old names whose brand cannot be inferred. It is
+  // not needed again after the successful selection records the actual vendor.
+  const vendor = matches.some(p => p.name === targetPreset) ? hint :
+    await findSystemProfileVendor('machine', targetPreset, (await loadPrinterCatalog()).map(v => v.name));
+  if (vendor) {
     const store = usePrinterConnectionStore.getState();
     const saved = store.printers.find((p) => p.id === device.id);
-    if (saved) usePrinterConnectionStore.setState({ printers: store.printers.map((p) => p.id === device.id ? { ...p, vendor: vendor.name } : p) });
-    return vendor.name;
+    if (saved) usePrinterConnectionStore.setState({ printers: store.printers.map((p) => p.id === device.id ? { ...p, vendor } : p) });
+    return vendor;
   }
   return undefined;
 }
+
+const LAST_SETUP_KEY = 'orca.lastSetup';
+
+/** Restores the printer, process and filaments picked last time when no device decides them. */
+async function restoreLastSetup() {
+  let saved: { printer?: string; process?: string; filaments?: string[] } | null = null;
+  try { saved = JSON.parse(localStorage.getItem(LAST_SETUP_KEY) || 'null'); } catch { /* ignore */ }
+  if (!saved?.printer) return;
+  const app = () => useAppStore.getState();
+  const userOf = (kind: PresetKind, name: string) => app().userPresets.find((p) => p.kind === kind && p.name === name);
+  const userPrinter = userOf('printer', saved.printer);
+  const systemPrinter = userPrinter?.inherits || saved.printer;
+  const vendor = await resolveDeviceVendor({ id: '', preset: saved.printer });
+  if (!vendor) return;
+  if (vendor !== app().selectedVendor) await app().chooseVendor(vendor);
+  if (!app().printers.some((p) => p.name === systemPrinter)) return;
+  await app().choosePrinter(systemPrinter);
+  if (userPrinter) await app().selectUserPreset('printer', saved.printer);
+  if (saved.process) {
+    if (userOf('process', saved.process)) await app().selectUserPreset('process', saved.process);
+    else if (app().processes.some((p) => p.name === saved!.process)) await app().chooseProcess(saved.process);
+  }
+  for (const [slot, name] of (saved.filaments || []).entries()) {
+    if (slot > 0 && slot >= app().selectedFilaments.length) await app().addFilamentSlot();
+    if (userOf('filament', name)) await app().selectUserPreset('filament', name, slot);
+    else if (app().filaments.some((f) => f.name === name)) await app().chooseFilament(name, slot);
+  }
+}
+
+useAppStore.subscribe((state, previous) => {
+  if (applyingDevice || !state.isEngineReady || state.isModelLoading || state.engineError || !state.selectedPrinter) return;
+  if (state.selectedPrinter === previous.selectedPrinter && state.selectedProcess === previous.selectedProcess &&
+      state.selectedFilaments === previous.selectedFilaments) return;
+  try {
+    localStorage.setItem(LAST_SETUP_KEY, JSON.stringify({
+      printer: state.selectedPrinter, vendor: state.selectedVendor, process: state.selectedProcess, filaments: state.selectedFilaments
+    }));
+  } catch { /* storage unavailable */ }
+});
 
 async function restoreDeviceFilaments() {
   const device = selectedDevice();
@@ -1817,8 +1990,7 @@ async function applyDevicePreset() {
     // Start from its default rather than inheriting the previous device's slots.
     useAppStore.setState({ filamentOverrides: {}, activeFilamentSlot: 0 });
     if (isUser) {
-      const preset = curState.userPresets.find((p) => p.kind === 'printer' && p.name === device.preset)!;
-      await useAppStore.getState().choosePrinter(preset.inherits);
+      await useAppStore.getState().choosePrinter(resolveSystemPreset('printer', device.preset, curState.userPresets));
       await useAppStore.getState().selectUserPreset('printer', device.preset);
     } else {
       await useAppStore.getState().choosePrinter(device.preset);
@@ -1832,6 +2004,23 @@ async function applyDevicePreset() {
 
 let lastDeviceId = usePrinterConnectionStore.getState().selectedPrinterId;
 let deviceSwitch = Promise.resolve();
+let selectingPrinterProfile = false;
+
+/** Keep a complete UI printer pick ahead of queued device switches and out of spool persistence. */
+export function withPrinterProfileSelection(select: () => Promise<void>): Promise<void> {
+  const selection = deviceSwitch.then(async () => {
+    selectingPrinterProfile = true;
+    try {
+      await select();
+    } finally {
+      selectingPrinterProfile = false;
+    }
+  });
+  // A failed pick must not prevent the next device switch; the caller receives the failure.
+  deviceSwitch = selection.catch(() => {});
+  return selection;
+}
+
 usePrinterConnectionStore.subscribe((s) => {
   if (s.selectedPrinterId === lastDeviceId) return;
   lastDeviceId = s.selectedPrinterId;
@@ -1847,7 +2036,7 @@ useAppStore.subscribe((state, previous) => {
     useAppStore.setState({ gcodeUrl: null });
   if (state.sliceResult?.gcode !== previous.sliceResult?.gcode)
     clearExportGcodeCache(state.sliceResult?.gcode ?? null);
-  if (applyingDevice || !state.isEngineReady || state.isModelLoading || state.engineError) return;
+  if (applyingDevice || selectingPrinterProfile || !state.isEngineReady || state.isModelLoading || state.engineError) return;
   const device = selectedDevice();
   if (!device || device.preset !== state.selectedPrinter) return;
   if (state.selectedFilaments === previous.selectedFilaments && state.currentConfig.filament_colour === previous.currentConfig.filament_colour) return;

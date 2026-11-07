@@ -216,6 +216,8 @@ set(lisbslic3r_sources
     Format/SL1.hpp
     Format/STEP.cpp
     Format/STEP.hpp
+    Format/STEPTessellate.cpp
+    Format/STEPTessellate.hpp
     Format/STL.cpp
     Format/STL.hpp
     Format/svg.cpp
@@ -386,6 +388,7 @@ set(lisbslic3r_sources
     PublishSettings.hpp
     PrintApply.cpp
     PrintBase.cpp
+    PrintBaseWarnings.cpp
     PrintBase.hpp
     MaterialType.cpp
     MaterialType.hpp
@@ -642,6 +645,233 @@ if (MSVC AND "${CMAKE_SIZEOF_VOID_P}" STREQUAL "4") # 32 bit MSVC workaround
 endif ()
 
 encoding_check(libslic3r)
+
+# WebAssembly size tiers (docs/superpowers/wasm/engine-size-optimization.md, sections 8 and 9).
+# Per-source COMPILE_OPTIONS land after the target's -O3, so the last -O wins.
+#   cold -Oz: start-up and user-triggered code, no effect on slicing time
+#   warm -Os: shared by slicing and import, measured speed neutral
+#   hot  -O2: slicing hot path, -O3 -> -O2 measured speed neutral (own switch, revert separately)
+if (EMSCRIPTEN)
+    set(_orca_wasm_default ON)
+else ()
+    set(_orca_wasm_default OFF)
+endif ()
+option(ORCA_WASM_SIZE_TIERS "Compile cold and warm libslic3r sources with -Oz/-Os (wasm only)" ${_orca_wasm_default})
+option(ORCA_WASM_HOT_O2 "Compile the slicing hot path with -O2 instead of -O3 (wasm only, needs ORCA_WASM_SIZE_TIERS)" ${_orca_wasm_default})
+option(ORCA_WASM_NOLOG "Compile out Boost.Log trace/debug/info statements (wasm only)" ${_orca_wasm_default})
+
+if (ORCA_WASM_SIZE_TIERS AND EMSCRIPTEN)
+    if (ORCA_WASM_PREVIEW)
+        # The preview only parses G-code: shrink the two config-heavy units it links.
+        set(_orca_cold_oz)
+        set(_orca_warm_os PrintConfig.cpp PlaceholderParser.cpp)
+        set(_orca_hot_o2)
+    else ()
+        set(_orca_cold_oz
+            AppConfig.cpp
+            BuildVolume.cpp
+            calib.cpp
+            CustomGCode.cpp
+            CutSurface.cpp
+            Emboss.cpp
+            FaceDetector.cpp
+            FilamentGroup.cpp
+            FilamentMixer.cpp
+            FlushVolPredictor.cpp
+            Format/AMF.cpp
+            Format/AssimpImport.cpp
+            Format/DRC.cpp
+            Format/OBJ.cpp
+            Format/objparser.cpp
+            Format/svg.cpp
+            InstanceLock.cpp
+            LayOnFace.cpp
+            MaterialType.cpp
+            Measure.cpp
+            MeshBoolean.cpp
+            Orient.cpp
+            PresetBundle.cpp
+            PresetCacheFormat.cpp
+            Preset.cpp
+            PrincipalComponents2D.cpp
+            PrintConfig.cpp
+            PublishSettings.cpp
+            QuadricEdgeCollapse.cpp
+            ShortEdgeCollapse.cpp
+            TriangleSetSampling.cpp
+            Triangulation.cpp
+        )
+        set(_orca_warm_os
+            ArcFitter.cpp
+            Config.cpp
+            Print.cpp
+            PrintApply.cpp
+            PrintBase.cpp
+            PrintBaseWarnings.cpp
+            PrintRegion.cpp
+            Arrange.cpp
+            Circle.cpp
+            ClipperZUtils.cpp
+            ContourZ.cpp
+            CutUtils.cpp
+            Extruder.cpp
+            Feature/FuzzySkin/FuzzySkin.cpp
+            Feature/Interlocking/InterlockingGenerator.cpp
+            Feature/Interlocking/VoxelUtils.cpp
+            FilamentGroupUtils.cpp
+            Flow.cpp
+            Format/3mf.cpp
+            Format/bbs_3mf.cpp
+            Format/STL.cpp
+            GCode/AdaptivePAInterpolator.cpp
+            GCode/AdaptivePAProcessor.cpp
+            GCode/ConflictChecker.cpp
+            GCode/ElegooGCodeProcessorHelper.cpp
+            GCode/OrderingStrategies.cpp
+            GCode/PchipInterpolatorHelper.cpp
+            GCode/PreciseSeam.cpp
+            GCode/PrintExtents.cpp
+            GCode/SmallAreaInfillFlowCompensator.cpp
+            GCode/ThumbnailData.cpp
+            GCode/Thumbnails.cpp
+            GCode/TimelapsePosPicker.cpp
+            GCode/ToolOrderUtils.cpp
+            GCode/WipePathHelpers.cpp
+            Geometry.cpp
+            LocalesUtils.cpp
+            MinimumSpanningTree.cpp
+            miniz_extension.cpp
+            ModelArrange.cpp
+            Model.cpp
+            MultiNozzleUtils.cpp
+            NormalUtils.cpp
+            NSVGUtils.cpp
+            ParameterUtils.cpp
+            PrintObject.cpp
+            SLA/IndexedMesh.cpp
+            SlicingAdaptive.cpp
+            Support/SupportMaterial.cpp
+            Support/SupportSpotsGenerator.cpp
+            Support/TreeModelVolumes.cpp
+            Support/TreeSupport3D.cpp
+            Support/TreeSupport.cpp
+            Tesselate.cpp
+            Thread.cpp
+            Time.cpp
+            TriangleSelector.cpp
+            utils.cpp
+            VariableWidth.cpp
+        )
+        set(_orca_hot_o2)
+        if (ORCA_WASM_HOT_O2)
+            set(_orca_hot_o2
+                Algorithm/LineSplit.cpp
+                Algorithm/RegionExpansion.cpp
+                Arachne/BeadingStrategy/BeadingStrategy.cpp
+                Arachne/BeadingStrategy/BeadingStrategyFactory.cpp
+                Arachne/BeadingStrategy/DistributedBeadingStrategy.cpp
+                Arachne/BeadingStrategy/LimitedBeadingStrategy.cpp
+                Arachne/BeadingStrategy/OuterWallInsetBeadingStrategy.cpp
+                Arachne/BeadingStrategy/RedistributeBeadingStrategy.cpp
+                Arachne/BeadingStrategy/WideningBeadingStrategy.cpp
+                Arachne/SkeletalTrapezoidation.cpp
+                Arachne/SkeletalTrapezoidationGraph.cpp
+                Arachne/utils/ExtrusionLine.cpp
+                Arachne/utils/PolylineStitcher.cpp
+                Arachne/utils/SquareGrid.cpp
+                Arachne/WallToolPaths.cpp
+                BoundingBox.cpp
+                BridgeDetector.cpp
+                Brim.cpp
+                ClipperUtils.cpp
+                EdgeGrid.cpp
+                ElephantFootCompensation.cpp
+                ExPolygon.cpp
+                ExPolygonsIndex.cpp
+                ExtrusionEntityCollection.cpp
+                ExtrusionEntity.cpp
+                Fill/Fill3DHoneycomb.cpp
+                Fill/FillAdaptive.cpp
+                Fill/FillBase.cpp
+                Fill/FillConcentric.cpp
+                Fill/FillConcentricInternal.cpp
+                Fill/FillCornerSmoothing.cpp
+                Fill/Fill.cpp
+                Fill/FillCrossHatch.cpp
+                Fill/FillGyroid.cpp
+                Fill/FillHoneycomb.cpp
+                Fill/FillLightning.cpp
+                Fill/FillLine.cpp
+                Fill/FillPlanePath.cpp
+                Fill/FillRectilinear.cpp
+                Fill/FillSpiralInset.cpp
+                Fill/FillTpmsD.cpp
+                Fill/FillTpmsFK.cpp
+                Fill/Lightning/DistanceField.cpp
+                Fill/Lightning/Generator.cpp
+                Fill/Lightning/Layer.cpp
+                Fill/Lightning/TreeNode.cpp
+                GCode/AvoidCrossingPerimeters.cpp
+                GCode/CoolingBuffer.cpp
+                GCode.cpp
+                GCode/FanMover.cpp
+                GCode/GCodeProcessor.cpp
+                GCode/PressureEqualizer.cpp
+                GCodeReader.cpp
+                GCode/RetractWhenCrossingPerimeters.cpp
+                GCode/SeamPlacer.cpp
+                GCode/SpiralVase.cpp
+                GCode/ToolOrdering.cpp
+                GCode/WipeTower2.cpp
+                GCode/WipeTower.cpp
+                GCode/WipeTowerEstimate.cpp
+                GCodeWriter.cpp
+                Geometry/Circle.cpp
+                Geometry/ConvexHull.cpp
+                Geometry/MedialAxis.cpp
+                Geometry/Voronoi.cpp
+                Geometry/VoronoiOffset.cpp
+                Geometry/VoronoiUtilsCgal.cpp
+                Geometry/VoronoiUtils.cpp
+                Layer.cpp
+                LayerRegion.cpp
+                Line.cpp
+                MultiMaterialSegmentation.cpp
+                MultiPoint.cpp
+                MutablePolygon.cpp
+                # Evaluated per tool change: at -Oz it cost +12% on orcabadge-bbl-multifilament.
+                PlaceholderParser.cpp
+                PerimeterGenerator.cpp
+                Point.cpp
+                Polygon.cpp
+                Polyline.cpp
+                PrintObjectSlice.cpp
+                ShortestPath.cpp
+                Slicing.cpp
+                Support/SupportCommon.cpp
+                SurfaceCollection.cpp
+                Surface.cpp
+                TriangleMesh.cpp
+                TriangleMeshSlicer.cpp
+            )
+        endif ()
+    endif ()
+    foreach (_f ${_orca_cold_oz})
+        set_source_files_properties(${_f} PROPERTIES COMPILE_OPTIONS "-Oz")
+    endforeach ()
+    foreach (_f ${_orca_warm_os})
+        set_source_files_properties(${_f} PROPERTIES COMPILE_OPTIONS "-Os")
+    endforeach ()
+    foreach (_f ${_orca_hot_o2})
+        set_source_files_properties(${_f} PROPERTIES COMPILE_OPTIONS "-O2")
+    endforeach ()
+endif ()
+
+# The wasm engine filters Boost.Log at >= warning; trace/debug/info statements are dead code there.
+if (ORCA_WASM_NOLOG AND EMSCRIPTEN)
+    target_compile_options(libslic3r PRIVATE
+        "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/../../wasm/engine/orca_nolog.h>")
+endif ()
 
 target_compile_definitions(libslic3r PUBLIC -DUSE_TBB -DTBB_USE_CAPTURED_EXCEPTION=0)
 set(_slic3r_no_defs)

@@ -34,6 +34,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -86,12 +87,8 @@ async function runCalibrationSuite(browserType, browserName) {
     if (!isIsolated) {
       console.log(`[${browserName}] Body HTML:`, await page.evaluate(() => document.body.innerHTML));
     }
-    await page.waitForFunction(() => {
-      const v = document.getElementById('vendor-select');
-      return v && v.options.length > 1;
-    }, null, { timeout: 20000 });
 
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
 
     await page.waitForFunction(() => {
       const p = document.getElementById('printer-select');
@@ -565,7 +562,7 @@ async function runCalibrationSuite(browserType, browserName) {
     console.log(`[${browserName}] Step 9: Testing non-0.4 nozzle scaling and preserved first layer...`);
     // Select 0.6mm nozzle printer
     await page.click('#tab-prepare');
-    await page.selectOption('#printer-select', 'Voron 2.4 300 0.6 nozzle');
+    await selectAddedPrinter(page, 'Voron', 'Voron 2.4 300 0.6 nozzle');
     await page.waitForTimeout(500);
 
     // Apply custom initial_layer_print_height = 0.35 (greater than layer_height 0.30)
@@ -619,7 +616,7 @@ async function runCalibrationSuite(browserType, browserName) {
     // Verify 0.8 nozzle large nozzle XY enlargement (xyScale = 0.8 / 0.6 = 1.3333 > 1.2)
     console.log(`[${browserName}] Testing large nozzle XY enlargement on 0.8 nozzle...`);
     await page.click('#tab-prepare');
-    await page.selectOption('#printer-select', 'Voron 2.4 300 0.8 nozzle');
+    await selectAddedPrinter(page, 'Voron', 'Voron 2.4 300 0.8 nozzle');
     await page.waitForTimeout(500);
 
     await page.click('#tab-calibration'); await page.click('#calibration-btn');

@@ -17,6 +17,7 @@ import { getMoveGcodeLine } from './orcaPreviewModule';
 import { useTranslation } from "../i18n";
 
 import { indexGcodeLines, readGcodeLines } from './gcodeLines';
+import './PreviewControls.css';
 
 export const GCodeWindow: React.FC = () => {
     const { t } = useTranslation();
@@ -51,11 +52,10 @@ export const GCodeWindow: React.FC = () => {
       data-testid="gcode-window"
       className="gcode-window-panel"
       style={{
-        position: 'absolute',
-        top: 16,
-        right: 90,
-        width: 320,
-        maxHeight: isCollapsed ? 'auto' : 'calc(100% - 100px)',
+        position: 'relative',
+        width: '100%',
+        flex: isCollapsed ? '0 0 auto' : '1 1 45%',
+        minHeight: 0,
         background: 'var(--panel-bg)',
         backdropFilter: 'blur(10px)',
         border: '1px solid var(--border-color)',
@@ -83,11 +83,11 @@ export const GCodeWindow: React.FC = () => {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, fontSize: '0.8rem' }}>
           <span>{t("📄 G-code")}</span>
-          <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 400 }}>
+          <span className="preview-value-detail">
             {t("Layer")} {maxLayer + 1}
           </span>
           {highlightedLineNumber > 0 && (
-            <span style={{ fontSize: '0.7rem', color: '#38bdf8', fontWeight: 500 }}>
+            <span className="preview-value-detail preview-current-value">
               {t("Line")} {highlightedLineNumber}
             </span>
           )}
@@ -136,7 +136,8 @@ export const GCodeWindow: React.FC = () => {
           id="gcode-lines-container"
           data-testid="gcode-lines-container"
           style={{
-            height: 380,
+            minHeight: 0,
+            flex: 1,
             overflowY: 'auto',
             background: 'var(--canvas-bg)',
             padding: '4px 0',

@@ -36,7 +36,7 @@ export const RepairBadge: React.FC = () => {
           gap: '6px',
           padding: '4px 8px',
           borderRadius: '4px',
-          fontSize: '12px',
+          fontSize: '0.75rem',
           backgroundColor: '#1f2937',
           color: '#9ca3af'
         }}
@@ -58,7 +58,7 @@ export const RepairBadge: React.FC = () => {
           gap: '6px',
           padding: '4px 8px',
           borderRadius: '4px',
-          fontSize: '12px',
+          fontSize: '0.75rem',
           backgroundColor: '#374151',
           color: '#e5e7eb',
           border: '1px solid #4b5563',
@@ -83,7 +83,7 @@ export const RepairBadge: React.FC = () => {
           gap: '6px',
           padding: '4px 10px',
           borderRadius: '4px',
-          fontSize: '12px',
+          fontSize: '0.75rem',
           fontWeight: 500,
           backgroundColor: '#064e3b',
           border: '1px solid #059669',
@@ -110,7 +110,7 @@ export const RepairBadge: React.FC = () => {
         gap: '8px',
         padding: '4px 8px',
         borderRadius: '4px',
-        fontSize: '12px',
+        fontSize: '0.75rem',
         backgroundColor: '#451a03',
         border: '1px solid #b45309',
         color: '#fde68a'
@@ -132,7 +132,7 @@ export const RepairBadge: React.FC = () => {
           borderRadius: '3px',
           cursor: isRepairing || isCutting ? 'not-allowed' : 'pointer',
           fontWeight: 600,
-          fontSize: '11px',
+          fontSize: '0.6875rem',
           transition: 'background-color 0.15s ease'
         }}
       >
@@ -145,7 +145,7 @@ export const RepairBadge: React.FC = () => {
           title={t("Mesh repaired: geometry cleaned and volume IDs updated")}
           style={{
             color: '#86efac',
-            fontSize: '11px',
+            fontSize: '0.6875rem',
             marginLeft: '4px'
           }}
         >
@@ -158,7 +158,7 @@ export const RepairBadge: React.FC = () => {
           title={error}
           style={{
             color: '#f87171',
-            fontSize: '11px',
+            fontSize: '0.6875rem',
             marginLeft: '4px'
           }}
         >

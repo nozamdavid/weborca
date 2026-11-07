@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { modifiedSettings } from './modifiedSettings';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { useTranslation } from "../i18n";
+import './settings-ui.css';
 
 const short = (value: string) => (value.length > 40 ? `${value.slice(0, 37)}...` : value);
 
@@ -19,31 +20,31 @@ export const ModifiedSettingsDialog: React.FC<{ onClose: () => void }> = ({ onCl
   }, [changes.length, onClose]);
 
   return (
-    <ModalBackdrop onClose={onClose} id="modified-dialog" role="dialog" aria-label={t("Modified settings")}>
-      <div className="modal-content" style={{ width: 'min(680px, 94vw)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '86vh' }}>
-        <h3 style={{ margin: 0 }}>{t("Modified settings (")}{changes.length})</h3>
-        <div style={{ overflow: 'auto', fontSize: 12 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <Dialog onClose={onClose} id="modified-dialog" role="dialog" aria-label={t("Modified settings")}>
+      <div className="modal-content ds-dialog modified-settings-modal">
+        <h3 className="ds-dialog__head">{t("Modified settings (")}{changes.length})</h3>
+        <div className="ds-dialog__body">
+          <table className="modified-settings-table">
             <thead>
-              <tr style={{ textAlign: 'left', color: 'var(--text-muted, #a0a0a0)' }}><th>{t("Setting")}</th><th>{t("Preset")}</th><th>{t("Now")}</th><th /></tr>
+              <tr><th scope="col">{t("Setting")}</th><th scope="col">{t("Preset")}</th><th scope="col">{t("Now")}</th><th /></tr>
             </thead>
             <tbody>
               {changes.map((c) => (
-                <tr key={`${c.tab}/${c.key}`} className="modified-row" style={{ borderTop: '1px solid var(--border-color, var(--border-color))' }}>
-                  <td style={{ padding: '4px 6px' }}>{c.label}<div style={{ color: 'var(--text-muted, #a0a0a0)', fontSize: 11 }}>{c.page}</div></td>
-                  <td style={{ padding: '4px 6px' }} title={c.from}>{short(c.from)}</td>
-                  <td style={{ padding: '4px 6px', color: '#f59e0b' }} title={c.to}>{short(c.to)}</td>
-                  <td><button className="btn btn-secondary" style={{ padding: '1px 8px' }} onClick={() => void resetOption(c.key, c.tab)}>{t("Reset")}</button></td>
+                <tr key={`${c.tab}/${c.key}`} className="modified-row">
+                  <td>{c.label}<div className="modified-settings-page">{c.page}</div></td>
+                  <td title={c.from}>{short(c.from)}</td>
+                  <td className="modified-settings-value" title={c.to}>{short(c.to)}</td>
+                  <td><button className="ds-btn" onClick={() => void resetOption(c.key, c.tab)}>{t("Reset")}</button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
-          <button className="btn btn-secondary" id="modified-reset-all" onClick={async () => { for (const c of changes) await resetOption(c.key, c.tab); }}>{t("Reset all")}</button>
-          <button className="btn btn-primary" id="modified-close" onClick={onClose}>{t("Close")}</button>
+        <div className="ds-dialog__foot">
+          <button className="ds-btn" id="modified-reset-all" onClick={async () => { for (const c of changes) await resetOption(c.key, c.tab); }}>{t("Reset all")}</button>
+          <button className="ds-btn ds-btn--primary" id="modified-close" onClick={onClose}>{t("Close")}</button>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

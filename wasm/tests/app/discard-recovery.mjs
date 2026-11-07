@@ -47,4 +47,4 @@ async function suite(browserType) {
   } finally { await browser.close(); }
 }
 await startServer(port, 'discard-recovery');
-try { await suite(chromium); await suite(firefox); } finally { await stopServer(port); }
+try { await suite(chromium); if (process.env.SKIP_FIREFOX !== '1') await suite(firefox); } finally { await stopServer(port); }

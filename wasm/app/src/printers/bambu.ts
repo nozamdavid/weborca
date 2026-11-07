@@ -94,6 +94,7 @@ export function deriveBambuState(print: Record<string, any>): PrinterState {
  * carries the serial number and access code (see printerGateway.ts).
  */
 export class BambuApi implements PrinterApi {
+  private activeBridge?: { socket: WebSocket; send: (payload: object) => void };
   constructor(private printer: PhysicalPrinter) {}
 
   private open(onMessage: (message: any) => void, onClose: (reason?: string) => void): { socket: WebSocket; send: (payload: object) => void } {
@@ -132,10 +133,10 @@ export class BambuApi implements PrinterApi {
 
   connect(onState: (state: PrinterState) => void, onError: (error: Error) => void): () => void {
     let stopped = false;
-    let socket: WebSocket | undefined;
+    let bridge: { socket: WebSocket; send: (payload: object) => void } | undefined;
     let print: Record<string, any> = {};
     try {
-      socket = this.open(
+      bridge = this.open(
         (m) => {
           if (m.type === 'report' && m.payload?.print) {
             print = mergeBambuReport(print, m.payload.print);
@@ -144,14 +145,19 @@ export class BambuApi implements PrinterApi {
             onError(new Error(m.message ?? m.orca_gateway_error));
           }
         },
-        () => !stopped && onError(new Error('Connection to the printer was lost.'))
-      ).socket;
+        () => {
+          if (this.activeBridge === bridge) this.activeBridge = undefined;
+          if (!stopped) onError(new Error('Connection to the printer was lost.'));
+        }
+      );
+      this.activeBridge = bridge;
     } catch (error) {
       onError(error instanceof Error ? error : new Error(String(error)));
     }
     return () => {
       stopped = true;
-      socket?.close();
+      if (this.activeBridge === bridge) this.activeBridge = undefined;
+      bridge?.socket.close();
     };
   }
 
@@ -172,6 +178,84 @@ export class BambuApi implements PrinterApi {
         error ? reject(error) : resolve();
       }
     });
+  }
+
+  private async sendCommand(payload: object): Promise<void> {
+    if (this.activeBridge && this.activeBridge.socket.readyState === WebSocket.OPEN) {
+      this.activeBridge.send(payload);
+      return;
+    }
+    return this.command(payload);
+  }
+
+  async home(axes?: Array<'x' | 'y' | 'z'>): Promise<void> {
+    let script = 'G28';
+    if (axes && axes.length > 0 && axes.length < 3) {
+      if (axes.length === 2 && axes.includes('x') && axes.includes('y')) {
+        script = 'G28 X Y';
+      } else if (axes[0] === 'z') {
+        script = 'G28 Z';
+      }
+    }
+    await this.sendCommand({ print: { sequence_id: '0', command: 'gcode_line', param: `${script}\n` } });
+  }
+
+  async jog(axis: 'x' | 'y' | 'z', distance: number, speed?: number): Promise<void> {
+    const spd = speed ?? (axis === 'z' ? 600 : 3000);
+    const script = `G91\nG1 ${axis.toUpperCase()}${distance} F${spd}\nG90\n`;
+    await this.sendCommand({ print: { sequence_id: '0', command: 'gcode_line', param: script } });
+  }
+
+  async extrude(amount: number, speed?: number): Promise<void> {
+    const spd = speed ?? 300;
+    const script = `M83\nG1 E${amount} F${spd}\n`;
+    await this.sendCommand({ print: { sequence_id: '0', command: 'gcode_line', param: script } });
+  }
+
+  async setTemperature(heater: 'extruder' | 'bed' | 'chamber', target: number, _tool?: number): Promise<void> {
+    const t = Math.round(target);
+    let script = '';
+    if (heater === 'bed') {
+      script = `M140 S${t}\n`;
+    } else if (heater === 'chamber') {
+      script = `M141 S${t}\n`;
+    } else {
+      script = `M104 S${t}\n`;
+    }
+    await this.sendCommand({ print: { sequence_id: '0', command: 'gcode_line', param: script } });
+  }
+
+  async setFanSpeed(speed: number, _fanIndex?: number): Promise<void> {
+    const s = Math.round(Math.max(0, Math.min(1, speed)) * 255);
+    await this.sendCommand({ print: { sequence_id: '0', command: 'gcode_line', param: `M106 P1 S${s}\n` } });
+  }
+
+  async setPrintSpeed(speedPercentOrLevel: number): Promise<void> {
+    let param = '2';
+    if (speedPercentOrLevel >= 1 && speedPercentOrLevel <= 4) {
+      param = String(Math.round(speedPercentOrLevel));
+    } else if (speedPercentOrLevel <= 60) {
+      param = '1';
+    } else if (speedPercentOrLevel <= 110) {
+      param = '2';
+    } else if (speedPercentOrLevel <= 140) {
+      param = '3';
+    } else {
+      param = '4';
+    }
+    await this.sendCommand({ print: { sequence_id: '0', command: 'print_speed', param } });
+  }
+
+  async pausePrint(): Promise<void> {
+    await this.sendCommand({ print: { sequence_id: '0', command: 'pause' } });
+  }
+
+  async resumePrint(): Promise<void> {
+    await this.sendCommand({ print: { sequence_id: '0', command: 'resume' } });
+  }
+
+  async cancelPrint(): Promise<void> {
+    await this.sendCommand({ print: { sequence_id: '0', command: 'stop' } });
   }
 
   async upload({ filename, gcode, print, onProgress }: UploadOptions): Promise<void> {

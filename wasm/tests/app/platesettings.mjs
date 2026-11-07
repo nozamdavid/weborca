@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { chromium, firefox } from 'playwright';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const PORT = parseInt(process.env.PORT || '5115', 10);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -17,7 +18,7 @@ async function runSuite(browserType, name) {
   try {
     await page.goto(BASE_URL);
     await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.selectOption('#printer-select', 'Voron 2.4 300 0.4 nozzle');
     await page.selectOption('#filament-select', 'Generic PLA @System');
     await page.selectOption('#process-select', '0.20mm Standard @Voron');

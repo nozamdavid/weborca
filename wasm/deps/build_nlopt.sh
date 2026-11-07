@@ -31,6 +31,14 @@ if [ ! -d "$SRC_DIR" ]; then
     tar -xzf "$SRC_ARCHIVE" -C "$REPO_ROOT/wasm/build/src"
 fi
 
+# Keep only the algorithms libnest2d uses (Nelder-Mead, Subplex, ESCH); the rest would be
+# linked into the engine through the nlopt_optimize() switch. Idempotent.
+PRUNE_PATCH="$SCRIPT_DIR/nlopt-prune-algorithms.patch"
+if patch -p1 -N --dry-run -s -d "$SRC_DIR" < "$PRUNE_PATCH" > /dev/null 2>&1; then
+    echo "Pruning unused $DEP_NAME algorithms..."
+    patch -p1 -N -s -d "$SRC_DIR" < "$PRUNE_PATCH"
+fi
+
 mkdir -p "$BUILD_DIR"
 
 echo "Configuring $DEP_NAME..."

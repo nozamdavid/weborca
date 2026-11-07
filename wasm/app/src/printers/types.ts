@@ -1,4 +1,4 @@
-export type HostType = 'moonraker' | 'octoprint' | 'prusalink' | 'prusaconnect' | 'bambu' | 'bambu-cloud' | 'creality-cloud' | 'flashforge';
+export type HostType = 'moonraker' | 'octoprint' | 'prusalink' | 'prusaconnect' | 'bambu' | 'bambu-cloud' | 'creality-cloud' | 'snapmaker-cloud' | 'flashforge';
 
 export const HOST_TYPE_LABELS: Record<HostType, string> = {
   moonraker: 'Klipper (Moonraker)',
@@ -8,11 +8,35 @@ export const HOST_TYPE_LABELS: Record<HostType, string> = {
   bambu: 'Bambu Lab (LAN mode)',
   'bambu-cloud': 'Bambu Cloud',
   'creality-cloud': 'Creality Cloud',
+  'snapmaker-cloud': 'Snapmaker Cloud',
   flashforge: 'Flashforge'
+};
+
+export interface HostCapabilities {
+  home: boolean;
+  jog: boolean;
+  extrude: boolean;
+  temps: boolean;
+  fan: boolean;
+  speed: boolean;
+  job: boolean;
+}
+
+export const HOST_CAPABILITIES: Record<HostType, HostCapabilities> = {
+  moonraker: { home: true, jog: true, extrude: true, temps: true, fan: true, speed: true, job: true },
+  octoprint: { home: true, jog: true, extrude: true, temps: true, fan: true, speed: true, job: true },
+  bambu: { home: true, jog: true, extrude: true, temps: true, fan: true, speed: true, job: true },
+  prusalink: { home: false, jog: false, extrude: false, temps: false, fan: false, speed: false, job: true },
+  flashforge: { home: false, jog: false, extrude: false, temps: false, fan: false, speed: false, job: false },
+  'bambu-cloud': { home: false, jog: false, extrude: false, temps: false, fan: false, speed: false, job: false },
+  'creality-cloud': { home: false, jog: false, extrude: false, temps: false, fan: false, speed: false, job: false },
+  'snapmaker-cloud': { home: false, jog: false, extrude: false, temps: false, fan: false, speed: false, job: false },
+  prusaconnect: { home: false, jog: false, extrude: false, temps: false, fan: false, speed: false, job: true }
 };
 
 /** A printer preset plus how to reach the machine, like desktop's physical printer. */
 export interface PhysicalPrinter {
+  octoeverywhere?: import('./octoEverywhereTypes').OctoEverywhereSettings;
   id: string;
   name: string;
   /** Name of the printer preset this machine uses. */
@@ -39,10 +63,12 @@ export interface PhysicalPrinter {
   cloud_device_id?: string;
   /** Bambu device serial number. */
   serial?: string;
-  /** Go through the app server's printer gateway. Needed unless the printer allows this origin. */
+  /** Cloud team identifier (Prusa Connect). */
+  cloud_team_id?: string;
+  /** Cloud OAuth refresh token (Prusa Connect). */
+  cloud_refresh_token?: string;
+  /** Legacy persisted flag. Connections always use the app server gateway. */
   use_gateway: boolean;
-  /** Address of the gateway program on the user's computer. When set, requests go there instead of to the app server. */
-  local_gateway?: string;
 }
 
 export type PrinterRunState = 'offline' | 'ready' | 'printing' | 'paused' | 'complete' | 'error' | 'unknown';
@@ -51,6 +77,8 @@ export interface Heater {
   id: string;
   label: string;
   kind: 'extruder' | 'bed' | 'chamber' | 'other';
+  /** Zero-based physical EXTRUDER index, never a feeder index. */
+  toolIndex?: number;
   current: number;
   target: number;
 }
@@ -85,7 +113,14 @@ export interface PrinterFilament {
   slotIndex?: number;
 }
 
+export interface PrinterFilamentSlot extends PrinterFilament {
+  presence: 'present' | 'empty' | 'unknown';
+  vendor?: string;
+  subtype?: string;
+}
+
 export interface PrinterState {
+  octoeverywhere?: import('./octoEverywhereTypes').OctoEverywhereRemoteState;
   state: PrinterRunState;
   message?: string;
   heaters: Heater[];
@@ -104,6 +139,8 @@ export interface PrinterState {
   activeTool?: string;
   /** Loaded slots reported by the printer. Never inferred from heater count. */
   filaments?: PrinterFilament[];
+  /** Reported tool assignments; absent means unavailable, [] means reported empty. */
+  filamentSlots?: PrinterFilamentSlot[];
   software?: string;
   webcams?: Webcam[];
   files?: PrinterFile[];
@@ -119,12 +156,26 @@ export interface UploadOptions {
 export interface ConnectOptions {
   /** Polling drivers slow down while this returns false (the Device tab is not showing). */
   isActive?: () => boolean;
+  /** Active telemetry interval; push transports keep their existing subscriptions. */
+  pollIntervalMs?: number;
 }
 
 export interface PrinterApi {
+  /** Release pending remote operations as well as monitoring. */
+  dispose?(): void;
   /** Starts reading the printer's state. Returns a function that stops it. */
   connect(onState: (state: PrinterState) => void, onError: (error: Error) => void, options?: ConnectOptions): () => void;
   /** One-off check used by the dialog's Test button; resolves with a short description of the printer. */
   test(): Promise<string>;
   upload(options: UploadOptions): Promise<void>;
+
+  home?(axes?: Array<'x' | 'y' | 'z'>): Promise<void>;
+  jog?(axis: 'x' | 'y' | 'z', distance: number, speed?: number): Promise<void>;
+  extrude?(amount: number, speed?: number): Promise<void>;
+  setTemperature?(heater: 'extruder' | 'bed' | 'chamber', target: number, tool?: number): Promise<void>;
+  setFanSpeed?(speed: number, fanIndex?: number): Promise<void>;
+  setPrintSpeed?(speedPercentOrLevel: number): Promise<void>;
+  pausePrint?(): Promise<void>;
+  resumePrint?(): Promise<void>;
+  cancelPrint?(): Promise<void>;
 }

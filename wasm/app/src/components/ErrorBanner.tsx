@@ -6,6 +6,8 @@ export const ErrorBanner: React.FC = () => {
     const { t } = useTranslation();
   const engineError = useAppStore((state) => state.engineError);
   const setEngineError = useAppStore((state) => state.setEngineError);
+  const ready = useAppStore(state => state.isEngineReady);
+  const init = useAppStore(state => state.initApp);
 
   if (!engineError) return null;
 
@@ -21,18 +23,18 @@ export const ErrorBanner: React.FC = () => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        fontSize: '14px',
+        fontSize: '0.875rem',
         fontWeight: 500,
         zIndex: 1000
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ fontSize: '18px' }}>{t("⚠️")}</span>
+        <span style={{ fontSize: '1.125rem' }}>{t("⚠️")}</span>
         <span id="error-message">{engineError}</span>
       </div>
       <button
         id="dismiss-error-btn"
-        onClick={() => setEngineError(null)}
+        onClick={() => ready ? setEngineError(null) : void init()}
         style={{
           background: 'transparent',
           border: '1px solid #f87171',
@@ -40,10 +42,10 @@ export const ErrorBanner: React.FC = () => {
           borderRadius: '4px',
           padding: '2px 8px',
           cursor: 'pointer',
-          fontSize: '12px'
+          fontSize: '0.75rem'
         }}
       >
-        {t("Dismiss")}</button>
+        {t(ready ? 'Dismiss' : 'Retry')}</button>
     </div>
   );
 };

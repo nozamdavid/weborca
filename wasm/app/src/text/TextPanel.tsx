@@ -1,3 +1,4 @@
+import './TextPanel.css';
 /**
  * @file TextPanel.tsx
  * Floating control panel for 3D Text & Emboss tool in OrcaSlicer Web.
@@ -103,50 +104,22 @@ export const TextPanel: React.FC = () => {
       data-testid="text-emboss-panel"
       role="region"
       aria-label={t("3D Text and Emboss Tool")}
-      style={{
-        position: 'absolute',
-        top: 60,
-        right: 16,
-        width: 320,
-        maxHeight: 'calc(100vh - 80px)',
-        overflowY: 'auto',
-        background: 'rgba(24, 24, 27, 0.95)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(255, 255, 255, 0.15)',
-        borderRadius: 10,
-        padding: '14px 16px',
-        color: 'var(--text-color)',
-        fontSize: '0.82rem',
-        boxShadow: '0 12px 36px rgba(0, 0, 0, 0.5)',
-        zIndex: 40,
-        userSelect: 'none'
-      }}
+      className="ds-float text-panel"
     >
       {/* Header */}
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 12
-        }}
+        className="text-panel__head"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: '1.1rem' }}>{t("🔤")}</span>
-          <strong id="text-panel-title" style={{ fontSize: '0.92rem', color: '#38bdf8' }}>
-            {isEditing ? 'Edit 3D Text' : '3D Text / Emboss'}
+        <div className="text-panel__row-26">
+          <span className="text-panel__span-63">{t("🔤")}</span>
+          <strong id="text-panel-title" className="ds-title ds-title--panel text-panel__title">
+            {isEditing ? t('Edit 3D Text') : t('Text')}
           </strong>
           {isEditing && (
             <span
-              style={{
-                fontSize: '0.7rem',
-                padding: '2px 6px',
-                borderRadius: 4,
-                background: '#0369a1',
-                color: '#e0f2fe'
-              }}
+              className="text-panel__span-61"
             >
-              {targetObjectId !== null ? `Obj #${targetObjectId} • ` : ''}{t("Vol #")}{targetVolumeId}
+              {targetObjectId !== null ? `${t('Object')} #${targetObjectId} • ` : ''}{t("Vol #")}{targetVolumeId}
             </span>
           )}
         </div>
@@ -155,15 +128,7 @@ export const TextPanel: React.FC = () => {
           data-testid="close-text-btn"
           onClick={close}
           title={t("Close text tool")}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: '#94a3b8',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            padding: '2px 6px',
-            lineHeight: 1
-          }}
+          className="ds-btn text-panel__button-60"
         >
           ✕
         </button>
@@ -175,37 +140,20 @@ export const TextPanel: React.FC = () => {
           id="font-reselect-banner"
           data-testid="font-reselect-banner"
           role="alert"
-          style={{
-            backgroundColor: '#451a03',
-            border: '1px solid #f59e0b',
-            borderRadius: 6,
-            color: '#fef3c7',
-            padding: '10px 12px',
-            marginBottom: 12,
-            fontSize: '0.8rem'
-          }}
+          className="text-panel__card-59"
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+          <div className="text-panel__row-58">
             <span>{t("⚠️")}</span>
-            <strong style={{ color: '#fbbf24' }}>{t("Custom Font Required")}</strong>
+            <strong className="text-panel__strong-57">{t("Custom Font Required")}</strong>
           </div>
-          <div style={{ marginBottom: 8, color: '#fde68a', fontSize: '0.78rem', lineHeight: 1.3 }}>
+          <div className="text-panel__div-56">
             {t("Font")}<strong>"{fontMissingName}"</strong> {t("is not embedded in the 3MF project archive. Please reselect the font file to edit text geometry.")}</div>
           <button
             id="reselect-font-btn"
             data-testid="reselect-font-btn"
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            style={{
-              background: '#f59e0b',
-              color: '#1c1917',
-              fontWeight: 600,
-              border: 'none',
-              borderRadius: 4,
-              padding: '4px 10px',
-              cursor: 'pointer',
-              fontSize: '0.78rem'
-            }}
+            className="ds-btn text-panel__button-55"
           >
             {t("📁 Reselect Font File…")}</button>
         </div>
@@ -217,46 +165,26 @@ export const TextPanel: React.FC = () => {
           id="text-error-banner"
           data-testid="text-error-banner"
           role="alert"
-          style={{
-            backgroundColor: '#7f1d1d',
-            border: '1px solid #ef4444',
-            borderRadius: 6,
-            color: '#fecaca',
-            padding: '8px 12px',
-            marginBottom: 12,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            fontSize: '0.8rem',
-            fontWeight: 500
-          }}
+          className="text-panel__row-54"
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="text-panel__row-26">
             <span>{t("⚠️")}</span>
-            <span id="text-error-message">{error}</span>
+            <span id="text-error-message">{t(error)}</span>
           </div>
           <button
             id="dismiss-text-error-btn"
             onClick={() => setError(null)}
-            style={{
-              background: 'transparent',
-              border: '1px solid #f87171',
-              color: '#fecaca',
-              borderRadius: 4,
-              padding: '1px 6px',
-              cursor: 'pointer',
-              fontSize: '0.75rem'
-            }}
+            className="ds-btn text-panel__button-53"
           >
             {t("Dismiss")}</button>
         </div>
       )}
 
       {/* Text String Input (Multi-line) */}
-      <div style={{ marginBottom: 12 }}>
+      <div className="text-panel__div-38">
         <label
           htmlFor="text-input"
-          style={{ display: 'block', marginBottom: 4, color: 'var(--text-muted)', fontWeight: 500 }}
+          className="text-panel__label-52"
         >
           {t("Text:")}</label>
         <textarea
@@ -266,35 +194,18 @@ export const TextPanel: React.FC = () => {
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={t("Enter text...")}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            background: 'var(--canvas-bg)',
-            border: '1px solid var(--control-bg)',
-            borderRadius: 6,
-            padding: '8px 10px',
-            color: 'var(--text-color)',
-            fontSize: '0.85rem',
-            resize: 'vertical',
-            outline: 'none',
-            fontFamily: 'inherit'
-          }}
+          className="ds-input text-panel__textarea-51"
         />
       </div>
 
       {/* Font Select & Load Font File */}
-      <div style={{ marginBottom: 12 }}>
+      <div className="text-panel__div-38">
         <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 4
-          }}
+          className="text-panel__row-50"
         >
           <label
             htmlFor="font-select"
-            style={{ color: 'var(--text-muted)', fontWeight: 500 }}
+            className="text-panel__span-36"
           >
             {t("Font:")}</label>
           <button
@@ -303,15 +214,7 @@ export const TextPanel: React.FC = () => {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             title={t("Load custom TrueType / OpenType font file (.ttf, .otf)")}
-            style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              borderRadius: 4,
-              color: '#38bdf8',
-              fontSize: '0.75rem',
-              padding: '2px 8px',
-              cursor: 'pointer'
-            }}
+            className="ds-btn text-panel__button-49"
           >
             {t("📁 Load font file…")}</button>
           <input
@@ -321,7 +224,7 @@ export const TextPanel: React.FC = () => {
             type="file"
             accept=".ttf,.otf,.ttc"
             onChange={handleFileChange}
-            style={{ display: 'none' }}
+            className="text-panel__input-48"
           />
         </div>
         <select
@@ -329,17 +232,7 @@ export const TextPanel: React.FC = () => {
           data-testid="font-select"
           value={selectedFont?.id || ''}
           onChange={handleFontSelect}
-          style={{
-            width: '100%',
-            background: 'var(--canvas-bg)',
-            border: fontMissingName && !selectedFont ? '1px solid #f59e0b' : '1px solid var(--control-bg)',
-            borderRadius: 6,
-            padding: '6px 8px',
-            color: 'var(--text-color)',
-            fontSize: '0.82rem',
-            outline: 'none',
-            cursor: 'pointer'
-          }}
+          className={["ds-input text-panel__select-47", (fontMissingName && !selectedFont  ? "text-panel__state-46" : "text-panel__state-14")].join(" ")}
         >
           {fontMissingName && !selectedFont && (
             <option value="" disabled>
@@ -355,11 +248,11 @@ export const TextPanel: React.FC = () => {
       </div>
 
       {/* Dimensions: Size & Depth */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+      <div className="text-panel__grid-42">
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ color: 'var(--text-muted)' }}>{t("Size:")}</span>
-            <span id="text-size-val" style={{ color: '#38bdf8', fontWeight: 500 }}>
+          <div className="text-panel__row-41">
+            <span className="text-panel__state-12">{t("Size:")}</span>
+            <span id="text-size-val" className="text-panel__span-40">
               {size.toFixed(1)} {t("mm")}</span>
           </div>
           <input
@@ -371,14 +264,14 @@ export const TextPanel: React.FC = () => {
             step="0.5"
             value={size}
             onChange={(e) => setSize(parseFloat(e.target.value))}
-            style={{ width: '100%', cursor: 'pointer' }}
+            className="text-panel__input-39"
           />
         </div>
 
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ color: 'var(--text-muted)' }}>{t("Depth:")}</span>
-            <span id="text-depth-val" style={{ color: '#38bdf8', fontWeight: 500 }}>
+          <div className="text-panel__row-41">
+            <span className="text-panel__state-12">{t("Depth:")}</span>
+            <span id="text-depth-val" className="text-panel__span-40">
               {depth.toFixed(2)} {t("mm")}</span>
           </div>
           <input
@@ -390,30 +283,18 @@ export const TextPanel: React.FC = () => {
             step="0.1"
             value={depth}
             onChange={(e) => setDepth(parseFloat(e.target.value))}
-            style={{ width: '100%', cursor: 'pointer' }}
+            className="text-panel__input-39"
           />
         </div>
       </div>
 
-      <div style={{ marginTop: 12, display: 'flex', alignItems: 'center' }}>
-        <input
-          id="use-surface-checkbox"
-          data-testid="use-surface-checkbox"
-          type="checkbox"
-          checked={useSurface}
-          onChange={(e) => setUseSurface(e.target.checked)}
-          style={{ marginRight: 8, cursor: 'pointer' }}
-        />
-        <label htmlFor="use-surface-checkbox" style={{ color: 'var(--text-muted)', cursor: 'pointer' }}>
-          {t("Use surface")}</label>
-      </div>
 
       {/* Spacing: Character Gap & Line Gap */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+      <div className="text-panel__grid-42">
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ color: 'var(--text-muted)' }}>{t("Char Gap:")}</span>
-            <span id="text-char-gap-val" style={{ color: '#94a3b8' }}>
+          <div className="text-panel__row-41">
+            <span className="text-panel__state-12">{t("Char Gap:")}</span>
+            <span id="text-char-gap-val" className="text-panel__state-12">
               {charGap} {t("pt")}</span>
           </div>
           <input
@@ -425,14 +306,14 @@ export const TextPanel: React.FC = () => {
             step="1"
             value={charGap}
             onChange={(e) => setCharGap(parseInt(e.target.value, 10))}
-            style={{ width: '100%', cursor: 'pointer' }}
+            className="text-panel__input-39"
           />
         </div>
 
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ color: 'var(--text-muted)' }}>{t("Line Gap:")}</span>
-            <span id="text-line-gap-val" style={{ color: '#94a3b8' }}>
+          <div className="text-panel__row-41">
+            <span className="text-panel__state-12">{t("Line Gap:")}</span>
+            <span id="text-line-gap-val" className="text-panel__state-12">
               {lineGap} {t("pt")}</span>
           </div>
           <input
@@ -444,16 +325,16 @@ export const TextPanel: React.FC = () => {
             step="1"
             value={lineGap}
             onChange={(e) => setLineGap(parseInt(e.target.value, 10))}
-            style={{ width: '100%', cursor: 'pointer' }}
+            className="text-panel__input-39"
           />
         </div>
       </div>
 
       {/* Rotation Angle */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span style={{ color: 'var(--text-muted)' }}>{t("Rotation:")}</span>
-          <span id="text-rotation-val" data-testid="text-rotation-val" style={{ color: '#38bdf8', fontWeight: 500 }}>
+      <div className="text-panel__div-38">
+        <div className="text-panel__row-41">
+          <span className="text-panel__state-12">{t("Rotation:")}</span>
+          <span id="text-rotation-val" data-testid="text-rotation-val" className="text-panel__span-40">
             {rotation.toFixed(0)}°
           </span>
         </div>
@@ -466,55 +347,36 @@ export const TextPanel: React.FC = () => {
           step="5"
           value={rotation}
           onChange={(e) => setRotation(parseFloat(e.target.value))}
-          style={{ width: '100%', cursor: 'pointer' }}
+          className="text-panel__input-39"
         />
       </div>
 
       {/* Style & Alignment Controls */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{t("Style & Align:")}</span>
+      <div className="text-panel__div-38">
+        <div className="text-panel__row-37">
+          <span className="text-panel__span-36">{t("Style & Align:")}</span>
 
           {/* Bold and Italic toggles */}
-          <div style={{ display: 'flex', gap: 4 }}>
+          <div className="text-panel__row-35">
             <button
               id="bold-btn"
+              aria-pressed={isBold}
               data-testid="bold-btn"
               type="button"
               onClick={() => setBoldness(isBold ? 0.0 : 0.2)}
               title={t("Toggle Bold style")}
-              style={{
-                width: 28,
-                height: 26,
-                background: isBold ? '#0284c7' : 'rgba(255, 255, 255, 0.08)',
-                color: '#fff',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontWeight: 'bold',
-                fontSize: '0.85rem'
-              }}
+              className={["ds-btn text-panel__button-34", (isBold  ? "text-panel__state-9" : "text-panel__state-32")].join(" ")}
             >
               B
             </button>
             <button
               id="italic-btn"
+              aria-pressed={isItalic}
               data-testid="italic-btn"
               type="button"
               onClick={() => setSkew(isItalic ? 0.0 : 0.25)}
               title={t("Toggle Italic / Skew style")}
-              style={{
-                width: 28,
-                height: 26,
-                background: isItalic ? '#0284c7' : 'rgba(255, 255, 255, 0.08)',
-                color: '#fff',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontStyle: 'italic',
-                fontFamily: 'serif',
-                fontSize: '0.85rem'
-              }}
+              className={["ds-btn text-panel__button-33", (isItalic  ? "text-panel__state-9" : "text-panel__state-32")].join(" ")}
             >
               I
             </button>
@@ -522,17 +384,11 @@ export const TextPanel: React.FC = () => {
         </div>
 
         {/* Alignment Buttons */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        <div className="text-panel__grid-31">
           {/* Horizontal Alignment */}
           <div
             id="horizontal-align-group"
-            style={{
-              display: 'flex',
-              background: 'var(--canvas-bg)',
-              borderRadius: 4,
-              border: '1px solid var(--control-bg)',
-              overflow: 'hidden'
-            }}
+            className="text-panel__row-30"
           >
             {(['left', 'center', 'right'] as const).map((h) => {
               const active = align.horizontal === h;
@@ -540,21 +396,13 @@ export const TextPanel: React.FC = () => {
                 <button
                   key={h}
                   id={`align-${h}-btn`}
+                  aria-pressed={active}
                   type="button"
                   onClick={() => setAlign({ ...align, horizontal: h })}
-                  title={`Align ${h}`}
-                  style={{
-                    flex: 1,
-                    background: active ? '#0284c7' : 'transparent',
-                    color: active ? '#fff' : '#94a3b8',
-                    border: 'none',
-                    padding: '4px 0',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    textTransform: 'capitalize'
-                  }}
+                  title={t(h.charAt(0).toUpperCase() + h.slice(1))}
+                  className={["ds-btn text-panel__button-29", (active  ? "text-panel__state-9" : "text-panel__state-28"), (active  ? "text-panel__state-11" : "text-panel__state-12")].join(" ")}
                 >
-                  {h === 'left' ? '⇤ L' : h === 'center' ? '⇥⇤ C' : '⇥ R'}
+                  {h === "left" ? "⇤" : h === "center" ? "⇥⇤" : "⇥"}
                 </button>
               );
             })}
@@ -563,13 +411,7 @@ export const TextPanel: React.FC = () => {
           {/* Vertical Alignment */}
           <div
             id="vertical-align-group"
-            style={{
-              display: 'flex',
-              background: 'var(--canvas-bg)',
-              borderRadius: 4,
-              border: '1px solid var(--control-bg)',
-              overflow: 'hidden'
-            }}
+            className="text-panel__row-30"
           >
             {(['top', 'center', 'bottom'] as const).map((v) => {
               const active = align.vertical === v;
@@ -577,21 +419,13 @@ export const TextPanel: React.FC = () => {
                 <button
                   key={v}
                   id={`align-v-${v}-btn`}
+                  aria-pressed={active}
                   type="button"
                   onClick={() => setAlign({ ...align, vertical: v })}
-                  title={`Vertical ${v}`}
-                  style={{
-                    flex: 1,
-                    background: active ? '#0284c7' : 'transparent',
-                    color: active ? '#fff' : '#94a3b8',
-                    border: 'none',
-                    padding: '4px 0',
-                    cursor: 'pointer',
-                    fontSize: '0.75rem',
-                    textTransform: 'capitalize'
-                  }}
+                  title={t(v.charAt(0).toUpperCase() + v.slice(1))}
+                  className={["ds-btn text-panel__button-29", (active  ? "text-panel__state-9" : "text-panel__state-28"), (active  ? "text-panel__state-11" : "text-panel__state-12")].join(" ")}
                 >
-                  {v === 'top' ? '↥ Top' : v === 'center' ? '⬍ Mid' : '↧ Bot'}
+                  {v === "top" ? "↥" : v === "center" ? "⬍" : "↧"}
                 </button>
               );
             })}
@@ -599,72 +433,82 @@ export const TextPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Surface Projection (Conform to Surface) - Planar Only in Web */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '6px 8px',
-          background: 'rgba(255, 255, 255, 0.04)',
-          borderRadius: 6,
-          marginBottom: 12,
-          opacity: 0.7
-        }}
-        title={t("Curved surface projection is not supported in the WebAssembly engine. Planar extrusion is used.")}
-      >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <label
-              htmlFor="surface-toggle"
-              style={{ fontWeight: 500, color: 'var(--text-muted)', cursor: 'not-allowed' }}
-            >
-              {t("Conform to Surface")}</label>
-            <span
-              style={{
-                fontSize: '0.65rem',
-                padding: '1px 5px',
-                borderRadius: 3,
-                background: 'rgba(56, 189, 248, 0.15)',
-                color: '#38bdf8',
-                border: '1px solid rgba(56, 189, 248, 0.3)'
-              }}
-            >
-              {t("Planar Only")}</span>
+      {/* Curved Surface Text Wrapping (Conform to Surface) */}
+      {(() => {
+        const isUnattached = targetObjectId === null || volumeType === 'new_object';
+        const handleUseSurfaceToggle = (checked: boolean) => {
+          if (checked && isUnattached) {
+            setError("Select a model on the build plate to wrap text onto its surface.");
+            return;
+          }
+          setUseSurface(checked);
+        };
+        return (
+          <div
+            className={["text-panel__row-27", isUnattached ? "text-panel__row-27--disabled" : ""].filter(Boolean).join(" ")}
+            title={
+              isUnattached
+                ? t("Select a model on the build plate to wrap text onto its surface.")
+                : t("Wrap text geometry onto the curved surface of the target model.")
+            }
+          >
+            <div>
+              <div className="text-panel__row-26">
+                <label
+                  htmlFor="use-surface-checkbox"
+                  className={["text-panel__label-25", isUnattached ? "text-panel__label-25--disabled" : ""].filter(Boolean).join(" ")}
+                >
+                  {t("Use surface")}
+                </label>
+                <span
+                  id="surface-mode-badge"
+                  className="text-panel__span-24"
+                >
+                  {isUnattached ? t("Requires Target Model") : useSurface ? t("Curved Wrap") : t("Planar")}
+                </span>
+              </div>
+              <div className="text-panel__div-23">
+                {isUnattached
+                  ? t("Select a model on the build plate to wrap text onto its surface.")
+                  : t("Wrap text geometry onto the curved surface of the target model.")}
+              </div>
+            </div>
+            <div className="text-panel__switch-wrapper">
+              <input
+                id="use-surface-checkbox"
+                data-testid="use-surface-checkbox"
+                type="checkbox"
+                role="switch"
+                aria-checked={useSurface}
+                aria-label={t("Use surface")}
+                checked={useSurface}
+                disabled={isUnattached}
+                onChange={(e) => handleUseSurfaceToggle(e.target.checked)}
+                className="ds-switch text-panel__input-22"
+              />
+              <input
+                id="surface-toggle"
+                data-testid="surface-toggle"
+                type="checkbox"
+                aria-hidden="true"
+                checked={useSurface}
+                disabled={isUnattached}
+                onChange={(e) => handleUseSurfaceToggle(e.target.checked)}
+                tabIndex={-1}
+              />
+            </div>
           </div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>
-            {t("Planar extrusion (curved surface wrap unavailable in Web)")}</div>
-        </div>
-        <input
-          id="surface-toggle"
-          data-testid="surface-toggle"
-          type="checkbox"
-          checked={false}
-          disabled={true}
-          readOnly={true}
-          style={{ width: 16, height: 16, cursor: 'not-allowed', opacity: 0.5 }}
-        />
-      </div>
-
+        );
+      })()}
       {/* Volume Type Selector */}
-      <div style={{ marginBottom: 14 }}>
-        <span style={{ display: 'block', marginBottom: 6, color: 'var(--text-muted)', fontWeight: 500 }}>
+      <div className="text-panel__div-21">
+        <span className="text-panel__span-20">
           {t("Operation / Type:")}</span>
         {targetObjectId === null ? (
           <div
             id="volume-type-unattached"
             data-testid="volume-type-unattached"
-            style={{
-              padding: '6px 10px',
-              background: 'var(--canvas-bg)',
-              border: '1px solid var(--control-bg)',
-              borderRadius: 4,
-              color: '#38bdf8',
-              fontSize: '0.78rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6
-            }}
+            className="text-panel__row-19"
           >
             <span>✨</span>
             <span>{t("New Object on Print Bed (No parent object selected)")}</span>
@@ -673,17 +517,13 @@ export const TextPanel: React.FC = () => {
           <div
             id="volume-type-selector"
             data-testid="volume-type-selector"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: 4
-            }}
+            className="text-panel__grid-18"
           >
             {(
               [
-                { type: 'part', label: t("Part (Join)"), color: '#22c55e' },
-                { type: 'negative', label: t("Cut (Negative)"), color: '#ef4444' },
-                { type: 'modifier', label: t("Modifier"), color: '#38bdf8' }
+                { type: 'part', label: t("Part (Join)") },
+                { type: 'negative', label: t("Cut (Negative)") },
+                { type: 'modifier', label: t("Modifier") }
               ] as const
             ).map((item) => {
               const active = volumeType === item.type;
@@ -691,20 +531,11 @@ export const TextPanel: React.FC = () => {
                 <button
                   key={item.type}
                   id={`type-${item.type}-btn`}
+                  aria-pressed={active}
                   data-testid={`type-${item.type}-btn`}
                   type="button"
                   onClick={() => setVolumeType(item.type as TextVolumeType)}
-                  style={{
-                    background: active ? item.color : 'var(--canvas-bg)',
-                    color: active ? '#fff' : 'var(--text-muted)',
-                    border: active ? `1px solid ${item.color}` : '1px solid var(--control-bg)',
-                    borderRadius: 4,
-                    padding: '6px 2px',
-                    cursor: 'pointer',
-                    fontSize: '0.74rem',
-                    fontWeight: active ? 600 : 400,
-                    transition: 'background 0.15s ease'
-                  }}
+                  className={["ds-btn text-panel__button-17", (active  ? "text-panel__state-9" : "text-panel__state-10"), (active  ? "text-panel__state-11" : "text-panel__state-12"), (active  ? "text-panel__state-13" : "text-panel__state-14"), (active  ? "text-panel__state-15" : "text-panel__state-16")].join(" ")}
                 >
                   {item.label}
                 </button>
@@ -715,7 +546,7 @@ export const TextPanel: React.FC = () => {
       </div>
 
       {/* Action Footer Buttons */}
-      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+      <div className="text-panel__row-8">
         {isEditing ? (
           <button
             id="update-text-btn"
@@ -723,20 +554,9 @@ export const TextPanel: React.FC = () => {
             type="button"
             disabled={isLoading || (!!fontMissingName && !selectedFont)}
             onClick={() => void updateText(true)}
-            style={{
-              flex: 2,
-              background: '#009688',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
-              padding: '8px 12px',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              cursor: isLoading || (!!fontMissingName && !selectedFont) ? 'default' : 'pointer',
-              opacity: isLoading || (!!fontMissingName && !selectedFont) ? 0.6 : 1
-            }}
+            className={["ds-btn text-panel__button-7", (isLoading || (!!fontMissingName && !selectedFont)  ? "text-panel__state-3" : "text-panel__state-4"), (isLoading || (!!fontMissingName && !selectedFont)  ? "text-panel__state-5" : "text-panel__state-6")].join(" ")}
           >
-            {isLoading ? 'Updating…' : 'Update Mesh'}
+            {isLoading ? t('Updating...') : t('Update')}
           </button>
         ) : (
           <button
@@ -745,20 +565,9 @@ export const TextPanel: React.FC = () => {
             type="button"
             disabled={isLoading || (!!fontMissingName && !selectedFont)}
             onClick={() => void addText()}
-            style={{
-              flex: 2,
-              background: '#009688',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 6,
-              padding: '8px 12px',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              cursor: isLoading || (!!fontMissingName && !selectedFont) ? 'default' : 'pointer',
-              opacity: isLoading || (!!fontMissingName && !selectedFont) ? 0.6 : 1
-            }}
+            className={["ds-btn text-panel__button-7", (isLoading || (!!fontMissingName && !selectedFont)  ? "text-panel__state-3" : "text-panel__state-4"), (isLoading || (!!fontMissingName && !selectedFont)  ? "text-panel__state-5" : "text-panel__state-6")].join(" ")}
           >
-            {isLoading ? 'Generating…' : 'Add Text'}
+            {isLoading ? t('Loading...') : t('Add')}
           </button>
         )}
 
@@ -769,16 +578,7 @@ export const TextPanel: React.FC = () => {
           disabled={isLoading}
           onClick={resetParams}
           title={t("Reset options to defaults")}
-          style={{
-            flex: 1,
-            background: 'transparent',
-            color: 'var(--text-muted)',
-            border: '1px solid var(--control-bg)',
-            borderRadius: 6,
-            padding: '8px 8px',
-            fontSize: '0.82rem',
-            cursor: 'pointer'
-          }}
+          className="ds-btn text-panel__button-2"
         >
           {t("Reset")}</button>
 
@@ -787,16 +587,7 @@ export const TextPanel: React.FC = () => {
           data-testid="close-panel-btn"
           type="button"
           onClick={close}
-          style={{
-            flex: 1,
-            background: 'transparent',
-            color: '#ef4444',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            borderRadius: 6,
-            padding: '8px 8px',
-            fontSize: '0.82rem',
-            cursor: 'pointer'
-          }}
+          className="ds-btn text-panel__button-1"
         >
           {t("Close")}</button>
       </div>

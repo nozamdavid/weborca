@@ -1,4 +1,5 @@
 import type { AppState } from '../store/appStore';
+import { effectivePreset } from './effectivePreset';
 import type { PresetKind, UserPreset, ConflictStrategy, PresetBundle, ImportBundleResult } from './types';
 import {
   saveUserPreset,
@@ -101,6 +102,18 @@ export async function saveCurrentUserPresetHelper(
     const existingUser = userPresets.find((p) => p.kind === 'printer' && p.name === selectedPrinter);
     if (existingUser) inherits = existingUser.inherits;
     values = { ...printerOverrides };
+  }
+
+  if (kind !== 'filament') {
+    const selectedName = kind === 'process' ? selectedProcess : selectedPrinter;
+    const existing = userPresets.find(p => p.kind === kind && p.name === selectedName);
+    if (existing) {
+      const savedValues = effectivePreset(kind, selectedName, userPresets).values;
+      // Selection maps contain the whole user chain for native reloads. Save
+      // only this child's explicit values and edits against its saved baseline.
+      values = { ...existing.values, ...Object.fromEntries(Object.entries(values).filter(([key, value]) =>
+        key in existing.values || value !== (key in savedValues ? savedValues[key] : get().presetConfig[key]))) };
+    }
   }
 
   const newPreset: UserPreset = {

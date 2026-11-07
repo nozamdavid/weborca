@@ -19,6 +19,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -91,12 +92,8 @@ async function runBrowserSuite(browserType, browserName) {
     console.log(`[${browserName}] Step 2: Selecting Voron presets and slicing 20mm cube...`);
 
     // Wait for vendor selector to have options
-    await page.waitForFunction(() => {
-      const v = document.getElementById('vendor-select');
-      return v && v.options.length > 1;
-    }, null, { timeout: 15000 });
 
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
 
     // Wait for printer select options
     await page.waitForFunction(() => {
@@ -169,12 +166,12 @@ async function runBrowserSuite(browserType, browserName) {
     results.push({ name: 'Voron Cube Parity Slice (SHA-256 match)', pass: true });
 
     // -------------------------------------------------------------------------
-    await page.click("#tab-prepare"); await page.waitForSelector("#vendor-select", { state: "visible", timeout: 5000 });
+    await page.click("#tab-prepare"); await page.waitForSelector("#printer-select", { state: "visible", timeout: 5000 });
     // Step 3: Bambu Lab X1 Carbon Slicing (100 Layers)
     // -------------------------------------------------------------------------
-    await page.click("#tab-prepare"); await page.waitForSelector("#vendor-select", { state: "visible", timeout: 5000 });
+    await page.click("#tab-prepare"); await page.waitForSelector("#printer-select", { state: "visible", timeout: 5000 });
     console.log(`[${browserName}] Step 3: Slicing with Bambu Lab X1 Carbon 0.4 nozzle...`);
-    await page.selectOption('#vendor-select', 'BBL');
+    await selectAddedPrinter(page, 'BBL');
 
     // Wait for BBL printers
     await page.waitForFunction(() => {

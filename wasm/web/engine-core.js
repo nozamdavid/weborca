@@ -76,6 +76,24 @@ export async function createEngineCore(options = {}) {
 
   const engine = new Module.Engine();
   let initialized = false;
+  let transactionTail = Promise.resolve();
+
+  // Include MEMFS input writes and output reads in admission order. Native
+  // serialization alone cannot protect files consumed after submit returns.
+  function enqueue(transaction) {
+    const result = transactionTail.then(transaction);
+    transactionTail = result.catch(() => {});
+    return result;
+  }
+
+  function checkAborted(signal) {
+    if (signal?.aborted) {
+      const error = new Error('canceled');
+      error.name = 'AbortError';
+      error.canceled = true;
+      throw error;
+    }
+  }
 
   /**
    * Recursively creates directories in MEMFS.
@@ -129,6 +147,21 @@ export async function createEngineCore(options = {}) {
     return Module.FS.readFile(filePath);
   }
 
+  async function importFile(path, bytes, op, args = {}) {
+    // Only wrapper scratch is ours to release. A file written by a caller at
+    // this basename must survive both successful and rejected imports.
+    const previous = Module.FS.analyzePath(path).exists ? readFile(path) : null;
+    try {
+      writeFile(path, bytes);
+      return await runCall(op, { ...args, path });
+    } finally {
+      if (previous !== null) writeFile(path, previous);
+      // Other formats can carry source/asset dependencies; retain their input
+      // until those persistence contracts have equivalent coverage.
+      else if ((op === 'loadStepMesh' || /\.(obj|stl)$/i.test(path)) && Module.FS.analyzePath(path).exists) Module.FS.unlink(path);
+    }
+  }
+
   /**
    * Submits a job to the engine and polls for the result without blocking.
    * Polling starts immediately and backs off to every 16ms, so quick ops
@@ -140,11 +173,17 @@ export async function createEngineCore(options = {}) {
    * @param {AbortSignal} [callOptions.signal]
    * @returns {Promise<any>}
    */
-  async function call(op, args = {}, { onProgress, signal } = {}) {
+  function call(op, args = {}, callOptions = {}) {
+    return enqueue(() => runCall(op, args, callOptions));
+  }
+
+  async function runCall(op, args = {}, { onProgress, signal } = {}) {
+    checkAborted(signal);
     // Engine ops require init to have run once before other ops
     if (!initialized && op !== 'init') {
-      await call('init', { resourcesDir: '/resources', dataDir: '/data' });
+      await runCall('init', { resourcesDir: '/resources', dataDir: '/data' });
     }
+    checkAborted(signal);
 
     let effectiveArgs = args;
     if (op === 'slice') {
@@ -165,10 +204,6 @@ export async function createEngineCore(options = {}) {
     const argsJson = typeof effectiveArgs === 'string' ? effectiveArgs : JSON.stringify(effectiveArgs || {});
     const jobId = engine.submit(op, argsJson);
 
-    if (op === 'init') {
-      initialized = true;
-    }
-
     return new Promise((resolve, reject) => {
       let lastProgressKey = null;
       let timerId = null;
@@ -185,19 +220,13 @@ export async function createEngineCore(options = {}) {
         }
       };
 
-      if (signal) {
-        if (signal.aborted) {
+      if (signal && op === 'slice') {
+        onAbort = () => {
           try {
             engine.cancel();
           } catch (_) {}
-        } else {
-          onAbort = () => {
-            try {
-              engine.cancel();
-            } catch (_) {}
-          };
-          signal.addEventListener('abort', onAbort, { once: true });
-        }
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
       }
 
       const pollTick = () => {
@@ -221,6 +250,7 @@ export async function createEngineCore(options = {}) {
             cleanup();
             const res = JSON.parse(resJson);
             if (res.ok) {
+              if (op === 'init') initialized = true;
               resolve(res.result !== undefined ? res.result : {});
             } else {
               const err = new Error(res.error || 'Operation failed');
@@ -250,7 +280,11 @@ export async function createEngineCore(options = {}) {
    * @param {Object} [sliceOptions={}]
    * @returns {Promise<any>}
    */
-  async function slice(sliceOptions = {}) {
+  function slice(sliceOptions = {}) {
+    return enqueue(() => runSlice(sliceOptions));
+  }
+
+  async function runSlice(sliceOptions) {
     const defaultThreads = Math.min(
       typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4,
       8
@@ -262,14 +296,9 @@ export async function createEngineCore(options = {}) {
         : defaultThreads;
     const resolvedThreads = Math.max(1, Math.floor(configuredThreads));
     const { onProgress, signal, outPath = '/out/plate_1.gcode' } = sliceOptions;
-    const result = await call('slice', { ...sliceOptions, threads: resolvedThreads, outPath }, { onProgress, signal });
+    const result = await runCall('slice', { ...sliceOptions, threads: resolvedThreads, outPath }, { onProgress, signal });
     const finalPath = sliceOptions.outPath || result?.gcodePath || outPath;
-    let gcode;
-    try {
-      gcode = readFile(finalPath);
-    } catch (_) {
-      gcode = new Uint8Array(0);
-    }
+    const gcode = readFile(finalPath);
     return { ...result, gcode };
   }
 
@@ -299,7 +328,7 @@ export async function createEngineCore(options = {}) {
   }
 
   /**
-   * Writes a model file into /models/<fileName> and calls the loadModel op.
+   * Imports through /models/<fileName>. Owned OBJ/STL scratch is released after consumption.
    * @param {string} fileName
    * @param {Uint8Array|ArrayBuffer|string} bytes
    * @returns {Promise<any>}
@@ -307,12 +336,11 @@ export async function createEngineCore(options = {}) {
   async function loadModel(fileName, bytes) {
     const base = fileName.split('/').pop().split('\\').pop();
     const dest = `/models/${base}`;
-    writeFile(dest, bytes);
-    return await call('loadModel', { path: dest });
+    return enqueue(() => importFile(dest, bytes, 'loadModel'));
   }
 
   /**
-   * Writes a model file into /models/<fileName> and calls the addModel op.
+   * Appends through /models/<fileName>. Owned OBJ/STL scratch is released after consumption.
    * @param {string} fileName
    * @param {Uint8Array|ArrayBuffer|string} bytes
    * @returns {Promise<any>}
@@ -320,8 +348,23 @@ export async function createEngineCore(options = {}) {
   async function addModel(fileName, bytes) {
     const base = fileName.split('/').pop().split('\\').pop();
     const dest = `/models/${base}`;
-    writeFile(dest, bytes);
-    return await call('addModel', { path: dest });
+    return enqueue(() => importFile(dest, bytes, 'addModel'));
+  }
+
+  /**
+   * Writes the packed mesh of the STEP module (wasm/step) into
+   * /models/<fileName>.stm and calls the loadStepMesh op, which reads and
+   * deletes it. `replace` replaces the model like loadModel; otherwise the
+   * objects are appended like addModel.
+   * @param {string} fileName Name of the original STEP file
+   * @param {Uint8Array|ArrayBuffer} packed
+   * @param {{ replace?: boolean }} [options]
+   * @returns {Promise<any>}
+   */
+  async function loadStepMesh(fileName, packed, options = {}) {
+    const base = fileName.split('/').pop().split('\\').pop();
+    const dest = `/models/${base}.stm`;
+    return enqueue(() => importFile(dest, packed, 'loadStepMesh', { name: base, replace: !!options.replace }));
   }
 
   /**
@@ -342,6 +385,7 @@ export async function createEngineCore(options = {}) {
     addVendorBundle,
     loadModel,
     addModel,
+    loadStepMesh,
     dispose,
     FS: Module.FS,
     rawEngine: engine

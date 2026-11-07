@@ -296,6 +296,7 @@ export const LayerSlider: React.FC = () => {
   return (
     <div
       id="layer-slider-container"
+      aria-label={t('Vertical layer range')}
       className="layer-slider-vertical"
       style={{
         position: 'absolute',
@@ -316,6 +317,7 @@ export const LayerSlider: React.FC = () => {
         boxShadow: '0 4px 16px rgba(0, 0, 0, 0.35)'
       }}
     >
+      <span className="layer-range-caption">{t('Layers')}</span>
       {/* Top Layer & Z Height Indicator Badge */}
       <div
         id="layer-indicator-top"
@@ -327,10 +329,10 @@ export const LayerSlider: React.FC = () => {
           color: 'var(--text-color)'
         }}
       >
-        <div style={{ fontWeight: 600, color: '#38bdf8' }} id="layer-current-number">
+        <div className="preview-current-value" id="layer-current-number">
           L{maxLayer + 1}
         </div>
-        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }} id="layer-current-z">
+        <div className="preview-value-detail" id="layer-current-z">
           {currentZ}{t("mm")}</div>
       </div>
 
@@ -749,7 +751,7 @@ export const LayerSlider: React.FC = () => {
           color: 'var(--text-muted)'
         }}
       >
-        <div style={{ fontWeight: 500, color: '#f59e0b' }}>L{minLayer + 1}</div>
+        <div className="preview-current-value">L{minLayer + 1}</div>
         <div>{minZ}{t("mm")}</div>
       </div>
 
@@ -772,7 +774,7 @@ export const LayerSlider: React.FC = () => {
           textAlign: 'center'
         }}
       >
-        {t("All")}</button>
+        {t("All layers")}</button>
 
       {/* Total layers count label */}
       <div

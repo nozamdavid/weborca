@@ -26,7 +26,12 @@
   border-radius: 4px;
   padding: 4px 8px;
   min-width: 200px;
+  max-width: 100%;
 }
+.device-header > span { min-width: 0; overflow-wrap: anywhere; }
+.device-header .device-status-dot { flex: none; }
+.device-freshness { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); min-width: 0; color: var(--text-secondary); font-size: var(--text-md); overflow-wrap: anywhere; }
+.device-saved-label { font-weight: 600; color: var(--text-primary); }
 .device-status-dot {
   display: inline-block;
   width: 9px;
@@ -40,13 +45,14 @@
 .device-spacer { flex: 1; }
 .device-body {
   display: flex;
-  gap: 12px;
+  gap: 0;
   padding: 12px;
   flex: 1;
   min-height: 0;
 }
 .device-status-col {
-  flex: 0 0 340px;
+  flex: 0 0 var(--device-status-width, 340px);
+  min-width: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -61,7 +67,7 @@
 }
 .device-card h4 {
   margin: 0 0 8px;
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--dev-muted);
@@ -71,13 +77,14 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 600;
   text-transform: capitalize;
 }
-.device-state[data-state='printing'] { color: var(--dev-accent); }
+.device-state[data-state='printing'] { color: var(--text-primary); }
+.device-no-readings { font-size: var(--text-md); font-weight: 400; text-transform: none; }
 .device-state[data-state='error'] { color: var(--danger-color, #d32f2f); }
-.device-message { margin-top: 4px; color: var(--dev-muted); font-size: 12px; }
+.device-message { margin-top: 4px; color: var(--dev-muted); font-size: 0.75rem; }
 .device-progress {
   height: 8px;
   border-radius: 4px;
@@ -88,7 +95,52 @@
 .device-progress > div { height: 100%; background: var(--dev-accent); transition: width 0.4s; }
 .device-row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; font-variant-numeric: tabular-nums; }
 .device-row > span:first-child { color: var(--dev-muted); }
-.device-file { word-break: break-all; font-size: 12px; }
+.device-file { word-break: break-all; font-size: 0.75rem; }
+.device-filament-note { margin: 0 0 var(--space-2); color: var(--text-secondary); font-size: var(--text-sm); }
+.device-filament-list { margin: 0; }
+.device-filament-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--space-3); padding: var(--space-2) 0; min-height: var(--row-h); font-size: var(--text-md); overflow-wrap: anywhere; }
+.device-filament-row + .device-filament-row { border-top: 1px solid var(--border-subtle); }
+.device-filament-row dt { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.device-filament-row dd { margin: 0; min-width: 0; }
+.device-filament-detail { color: var(--text-secondary); font-size: var(--text-sm); margin-top: var(--space-1); }
+.device-filament-color { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-1); font-size: var(--text-sm); }
+.device-filament-swatch { width: var(--space-4); height: var(--space-4); flex: none; background: var(--swatch); border: 1px solid var(--border-strong); border-radius: var(--radius-xs); }
+.device-extruders { min-width: 0; }
+.device-extruders > h4 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.device-extruder-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: var(--space-2);
+}
+.device-extruder-card {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--dev-border);
+  border-radius: var(--radius-md);
+  background: var(--dev-card);
+  color: var(--text-primary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.device-extruder-card h5 { grid-column: 1 / -1; margin: 0; font-size: var(--text-md); font-weight: 600; }
+.device-extruder-icon { width: 100%; height: auto; align-self: start; color: var(--text-secondary); }
+.device-extruder-body { fill: var(--dev-card); stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.device-extruder-feed-border { fill: none; stroke: var(--text-secondary); stroke-width: 7; stroke-linecap: round; }
+.device-extruder-feed { fill: none; stroke: var(--filament-color, var(--text-secondary)); stroke-width: 4; stroke-linecap: round; }
+.device-extruder-card[data-presence='unknown'] .device-extruder-feed { stroke: var(--text-secondary); stroke-dasharray: 3 5; }
+.device-extruder-card[data-presence='unknown'] .device-extruder-feed-border { display: none; }
+.device-extruder-material { min-width: 0; font-size: var(--text-md); }
+.device-extruder-type { font-weight: 600; }
+.device-extruder-temperatures { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); margin: var(--space-1) 0 0; padding-top: var(--space-2); border-top: 1px solid var(--border-subtle); font-variant-numeric: tabular-nums; }
+.device-extruder-temperatures dt { color: var(--text-secondary); font-size: var(--text-sm); }
+.device-extruder-temperatures dd { margin: var(--space-1) 0 0; font-size: var(--text-md); font-weight: 600; }
 .device-heater { padding: 4px 0; }
 .device-heater-bar {
   height: 4px;
@@ -102,7 +154,7 @@
 .device-heater[data-kind='chamber'] .device-heater-bar > div { background: #8e24aa; }
 .device-camera img { width: 100%; border-radius: 4px; display: block; background: #000; min-height: 80px; }
 .device-camera select { margin-bottom: 6px; background: var(--control-bg, #3a3a3a); color: inherit; border: 1px solid var(--dev-border); border-radius: 4px; }
-.device-files { max-height: 180px; overflow-y: auto; font-size: 12px; }
+.device-files { max-height: 180px; overflow-y: auto; font-size: 0.75rem; }
 .device-ui-col {
   flex: 1;
   min-width: 0;
@@ -120,7 +172,7 @@
   padding: 6px 10px;
   background: var(--dev-card);
   border-bottom: 1px solid var(--dev-border);
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 .device-ui-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .device-ui-frame { flex: 1; position: relative; background: #111; }
@@ -135,10 +187,23 @@
   flex: 1;
   color: var(--dev-muted);
 }
-.device-error { color: #ef9a9a; font-size: 12px; }
+.device-error { color: var(--danger-fg); font-size: 0.75rem; }
 
 /* The printer's own UI sits in a side column that can be folded away, leaving the status cards the full width. */
-.device-ui-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.device-ui-side { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+.device-splitter { flex: 0 0 8px; margin-inline: 2px; cursor: col-resize; touch-action: none; position: relative; }
+.device-splitter::after { content: ''; position: absolute; inset-block: 0; left: 3px; width: 1px; background: var(--border-default); }
+.device-splitter:hover::after,
+.device-splitter:focus-visible::after,
+.device-resizing .device-splitter::after { background: var(--text-secondary); width: 2px; }
+.device-splitter:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 0; }
+.device-resizing { cursor: col-resize; user-select: none; }
+.device-resizing iframe { pointer-events: none; }
+.device-drag-shield { position: fixed; inset: 0; z-index: var(--z-popover); cursor: col-resize; }
+.device-body.device-stacked { flex-direction: column; overflow-y: auto; gap: 12px; }
+.device-body.device-stacked .device-status-col { flex: none; min-width: 0; display: flex; align-items: stretch; overflow-y: visible; padding-right: 0; }
+.device-stacked .device-ui-side { flex: none; overflow-y: visible; }
+.device-stacked .device-ui-frame { flex: none; height: min(60dvh, 480px); min-height: 280px; }
 .device-ui-hold { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .device-ui-toggle {
   align-self: flex-end;
@@ -147,15 +212,226 @@
   border: 1px solid var(--dev-border);
   border-radius: 4px;
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: 0.75rem;
   cursor: pointer;
 }
-.device-body.ui-collapsed .device-ui-side { flex: 0 0 auto; }
+.device-body.ui-collapsed { gap: 12px; flex-direction: column; }
+.device-body.ui-collapsed .device-ui-side { flex: 0 0 auto; order: -1; }
 .device-body.ui-collapsed .device-ui-hold { display: none; }
 .device-body.ui-collapsed .device-status-col {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   align-content: start;
   align-items: start;
+}
+
+@media (max-width: 800px) {
+  .device-body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  /* Also override the collapsed desktop grid so cards fit narrow phones. */
+  .device-body .device-status-col,
+  .device-body.ui-collapsed .device-status-col {
+    flex: none;
+    min-width: 0;
+    display: flex;
+    align-items: stretch;
+    overflow-y: visible;
+    padding-right: 0;
+  }
+  .device-ui-side { flex: none; }
+  .device-extrude-row { flex-wrap: wrap; }
+  .device-fan-row input[type='range'] { min-width: 0; }
+  .device-ui-frame {
+    flex: none;
+    height: min(60dvh, 480px);
+    min-height: 280px;
+  }
+}
+
+/* Controls */
+#device-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.device-control-error {
+  background: color-mix(in srgb, var(--danger-fg) 8%, var(--surface-2));
+  border: 1px solid var(--danger-border);
+  color: color-mix(in srgb, var(--danger-fg) 60%, var(--text-primary));
+  overflow-wrap: anywhere;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+@media (max-width: 800px) {
+  .device-control-error {
+    /* The mobile shell uses its neutral dark surfaces in either theme. */
+    --danger-fg: var(--p-red-400);
+  }
+}
+.device-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.device-control-group:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.device-control-title {
+  font-size: 0.6875rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dev-muted);
+  font-weight: 600;
+}
+.device-control-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  color: var(--dev-muted);
+  font-weight: 600;
+}
+.device-step-selector {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.device-step-label {
+  font-size: 0.75rem;
+  text-transform: none;
+  color: var(--dev-muted);
+  margin-right: 2px;
+}
+.btn-step {
+  background: var(--control-bg, #3a3a3a);
+  border: 1px solid var(--dev-border);
+  color: var(--text-color, #e0e0e0);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 0.6875rem;
+  cursor: pointer;
+}
+.btn-step.active {
+  background: var(--dev-accent);
+  color: #fff;
+  border-color: var(--dev-accent);
+}
+.device-btn-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.device-jog-container {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0;
+}
+.device-jog-xy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.jog-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.jog-btn {
+  width: 44px;
+  height: 32px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.8125rem;
+}
+.jog-spacer {
+  width: 44px;
+  height: 32px;
+}
+.device-jog-z {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.control-input {
+  width: 55px;
+  padding: 3px 6px;
+  background: var(--control-bg, #3a3a3a);
+  border: 1px solid var(--dev-border);
+  color: inherit;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  text-align: right;
+}
+.control-label {
+  font-size: 0.75rem;
+  color: var(--dev-muted);
+  min-width: 50px;
+}
+.device-temp-row,
+.device-extrude-row,
+.device-fan-row,
+.device-speed-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+}
+.device-fan-row input[type='range'] {
+  flex: 1;
+}
+.device-fan-val {
+  min-width: 35px;
+  text-align: right;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 800px) {
+  .device-header,
+  .device-body { padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right)); }
+  .device-body { padding-bottom: max(24px, env(safe-area-inset-bottom)); scroll-padding-block: 20px; }
+  .device-panel :is(button, .btn, input, select) {
+    min-height: 48px; max-width: 100%; font-size: 1rem;
+    border-radius: var(--radius-md); accent-color: var(--text-secondary);
+  }
+  .device-panel :is(button, .btn) { white-space: normal; overflow-wrap: anywhere; }
+  .device-panel :is(input, select) { min-width: 0; caret-color: var(--text-primary); }
+  .device-header select { width: 100%; }
+  .device-panel :is(button, .btn, input, select):focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+  .device-panel ::selection { background: var(--text-primary); color: var(--surface-1); }
+  .device-panel .btn-primary { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+  .device-panel .btn-primary:hover:not(:disabled),
+  .device-panel .btn-primary:active:not(:disabled) { background: var(--text-secondary); color: var(--surface-1); }
+  .device-panel .btn-step.active { background: var(--accent-subtle); color: var(--text-primary); border-color: var(--text-secondary); }
+  .device-panel :is(button, .btn):hover:not(:disabled) { border-color: var(--text-secondary); }
+  .device-control-title-row,
+  .device-step-selector,
+  .device-jog-container,
+  .device-temp-row,
+  .device-speed-row { flex-wrap: wrap; gap: var(--space-2); }
+  .device-step-selector { min-width: 0; }
+  .device-step-selector .btn-step { min-width: 48px; }
+  .device-jog-container { gap: var(--space-4); }
+  .device-panel .jog-btn,
+  .device-panel .jog-spacer { width: 48px; height: 48px; flex: none; }
+  .device-panel .control-input { width: 4.5em; font-variant-numeric: tabular-nums; }
+  .device-panel :is(.control-label, .device-step-label) {
+    font-size: var(--ctl-font); font-weight: 400; line-height: var(--leading-normal); color: var(--text-secondary);
+  }
+  .device-panel .device-fan-row input[type=range] { width: 0; }
+  .device-empty { padding: 20px 16px 24px; text-align: center; }
+  .device-card :is(h4, .device-control-title, .device-control-title-row) { overflow-wrap: anywhere; }
 }

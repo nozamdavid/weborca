@@ -11,7 +11,7 @@ import { Aedes } from 'aedes';
 import mqtt from 'mqtt';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
-  bambuRequestAllowedInReadOnly, checkRpcFrame, digestAuthorization, GatewayError, httpAllowedInReadOnly,
+  bambuRequestAllowed, bambuRequestAllowedInReadOnly, checkRpcFrame, isSafeGcode, digestAuthorization, GatewayError, httpAllowedInReadOnly,
   isPrivateAddress, parseDigestChallenge, resolveTarget
 } from '../../app/gateway/policy.ts';
 import { close, listen, sleep, startGateway } from './lib/gatewayHarness.mjs';
@@ -54,6 +54,9 @@ describe('policy', () => {
     await rejects(resolveTarget('connect.prusa3d.com', 80, cloud, cdns), 403); // https only
     await rejects(resolveTarget('example.com', 443, cloud, cdns), 403); // not an enabled service
     await rejects(resolveTarget('192.168.0.5', 80, cloud, cdns), 403); // cloud alone does not open the LAN
+    for (const host of ['api.snapmaker.com', 'id.snapmaker.com', '192.168.0.5']) {
+      await rejects(resolveTarget(host, 443, { cloud: 'snapmaker-cloud' }, cdns), 403);
+    }
     assert.equal((await resolveTarget('192.168.0.5', 80, { ...cloud, proxy: 'private' }, dns)).host, '192.168.0.5');
   });
 
@@ -122,6 +125,38 @@ describe('policy', () => {
     for (const payload of [{ print: { command: 'stop' } }, { system: { command: 'ledctrl' } }, { pushing: { command: 'start' } },
       { pushing: { command: 'pushall' }, print: { command: 'stop' } }, null, 'pushall', []]) {
       assert.equal(bambuRequestAllowedInReadOnly(payload), false, JSON.stringify(payload));
+    }
+  });
+
+  test('safe Bambu requests and gcode validation', () => {
+    assert.equal(isSafeGcode('G28'), true);
+    assert.equal(isSafeGcode('G28 X Y\nG91\nG1 X10 F3000\nG90'), true);
+    assert.equal(isSafeGcode('M83\nG1 E5 F300'), true);
+    assert.equal(isSafeGcode('M104 S210\nM140 S60\nM106 P1 S255'), true);
+    assert.equal(isSafeGcode('M220 S100\nM221 S95'), true);
+    assert.equal(isSafeGcode('SET_HEATER_TEMPERATURE HEATER=chamber TARGET=40'), true);
+    assert.equal(isSafeGcode('M500'), false);
+    assert.equal(isSafeGcode('G28\nrm -rf /'), false);
+    assert.equal(isSafeGcode(''), false);
+
+    assert.equal(bambuRequestAllowed({ info: { command: 'get_version' } }), true);
+    assert.equal(bambuRequestAllowed({ pushing: { command: 'pushall' } }), true);
+    assert.equal(bambuRequestAllowed({ print: { command: 'pause' } }), true);
+    assert.equal(bambuRequestAllowed({ print: { command: 'resume' } }), true);
+    assert.equal(bambuRequestAllowed({ print: { command: 'stop' } }), true);
+    assert.equal(bambuRequestAllowed({ print: { command: 'print_speed', param: '2' } }), true);
+    assert.equal(bambuRequestAllowed({ print: { command: 'gcode_file', param: '/sdcard/cube.gcode' } }), true);
+    assert.equal(bambuRequestAllowed({ print: { command: 'gcode_line', param: 'G28\n' } }), true);
+    assert.equal(bambuRequestAllowed({ print: { command: 'gcode_line', param: 'M83\nG0 X10 Y10 F3000\n' } }), true);
+
+    for (const bad of [
+      { print: { command: 'gcode_line', param: 'M500' } },
+      { print: { command: 'gcode_line', param: 'reboot' } },
+      { print: { command: 'unknown' } },
+      { system: { command: 'ledctrl' } },
+      null, 'pushall', []
+    ]) {
+      assert.equal(bambuRequestAllowed(bad), false, JSON.stringify(bad));
     }
   });
 
@@ -284,6 +319,111 @@ describe('gateway', () => {
     assert.deepEqual(await res.json(), { method: 'POST', bytes: payload.length });
     assert.ok(seen[0].body.equals(payload));
     await gw.close();
+  });
+
+  test('Moonraker upload opt-in preserves the staging read-only default', async (t) => {
+    reset();
+    const saved = Object.fromEntries(['ORCA_PRINTER_PROXY', 'ORCA_PRINTER_PROXY_READONLY', 'ORCA_PRINTER_PROXY_ALLOW_UPLOAD', 'ORCA_PRINTER_CLOUD'].map(key => [key, process.env[key]]));
+    t.after(() => {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    });
+    process.env.ORCA_PRINTER_PROXY = 'private';
+    process.env.ORCA_PRINTER_PROXY_READONLY = '1';
+    process.env.ORCA_PRINTER_CLOUD = 'bambu-cloud,creality-cloud,orca-cloud,prusa-connect';
+    delete process.env.ORCA_PRINTER_PROXY_ALLOW_UPLOAD;
+    const gw = await startGateway({});
+    t.after(() => gw.close());
+    const upload = () => {
+      const form = new FormData();
+      form.append('root', 'gcodes');
+      form.append('file', new Blob(['G1 X1\n']), 'test.gcode');
+      return fetch(`${gw.url}/_printer/http/127.0.0.1:${upstreamPort}/server/files/upload`, { method: 'POST', body: form });
+    };
+    const refused = await upload();
+    assert.equal(refused.status, 403);
+    assert.equal(await refused.text(), 'Read-only mode: this request could change the printer.');
+    assert.equal(seen.length, 0);
+    process.env.ORCA_PRINTER_PROXY_ALLOW_UPLOAD = '1';
+    const accepted = await upload();
+    assert.equal(accepted.status, 200, 'explicit upload-only opt-in accepts the actual UI multipart body');
+    assert.equal(seen.length, 1);
+    const parsed = await new Response(seen[0].body, { headers: { 'content-type': seen[0].headers['content-type'] } }).formData();
+    assert.equal(parsed.get('root'), 'gcodes');
+    assert.equal(parsed.get('file').name, 'test.gcode');
+    assert.equal(await parsed.get('file').text(), 'G1 X1\n');
+  });
+
+  test('Moonraker upload opt-in blocks print flags, commands and encoded routes before forwarding', async (t) => {
+    reset();
+    const gw = await startGateway({ proxy: 'private', readOnly: true, allowUpload: true });
+    t.after(() => gw.close());
+    const base = `${gw.url}/_printer/http/127.0.0.1:${upstreamPort}`;
+    const form = (name, value) => {
+      const body = new FormData();
+      body.append('root', 'gcodes');
+      if (name) body.append(name, value);
+      body.append('file', new Blob(['G1 X1\n']), 'test.gcode');
+      return body;
+    };
+    for (const [name, value] of [['print', 'true'], ['print', 'false'], ['start_print', 'true'], ['start', 'true'], ['unknown', 'x'], ['root', 'config']]) {
+      const response = await fetch(`${base}/server/files/upload`, { method: 'POST', body: form(name, value) });
+      assert.equal(response.status, 403, name);
+      await response.text();
+    }
+    // A print field after the file must also be inspected before any bytes reach upstream.
+    const extra = form();
+    extra.append('print', 'true');
+    assert.equal((await fetch(`${base}/server/files/upload`, { method: 'POST', body: extra })).status, 403);
+    const duplicate = form();
+    duplicate.append('file', new Blob(['G1 X2\n']), 'second.gcode');
+    assert.equal((await fetch(`${base}/server/files/upload`, { method: 'POST', body: duplicate })).status, 403);
+    for (const path of ['/server/files/%75pload', '/server%2ffiles%2fupload', '/server/files/%2575pload',
+      '/server/files/upload?print=true', '/printer/print/start', '/printer/gcode/script']) {
+      const response = await fetch(base + path, { method: 'POST', body: form() });
+      assert.equal(response.status, 403, path);
+      await response.text();
+    }
+    assert.equal((await fetch(`${base}/server/files/upload`, {
+      method: 'POST', body: form(), headers: { 'x-http-method-override': 'POST' }
+    })).status, 403);
+    assert.equal(seen.length, 0);
+  });
+
+  test('Moonraker upload opt-in rejects malformed multipart and bounded bodies', async (t) => {
+    reset();
+    const max = 8192;
+    const gw = await startGateway({ proxy: 'private', readOnly: true, allowUpload: true, uploadMaxBytes: max });
+    t.after(() => gw.close());
+    const url = `${gw.url}/_printer/http/127.0.0.1:${upstreamPort}/server/files/upload`;
+    for (const [contentType, body] of [['application/octet-stream', 'x'],
+      ['multipart/form-data; boundary=test', '--test\r\nContent-Disposition: form-data; name="root"\r\n\r\ngcodes'],
+      ['multipart/form-data; boundary=test', `--test\r\n${'x'.repeat(4097)}\r\n\r\nx\r\n--test--`]]) {
+      const response = await fetch(url, { method: 'POST', body, headers: { 'content-type': contentType } });
+      assert.equal(response.status, 400);
+      await response.text();
+    }
+    const oversized = (declared) => new Promise((resolve, reject) => {
+      const request = http.request(url, { method: 'POST', headers: {
+        'content-type': 'multipart/form-data; boundary=test',
+        connection: 'close',
+        ...(declared ? { 'content-length': max + 1 } : {})
+      } }, response => {
+        response.resume();
+        response.on('end', () => resolve(response.statusCode));
+      });
+      request.on('error', error => { error.message = `${declared ? 'declared' : 'chunked'} limit: ${error.message}`; reject(error); });
+      if (!declared) {
+        request.write('--test\r\nContent-Disposition: form-data; name="file"; filename="test.gcode"\r\nContent-Type: application/octet-stream\r\n\r\n');
+        request.write(Buffer.alloc(max + 1, 120));
+      }
+      request.end();
+    });
+    assert.equal(await oversized(true), 413, 'declared limit checked before allocation');
+    assert.equal(await oversized(false), 413, 'chunked bodies cannot bypass the limit');
+    assert.equal(seen.length, 0);
   });
 
   test('forwards response chunks as they arrive (camera streams)', async () => {

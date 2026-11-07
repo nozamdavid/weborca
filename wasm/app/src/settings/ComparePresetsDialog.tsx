@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { getPresetConfig, listPresets } from '../engine/orcaEngine';
 import { useAppStore } from '../store/appStore';
 import { modifiedSettings, type ModifiedSetting } from './modifiedSettings';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { useTranslation } from "../i18n";
 
 export const useCompareStore = create<{ open: boolean; setOpen: (open: boolean) => void }>((set) => ({ open: false, setOpen: (open) => set({ open }) }));
@@ -64,8 +64,8 @@ export const ComparePresetsDialog: React.FC = () => {
     </select>
   );
   return (
-    <ModalBackdrop onClose={() => setOpen(false)} id="compare-dialog" role="dialog" aria-label={t("Compare presets")}>
-      <div className="modal-content" style={{ width: 'min(820px, 94vw)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '86vh' }}>
+    <Dialog onClose={() => setOpen(false)} id="compare-dialog" role="dialog" aria-label={t("Compare presets")}>
+      <div className="modal-content ds-dialog ds-dialog--lg">
         <h3 style={{ margin: 0 }}>{t("Compare presets")}</h3>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <select id="compare-kind" value={kind} onChange={(e) => setKind(e.target.value as Kind)} aria-label={t("Preset type")}>
@@ -75,17 +75,17 @@ export const ComparePresetsDialog: React.FC = () => {
           {picker('compare-right', right, setRight)}
         </div>
         {error && <div id="compare-error" style={{ color: 'var(--danger-color)' }}>{error}</div>}
-        <div style={{ overflow: 'auto', fontSize: 12 }}>
+        <div style={{ overflow: 'auto', fontSize: '0.75rem' }}>
           {diff && diff.length === 0 && <div id="compare-same" style={{ padding: 8 }}>{t("No differences in the settings shown by the app.")}</div>}
           {diff && diff.length > 0 && (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ textAlign: 'left', color: 'var(--text-muted, #a0a0a0)' }}><th>{t("Setting")}</th><th>{short(left)}</th><th>{short(right)}</th></tr></thead>
+              <thead><tr style={{ textAlign: 'left', color: 'var(--text-secondary)' }}><th>{t("Setting")}</th><th>{short(left)}</th><th>{short(right)}</th></tr></thead>
               <tbody>
                 {diff.map((c) => (
                   <tr key={`${c.tab}/${c.key}`} className="compare-row" style={{ borderTop: '1px solid var(--border-color, var(--border-color))' }}>
-                    <td style={{ padding: '4px 6px' }}>{c.label}<div style={{ color: 'var(--text-muted, #a0a0a0)', fontSize: 11 }}>{c.page}</div></td>
+                    <td style={{ padding: '4px 6px' }}>{c.label}<div style={{ color: 'var(--text-secondary)', fontSize: '0.6875rem' }}>{c.page}</div></td>
                     <td style={{ padding: '4px 6px' }} title={c.from}>{short(c.from)}</td>
-                    <td style={{ padding: '4px 6px', color: '#f59e0b' }} title={c.to}>{short(c.to)}</td>
+                    <td style={{ padding: '4px 6px', color: 'var(--warning-fg)' }} title={c.to}>{short(c.to)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -93,9 +93,9 @@ export const ComparePresetsDialog: React.FC = () => {
           )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button className="btn btn-primary" id="compare-close" onClick={() => setOpen(false)}>{t("Close")}</button>
+          <button className="ds-btn ds-btn--primary" id="compare-close" onClick={() => setOpen(false)}>{t("Close")}</button>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

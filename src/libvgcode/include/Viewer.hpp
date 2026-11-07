@@ -90,6 +90,8 @@ public:
     // ORCA: direction to the top light in eye space, shading the toolpaths and biasing their shadow lookup.
     //
     void set_light_top_dir(const Vec3& direction);
+    // ES preview lighting mode; desktop rendering keeps its existing behavior.
+    void set_enhanced_lighting(bool enabled);
 
     //
     // ************************************************************************

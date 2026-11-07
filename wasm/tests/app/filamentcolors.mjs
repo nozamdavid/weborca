@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const CUBE = fs.readFileSync(path.resolve(repoRoot, 'tests/data/20mm_cube.obj'));
@@ -32,7 +33,7 @@ async function runSuite(browserType, name) {
   try {
     await page.goto(BASE_URL);
     await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.selectOption('#printer-select', 'Voron 2.4 300 0.4 nozzle');
     await page.waitForTimeout(2000);
     await page.evaluate(async (bytes) => window.__appStore.getState().importModelFile(new File([new Uint8Array(bytes)], 'cube.obj')), Array.from(CUBE));

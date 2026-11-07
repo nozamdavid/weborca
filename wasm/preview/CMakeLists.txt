@@ -6,6 +6,7 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/src/libvgcode ${CMAKE_CURRENT_BINARY_DIR}/l
 add_executable(orca_preview
     preview.cpp
     convert.cpp
+    ${CMAKE_SOURCE_DIR}/wasm/engine/cxa_demangle_stub.cpp
 )
 
 target_include_directories(orca_preview PRIVATE

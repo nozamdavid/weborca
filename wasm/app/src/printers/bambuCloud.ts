@@ -8,7 +8,7 @@ async function cloudJson(printer: PhysicalPrinter, path: string, init: RequestIn
   const signal = init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000);
   const response = await fetch(bambuCloudApiUrl(printer, path), { ...init, signal });
   const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.error || data?.message || `Cloud API answered ${response.status}.`);
+  if (!response.ok) throw Object.assign(new Error(`Cloud API answered ${response.status}.`), { status: response.status });
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid cloud API response.');
   return data;
 }
@@ -21,7 +21,11 @@ export async function loginBambuCloud(printer: PhysicalPrinter, account: string,
   });
   if (login.loginType === 'verifyCode') throw new Error('Verification code required (check email).');
   if (typeof login.accessToken !== 'string' || !login.accessToken) throw new Error('No access token returned.');
-  const headers = { authorization: `Bearer ${login.accessToken}` };
+  return fetchBambuCloudSession({ ...printer, printhost_apikey: login.accessToken }, signal);
+}
+
+export async function fetchBambuCloudSession(printer: PhysicalPrinter, signal?: AbortSignal) {
+  const headers = { authorization: `Bearer ${printer.printhost_apikey}` };
   const preference = await cloudJson(printer, '/v1/design-user-service/my/preference', { headers, signal });
   if (!/^\d+$/.test(String(preference.uid ?? ''))) throw new Error('The cloud account did not return a valid user ID.');
   const bound = await cloudJson(printer, '/v1/iot-service/api/user/bind', { headers, signal });
@@ -29,7 +33,7 @@ export async function loginBambuCloud(printer: PhysicalPrinter, account: string,
   const devices: BambuCloudDevice[] = bound.devices.filter((device: any) =>
     device && typeof device.dev_id === 'string' && /^[A-Za-z0-9_-]+$/.test(device.dev_id)
   ).map((device: any) => ({ dev_id: device.dev_id, name: typeof device.name === 'string' ? device.name : device.dev_id }));
-  return { token: login.accessToken as string, username: `u_${preference.uid}`, devices };
+  return { token: printer.printhost_apikey!, username: `u_${preference.uid}`, devices };
 }
 
 export class BambuCloudApi implements PrinterApi {
@@ -54,6 +58,7 @@ export class BambuCloudApi implements PrinterApi {
         }
 
         const brokerUrl = bambuCloudMqttUrl(this.printer, this.printer.print_host || 'us.mqtt.bambulab.com');
+        report = {};
         const socket = new WebSocket(brokerUrl);
         ws = socket;
         handshakeTimer = setTimeout(() => {
@@ -83,9 +88,13 @@ export class BambuCloudApi implements PrinterApi {
               ws?.send(JSON.stringify({ type: 'publish', payload: { info: { sequence_id: '0', command: 'get_version' } } }));
               ws?.send(JSON.stringify({ type: 'publish', payload: { pushing: { sequence_id: '0', command: 'pushall' } } }));
             } else if (msg.type === 'report' && msg.payload) {
-              const update = msg.payload.print ?? msg.payload;
+              const update = msg.payload.print;
+              if (!update || typeof update !== 'object' || Array.isArray(update) ||
+                  Object.keys(update).every(key => ['sequence_id', 'command', 'result', 'reason'].includes(key))) return;
               report = mergeBambuReport(report, update);
               const state = deriveBambuState(report);
+              // Version/control replies cannot complete initial telemetry recovery.
+              if (typeof report.gcode_state !== 'string' && state.heaters.length === 0) return;
               onState(state);
             }
           } catch {
@@ -99,7 +108,7 @@ export class BambuCloudApi implements PrinterApi {
           if (!closed) {
             onError(new Error('Cloud MQTT disconnected. Reconnecting...'));
             clearTimeout(reconnectTimer);
-            reconnectTimer = setTimeout(tryConnect, 3000);
+            if (!closed) reconnectTimer = setTimeout(tryConnect, 3000);
           }
         };
         ws.onerror = () => {

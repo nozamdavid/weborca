@@ -1,0 +1,234 @@
+/* Scoped layout and state chrome for FlowRateModal. */
+.flow-rate-panel {
+  width: 540px;
+  max-width: 92vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+.flow-rate-panel__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-input);
+  background: var(--surface-2);
+}
+.flowrate-modal__button-44 {
+  border: none;
+  cursor: pointer;
+}
+.flowrate-modal__state-43 {
+  border-bottom: 2px solid transparent;
+}
+.flowrate-modal__state-42 {
+  border-bottom: 2px solid var(--accent-text);
+}
+.flowrate-modal__state-41 {
+  font-weight: 400;
+}
+.flowrate-modal__state-40 {
+  color: var(--text-secondary);
+}
+.flowrate-modal__state-39 {
+  color: var(--text-primary);
+}
+.flowrate-modal__state-38 {
+  background: transparent;
+}
+.flowrate-modal__state-37 {
+  background: var(--border-input);
+}
+.flowrate-modal__div-36 {
+  padding: var(--space-4) var(--space-5);
+  overflow-y: auto;
+  flex: 1;
+}
+.flowrate-modal__card-35 {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-fg);
+  border-radius: var(--radius-sm);
+  color: var(--danger-fg);
+  font-size: var(--text-lg);
+}
+.flowrate-modal__card-34 {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--info-bg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--info-fg);
+  font-size: var(--text-lg);
+}
+.flowrate-modal__label-33 {
+  display: block;
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+  font-size: var(--text-lg);
+}
+.flowrate-modal__row-32 {
+  display: flex;
+  gap: var(--space-3);
+}
+.flowrate-modal__label-31 {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.flowrate-modal__state-30 {
+  border: 1px solid var(--border-input);
+}
+.flowrate-modal__state-29 {
+  border: 1px solid var(--accent-text);
+}
+.flowrate-modal__state-28 {
+  background: var(--surface-1);
+}
+.flowrate-modal__state-27 {
+  background: var(--accent-subtle);
+}
+.flowrate-modal__row-26 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+.flowrate-modal__span-25 {
+  font-weight: 600;
+}
+.flowrate-modal__span-24 {
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+}
+.flowrate-modal__div-23 {
+  margin-bottom: var(--space-4);
+}
+.flowrate-modal__label-22 {
+  display: block;
+  font-weight: 600;
+  margin-bottom: var(--space-1-5);
+  font-size: var(--text-lg);
+}
+.flowrate-modal__span-21 {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--text-md);
+  color: var(--text-tertiary);
+}
+.flowrate-modal__card-20 {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) 14px;
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-fg);
+  border-radius: var(--radius-md);
+  color: var(--warning-fg);
+}
+.flowrate-modal__div-19 {
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+}
+.flowrate-modal__div-18 {
+  font-size: var(--text-lg);
+  margin-bottom: 10px;
+  color: var(--warning-fg);
+}
+.flowrate-modal__row-17 {
+  display: flex;
+  gap: var(--space-2);
+}
+.flowrate-modal__row-16 {
+  margin-top: var(--space-5);
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.flowrate-modal__p-15 {
+  font-size: var(--text-lg);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-4);
+}
+.flowrate-modal__div-14 {
+  margin-bottom: 14px;
+}
+.flowrate-modal__label-13 {
+  display: block;
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+.flowrate-modal__input-12 {
+  width: 100%;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  border: 1px solid var(--border-input);
+}
+.flowrate-modal__span-11 {
+  font-size: var(--text-md);
+  color: var(--text-tertiary);
+}
+.flowrate-modal__card-10 {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+}
+.flowrate-modal__div-9 {
+  font-size: var(--text-md);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+.flowrate-modal__code-8 {
+  color: var(--accent-text);
+}
+.flowrate-modal__row-7 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.flowrate-modal__span-6 {
+  font-size: var(--text-lg);
+  color: var(--text-primary);
+}
+.flowrate-modal__span-5 {
+  font-size: var(--text-xl);
+  font-weight: 700;
+}
+.flowrate-modal__state-4 {
+  color: var(--text-tertiary);
+}
+.flowrate-modal__state-3 {
+  color: var(--text-primary);
+}
+.flowrate-modal__card-2 {
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--success-bg);
+  border: 1px solid var(--text-primary);
+  border-radius: var(--radius-sm);
+  color: var(--success-fg);
+  font-size: var(--text-lg);
+}
+.flowrate-modal__row-1 {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: var(--space-4);
+}
+.flow-rate-panel.ds-dialog { width: min(540px, 100%); max-width: 100%; max-height: calc(100dvh - var(--space-6)); }
+.flow-rate-panel .ds-btn, .flow-rate-panel .ds-input { min-height: var(--ctl-h); font-size: var(--ctl-font); }
+.flow-rate-panel .ds-btn { white-space: normal; }
+.flow-rate-panel .ds-input { color: var(--text-primary); background: var(--surface-1); }
+.flow-rate-panel__tabs { flex: none; }
+.flow-rate-panel .ds-dialog__head { min-height: var(--row-h); }
+.flow-rate-panel .ds-dialog__body { min-height: 0; }
+.flow-rate-panel .ds-dialog__foot { flex-wrap: wrap; }
+.flow-rate-panel .flowrate-modal__row-7 { flex-wrap: wrap; }
+.flow-rate-panel .flowrate-modal__code-8 { color: var(--text-primary); overflow-wrap: anywhere; }
+@media (max-width: 800px) {
+  .flow-rate-panel.ds-dialog { width: 100%; }
+  .flow-rate-panel .flowrate-modal__row-32 { flex-direction: column; }
+}
+.flow-rate-panel input[type="radio"] { accent-color: var(--accent); min-width: var(--space-4); min-height: var(--space-4); }

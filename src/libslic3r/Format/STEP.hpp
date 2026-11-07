@@ -6,6 +6,8 @@
 #include "XCAFDoc_ShapeTool.hxx"
 #include <Standard_TypeDef.hxx>
 #include <Standard_Handle.hxx>
+#include <TDF_Label.hxx>
+#include <TopLoc_Location.hxx>
 #endif
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem.hpp>
@@ -13,6 +15,8 @@
 #include <Message_ProgressIndicator.hxx>
 #endif
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <iostream>
@@ -48,7 +52,23 @@ struct NamedSolid
     const std::string  name;
     int tri_face_cout = 0;
 };
+
+// Collects the XCAF shapes of a document into named solids. Defined in
+// STEPTessellate.cpp, next to the OCCT tessellation that consumes them.
+void getNamedSolids(const TopLoc_Location& location,
+                    const std::string& prefix,
+                    unsigned int& id,
+                    const Handle(XCAFDoc_ShapeTool) shapeTool,
+                    const TDF_Label label,
+                    std::vector<NamedSolid>& namedSolids,
+                    bool isSplitCompound = false);
 #endif
+
+// Builds the mesh of one STEP solid from the indexed positions/indices of a
+// StepMesh (STEPTessellate.hpp) through the same stl_file -> TriangleMesh::from_stl
+// route the importer has always used. Available without OCCT, so the wasm
+// engine can consume the packed output of the standalone STEP module.
+TriangleMesh step_indexed_to_triangle_mesh(const float* positions, const uint32_t* indices, size_t triangle_count);
 
 //BBS: Load an step file into a provided model.
 extern bool load_step(const char *path, Model *model,

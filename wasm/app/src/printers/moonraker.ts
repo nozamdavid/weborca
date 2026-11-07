@@ -140,7 +140,10 @@ function camUrl(printer: PhysicalPrinter, url: string): string {
 }
 
 export class MoonrakerApi implements PrinterApi {
-  constructor(private printer: PhysicalPrinter) {}
+  constructor(private printer: PhysicalPrinter) {
+    const { scheme, hostPort, basePath } = parseHost(printer.print_host, 7125);
+    this.printer = { ...printer, print_host: `${scheme}://${hostPort}${basePath}` };
+  }
 
   async test(): Promise<string> {
     const headers = authHeaders(this.printer);
@@ -174,6 +177,7 @@ export class MoonrakerApi implements PrinterApi {
 
       const call = (method: string, params?: object) =>
         new Promise<any>((resolve, reject) => {
+          if (stopped) { reject(new Error('Monitoring stopped')); return; }
           const id = nextId++;
           const timer = setTimeout(() => {
             pending.delete(id);
@@ -267,7 +271,7 @@ export class MoonrakerApi implements PrinterApi {
         }
         if (stopped) return;
         onError(new Error('Connection to the printer was lost. Reconnecting...'));
-        timer = setTimeout(open, RECONNECT_MS[Math.min(attempt++, RECONNECT_MS.length - 1)]);
+        if (!stopped) timer = setTimeout(open, RECONNECT_MS[Math.min(attempt++, RECONNECT_MS.length - 1)]);
       };
     };
 
@@ -285,5 +289,86 @@ export class MoonrakerApi implements PrinterApi {
     if (print) form.append('print', 'true');
     form.append('file', new Blob([gcode as BlobPart]), filename);
     await sendWithProgress('POST', httpUrl(this.printer, '/server/files/upload'), authHeaders(this.printer), form, onProgress);
+  }
+
+  private async postMoonraker(path: string, body?: any): Promise<any> {
+    const headers = { ...authHeaders(this.printer), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) };
+    let res: Response;
+    try {
+      res = await fetch(httpUrl(this.printer, path), {
+        method: 'POST',
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined
+      });
+    } catch (error) {
+      throw new Error(await describeFetchFailure(this.printer, undefined, error));
+    }
+    if (!res.ok) throw new Error(await describeFetchFailure(this.printer, res));
+    const text = await res.text();
+    try {
+      return text ? JSON.parse(text) : undefined;
+    } catch {
+      return text;
+    }
+  }
+
+  async home(axes?: Array<'x' | 'y' | 'z'>): Promise<void> {
+    let script = 'G28';
+    if (axes && axes.length > 0 && axes.length < 3) {
+      if (axes.length === 2 && axes.includes('x') && axes.includes('y')) {
+        script = 'G28 X Y';
+      } else if (axes[0] === 'z') {
+        script = 'G28 Z';
+      }
+    }
+    await this.postMoonraker('/printer/gcode/script', { script });
+  }
+
+  async jog(axis: 'x' | 'y' | 'z', distance: number, speed?: number): Promise<void> {
+    const spd = speed ?? (axis === 'z' ? 600 : 3000);
+    const script = `G91\nG1 ${axis.toUpperCase()}${distance} F${spd}\nG90`;
+    await this.postMoonraker('/printer/gcode/script', { script });
+  }
+
+  async extrude(amount: number, speed?: number): Promise<void> {
+    const spd = speed ?? 300;
+    const script = `M83\nG1 E${amount} F${spd}`;
+    await this.postMoonraker('/printer/gcode/script', { script });
+  }
+
+  async setTemperature(heater: 'extruder' | 'bed' | 'chamber', target: number, tool?: number): Promise<void> {
+    const t = Math.round(target);
+    let script = '';
+    if (heater === 'bed') {
+      script = `M140 S${t}`;
+    } else if (heater === 'chamber') {
+      script = `M141 S${t}`;
+    } else {
+      script = `M104 ${tool != null ? `T${tool} ` : ''}S${t}`;
+    }
+    await this.postMoonraker('/printer/gcode/script', { script });
+  }
+
+  async setFanSpeed(speed: number, fanIndex?: number): Promise<void> {
+    const s = Math.round(Math.max(0, Math.min(1, speed)) * 255);
+    const script = `M106 ${fanIndex != null ? `P${fanIndex} ` : ''}S${s}`;
+    await this.postMoonraker('/printer/gcode/script', { script });
+  }
+
+  async setPrintSpeed(speedPercent: number): Promise<void> {
+    const s = Math.round(Math.max(10, Math.min(500, speedPercent)));
+    await this.postMoonraker('/printer/gcode/script', { script: `M220 S${s}` });
+  }
+
+  async pausePrint(): Promise<void> {
+    await this.postMoonraker('/printer/print/pause');
+  }
+
+  async resumePrint(): Promise<void> {
+    await this.postMoonraker('/printer/print/resume');
+  }
+
+  async cancelPrint(): Promise<void> {
+    await this.postMoonraker('/printer/print/cancel');
   }
 }

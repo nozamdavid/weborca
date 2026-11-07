@@ -189,6 +189,7 @@ export class FlashforgeApi implements PrinterApi {
   connect(onState: (state: PrinterState) => void, onError: (error: Error) => void, options?: ConnectOptions): () => void {
     let stopped = false;
     let errors = 0;
+    const controller = new AbortController();
     let timerId: ReturnType<typeof setTimeout>;
 
     const poll = async () => {
@@ -200,6 +201,7 @@ export class FlashforgeApi implements PrinterApi {
         });
 
         const res = await fetch(this.apiUrl('detail'), {
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]),
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body
@@ -219,14 +221,14 @@ export class FlashforgeApi implements PrinterApi {
         if (errors > 2) onError(err as Error);
       } finally {
         if (!stopped) {
-          const delay = options?.isActive?.() === false ? 15000 : 3000;
+          const delay = options?.pollIntervalMs ?? (options?.isActive?.() === false ? 15000 : 3000);
           timerId = setTimeout(poll, delay);
         }
       }
     };
 
     poll();
-    return () => { stopped = true; clearTimeout(timerId); };
+    return () => { stopped = true; controller.abort(); clearTimeout(timerId); };
   }
 
   async test(): Promise<string> {

@@ -1,0 +1,38 @@
+.setting-help-link {
+  margin-left: var(--space-1);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+.setting-help-link:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+@media (max-width: 800px) {
+  .setting-help-link { display: none; }
+}
+
+.settings-dialog-modal > .modal-header {
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+.settings-dialog-modal .modal-title { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.settings-dialog-modal .modal-header-actions { flex: 0 1 auto; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }
+.settings-dialog-modal .mode-switcher { margin: 0; }
+.settings-dialog-modal .modal-header-actions > button { display: inline-flex; align-items: center; gap: var(--space-2); }
+.settings-dialog-modal .settings-dialog-tabs { flex: none; }
+.settings-dialog-modal .settings-dialog-content { min-height: 0; }
+
+@media (max-width: 800px), (pointer: coarse) {
+  .settings-dialog-modal .modal-header-actions > button,
+  .settings-dialog-modal .settings-dialog-tabs > button {
+    min-height: 44px;
+  }
+}
+
+.modified-settings-modal .ds-dialog__body { padding: var(--space-3) var(--space-4); }
+.modified-settings-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.modified-settings-table :is(th, td) { text-align: left; padding: var(--space-1) var(--space-2); vertical-align: top; }
+.modified-settings-table th, .modified-settings-page { color: var(--text-secondary); }
+.modified-settings-table .modified-row { border-top: 1px solid var(--border-default); }
+.modified-settings-page { font-size: var(--text-sm); }
+.modified-settings-value { color: var(--warning-fg); }
+.modified-settings-modal .ds-dialog__foot { justify-content: space-between; }

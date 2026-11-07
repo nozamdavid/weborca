@@ -2,6 +2,7 @@
 /** Browser test of setting documentation links: finds a '?' link and asserts href starts with wiki URL and target=_blank. */
 import assert from 'node:assert/strict';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 let playwright;
 try {
@@ -32,7 +33,7 @@ async function runSuite(browserType, name) {
   try {
     await page.goto(BASE_URL);
     await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.selectOption('#printer-select', 'Voron 2.4 300 0.4 nozzle');
     await page.selectOption('#process-select', '0.20mm Standard @Voron');
     await page.waitForTimeout(1000);

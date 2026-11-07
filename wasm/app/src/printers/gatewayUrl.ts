@@ -1,4 +1,4 @@
-import type { HostType, PhysicalPrinter } from './types';
+import type { PhysicalPrinter } from './types';
 
 export interface GatewayStatus {
   enabled: boolean;
@@ -9,9 +9,9 @@ export interface GatewayStatus {
 }
 
 /** Asks the app server whether the printer gateway is on. Resolves to undefined when there is no gateway (static hosting). */
-export async function fetchGatewayStatus(localBase?: string): Promise<GatewayStatus | undefined> {
+export async function fetchGatewayStatus(): Promise<GatewayStatus | undefined> {
   try {
-    const res = await fetch(localBase ? `${trimBase(localBase)}/_gw/status` : '/_printer/status');
+    const res = await fetch('/_printer/status');
     const type = res.headers.get('content-type') ?? '';
     return res.ok && type.includes('json') ? ((await res.json()) as GatewayStatus) : undefined;
   } catch {
@@ -19,108 +19,83 @@ export async function fetchGatewayStatus(localBase?: string): Promise<GatewaySta
   }
 }
 
-export const DEFAULT_LOCAL_GATEWAY = 'http://127.0.0.1:5199';
-
-const trimBase = (base: string) => base.trim().replace(/\/+$/, '');
-
-/** Address of the gateway program on the user's computer when the printer uses it, else undefined (the app server's gateway). */
-export function localGatewayBase(printer: PhysicalPrinter): string | undefined {
-  return printer.use_gateway && printer.local_gateway ? trimBase(printer.local_gateway) : undefined;
-}
-
-/** `scheme://host` of the gateway the printer goes through, with the page's own origin for the app server. */
-function gatewayOrigin(printer: PhysicalPrinter, websocket: boolean): string {
-  const base = localGatewayBase(printer) ?? window.location.origin;
-  const url = new URL(base);
-  const secure = url.protocol === 'https:';
-  return websocket ? `${secure ? 'wss' : 'ws'}://${url.host}` : url.origin;
+/** WebSockets always use the app server, including for saved legacy connections. */
+function gatewayOrigin(): string {
+  const url = new URL(window.location.origin);
+  return `${url.protocol === 'https:' ? 'wss' : 'ws'}://${url.host}`;
 }
 
 /** Splits a hostname, IP or URL into scheme, host:port and base path, like desktop's print_host field. */
-export function parseHost(input: string): { scheme: 'http' | 'https'; hostPort: string; basePath: string } {
+export function parseHost(input: string, defaultPort?: number): { scheme: 'http' | 'https'; hostPort: string; basePath: string } {
   const trimmed = input.trim();
   if (/\s/.test(trimmed)) throw new Error(`Invalid address: ${input}`); // browsers percent-encode spaces in a host instead of rejecting them
-  const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`);
+  const address = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const url = new URL(address);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`Unsupported address: ${input}`);
+  // URL.port drops explicit :80/:443, so inspect the original authority before applying a default.
+  const authority = address.split('://')[1].split(/[/?#]/)[0];
+  if (defaultPort && !/:\d+$/.test(authority)) url.port = String(defaultPort);
   return { scheme: url.protocol === 'https:' ? 'https' : 'http', hostPort: url.host, basePath: url.pathname.replace(/\/+$/, '') };
 }
 
 const withSlash = (path: string) => (path.startsWith('/') ? path : `/${path}`);
 
-/** URL for an HTTP request to the printer, through the gateway or direct. */
+/** URL for an HTTP request through the app server gateway. */
 export function httpUrl(printer: PhysicalPrinter, path: string): string {
   const { scheme, hostPort, basePath } = parseHost(printer.print_host);
-  return printer.use_gateway
-    ? `${localGatewayBase(printer) ? gatewayOrigin(printer, false) : ''}/_printer/${scheme}/${hostPort}${basePath}${withSlash(path)}`
-    : `${scheme}://${hostPort}${basePath}${withSlash(path)}`;
+  return `/_printer/${scheme}/${hostPort}${basePath}${withSlash(path)}`;
 }
 
-/** URL for a websocket to the printer, through the gateway or direct. */
+/** URL for a websocket through the app server gateway. */
 export function wsUrl(printer: PhysicalPrinter, path: string): string {
   const { scheme, hostPort, basePath } = parseHost(printer.print_host);
   const wsScheme = scheme === 'https' ? 'wss' : 'ws';
-  if (printer.use_gateway) {
-    return `${gatewayOrigin(printer, true)}/_printer/${wsScheme}/${hostPort}${basePath}${withSlash(path)}`;
-  }
-  return `${wsScheme}://${hostPort}${basePath}${withSlash(path)}`;
+  return `${gatewayOrigin()}/_printer/${wsScheme}/${hostPort}${basePath}${withSlash(path)}`;
 }
 
 /** Websocket URL of the gateway's Bambu MQTT bridge. */
 export function bambuMqttUrl(printer: PhysicalPrinter): string {
   const { hostPort } = parseHost(printer.print_host);
-  return `${gatewayOrigin(printer, true)}/_printer/bambu/mqtt/${hostPort}`;
+  return `${gatewayOrigin()}/_printer/bambu/mqtt/${hostPort}`;
 }
 
 /** Websocket URL of the gateway's Bambu Cloud MQTT bridge. */
-export function bambuCloudMqttUrl(printer: PhysicalPrinter, brokerHost: string): string {
-  return `${gatewayOrigin(printer, true)}/_printer/bambu-cloud/mqtt/${brokerHost}`;
+export function bambuCloudMqttUrl(_printer: PhysicalPrinter, brokerHost: string): string {
+  return `${gatewayOrigin()}/_printer/bambu-cloud/mqtt/${brokerHost}`;
 }
 
 /** HTTP URL of the gateway's Bambu Cloud API bridge. */
-export function bambuCloudApiUrl(printer: PhysicalPrinter, path: string): string {
-  return `${localGatewayBase(printer) ? gatewayOrigin(printer, false) : ''}/_printer/bambu-cloud/api${path.startsWith('/') ? path : '/' + path}`;
+export function bambuCloudApiUrl(_printer: PhysicalPrinter, path: string): string {
+  return `/_printer/bambu-cloud/api${path.startsWith('/') ? path : '/' + path}`;
 }
 
 
 /** URL of the gateway's Bambu FTPS bridge. */
 export function bambuFtpUrl(printer: PhysicalPrinter): string {
   const { hostPort } = parseHost(printer.print_host);
-  return `${localGatewayBase(printer) ? gatewayOrigin(printer, false) : ''}/_printer/bambu/ftp/${hostPort}`;
-}
-
-/** Asks the local gateway for an address under which the printer's web UI can be framed on its own origin. */
-export async function createUiSession(printer: PhysicalPrinter, url: string): Promise<string> {
-  const res = await fetch(`${gatewayOrigin(printer, false)}/_gw/ui-session`, { method: 'POST', body: JSON.stringify({ url }) });
-  if (!res.ok) throw new Error((await res.text().catch(() => '')) || `The local gateway answered ${res.status}.`);
-  return ((await res.json()) as { url: string }).url;
+  return `/_printer/bambu/ftp/${hostPort}`;
 }
 
 /** Headers carrying the printer's credentials. Digest credentials are used by the gateway, never sent to the printer as is. */
 export function authHeaders(printer: PhysicalPrinter): Record<string, string> {
   const headers: Record<string, string> = {};
   if (printer.printhost_apikey) headers['X-Api-Key'] = printer.printhost_apikey;
-  if (printer.host_type === 'prusalink' && printer.printhost_password && printer.use_gateway) {
+  if (printer.host_type === 'prusalink' && printer.printhost_password) {
     headers['x-orca-auth'] = `digest ${printer.printhost_user || 'maker'}:${printer.printhost_password}`;
   }
   return headers;
 }
 
-/** Turns a failed request into a message that says what to do, e.g. when the gateway is off or CORS blocks a direct call. */
-export async function describeFetchFailure(printer: PhysicalPrinter, res?: Response, error?: unknown): Promise<string> {
+/** Explains a failed request, including deployments without a printer backend. */
+export async function describeFetchFailure(_printer: PhysicalPrinter, res?: Response, error?: unknown): Promise<string> {
   if (res) {
     const body = (await res.text().catch(() => '')).slice(0, 300);
     if (res.status === 401) return 'The printer rejected the credentials (401). Check the API key or password.';
     return body ? `${res.status}: ${body}` : `The printer answered with status ${res.status}.`;
   }
-  const status = printer.use_gateway ? await fetchGatewayStatus(localGatewayBase(printer)) : undefined;
-  if (printer.use_gateway && !status && localGatewayBase(printer)) {
-    return `The gateway on this computer (${localGatewayBase(printer)}) did not answer. Start it, allow this app's address (--allow-origin ${window.location.origin}), and accept the browser's local network access prompt.`;
-  }
-  if (printer.use_gateway && !status) {
-    return 'This server has no printer gateway. Turn off "Use the app server as gateway" to connect directly, or host the app with the gateway.';
-  }
-  if (!printer.use_gateway) {
-    return 'The browser could not reach the printer. It may not allow this site (CORS), or the address is wrong. Try the app server gateway.';
+  const status = await fetchGatewayStatus();
+  if (!status) {
+    return 'This server has no printer gateway. Host the app with the gateway to connect to printers.';
   }
   return error instanceof Error ? error.message : String(error);
 }
@@ -151,33 +126,4 @@ export async function sendWithProgress(
     xhr.onerror = () => reject(new Error('The upload failed: the printer or the gateway could not be reached.'));
     xhr.send(body);
   });
-}
-
-export interface DiscoveredPrinter {
-  host_type: HostType;
-  host: string;
-  name?: string;
-  serial?: string;
-  detail?: string;
-}
-
-/** Asks the gateway on this computer to scan its networks; calls `onFound` for each printer as it is found. */
-export async function discoverPrinters(localBase: string, onFound: (printer: DiscoveredPrinter) => void, signal: AbortSignal): Promise<void> {
-  const res = await fetch(`${trimBase(localBase)}/_gw/discover`, { signal });
-  if (!res.ok || !res.body) throw new Error(res.status === 404 ? 'This gateway is too old to discover printers. Download the latest one.' : `The gateway refused the search (${res.status}).`);
-  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-  let buffer = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) return;
-    buffer += value;
-    let newline: number;
-    while ((newline = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, newline).trim();
-      buffer = buffer.slice(newline + 1);
-      if (!line) continue;
-      const message = JSON.parse(line);
-      if (message.host_type) onFound(message as DiscoveredPrinter);
-    }
-  }
 }

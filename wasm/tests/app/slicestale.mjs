@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const PORT = parseInt(process.env.PORT || '5142', 10);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
@@ -20,8 +21,7 @@ async function runSuite(browserType, name) {
   try {
     await page.goto(BASE_URL);
     await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
-    await page.waitForFunction(() => document.getElementById('vendor-select')?.options.length > 1);
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.waitForFunction(() => Array.from(document.getElementById('printer-select')?.options ?? []).some((o) => o.value === 'Voron 2.4 300 0.4 nozzle'));
     await page.selectOption('#printer-select', 'Voron 2.4 300 0.4 nozzle');
     await page.waitForFunction(() => Array.from(document.getElementById('process-select')?.options ?? []).some((o) => o.value === '0.20mm Standard @Voron'));

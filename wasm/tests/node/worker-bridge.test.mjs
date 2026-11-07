@@ -4,6 +4,7 @@ import { getEventListeners } from 'node:events';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import OrcaEngine from '../../web/orca-engine.js';
+import { createEngineCore } from '../../web/engine-core.js';
 
 function fakeWorker() {
   return {
@@ -17,7 +18,7 @@ function workerDispatcher(core, reply) {
   const source = fs.readFileSync(new URL('../../web/engine-worker.js', import.meta.url), 'utf8')
     .replace("import { createEngineCore } from './engine-core.js';", '')
     .replace('let core = null;', 'let core = injectedCore;');
-  const context = { injectedCore: core, self: {}, Uint8Array, postMessage: reply };
+  const context = { injectedCore: core, self: {}, Uint8Array, AbortController, postMessage: reply };
   vm.runInNewContext(source, context);
   return context.self.onmessage;
 }
@@ -42,6 +43,122 @@ test('writeFile transfers a byte subview without another worker allocation', asy
   await engine.writeFile('/models/subview.bin', view);
   assert.equal(backing.buffer.byteLength, 0, 'Public writeFile transfers ownership');
   engine.dispose();
+});
+
+// Delayed native consumption exposes writes made before a queued import executes.
+async function delayedCore() {
+  const files = new Map(), jobs = [], results = new Map(), nativeQueue = [], readableAt = new Map();
+  let nextId = 0, active = null, canceled = null;
+  function startNext() {
+    if (active !== null || !nativeQueue.length) return;
+    nativeQueue.shift()();
+  }
+  class Engine {
+    submit(op, json) {
+      const id = ++nextId, args = JSON.parse(json);
+      jobs.push({ op, args });
+      readableAt.set(id, Date.now() + 35);
+      nativeQueue.push(() => {
+        active = id;
+        setTimeout(() => {
+          let result = {};
+          if (op === 'loadModel' || op === 'addModel' || op === 'loadStepMesh') {
+            result = { bytes: [...files.get(args.path)], name: args.name || args.path.split('/').pop() };
+            if (op === 'loadStepMesh') files.delete(args.path);
+          }
+          if (op === 'slice') {
+            if (args.marker !== -1) files.set(args.outPath, new Uint8Array([args.marker || 1]));
+            result = { gcodePath: args.outPath };
+          }
+          results.set(id, JSON.stringify(id === canceled
+            ? { ok: false, canceled: true, error: 'canceled' } : { ok: true, result }));
+          active = null;
+          startNext();
+        }, 10);
+      });
+      startNext();
+      return id;
+    }
+    poll(id) {
+      if (Date.now() < readableAt.get(id)) return '';
+      const result = results.get(id); results.delete(id); return result || '';
+    }
+    progress() { return ''; }
+    cancel() { canceled = active; }
+    delete() {}
+  }
+  const core = await createEngineCore({ moduleFactory: async () => ({ Engine, FS: {
+    analyzePath(path) { return { exists: files.has(path) }; }, unlink(path) { files.delete(path); },
+    mkdir() {}, writeFile(path, bytes) { files.set(path, bytes.slice()); },
+    readFile(path) { if (!files.has(path)) throw new Error('missing output'); return files.get(path).slice(); }
+  } }) });
+  await core.call('init');
+  return { core, jobs };
+}
+
+test('overlapping imports with the same filename retain each request\'s geometry and operation order', async () => {
+  const { core, jobs } = await delayedCore();
+  const dispatch = workerDispatcher(core, message => replies.push(message));
+  const replies = [];
+  await Promise.all([
+    dispatch({ data: { id: 1, method: 'loadModel', args: { fileName: 'same.obj', bytes: new Uint8Array([1]) } } }),
+    dispatch({ data: { id: 2, method: 'setOptions', args: { options: { layer_height: '0.3' } } } }),
+    dispatch({ data: { id: 3, method: 'addModel', args: { fileName: 'same.obj', bytes: new Uint8Array([2]) } } })
+  ]);
+  assert.deepEqual(replies.map(x => x.result.bytes).filter(Boolean), [[1], [2]]);
+  assert.deepEqual(replies.filter(x => x.result.name).map(x => x.result.name), ['same.obj', 'same.obj']);
+  assert.deepEqual(jobs.slice(1).map(x => x.op), ['loadModel', 'setOptions', 'addModel']);
+  const packed = await Promise.all([core.loadStepMesh('same.step', new Uint8Array([3])), core.loadStepMesh('same.step', new Uint8Array([4]))]);
+  assert.deepEqual(packed.map(x => x.bytes), [[3], [4]]);
+  assert.deepEqual(packed.map(x => x.name), ['same.step', 'same.step']);
+  core.dispose();
+});
+
+test('aborting a queued slice leaves the active slice running and prevents the queued slice from starting', async () => {
+  const { core, jobs } = await delayedCore();
+  const replies = [];
+  const dispatch = workerDispatcher(core, message => replies.push(message));
+  const a = dispatch({ data: { id: 1, method: 'slice', args: { marker: 1 } } });
+  await new Promise(resolve => setTimeout(resolve, 2));
+  const b = dispatch({ data: { id: 2, method: 'slice', args: { marker: 2 } } });
+  const config = dispatch({ data: { id: 3, method: 'getConfig' } });
+  await dispatch({ data: { method: 'abort', args: { targetId: 2 } } });
+  await Promise.all([a, b, config]);
+  assert.equal(replies.find(x => x.id === 1 && x.ok)?.result.gcode[0], 1);
+  assert.equal(replies.find(x => x.id === 2)?.canceled, true);
+  assert.deepEqual(jobs.slice(1).map(x => x.op), ['slice', 'getConfig']);
+  const controller = new AbortController();
+  const active = core.slice({ signal: controller.signal });
+  await new Promise(resolve => setTimeout(resolve, 2));
+  controller.abort();
+  await assert.rejects(active, error => error.name === 'AbortError');
+  core.dispose();
+});
+
+test('overlapping slices snapshot shared-path G-code before starting the next slice', async () => {
+  const { core } = await delayedCore();
+  const results = await Promise.all([core.slice({ marker: 5 }), core.slice({ marker: 9 })]);
+  assert.deepEqual(results.map(x => [...x.gcode]), [[5], [9]]);
+  await assert.rejects(core.slice({ marker: -1, outPath: '/out/missing.gcode' }), /missing output/);
+  core.dispose();
+});
+
+test('overlapping public packed STEP imports transfer bytes as one transaction per request', async () => {
+  const { core } = await delayedCore();
+  const worker = fakeWorker();
+  const dispatch = workerDispatcher(core, message => worker.onmessage({ data: message }));
+  worker.postMessage = (message, transfer) => {
+    void dispatch({ data: structuredClone(message, { transfer }) });
+  };
+  const engine = new OrcaEngine(worker, {});
+  const a = new Uint8Array([7]), b = new Uint8Array([8]);
+  const results = await Promise.all([engine.loadStepMesh('same.step', a, { replace: true }), engine.loadStepMesh('same.step', b)]);
+  assert.deepEqual(results.map(x => x.bytes), [[7], [8]]);
+  assert.deepEqual(results.map(x => x.name), ['same.step', 'same.step']);
+  assert.equal(a.byteLength, 0);
+  assert.equal(b.byteLength, 0);
+  engine.dispose();
+  core.dispose();
 });
 
 test('worker writeFile converts a raw ArrayBuffer to a byte view', async () => {

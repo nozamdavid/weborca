@@ -8,7 +8,7 @@ import { createBedGeometry } from './bedGeometry';
 import { displayBedOutline, loadBedModelOutline } from './bedModelOutline';
 import { plateTitle } from '../plates/plateName';
 import { usePlatesStore } from '../plates/platesStore';
-import type { PlateObject, BedConfig, GizmoMode, MeshBufferData, MeshVolumePartition } from './types';
+import type { PlateObject, BedConfig, GizmoMode, MeshBufferData, MeshVolumePartition, ViewerMeshData } from './types';
 import type { SupportPaintingData } from '../painting/types';
 import { renderPaintOverlay, clearPaintOverlay } from '../paint-tools/overlayRenderer';
 import type { ParsedPaintOverlay, PaintLayer } from '../paint-tools/types';
@@ -18,6 +18,10 @@ import { usePrefsStore } from '../prefs/prefsStore';
 import type { CameraView } from '../shell/cameraBridge';
 import { encodeQoi, bytesToBase64 } from '../shell/gcodeThumbnails';
 import { useObjectListStore } from '../objectlist/objectListStore';
+import { useCutStore, getConnectorIssues } from '../cut/cutStore';
+import { CutPreview } from './cutPreview';
+import { bindCanvasTouch } from '../components/canvasTouch';
+import { useMeasureStore, getMeasurementFeature, measureFeatures } from '../measure';
 
 export interface PlateSceneCallbacks {
   canMoveObjects?: () => boolean;
@@ -36,6 +40,10 @@ export interface PlateSceneCallbacks {
     }
   ) => void;
   getMesh: (objectId: number) => Promise<MeshBufferData>;
+  getViewerMesh: (objectId: number) => Promise<ViewerMeshData>;
+  onVolumeTransformChange: (objectId: number, volumeId: number, transform: {
+    offset?: [number, number, number]; rotation?: [number, number, number]; scale?: [number, number, number];
+  }) => void;
   onPaintBegin?: () => void;
   onPaintFacet?: (facetId: number) => void;
   onPaintEnd?: () => void;
@@ -55,14 +63,16 @@ export class PlateScene {
   public camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
   public renderer: THREE.WebGLRenderer;
   private orbitControls: OrbitControls;
+  private disposeTouch: () => void;
   private transformControls: TransformControls;
 
   /** Short white bounding-box corners for the current selection, independent of transform tools. */
   // Viewer-only lines: never added to objectMeshes, the engine, or exported model data.
   public selectionOutline = new LineSegments2(
     new LineSegmentsGeometry(),
-    // Let the scene depth hide corners behind the model as the camera orbits.
-    new LineMaterial({ color: 0xffffff, linewidth: 2.5, depthTest: true, depthWrite: false, toneMapped: false })
+    // Let the scene depth hide corners behind the model as the camera orbits. Transparent so they draw after
+    // the bed floor, which is transparent and writes no depth: in the opaque pass the floor painted over them.
+    new LineMaterial({ color: 0xffffff, linewidth: 2.5, depthTest: true, depthWrite: false, transparent: true, toneMapped: false })
   );
   private selectionBounds = new THREE.Box3();
   private outlineBounds = new THREE.Box3();
@@ -89,14 +99,20 @@ export class PlateScene {
   private flattenClusters: Array<{ normal: [number, number, number]; center: [number, number, number]; area: number; outline: Array<[number, number, number]> }> = [];
   private flattenGroup: THREE.Group;
   private brimEarsGroup: THREE.Group;
+  private layerRangeOverlays = new THREE.Group();
   private brimEarsActive = false;
   private measureActive = false;
+  private measureSessionId = 0;
   private measurePoints: THREE.Vector3[] = [];
   private measureGroup = new THREE.Group();
+  private unsubscribeMeasure: (() => void) | null = null;
   private explodeActive = false;
   private explodeFactor = 0;
 
   private objectMeshes: Map<string, THREE.Mesh> = new Map();
+  private volumeMeshes: Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.MeshLambertMaterial>> = new Map();
+  private selectedVolumeId: number | null = null;
+  private hiddenMaterial = new THREE.MeshBasicMaterial({ visible: false });
   private overlayMeshes: Map<string, THREE.Mesh> = new Map();
   private geometries: Map<number, THREE.BufferGeometry> = new Map();
   private meshVolumes: Map<number, MeshVolumePartition[]> = new Map();
@@ -111,6 +127,7 @@ export class PlateScene {
     pointerId: number; target: THREE.Mesh; plane: THREE.Plane; start: THREE.Vector3;
     origins: Map<THREE.Mesh, THREE.Vector3>; moved: boolean;
     orbitEnabled: boolean; transformEnabled: boolean;
+    touchScale?: { origin: THREE.Vector3; clientY: number };
   } | null = null;
   private selectedInstanceId: number | null = null;
   private gizmoMode: GizmoMode = null;
@@ -150,9 +167,14 @@ export class PlateScene {
   public zoomSpeed = 1.0;
 
   private unsubscribePrefs: (() => void) | null = null;
+  private unsubscribeCut: (() => void) | null = null;
+  /** Editor-only cut plane, halves and connectors for the cut tool; see cutPreview.ts. */
+  private cutPreview = new CutPreview();
   private resizeObserver: ResizeObserver;
   private intersectionObserver: IntersectionObserver;
   private hasVisibleSize = false;
+  private initialViewportFit = true;
+  private initialBedFit = true;
   private isInViewport = true;
 
   constructor(container: HTMLElement, bedConfig: BedConfig, callbacks: PlateSceneCallbacks) {
@@ -209,6 +231,7 @@ export class PlateScene {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.shadowMap.enabled = true;
+    this.renderer.localClippingEnabled = true; // cut preview halves
     this.renderer.domElement.style.display = 'block';
     container.appendChild(this.renderer.domElement);
 
@@ -217,6 +240,7 @@ export class PlateScene {
     this.orbitControls.target.set(cx, cy, 0);
     this.orbitControls.enableDamping = true;
     this.orbitControls.dampingFactor = 0.1;
+    this.orbitControls.addEventListener('start', () => { this.initialBedFit = false; });
     this.orbitControls.zoomSpeed = this.zoomSpeed;
     this.orbitControls.rotateSpeed = this.rotateSensitivity;
     this.orbitControls.mouseButtons = {
@@ -324,9 +348,11 @@ export class PlateScene {
     this.scene.add(this.flattenGroup);
     this.scene.add(this.brimEarsGroup);
     this.scene.add(this.measureGroup);
+    this.scene.add(this.cutPreview.group);
     this.scene.add(this.labelsGroup);
     this.scene.add(this.plateLabelGroup);
     this.scene.add(this.extraBedsGroup);
+    this.scene.add(this.layerRangeOverlays);
     this.setBedLoading(true);
     this.rebuildPlates();
 
@@ -413,7 +439,44 @@ export class PlateScene {
       }
     });
 
+    this.unsubscribeCut = useCutStore.subscribe(() => this.syncCutPreview());
+    this.unsubscribeMeasure = useMeasureStore.subscribe((state, prevState) => {
+      if (state.resetGeneration !== prevState.resetGeneration || (!state.feature1 && !state.feature2 && (prevState.feature1 || prevState.feature2))) {
+        this.measurePoints = [];
+        this.measureSessionId++;
+        this.drawMeasure();
+        this.callbacks.onMeasureChange?.([]);
+      }
+    });
+
     // Event listeners
+    let transformEnabled = true;
+    this.disposeTouch = bindCanvasTouch(this.renderer.domElement, {
+      start: () => {
+        transformEnabled = this.planeDrag?.transformEnabled ?? this.transformControls.enabled;
+        this.transformControls.enabled = false;
+      },
+      end: () => { queueMicrotask(() => { this.transformControls.enabled = this.planeDrag ? false : transformEnabled; }); },
+      singleStart: (event) => {
+        this.onPointerDown(event, true);
+        return this.planeDrag?.pointerId === event.pointerId;
+      },
+      singleMove: (event) => this.onPointerMove(event, true),
+      singleEnd: (commit) => this.finishPlaneDrag(commit),
+      resumePointer: (event) => (this.orbitControls as any)._onPointerDown(event),
+      cancelPointer: (pointerId) => {
+        const controls = this.orbitControls as any;
+        if (controls._pointers.includes(pointerId)) controls._onPointerUp({ pointerId });
+      },
+      tap: (event) => {
+        const hit = this.hitTest(event.clientX, event.clientY);
+        this.callbacks.onSelect(hit?.objectId ?? null, hit?.instanceId ?? null, false, hit?.volumeId);
+        this.renderer.domElement.dispatchEvent(new CustomEvent('canvas-touch-tap', { bubbles: true, detail: { x: event.clientX, y: event.clientY } }));
+      },
+      longpress: (point) => {
+        this.renderer.domElement.dispatchEvent(new CustomEvent('canvas-longpress', { bubbles: true, detail: point }));
+      }
+    });
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown, true);
     this.renderer.domElement.addEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.addEventListener('pointerup', this.onPointerUp);
@@ -566,7 +629,10 @@ export class PlateScene {
       this.rebuildPlates();
     }));
     for (const result of await Promise.allSettled(tasks)) if (result.status === 'rejected') console.warn('[Bed assets]', result.reason);
-    if (revision === this.bedAssetRevision && !this.isDestroyed) this.setBedLoading(false);
+    if (revision === this.bedAssetRevision && !this.isDestroyed) {
+      this.setBedLoading(false);
+      if (this.initialBedFit && this.hasVisibleSize) this.fitBed();
+    }
   }
 
   private bedOutline(): [number, number][] {
@@ -842,9 +908,45 @@ export class PlateScene {
   }
 
   public zoomToBed(): void {
-    const { cx, cy, span } = this.plateLayout();
-    this.orbitControls.target.set(cx, cy, 0);
-    this.camera.position.set(cx, cy - span * 1.5, span * 1.2);
+    this.initialBedFit = false;
+    this.fitBed();
+  }
+
+  private fitBed(): void {
+    const bounds = new THREE.Box3();
+    for (const { origin } of this.plates) {
+      for (const [x, y] of this.bedOutline()) bounds.expandByPoint(new THREE.Vector3(x + origin[0], y + origin[1], origin[2]));
+    }
+    const { span } = this.plateLayout();
+    this.fitBounds(bounds, new THREE.Vector3(0, -1.5, 1.2), span * Math.hypot(1.5, 1.2));
+  }
+
+  private fitBounds(bounds: THREE.Box3, direction: THREE.Vector3, minimumDistance: number): void {
+    if (bounds.isEmpty()) return;
+    const center = bounds.getCenter(new THREE.Vector3());
+    const aspect = (this.container.clientWidth || 800) / (this.container.clientHeight || 600);
+    const tan = Math.tan(THREE.MathUtils.degToRad(this.perspectiveCamera.fov / 2));
+    this.orbitControls.target.copy(center);
+    this.camera.position.copy(center).add(direction.clone().normalize());
+    this.camera.lookAt(center);
+    const inverse = this.camera.quaternion.clone().invert();
+    let distance = minimumDistance;
+    // In camera space each corner needs both horizontal and vertical clearance,
+    // including its depth toward the camera. Keep the familiar desktop distance.
+    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+      const p = new THREE.Vector3(x, y, z).sub(center).applyQuaternion(inverse);
+      distance = Math.max(distance, p.z + Math.max(Math.abs(p.x) / (tan * aspect * 0.9), Math.abs(p.y) / (tan * 0.9)));
+    }
+    this.camera.position.copy(center).addScaledVector(direction.normalize(), distance);
+    this.perspectiveCamera.aspect = aspect;
+    this.perspectiveCamera.zoom = 1;
+    this.perspectiveCamera.updateProjectionMatrix();
+    this.orthographicCamera.left = -distance * tan * aspect;
+    this.orthographicCamera.right = distance * tan * aspect;
+    this.orthographicCamera.top = distance * tan;
+    this.orthographicCamera.bottom = -distance * tan;
+    this.orthographicCamera.zoom = 1;
+    this.orthographicCamera.updateProjectionMatrix();
     this.orbitControls.update();
   }
 
@@ -917,6 +1019,25 @@ export class PlateScene {
   public setVolumeColors(colors: Map<number, Map<number, string>>): void {
     this.volumeColors = colors;
     for (const objectId of this.geometries.keys()) this.applyVolumeColors(objectId);
+    this.updateVolumeMaterials();
+  }
+
+  private updateVolumeMaterials(): void {
+    const css = getComputedStyle(document.documentElement);
+    for (const mesh of this.volumeMeshes.values()) {
+      const { objectId, instanceId, volumeId, type } = mesh.userData;
+      const selected = objectId === this.selectedObjectId && instanceId === this.selectedInstanceId &&
+        (this.selectedVolumeId === null || volumeId === this.selectedVolumeId);
+      const token = type === 'support_blocker' ? '--vp-support-blocker' : type === 'support_enforcer' ? '--vp-support-enforcer' : `--vp-${type}`;
+      mesh.material.color.set(type === 'part' ? this.volumeColors.get(objectId)?.get(volumeId) || css.getPropertyValue('--vp-part').trim() : css.getPropertyValue(token).trim());
+      mesh.material.emissive.copy(mesh.material.color).multiplyScalar(selected ? 0.25 : 0);
+      mesh.material.wireframe = this.showWireframe;
+    }
+  }
+
+  private viewerTargets(): THREE.Mesh[] {
+    const volumes = [...this.volumeMeshes.values()].filter(mesh => mesh.visible && mesh.parent?.visible);
+    return volumes.length ? volumes : [...this.objectMeshes.values()].filter(mesh => mesh.visible);
   }
 
   private applyVolumeColors(objectId: number): void {
@@ -1032,6 +1153,9 @@ export class PlateScene {
       }
 
       this.applyVolumeColors(obj.id);
+      let viewer: ViewerMeshData | null = null;
+      try { viewer = await this.callbacks.getViewerMesh(obj.id); }
+      catch (error) { console.error('[PlateScene] Viewer mesh unavailable:', error); }
 
       for (const inst of obj.instances) {
         const key = `${obj.id}_${inst.id}`;
@@ -1056,14 +1180,55 @@ export class PlateScene {
 
         // Apply instance transforms from Engine
         mesh.position.set(inst.offset[0], inst.offset[1], inst.offset[2]);
-        mesh.rotation.set(inst.rotation[0], inst.rotation[1], inst.rotation[2]);
+        // Orca composes Rz * Ry * Rx; the gizmo reads the angles back in the same order.
+        mesh.rotation.set(inst.rotation[0], inst.rotation[1], inst.rotation[2], 'ZYX');
         const mirror = inst.mirror ?? [1, 1, 1];
         mesh.scale.set(inst.scale[0] * mirror[0], inst.scale[1] * mirror[1], inst.scale[2] * mirror[2]);
+
+        for (const part of viewer?.volumes ?? []) {
+          const volumeKey = `${key}_${part.volumeId}`;
+          activeKeys.add(volumeKey);
+          let node = this.volumeMeshes.get(volumeKey);
+          const positions = viewer!.positions.subarray(part.firstVertex * 3, (part.firstVertex + part.vertexCount) * 3);
+          const old = node?.geometry.getAttribute('position').array;
+          // Transform and colour changes reuse the geometry and its shared position buffer.
+          if (!node || !old || old.length !== positions.length || old.some((v, i) => v !== positions[i])) {
+            const indices = viewer!.indices.slice(part.firstFacet * 3, (part.firstFacet + part.facetCount) * 3);
+            for (let i = 0; i < indices.length; i++) indices[i] -= part.firstVertex;
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+            geometry.computeVertexNormals();
+            geometry.computeBoundingBox();
+            geometry.computeBoundingSphere();
+            if (node) { node.geometry.dispose(); node.geometry = geometry; }
+            else {
+              const translucent = part.type !== 'part';
+              node = new THREE.Mesh(geometry, new THREE.MeshLambertMaterial({
+                // Shared indexed vertices must not smooth lighting across part facets.
+                flatShading: true,
+                transparent: translucent, opacity: translucent ? 0.35 : 1,
+                depthWrite: !translucent, side: THREE.DoubleSide,
+              }));
+              mesh.add(node);
+              this.volumeMeshes.set(volumeKey, node);
+            }
+          }
+          node.userData = { ...part, objectId: obj.id, instanceId: inst.id };
+          node.position.fromArray(part.offset);
+          node.rotation.set(...part.rotation, 'ZYX');
+          node.scale.set(...part.scale.map((s, i) => s * (part.mirror?.[i] ?? 1)) as [number, number, number]);
+        }
 
       }
     }
 
     // Remove any meshes that no longer exist
+    for (const [key, node] of this.volumeMeshes) if (!activeKeys.has(key)) {
+      if (this.transformControls.object === node) this.transformControls.detach();
+      node.removeFromParent(); node.geometry.dispose(); node.material.dispose();
+      this.volumeMeshes.delete(key);
+    }
     for (const [key, mesh] of this.objectMeshes.entries()) {
       if (!activeKeys.has(key)) {
         if (this.transformControls.object === mesh) {
@@ -1088,14 +1253,18 @@ export class PlateScene {
       this.applyExplode(this.explodeFactor);
     }
     this.updateLabels();
+    this.syncCutPreview();
+    this.updateViewerVisibility();
+    this.updateVolumeMaterials();
     this.updateTransformControls();
     this.updateSelectionOutline();
   }
 
-  public setSelection(objectId: number | null, instanceId: number | null, extras: { objectId: number; instanceId: number }[] = []): void {
+  public setSelection(objectId: number | null, instanceId: number | null, extras: { objectId: number; instanceId: number }[] = [], volumeId: number | null = null): void {
     this.selectedObjectId = objectId;
     this.selectedInstanceId = instanceId;
-    this.extraKeys = new Set(extras.map((e) => `${e.objectId}_${e.instanceId}`));
+    this.selectedVolumeId = volumeId;
+    this.extraKeys = new Set(volumeId === null ? extras.map((e) => `${e.objectId}_${e.instanceId}`) : []);
 
     for (const mesh of this.objectMeshes.values()) {
       const isSelected =
@@ -1107,14 +1276,42 @@ export class PlateScene {
       mesh.material = isSelected || this.extraKeys.has(`${mesh.userData.objectId}_${mesh.userData.instanceId}`) ? this.selectedMaterial : this.defaultMaterial;
     }
 
+    this.syncCutPreview();
+    this.updateViewerVisibility();
+    this.updateVolumeMaterials();
     this.updateTransformControls();
     this.updateSelectionOutline();
+  }
+
+  /** Follows the cut tool: preview the open cut on the target instance, and report its cut face to the store. */
+  private syncCutPreview(): void {
+    if (this.isDestroyed) return;
+    const cut = useCutStore.getState();
+    let target: THREE.Mesh | null = null;
+    if (cut.isCutActive && !cut.lastResult?.success && cut.selectedObjectId !== null) {
+      for (const mesh of this.objectMeshes.values()) {
+        if (mesh.userData.objectId !== cut.selectedObjectId) continue;
+        if (!target || (this.selectedObjectId === cut.selectedObjectId && mesh.userData.instanceId === this.selectedInstanceId)) target = mesh;
+      }
+    }
+    const wasActive = this.cutPreview.active;
+    const loops = this.cutPreview.update(target, target ? { ...cut, issues: getConnectorIssues(cut) } : null);
+    if (wasActive && !target) {
+      // The preview kept a material that may predate a selection change.
+      for (const mesh of this.objectMeshes.values()) {
+        const selected = mesh === this.getSelectedMesh() || this.extraKeys.has(`${mesh.userData.objectId}_${mesh.userData.instanceId}`);
+        mesh.material = selected ? this.selectedMaterial : this.defaultMaterial;
+      }
+    }
+    if (wasActive !== this.cutPreview.active) this.updateTransformControls();
+    if (loops) cut.setSection(loops);
+    else if (!target && cut.section) cut.setSection(null);
   }
 
   private updateTransformControls(): void {
     const selected = this.getSelectedMesh();
     // Other selected instances follow translation; rotate and scale apply to a single selection.
-    if (this.gizmoMode !== null && selected && !this.isPaintingActive && !this.measureActive && !this.explodeActive &&
+    if (this.gizmoMode !== null && selected && (this.selectedVolumeId === null || selected.userData.volumeId !== undefined) && !this.isPaintingActive && !this.measureActive && !this.explodeActive && !this.cutPreview.active &&
         (this.extraKeys.size === 0 || this.gizmoMode === 'translate')) {
       this.transformControls.attach(selected);
     } else {
@@ -1126,6 +1323,10 @@ export class PlateScene {
   private updateSelectionOutline(): void {
     const bounds = this.selectionBounds.makeEmpty();
     const selected = this.getSelectedMesh();
+    if (selected?.userData.volumeId !== undefined) {
+      selected.updateWorldMatrix(true, false);
+      bounds.copy(selected.geometry.boundingBox!).applyMatrix4(selected.matrixWorld);
+    }
     if (!selected && this.extraKeys.size === 0) { this.selectionOutline.visible = false; this.outlineBounds.makeEmpty(); return; }
     for (const [key, mesh] of this.objectMeshes) {
       if (!mesh.visible || (mesh !== selected && !this.extraKeys.has(key))) continue;
@@ -1166,6 +1367,7 @@ export class PlateScene {
   public setPaintingActive(active: boolean, volumeId?: number | null): void {
     this.isPaintingActive = active;
     this.paintingVolumeId = active ? (volumeId ?? null) : null;
+    this.updateViewerVisibility();
     this.updateTransformControls();
   }
 
@@ -1195,7 +1397,7 @@ export class PlateScene {
     );
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, this.camera);
-    const intersects = raycaster.intersectObjects(Array.from(this.objectMeshes.values()).filter(mesh => mesh.visible), false);
+    const intersects = raycaster.intersectObjects(this.viewerTargets(), false);
     if (intersects.length === 0) return null;
 
     const hit = intersects[0];
@@ -1204,9 +1406,9 @@ export class PlateScene {
     const instanceId = mesh.userData?.instanceId;
     if (typeof objectId !== 'number') return null;
 
-    let volumeId: number | undefined;
+    let volumeId: number | undefined = mesh.userData.volumeId;
     const partitions = this.meshVolumes.get(objectId);
-    if (partitions && partitions.length > 0 && typeof hit.faceIndex === 'number') {
+    if (volumeId === undefined && partitions && partitions.length > 0 && typeof hit.faceIndex === 'number') {
       const faceIndex = hit.faceIndex;
       const partition = partitions.find(
         (p) => faceIndex >= p.firstFacet && faceIndex < p.firstFacet + p.facetCount
@@ -1248,6 +1450,10 @@ export class PlateScene {
 
   public getSelectedMesh(): THREE.Mesh | null {
     if (this.selectedObjectId === null) return null;
+    if (this.selectedVolumeId !== null && !this.isPaintingActive && !this.cutPreview.active && !this.explodeActive && !this.flattenClusters.length) {
+      const volume = this.volumeMeshes.get(`${this.selectedObjectId}_${this.selectedInstanceId}_${this.selectedVolumeId}`);
+      if (volume) return volume;
+    }
     for (const mesh of this.objectMeshes.values()) {
       if (
         mesh.userData.objectId === this.selectedObjectId &&
@@ -1259,9 +1465,20 @@ export class PlateScene {
     return null;
   }
 
+  private updateViewerVisibility(): void {
+    const combined = this.isPaintingActive || this.cutPreview.active || this.explodeActive || this.flattenClusters.length > 0;
+    for (const mesh of this.objectMeshes.values()) {
+      const selected = mesh.userData.objectId === this.selectedObjectId && mesh.userData.instanceId === this.selectedInstanceId;
+      const hasVolumes = [...this.volumeMeshes.values()].some(node => node.parent === mesh);
+      mesh.material = combined || !hasVolumes ? (selected ? this.selectedMaterial : this.defaultMaterial) : this.hiddenMaterial;
+    }
+    for (const mesh of this.volumeMeshes.values()) mesh.visible = !combined;
+  }
+
   public showFlattenClusters(clusters: Array<{ normal: [number, number, number]; center: [number, number, number]; area: number; outline: Array<[number, number, number]> }>): void {
     this.clearFlattenClusters();
     this.flattenClusters = clusters;
+    this.updateViewerVisibility();
     const mesh = this.getSelectedMesh();
     if (!mesh) return;
 
@@ -1295,12 +1512,14 @@ export class PlateScene {
       this.flattenGroup.remove(child);
     }
     this.flattenClusters = [];
+    this.updateViewerVisibility();
   }
 
   /** Explode view spreads objects and their individual parts without changing engine transforms. */
   public setExplodeActive(active: boolean): void {
     if (this.explodeActive === active) return;
     this.explodeActive = active;
+    this.updateViewerVisibility();
     if (active) {
       this.transformControls.detach();
       this.applyExplode(this.explodeFactor);
@@ -1422,7 +1641,9 @@ export class PlateScene {
   }
 
   public clearMeasure(): void {
+    this.measureSessionId++;
     this.measurePoints = [];
+    useMeasureStore.getState().resetSelection();
     this.drawMeasure();
     this.callbacks.onMeasureChange?.([]);
   }
@@ -1446,17 +1667,160 @@ export class PlateScene {
       line.renderOrder = 10;
       this.measureGroup.add(line as unknown as THREE.Mesh);
     }
+
+    // Advanced feature highlights
+    const { feature1, feature2, result } = useMeasureStore.getState();
+    const drawFeature = (feat: any, color: number) => {
+      if (!feat) return;
+      if (feat.type === 'circle' && feat.circle) {
+        const c = feat.circle.center;
+        const normArr = feat.circle.normal;
+        const r = feat.circle.radius;
+        if (!c || !normArr || typeof r !== 'number' || !Number.isFinite(r) || r <= 0) return;
+        if (!c.every?.(Number.isFinite) || !normArr.every?.(Number.isFinite)) return;
+        const n = new THREE.Vector3(...normArr);
+        if (n.lengthSq() < 1e-6) n.set(0, 0, 1);
+        else n.normalize();
+        const curve = new THREE.EllipseCurve(0, 0, r, r, 0, 2 * Math.PI, false, 0);
+        const pts = curve.getPoints(64).map((p) => new THREE.Vector3(p.x, p.y, 0));
+        const geom = new THREE.BufferGeometry().setFromPoints(pts);
+        const circleLine = new THREE.LineLoop(geom, new THREE.LineBasicMaterial({ color, depthTest: false }));
+        circleLine.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+        circleLine.position.set(c[0], c[1], c[2]);
+        circleLine.renderOrder = 11;
+        this.measureGroup.add(circleLine as unknown as THREE.Mesh);
+
+        const centerDot = new THREE.Mesh(new THREE.SphereGeometry(marker * 0.5, 8, 6), new THREE.MeshBasicMaterial({ color, depthTest: false }));
+        centerDot.position.set(c[0], c[1], c[2]);
+        centerDot.renderOrder = 11;
+        this.measureGroup.add(centerDot);
+      } else if (feat.type === 'edge' && feat.edge) {
+        const sp = feat.edge.start;
+        const ep = feat.edge.end;
+        if (!sp || !ep || !sp.every?.(Number.isFinite) || !ep.every?.(Number.isFinite)) return;
+        const geom = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(sp[0], sp[1], sp[2]),
+          new THREE.Vector3(ep[0], ep[1], ep[2])
+        ]);
+        const edgeLine = new THREE.Line(geom, new THREE.LineBasicMaterial({ color, depthTest: false }));
+        edgeLine.renderOrder = 11;
+        this.measureGroup.add(edgeLine as unknown as THREE.Mesh);
+      } else if (feat.type === 'plane' && feat.plane) {
+        const orig = feat.plane.origin;
+        if (!orig || !orig.every?.(Number.isFinite)) return;
+        const planeMarker = new THREE.Mesh(new THREE.SphereGeometry(marker * 0.8, 12, 8), new THREE.MeshBasicMaterial({ color, depthTest: false }));
+        planeMarker.position.set(orig[0], orig[1], orig[2]);
+        planeMarker.renderOrder = 11;
+        this.measureGroup.add(planeMarker);
+      } else if (feat.type === 'point' && feat.point) {
+        const pt = feat.point;
+        if (!pt || !pt.every?.(Number.isFinite)) return;
+        const ptMarker = new THREE.Mesh(new THREE.SphereGeometry(marker * 0.8, 12, 8), new THREE.MeshBasicMaterial({ color, depthTest: false }));
+        ptMarker.position.set(pt[0], pt[1], pt[2]);
+        ptMarker.renderOrder = 11;
+        this.measureGroup.add(ptMarker);
+      }
+    };
+    if (feature1) drawFeature(feature1, 0x00bcd4);
+    if (feature2) drawFeature(feature2, 0x26a69a);
+
+    const distInfo = result?.distanceStrict ?? result?.distanceInfinite;
+    if (distInfo && distInfo.from && distInfo.to &&
+        distInfo.from.every?.(Number.isFinite) && distInfo.to.every?.(Number.isFinite)) {
+      const connGeom = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(...distInfo.from),
+        new THREE.Vector3(...distInfo.to)
+      ]);
+      const connLine = new THREE.Line(connGeom, new THREE.LineBasicMaterial({ color: 0x00e676, depthTest: false }));
+      connLine.renderOrder = 12;
+      this.measureGroup.add(connLine as unknown as THREE.Mesh);
+    }
   }
 
   private pickMeasurePoint(e: PointerEvent): void {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1), this.camera);
-    const hit = raycaster.intersectObjects(Array.from(this.objectMeshes.values()), false)[0];
+    const hit = raycaster.intersectObjects(this.viewerTargets(), false)[0];
     if (!hit) return;
-    this.measurePoints = this.measurePoints.length >= 2 ? [hit.point.clone()] : [...this.measurePoints, hit.point.clone()];
-    this.drawMeasure();
-    this.callbacks.onMeasureChange?.(this.measurePoints.map((p) => [p.x, p.y, p.z]));
+
+    const snapMode = useMeasureStore.getState().snapMode;
+    const session = ++this.measureSessionId;
+
+    // Normal point mode preserved
+    if (snapMode === 'point') {
+      useMeasureStore.getState().setError(null);
+      this.measurePoints = this.measurePoints.length >= 2 ? [hit.point.clone()] : [...this.measurePoints, hit.point.clone()];
+      this.drawMeasure();
+      this.callbacks.onMeasureChange?.(this.measurePoints.map((p) => [p.x, p.y, p.z]));
+      return;
+    }
+
+    // Explicit or auto feature selection: clear previous error on new click attempt
+    useMeasureStore.getState().setError(null);
+
+    const objectId = hit.object.userData?.objectId;
+    const instanceId = hit.object.userData?.instanceId;
+    const volumeId = hit.object.userData?.volumeId;
+    const facetIndex = hit.faceIndex ?? 0;
+    const position: [number, number, number] = [hit.point.x, hit.point.y, hit.point.z];
+
+    if (typeof objectId !== 'number') {
+      if (snapMode !== 'auto') {
+        const label = snapMode === 'circle' ? 'circular' : snapMode === 'edge' ? 'edge' : 'planar';
+        useMeasureStore.getState().setError(`No ${label} feature detected at selected position`);
+      }
+      return;
+    }
+
+    getMeasurementFeature({
+      objectId,
+      instanceId,
+      volumeId,
+      facetIndex,
+      position,
+      selection: snapMode,
+    }).then(async (res) => {
+      if (this.measureSessionId !== session || !this.measureActive) return;
+
+      if (!res.success || !res.feature) {
+        if (snapMode !== 'auto') {
+          useMeasureStore.getState().setError(res.error || `No ${snapMode === 'circle' ? 'circular' : snapMode === 'edge' ? 'edge' : 'planar'} feature detected on selected face`);
+        }
+        return;
+      }
+
+      const s = useMeasureStore.getState();
+      s.setError(null);
+      this.measurePoints = []; // Feature mode uses native feature highlights, not basic point clicks
+
+      const curF1 = s.feature1;
+      const curF2 = s.feature2;
+      if (!curF1 || (curF1 && curF2)) {
+        s.setFeature1(res.feature);
+        s.setFeature2(null);
+        const mRes = await measureFeatures({ first: res.feature });
+        if (this.measureSessionId !== session || !this.measureActive) return;
+        if (!mRes.success && mRes.error) {
+          s.setError(mRes.error);
+        }
+        useMeasureStore.getState().setResult(mRes);
+      } else {
+        s.setFeature2(res.feature);
+        const mRes = await measureFeatures({ first: curF1, second: res.feature });
+        if (this.measureSessionId !== session || !this.measureActive) return;
+        if (!mRes.success && mRes.error) {
+          s.setError(mRes.error);
+        }
+        useMeasureStore.getState().setResult(mRes);
+      }
+      this.drawMeasure();
+    }).catch((err: any) => {
+      if (this.measureSessionId !== session || !this.measureActive) return;
+      if (snapMode !== 'auto') {
+        useMeasureStore.getState().setError(err?.message || 'Feature detection failed');
+      }
+    });
   }
 
   public setBrimEarsActive(active: boolean): void {
@@ -1693,18 +2057,29 @@ export class PlateScene {
     return null;
   }
 
-  private onPointerDown = (e: PointerEvent): void => {
+  private onPointerDown = (e: PointerEvent, modelTouch = false): void => {
+    if (e.pointerType === 'touch' && !modelTouch) return;
+    if (this.planeDrag) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
     this.pointerDownPos = { x: e.clientX, y: e.clientY };
 
     // Body dragging translates in XY independently of the active gizmo mode.
     // Tool handles and tools that operate on the surface retain their own gestures.
     if (e.button === 0 && !e.shiftKey && !e.ctrlKey && !e.metaKey && !this.isPaintingActive &&
         !this.measureActive && !this.explodeActive && !this.brimEarsActive && !this.flattenClusters.length &&
-        !this.transformControls.dragging && !this.transformControls.axis && this.callbacks.canMoveObjects?.() !== false) {
+        !this.transformControls.dragging && (modelTouch || !this.transformControls.axis) && !this.cutPreview.active &&
+        (!modelTouch || this.gizmoMode === null || this.gizmoMode === 'translate' || this.gizmoMode === 'scale') &&
+        this.callbacks.canMoveObjects?.() !== false) {
       const raycaster = this.pointerRay(e);
-      const hit = raycaster.intersectObjects([...this.objectMeshes.values()].filter(mesh => mesh.visible), false)[0];
+      const hit = raycaster.intersectObjects(this.viewerTargets(), false)[0];
       if (hit) {
-        const target = hit.object as THREE.Mesh;
+        const body = hit.object as THREE.Mesh;
+        if (this.selectedVolumeId !== null && body.userData.volumeId === undefined) return;
+        const target = body.userData.volumeId === undefined || this.selectedVolumeId !== null ? body : body.parent as THREE.Mesh;
+        if (modelTouch && this.gizmoMode === 'scale' && (this.extraKeys.size > 0 || target !== this.getSelectedMesh())) return;
         const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -hit.point.z);
         const selected = target.userData.objectId === this.selectedObjectId && target.userData.instanceId === this.selectedInstanceId ||
           this.extraKeys.has(`${target.userData.objectId}_${target.userData.instanceId}`);
@@ -1713,7 +2088,8 @@ export class PlateScene {
           if (mesh === this.getSelectedMesh() || this.extraKeys.has(`${mesh.userData.objectId}_${mesh.userData.instanceId}`)) origins.set(mesh, mesh.position.clone());
         }
         this.planeDrag = { pointerId: e.pointerId, target, plane, start: hit.point.clone(), origins, moved: false,
-          orbitEnabled: this.orbitControls.enabled, transformEnabled: this.transformControls.enabled };
+          orbitEnabled: this.orbitControls.enabled, transformEnabled: this.transformControls.enabled,
+          touchScale: modelTouch && this.gizmoMode === 'scale' ? { origin: target.scale.clone(), clientY: e.clientY } : undefined };
         this.orbitControls.enabled = false;
         this.transformControls.enabled = false;
         this.renderer.domElement.setPointerCapture(e.pointerId);
@@ -1721,6 +2097,8 @@ export class PlateScene {
         return;
       }
     }
+
+    if (modelTouch) return;
 
     if (this.isPaintingActive && (e.button === 0 || (this.advancedPainting && e.button === 2))) {
       const hit = this.raycastSelectedMesh(e);
@@ -1741,19 +2119,33 @@ export class PlateScene {
     }
   };
 
-  private onPointerMove = (e: PointerEvent): void => {
+  private onPointerMove = (e: PointerEvent, modelTouch = false): void => {
+    if (e.pointerType === 'touch' && !modelTouch) return;
     const drag = this.planeDrag;
     if (drag && drag.pointerId === e.pointerId) {
       if (!drag.moved && Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y) <= 5) return;
-      const point = this.pointerRay(e).ray.intersectPlane(drag.plane, new THREE.Vector3());
-      if (!point) return;
+      const point = drag.touchScale ? null : this.pointerRay(e).ray.intersectPlane(drag.plane, new THREE.Vector3());
+      if (!drag.touchScale && !point) return;
       if (!drag.moved) {
         drag.moved = true;
-        if (drag.origins.size === 1) this.callbacks.onSelect(drag.target.userData.objectId, drag.target.userData.instanceId);
+        if (drag.origins.size === 1) this.callbacks.onSelect(drag.target.userData.objectId, drag.target.userData.instanceId, false, drag.target.userData.volumeId);
       }
-      const delta = point.sub(drag.start);
+      if (drag.touchScale) {
+        // One finger on the selected body scales uniformly around its origin.
+        const ratio = Math.exp(Math.max(-4, Math.min(4, (drag.touchScale.clientY - e.clientY) / 150)));
+        drag.target.scale.copy(drag.touchScale.origin).multiplyScalar(ratio);
+        return;
+      }
+      const delta = point!.sub(drag.start);
       delta.z = 0;
-      for (const [mesh, origin] of drag.origins) mesh.position.copy(origin).add(delta);
+      for (const [mesh, origin] of drag.origins) {
+        const localDelta = delta.clone();
+        if (mesh.userData.volumeId !== undefined && mesh.parent) {
+          mesh.parent.updateWorldMatrix(true, false);
+          localDelta.applyMatrix3(new THREE.Matrix3().setFromMatrix4(mesh.parent.matrixWorld).invert());
+        }
+        mesh.position.copy(origin).add(localDelta);
+      }
       return;
     }
     if (this.advancedPainting) {
@@ -1773,6 +2165,8 @@ export class PlateScene {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch') return;
+    if (this.planeDrag && this.planeDrag.pointerId !== e.pointerId) return;
     if (this.planeDrag?.pointerId === e.pointerId) {
       const moved = this.planeDrag.moved;
       this.finishPlaneDrag(true);
@@ -1793,6 +2187,17 @@ export class PlateScene {
     if (Math.hypot(dx, dy) > 5) return;
 
     if (this.transformControls.dragging) return;
+
+    // Placing connectors: clicks pick connectors or the new flat faces and never change the selection.
+    if (this.cutPreview.connectorMode) {
+      if (e.button !== 0) return;
+      const pick = this.cutPreview.pick(this.pointerRay(e));
+      const cut = useCutStore.getState();
+      if (pick && 'connector' in pick) cut.selectConnector(pick.connector);
+      else if (pick) cut.placeConnectorAt(pick.point[0], pick.point[1]);
+      else cut.placeConnectorAt(NaN, NaN); // off the faces: only reports why nothing was placed
+      return;
+    }
 
     if (this.measureActive) {
       this.pickMeasurePoint(e);
@@ -1873,16 +2278,16 @@ export class PlateScene {
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(mouse, this.camera);
 
-      const meshes = Array.from(this.objectMeshes.values());
+      const meshes = this.viewerTargets();
       const intersects = raycaster.intersectObjects(meshes, false);
 
       if (intersects.length > 0 && typeof intersects[0].faceIndex === 'number') {
         const hit = intersects[0].object as THREE.Mesh;
         if (hit.userData) {
           const objectId = hit.userData.objectId;
-          let volumeId: number | undefined;
+          let volumeId: number | undefined = hit.userData.volumeId;
           const partitions = this.meshVolumes.get(objectId);
-          if (partitions && partitions.length > 0) {
+          if (volumeId === undefined && partitions && partitions.length > 0) {
             const partition = partitions.find(
               (p) => intersects[0].faceIndex! >= p.firstFacet && intersects[0].faceIndex! < p.firstFacet + p.facetCount
             );
@@ -1914,11 +2319,27 @@ export class PlateScene {
     this.transformControls.enabled = drag.transformEnabled;
     if (this.renderer.domElement.hasPointerCapture(drag.pointerId)) this.renderer.domElement.releasePointerCapture(drag.pointerId);
     if (!commit) for (const [mesh, origin] of drag.origins) mesh.position.copy(origin);
+    if (!commit && drag.touchScale) drag.target.scale.copy(drag.touchScale.origin);
     if (!commit || !drag.moved) return;
-    this.commitMeshTransforms([...drag.origins.keys()]);
+    this.commitMeshTransforms([...drag.origins.keys()], !drag.touchScale);
   }
 
-  private commitMeshTransforms(meshes: THREE.Object3D[]): void {
+  private commitMeshTransforms(meshes: THREE.Object3D[], translationOnly = false): void {
+    this.measureSessionId++;
+    if (this.measureActive) {
+      this.clearMeasure();
+    } else {
+      useMeasureStore.getState().resetSelection();
+    }
+    for (const mesh of meshes) if (mesh.userData.volumeId !== undefined) {
+      const transform = { offset: mesh.position.toArray() as [number, number, number] };
+      this.callbacks.onVolumeTransformChange(mesh.userData.objectId, mesh.userData.volumeId,
+        translationOnly || this.gizmoMode === 'translate' ? transform : {
+          ...transform, rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z],
+          scale: [Math.abs(mesh.scale.x), Math.abs(mesh.scale.y), Math.abs(mesh.scale.z)],
+        });
+    }
+    meshes = meshes.filter(mesh => mesh.userData.volumeId === undefined);
     const entries = meshes.map(mesh => ({
       objectId: mesh.userData.objectId as number, instanceId: mesh.userData.instanceId as number,
       offset: mesh.position.toArray() as [number, number, number],
@@ -1929,7 +2350,8 @@ export class PlateScene {
     else for (const entry of entries) this.callbacks.onTransformChange(entry.objectId, entry.instanceId, entry);
   }
 
-  private onPointerCancel = (): void => {
+  private onPointerCancel = (event?: PointerEvent): void => {
+    if (event && this.planeDrag && this.planeDrag.pointerId !== event.pointerId) return;
     this.finishPlaneDrag(false);
     this.onPointerLeave();
   };
@@ -1974,6 +2396,10 @@ export class PlateScene {
     this.orthographicCamera.updateProjectionMatrix();
 
     this.renderer.setSize(width, height);
+    if (this.initialViewportFit) {
+      this.initialViewportFit = false;
+      this.fitBed();
+    }
     this.syncAnimation();
   };
 
@@ -1992,10 +2418,12 @@ export class PlateScene {
     if (this.isDestroyed || !this.hasVisibleSize || !this.isInViewport || document.hidden) return;
 
     this.orbitControls.update();
+    this.cutPreview.frame();
     this.updateSelectionOutline();
     const light = document.documentElement.dataset.theme === 'light';
     if (this.scene.userData.lightTheme !== light) {
       this.scene.userData.lightTheme = light;
+      this.updateVolumeMaterials();
       (this.scene.background as THREE.Color).setHex(light ? 0xe7e9ec : 0x1e1e24);
       this.bedFloorMaterial?.color.setHex(this.bedTexture ? 0xffffff : light ? 0xd4d8dd : 0x27272a);
     }
@@ -2010,6 +2438,7 @@ export class PlateScene {
   }
 
   public setCameraView(view: CameraView): void {
+    this.initialBedFit = false;
     if (view === 'BED') {
       this.zoomToBed();
       return;
@@ -2022,17 +2451,11 @@ export class PlateScene {
     if (view === 'Z') {
       if (selectedMesh) {
         const box = new THREE.Box3().setFromObject(selectedMesh);
-        box.getCenter(center);
         const size = box.getSize(new THREE.Vector3());
         maxDim = Math.max(size.x, size.y, size.z);
-        this.orbitControls.target.copy(center);
-        this.camera.position.set(center.x, center.y - maxDim * 1.5, center.z + maxDim);
+        this.fitBounds(box, new THREE.Vector3(0, -1.5, 1), maxDim * Math.hypot(1.5, 1));
       } else {
-        const cx = this.bedConfig.center[0];
-        const cy = this.bedConfig.center[1];
-        const span = Math.max(this.bedConfig.width, this.bedConfig.depth);
-        this.orbitControls.target.set(cx, cy, 0);
-        this.camera.position.set(cx, cy - span * 1.5, span * 1.2);
+        this.fitBed();
       }
       this.orbitControls.update();
       return;
@@ -2120,6 +2543,10 @@ export class PlateScene {
 
     // Save child overlays attached to meshes
     const savedChildOverlays = new Map<THREE.Object3D, boolean>();
+    for (const node of this.volumeMeshes.values()) {
+      savedChildOverlays.set(node, node.visible);
+      node.visible = false;
+    }
     for (const mesh of this.objectMeshes.values()) {
       for (const child of mesh.children) {
         if (child.name === '__paint_overlay_container__' || child.name.includes('overlay')) {
@@ -2148,6 +2575,7 @@ export class PlateScene {
     this.measureGroup.visible = false;
     this.transformControls.getHelper().visible = false;
     this.selectionOutline.visible = false;
+    this.cutPreview.setSuspended(true);
     if (this.towerPreview) this.towerPreview.visible = false;
 
     this.paintCursor.circleMesh.visible = false;
@@ -2317,6 +2745,7 @@ export class PlateScene {
       this.measureGroup.visible = savedMeasureVisible;
       this.transformControls.getHelper().visible = savedControlsVisible;
       this.selectionOutline.visible = savedOutlineVisible;
+      this.cutPreview.setSuspended(false);
       if (this.towerPreview) this.towerPreview.visible = savedTowerVisible;
 
       // Restore all cursor meshes
@@ -2347,6 +2776,70 @@ export class PlateScene {
     }
   }
 
+  public updateLayerRangeOverlays(
+    objectId: number | null,
+    ranges?: Array<{ minZ: number; maxZ: number }> | null,
+    selectedRangeIndex?: number | null
+  ): void {
+    while (this.layerRangeOverlays.children.length > 0) {
+      const child = this.layerRangeOverlays.children[0] as THREE.Mesh;
+      if (child.geometry) child.geometry.dispose();
+      if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
+      else if (child.material) child.material.dispose();
+      this.layerRangeOverlays.remove(child);
+    }
+
+    if (objectId === null || !ranges || ranges.length === 0) return;
+
+    let targetMesh: THREE.Mesh | null = null;
+    for (const mesh of this.objectMeshes.values()) {
+      if (mesh.userData.objectId === objectId) {
+        targetMesh = mesh;
+        break;
+      }
+    }
+    if (!targetMesh) return;
+
+    targetMesh.geometry.computeBoundingBox();
+    const bbox = targetMesh.geometry.boundingBox;
+    if (!bbox) return;
+
+    const sizeX = Math.max(1, (bbox.max.x - bbox.min.x) * targetMesh.scale.x);
+    const sizeY = Math.max(1, (bbox.max.y - bbox.min.y) * targetMesh.scale.y);
+    const posX = targetMesh.position.x + ((bbox.max.x + bbox.min.x) / 2) * targetMesh.scale.x;
+    const posY = targetMesh.position.y + ((bbox.max.y + bbox.min.y) / 2) * targetMesh.scale.y;
+    const baseZ = targetMesh.position.z;
+
+    ranges.forEach((range, idx) => {
+      const rangeHeight = Math.max(0.1, range.maxZ - range.minZ);
+      const centerZ = baseZ + range.minZ + rangeHeight / 2;
+      const isSelected = selectedRangeIndex === idx;
+
+      const geom = new THREE.BoxGeometry(sizeX * 1.05, sizeY * 1.05, rangeHeight);
+      const mat = new THREE.MeshBasicMaterial({
+        color: isSelected ? 0x00e5ff : 0x009688,
+        transparent: true,
+        opacity: isSelected ? 0.35 : 0.18,
+        depthWrite: false
+      });
+      const bandMesh = new THREE.Mesh(geom, mat);
+      bandMesh.position.set(posX, posY, centerZ);
+      this.layerRangeOverlays.add(bandMesh);
+
+      const edges = new THREE.EdgesGeometry(geom);
+      const line = new THREE.LineSegments(
+        edges,
+        new THREE.LineBasicMaterial({
+          color: isSelected ? 0x00ffff : 0x00b4a0,
+          transparent: true,
+          opacity: isSelected ? 0.8 : 0.4
+        })
+      );
+      line.position.copy(bandMesh.position);
+      this.layerRangeOverlays.add(line);
+    });
+  }
+
   public destroy(): void {
     this.setWipeTowerPreview({ enabled: false });
     this.bedAssetRevision++;
@@ -2359,8 +2852,14 @@ export class PlateScene {
 
     this.unsubscribePrefs?.();
     this.unsubscribePrefs = null;
+    this.unsubscribeCut?.();
+    this.unsubscribeCut = null;
+    this.unsubscribeMeasure?.();
+    this.unsubscribeMeasure = null;
+    this.cutPreview.dispose();
 
     this.finishPlaneDrag(false);
+    this.disposeTouch();
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown, true);
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp);
@@ -2386,6 +2885,8 @@ export class PlateScene {
     this.scene.remove(this.brimEarsGroup);
     this.clearMeasure();
     this.scene.remove(this.measureGroup);
+    this.updateLayerRangeOverlays(null, null);
+    this.scene.remove(this.layerRangeOverlays);
 
     for (const sprite of this.labelSprites.values()) {
       if (sprite.material.map) sprite.material.map.dispose();
@@ -2406,6 +2907,9 @@ export class PlateScene {
     }
     this.geometries.clear();
     this.meshVolumes.clear();
+    for (const node of this.volumeMeshes.values()) { node.geometry.dispose(); node.material.dispose(); }
+    this.volumeMeshes.clear();
+    this.hiddenMaterial.dispose();
 
     this.defaultMaterial.dispose();
     this.selectedMaterial.dispose();

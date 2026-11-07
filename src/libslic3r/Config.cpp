@@ -298,6 +298,7 @@ ConfigOption* ConfigOptionDef::create_empty_option() const
 	    case coFloats:          return new ConfigOptionFloats();
 	    case coInt:             return new ConfigOptionInt();
 	    case coInts:            return new ConfigOptionInts();
+	    case coIntsGroups:      return new ConfigOptionIntsGroups();
 	    case coString:          return new ConfigOptionString();
 	    case coStrings:         return new ConfigOptionStrings();
 	    case coPercent:         return new ConfigOptionPercent();
@@ -306,6 +307,7 @@ ConfigOption* ConfigOptionDef::create_empty_option() const
         case coFloatsOrPercents: return new ConfigOptionFloatsOrPercents();
 	    case coPoint:           return new ConfigOptionPoint();
 	    case coPoints:          return new ConfigOptionPoints();
+	    case coPointsGroups:    return new ConfigOptionPointsGroups();
 	    case coPoint3:          return new ConfigOptionPoint3();
 	//    case coPoint3s:         return new ConfigOptionPoint3s();
 	    case coBool:            return new ConfigOptionBool();

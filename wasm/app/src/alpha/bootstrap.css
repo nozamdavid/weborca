@@ -1,0 +1,129 @@
+@import './tokens.css';
+
+.alpha-ui {
+  color-scheme: dark;
+  color: var(--alpha-text);
+  background: var(--alpha-bg);
+  font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  scrollbar-color: var(--alpha-border) var(--alpha-control);
+  accent-color: var(--alpha-accent);
+  caret-color: var(--alpha-accent);
+  text-align: left;
+}
+body:has(> #root.alpha-ui) { margin: 0; background: var(--alpha-bg); }
+#root.alpha-ui { min-height: 100dvh; overflow: auto; }
+.alpha-ui *, .alpha-ui *::before, .alpha-ui *::after { box-sizing: border-box; }
+.alpha-ui ::selection { color: var(--alpha-text); background: var(--alpha-selected); }
+.alpha-page {
+  width: min(100%, 472px);
+  margin: 0 auto;
+  padding: max(48px, env(safe-area-inset-top)) max(28px, env(safe-area-inset-right)) max(40px, env(safe-area-inset-bottom)) max(28px, env(safe-area-inset-left));
+}
+.alpha-page.alpha-wide { width: min(100%, 1200px); }
+.alpha-brand { display: flex; align-items: center; gap: 12px; padding-bottom: 24px; margin-bottom: 40px; border-bottom: 1px solid var(--alpha-divider); }
+.alpha-wordmark { font-size: 20px; font-weight: 700; letter-spacing: -.025em; }
+.alpha-edition { color: var(--alpha-muted); border: 1px solid var(--alpha-border); border-radius: var(--alpha-radius); padding: 1px 7px; font-size: 12px; }
+.alpha-ui h1 { font-size: 28px; line-height: 1.25; letter-spacing: -.025em; font-weight: 650; margin: 0 0 12px; text-wrap: balance; }
+.alpha-ui h1:focus { outline: none; }
+.alpha-ui h2 { font-size: 18px; line-height: 1.4; font-weight: 600; margin: 0 0 20px; }
+.alpha-ui h3 { font-size: 15px; margin: 0 0 8px; font-weight: 600; }
+.alpha-ui p { max-width: 70ch; overflow-wrap: anywhere; }
+.alpha-ui .alpha-lead { color: var(--alpha-muted); margin: 0 0 32px; }
+.alpha-ui form { display: grid; gap: 18px; }
+.alpha-ui label { display: grid; gap: 8px; font-weight: 500; font-size: 13px; }
+.alpha-ui input {
+  width: 100%; min-width: 0; min-height: var(--alpha-control-height); border: 1px solid var(--alpha-border);
+  border-radius: var(--alpha-radius); background: var(--alpha-control); color: var(--alpha-text);
+  font: inherit; font-size: 15px; padding: 10px 12px;
+}
+.alpha-ui input:hover { border-color: var(--alpha-muted); }
+.alpha-ui input[aria-invalid='true'] { border-color: var(--alpha-error); }
+.alpha-ui button {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: var(--alpha-control-height); padding: 9px 16px; border-radius: var(--alpha-radius); border: 1px solid var(--alpha-border);
+  background: var(--alpha-surface); color: var(--alpha-text); font: inherit; font-weight: 600;
+  cursor: pointer; white-space: normal; overflow-wrap: anywhere;
+  transition: background-color 160ms ease-out, border-color 160ms ease-out;
+}
+.alpha-ui button:hover { background: var(--alpha-selected); border-color: var(--alpha-muted); }
+.alpha-ui button:active { background: var(--alpha-control); }
+.alpha-ui button:disabled { opacity: .65; cursor: wait; }
+.alpha-ui .alpha-primary { background: var(--alpha-accent); border-color: var(--alpha-accent); color: var(--alpha-on-accent); }
+.alpha-ui .alpha-primary:hover { background: var(--alpha-focus); border-color: var(--alpha-focus); }
+.alpha-ui :is(button, input, summary):focus-visible { outline: 2px solid var(--alpha-focus); outline-offset: 3px; }
+.alpha-page > button { margin: 24px 16px 0 0; }
+.alpha-page > button:not(.alpha-primary) { padding: 8px 0; background: none; border-color: transparent; color: var(--alpha-muted); font-weight: 500; }
+.alpha-page > button:not(.alpha-primary):hover { color: var(--alpha-text); text-decoration: underline; text-underline-offset: 4px; }
+.alpha-ui .alpha-status { margin: 0; color: var(--alpha-muted); font-size: 13px; }
+.alpha-ui .alpha-status:empty { display: none; }
+.alpha-ui .alpha-status[role='alert'] { color: var(--alpha-error); }
+.alpha-actions { display: flex; flex-wrap: wrap; gap: 12px; padding-bottom: 28px; margin: 24px 0 32px; border-bottom: 1px solid var(--alpha-divider); }
+.alpha-actions > :last-child { margin-left: auto; }
+.alpha-workspace { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 48px; align-items: start; }
+.alpha-composer { min-width: 0; }
+.alpha-create { padding: 24px; background: var(--alpha-surface); border-radius: var(--alpha-radius); }
+.alpha-ui .alpha-create h2 { margin: 0 0 4px; }
+.alpha-once { padding: 24px; margin-top: 20px; border: 1px solid var(--alpha-accent); border-radius: var(--alpha-radius); }
+.alpha-once[hidden] { display: none; }
+.alpha-once p { color: var(--alpha-muted); font-size: 13px; }
+.alpha-once input { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.alpha-once button { margin: 16px 8px 0 0; }
+.alpha-empty { border-block: 1px solid var(--alpha-divider); padding: 32px 0; }
+.alpha-empty p { color: var(--alpha-muted); margin: 4px 0 0; }
+.alpha-invite { border-top: 1px solid var(--alpha-divider); overflow-wrap: anywhere; }
+.alpha-invite:last-child { border-bottom: 1px solid var(--alpha-divider); }
+.alpha-invite summary { min-height: 76px; padding: 16px 26px 16px 0; cursor: pointer; display: flex; align-items: center; gap: 16px; position: relative; list-style: none; }
+.alpha-invite summary::-webkit-details-marker { display: none; }
+.alpha-invite summary::after { content: ''; position: absolute; right: 4px; width: 7px; height: 7px; border: solid var(--alpha-muted); border-width: 0 1px 1px 0; transform: rotate(45deg); }
+.alpha-invite[open] summary::after { transform: rotate(225deg); }
+.alpha-invite summary:hover { background: var(--alpha-surface); }
+.alpha-invite-identity { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.alpha-invite-name { font-weight: 600; }
+.alpha-invite-email { color: var(--alpha-muted); font-size: 12px; }
+.alpha-invite-state { display: flex; align-items: center; gap: 12px; flex-shrink: 0; font-size: 12px; }
+.alpha-badge { color: var(--alpha-success-text); background: var(--alpha-success-bg); padding: 3px 8px; border-radius: var(--alpha-radius); }
+.alpha-revoked { color: var(--alpha-warning-text); background: var(--alpha-warning-bg); }
+.alpha-use { color: var(--alpha-muted); min-width: 42px; }
+.alpha-invite dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 24px; padding: 16px 0; margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.alpha-invite dt { color: var(--alpha-muted); }
+.alpha-invite dd { margin: 0; overflow-wrap: anywhere; }
+.alpha-invite form { padding: 12px 0 24px; grid-template-columns: 1fr 1fr; }
+.alpha-invite form > :is(label:nth-child(3), .alpha-status, p) { grid-column: 1 / -1; }
+.alpha-invite form > p { color: var(--alpha-muted); font-size: 13px; margin: 8px 0 0; }
+.alpha-invite form > button { justify-self: start; }
+.alpha-nav { position: fixed; inset: auto max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) auto; z-index: 10000; border-radius: var(--alpha-radius); }
+body.alpha-locked > :not(.alpha-lock-screen) { visibility: hidden !important; pointer-events: none !important; }
+.alpha-lock-screen { position: fixed; inset: 0; z-index: 2147483647; overflow: auto; }
+[data-alpha-access-slot] .alpha-nav { position: relative; inset: auto; }
+.alpha-nav summary { min-height: 40px; padding: 8px; cursor: pointer; white-space: nowrap; }
+.alpha-nav-actions { position: absolute; right: 0; top: 100%; width: 210px; padding: 8px; background: var(--alpha-bg); border: 1px solid var(--alpha-border); display: grid; gap: 8px; }
+body > .alpha-nav .alpha-nav-actions { top: auto; bottom: 100%; }
+@media (max-width: 800px) {
+  .alpha-workspace { grid-template-columns: 1fr; gap: 36px; }
+  .alpha-create { grid-template-columns: 1fr 1fr; }
+  .alpha-create > :is(h2, label:nth-of-type(3), .alpha-status) { grid-column: 1 / -1; }
+  .alpha-create > button { justify-self: start; }
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .alpha-ui { --alpha-control-height: 48px; }
+  .alpha-page { padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
+  .alpha-brand { margin-bottom: 32px; padding-bottom: 20px; }
+  .alpha-ui h1 { font-size: 25px; }
+  .alpha-ui input { font-size: 16px; }
+  .alpha-page > button { margin-top: 16px; }
+  .alpha-actions { gap: 8px; margin-top: 20px; padding-bottom: 24px; }
+  .alpha-actions > button { flex: 1 1 auto; }
+  .alpha-actions > :last-child { margin-left: 0; }
+  .alpha-create { padding: 20px; grid-template-columns: 1fr; }
+  .alpha-create > * { grid-column: 1; }
+  .alpha-create > button { justify-self: stretch; }
+  .alpha-invite summary { align-items: start; flex-direction: column; gap: 10px; padding-block: 16px; }
+  .alpha-invite-state { gap: 12px; }
+  .alpha-invite form { grid-template-columns: 1fr; }
+  .alpha-invite form > * { grid-column: 1; }
+  .alpha-invite dl { gap: 8px 12px; font-size: 12px; }
+  .alpha-once { padding: 20px; }
+  .alpha-nav summary { min-height: 44px; display: flex; align-items: center; font-size: 12px; }
+  .alpha-nav button { font-size: 12px; padding: 4px 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .alpha-ui button { transition: none; } }

@@ -57,6 +57,46 @@ describe('printer drivers', () => {
       assert.equal(await createPrinterApi(printerOf('moonraker', mock.port)).test(), 'Moonraker v0.9.0-mock on mockhost, Klipper ready');
     });
 
+    test('missing Moonraker API ports default to 7125 and explicit ports are preserved', async (t) => {
+      useGateway(gateway);
+      const savedFetch = globalThis.fetch;
+      const savedWebSocket = globalThis.WebSocket;
+      t.after(() => { globalThis.fetch = savedFetch; globalThis.WebSocket = savedWebSocket; });
+      const urls = [];
+      globalThis.fetch = async url => {
+        urls.push(url);
+        return new Response(JSON.stringify({ result: { software_version: 'mock', hostname: 'mock', klippy_state: 'ready' } }));
+      };
+      globalThis.WebSocket = class {
+        constructor(url) { urls.push(url); }
+        close() {}
+      };
+      for (const [address, scheme, host] of [
+        ['printer.test', 'http', 'printer.test:7125'],
+        ['http://printer.test', 'http', 'printer.test:7125'],
+        ['https://printer.test', 'https', 'printer.test:7125'],
+        ['[::1]', 'http', '[::1]:7125'],
+        ['http://printer.test:80', 'http', 'printer.test'],
+        ['https://printer.test:443', 'https', 'printer.test'],
+        ['printer.test:8080/api', 'http', 'printer.test:8080/api']
+      ]) {
+        for (const use_gateway of [false, true]) {
+          urls.length = 0;
+          const printer = printerOf('moonraker', 1, { print_host: address, use_gateway });
+          const api = createPrinterApi(printer);
+          await api.test();
+          const stop = api.connect(() => {}, () => {});
+          stop();
+          const wsScheme = scheme === 'https' ? 'wss' : 'ws';
+          assert.deepEqual(urls, [
+            `/_printer/${scheme}/${host}/server/info`, `/_printer/${scheme}/${host}/printer/info`,
+            `${gateway.wsUrl}/_printer/${wsScheme}/${host}/websocket`
+          ], address);
+          assert.equal(printer.print_host, address, 'saved address is not mutated');
+        }
+      }
+    });
+
     test('Snapmaker RFID materials preserve tool numbers, unknown spools, black colors and live unloads', async () => {
       const snap = await startMockMoonraker({ filamentStatus: {
         filament_detect: { info: [
@@ -414,7 +454,7 @@ describe('printer drivers', () => {
     test('test() succeeds with the right access code and explains a wrong one', async () => {
       useGateway(bambuGateway);
       // The bridge answers a connection test once the printer sends a report.
-      const api = createPrinterApi(bambu());
+      const api = createPrinterApi(bambu({ use_gateway: false })); // Legacy direct flag still uses the server.
       const printer = mqtt.connect({ protocol: 'mqtt', host: '127.0.0.1', port: brokerPort, username: 'bblp', password: '12345678' });
       await new Promise((resolve) => printer.on('connect', resolve));
       const timer = setInterval(() => printer.publish(`device/${SERIAL}/report`, JSON.stringify({ print: { gcode_state: 'IDLE' } })), 100);
@@ -425,10 +465,5 @@ describe('printer drivers', () => {
       await assert.rejects(createPrinterApi(bambu({ printhost_apikey: 'wrong' })).test(), /./);
     });
 
-    test('needs the gateway', async () => {
-      useGateway(gateway);
-      const w = watch(createPrinterApi(bambu({ use_gateway: false })));
-      assert.match(w.errors[0], /need the app server gateway/);
-    });
   });
 });

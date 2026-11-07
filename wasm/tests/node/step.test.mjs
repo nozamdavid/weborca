@@ -1,3 +1,10 @@
+// STEP import against the OCCT-free main engine.
+//
+// STEP files are tessellated by the standalone module (wasm/step, built by
+// wasm/scripts/build_step_module.sh) and handed to the engine as a packed mesh
+// through the loadStepMesh op, which is what the app does in its STEP worker.
+// The engine under test has no STEP reader (SLIC3R_WITH_OCCT=OFF).
+
 import test, { describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,21 +18,35 @@ const repoRoot = path.resolve(__dirname, '../../..');
 
 const modulePath = process.env.ORCA_ENGINE_MODULE
   ? path.resolve(process.env.ORCA_ENGINE_MODULE)
-  : path.join(
-      repoRoot,
-      'wasm',
-      'build',
-      'orca-step-runtime',
-      'wasm',
-      'engine',
-      'orca_engine.mjs'
-    );
+  : path.join(repoRoot, 'wasm', 'build', 'orca-wasm64', 'wasm', 'engine', 'orca_engine.mjs');
+
+const stepModulePath = process.env.ORCA_STEP_MODULE
+  ? path.resolve(process.env.ORCA_STEP_MODULE)
+  : path.join(repoRoot, 'wasm', 'build', 'step-module', 'step_tessellate.mjs');
 
 const bundleDir = path.join(repoRoot, 'wasm', 'build', 'tests-node');
 const scratchDir = path.join(bundleDir, 'scratch');
 
+const LINEAR_DEFLECTION = 0.003;
+const ANGLE_DEFLECTION = 0.5;
+
 describe('Orca WASM STEP Import & Slicing Suite', () => {
   let core;
+  let stepModule;
+
+  // Same call sequence as wasm/web/step-worker.js. Returns the packed mesh or throws the module's error.
+  function tessellate(bytes, linear = LINEAR_DEFLECTION, angle = ANGLE_DEFLECTION) {
+    stepModule.FS.writeFile('/in.step', new Uint8Array(bytes));
+    const error = stepModule.step_tessellate_to_file('/in.step', linear, angle, false, '/out.bin');
+    if (error) throw new Error(error);
+    return stepModule.FS.readFile('/out.bin');
+  }
+
+  function fixtureBytes(name) {
+    const fixturePath = path.join(repoRoot, 'tests', 'data', name);
+    assert.ok(fs.existsSync(fixturePath), `Fixture must exist: ${fixturePath}`);
+    return fs.readFileSync(fixturePath);
+  }
 
   before(async () => {
     fs.mkdirSync(scratchDir, { recursive: true });
@@ -41,8 +62,10 @@ describe('Orca WASM STEP Import & Slicing Suite', () => {
       });
     }
 
-    if (!fs.existsSync(modulePath)) {
-      throw new Error(`Target engine module does not exist: ${modulePath}`);
+    for (const required of [modulePath, stepModulePath]) {
+      if (!fs.existsSync(required)) {
+        throw new Error(`Required module does not exist: ${required}`);
+      }
     }
 
     const mod = await import(modulePath);
@@ -59,6 +82,8 @@ describe('Orca WASM STEP Import & Slicing Suite', () => {
 
     await core.call('init', { resourcesDir: '/resources', dataDir: '/data' });
     await core.call('loadVendors', {});
+
+    stepModule = await (await import(stepModulePath)).default();
   });
 
   after(() => {
@@ -68,13 +93,12 @@ describe('Orca WASM STEP Import & Slicing Suite', () => {
   });
 
   test('STEP fixture with UTF-8 part names loads with valid objects and finite positive bounds', async () => {
-    const fixturePath = path.join(repoRoot, 'tests', 'data', 'utf8_part_names.step');
-    assert.ok(fs.existsSync(fixturePath), `Fixture must exist: ${fixturePath}`);
-    const fixtureBytes = fs.readFileSync(fixturePath);
+    const packed = tessellate(fixtureBytes('utf8_part_names.step'));
 
-    const loadRes = await core.loadModel('utf8_part_names.step', fixtureBytes);
-    assert.ok(loadRes && Array.isArray(loadRes.objects), 'loadModel must return objects array');
-    assert.ok(loadRes.objects.length > 0, 'Loaded model must contain at least one object');
+    const loadRes = await core.loadStepMesh('utf8_part_names.step', packed, { replace: true });
+    assert.ok(loadRes && Array.isArray(loadRes.objects), 'loadStepMesh must return objects array');
+    assert.equal(loadRes.objects.length, 1, 'A STEP file becomes one object');
+    assert.equal(loadRes.objects[0].name, 'utf8_part_names.step', 'Object is named after the STEP file');
 
     for (const obj of loadRes.objects) {
       assert.ok(obj.volumes > 0, `Object ${obj.id} must have non-empty volumes`);
@@ -90,18 +114,16 @@ describe('Orca WASM STEP Import & Slicing Suite', () => {
     const volumes = tree.objects[0].volumes;
     assert.equal(volumes.length, 3, 'Object must contain 3 volumes');
     const volumeNames = volumes.map(v => v.name);
-    assert.ok(volumeNames.includes('pi\u00e8ce'), 'Volume names must preserve UTF-8 part name pièce');
-    assert.ok(volumeNames.includes('Geh\u00e4use'), 'Volume names must preserve UTF-8 part name Gehäuse');
+    assert.ok(volumeNames.includes('pièce'), 'Volume names must preserve UTF-8 part name pièce');
+    assert.ok(volumeNames.includes('Gehäuse'), 'Volume names must preserve UTF-8 part name Gehäuse');
     assert.ok(volumeNames.includes('bracket'), 'Volume names must preserve ASCII part name bracket');
   });
 
   test('STEP fixture with security classification loads and slices producing non-empty G-code', async () => {
-    const fixturePath = path.join(repoRoot, 'tests', 'data', 'security_classification.step');
-    assert.ok(fs.existsSync(fixturePath), `Fixture must exist: ${fixturePath}`);
-    const fixtureBytes = fs.readFileSync(fixturePath);
+    const packed = tessellate(fixtureBytes('security_classification.step'));
 
-    const loadRes = await core.loadModel('security_classification.step', fixtureBytes);
-    assert.ok(loadRes && Array.isArray(loadRes.objects), 'loadModel must return objects array');
+    const loadRes = await core.loadStepMesh('security_classification.step', packed, { replace: true });
+    assert.ok(loadRes && Array.isArray(loadRes.objects), 'loadStepMesh must return objects array');
     assert.ok(loadRes.objects.length > 0, 'Loaded model must contain at least one object');
 
     const obj = loadRes.objects[0];
@@ -130,102 +152,129 @@ describe('Orca WASM STEP Import & Slicing Suite', () => {
     assert.ok(sliceRes.gcode && sliceRes.gcode.length > 0, 'output G-code must be non-empty');
   });
 
+  test('loadStepMesh appends by default and replaces with replace: true', async () => {
+    const packed = tessellate(fixtureBytes('security_classification.step'));
+    await core.loadStepMesh('first.step', packed, { replace: true });
+    const single = await core.call('listObjects', {});
+    assert.equal(single.length, 1, 'replace: true leaves only the imported object');
+
+    const added = await core.loadStepMesh('second.step', packed);
+    assert.equal(added.objects.length, 1);
+    assert.equal(added.objects[0].name, 'second.step');
+    const two = await core.call('listObjects', {});
+    assert.equal(two.length, 2, 'append keeps the existing object');
+    assert.ok(two.every(o => o.instances.length > 0), 'Every object has an instance');
+
+    await core.loadStepMesh('third.step', packed, { replace: true });
+    const replaced = await core.call('listObjects', {});
+    assert.equal(replaced.length, 1, 'replace: true discards the previous objects');
+
+    assert.throws(() => core.readFile('/models/third.step.stm'), 'The packed hand-off file is removed after import');
+  });
+
   test('Malformed STEP input is rejected cleanly without corrupting engine state', async () => {
-    // First load a known good object as baseline state
-    const validPath = path.join(repoRoot, 'tests', 'data', 'security_classification.step');
-    const validBytes = fs.readFileSync(validPath);
-    const initialRes = await core.loadModel('baseline.step', validBytes);
-    assert.ok(initialRes.objects.length > 0, 'Baseline object must load');
+    const validBytes = fixtureBytes('security_classification.step');
+    await core.loadStepMesh('baseline.step', tessellate(validBytes), { replace: true });
 
     const beforeObjects = await core.call('listObjects', {});
     assert.ok(Array.isArray(beforeObjects) && beforeObjects.length > 0, 'Baseline objects must exist');
 
-    // Attempt to load malformed STEP payload
+    // The STEP module rejects a malformed STEP payload; nothing reaches the engine.
     const malformedBytes = Buffer.from('ISO-10303-21;\nHEADER;\nCORRUPT_PAYLOAD_GARBAGE;\nENDSEC;\nDATA;\nEND-ISO-10303-21;');
-    await assert.rejects(
-      core.loadModel('malformed.step', malformedBytes),
-      (err) => {
-        assert.ok(err instanceof Error, 'Rejection should produce an Error');
-        return true;
-      },
-      'Malformed STEP load must reject'
-    );
+    assert.throws(() => tessellate(malformedBytes), (err) => {
+      assert.ok(err instanceof Error, 'Rejection should produce an Error');
+      return true;
+    }, 'Malformed STEP must be rejected by the module');
+    // The module stays usable after a rejected file.
+    assert.ok(tessellate(validBytes).length > 8, 'Module still tessellates after a malformed file');
+
+    // The engine rejects damaged packed meshes in both replace modes and keeps its model.
+    const good = Buffer.from(tessellate(validBytes));
+    const badMagic = Buffer.from(good);
+    badMagic.write('XXXX', 0, 'latin1');
+    const badIndex = Buffer.from(good);
+    {
+      // The last u32 of the file is the final triangle index; point it past the vertex count.
+      badIndex.writeUInt32LE(0xfffffff0, badIndex.length - 4);
+    }
+    const damaged = {
+      'bad magic': badMagic,
+      'truncated': good.subarray(0, good.length - 7),
+      'trailing bytes': Buffer.concat([good, Buffer.from([1, 2, 3])]),
+      'index out of range': badIndex,
+      'empty': Buffer.alloc(0),
+      'no solids': Buffer.from([0x53, 0x54, 0x4d, 0x31, 0, 0, 0, 0])
+    };
+    for (const [label, bytes] of Object.entries(damaged)) {
+      for (const replace of [true, false]) {
+        await assert.rejects(
+          core.loadStepMesh('damaged.step', bytes, { replace }),
+          (err) => {
+            assert.ok(err instanceof Error, 'Rejection should produce an Error');
+            assert.match(err.message, /STEP mesh|no valid shape/i);
+            return true;
+          },
+          `${label} packed mesh (replace=${replace}) must reject`
+        );
+        const after = await core.call('listObjects', {});
+        assert.deepEqual(after, beforeObjects, `Objects must remain intact after rejected ${label} import (replace=${replace})`);
+      }
+    }
 
     // Verify engine remains responsive and unaffected
     const config = await core.call('getConfig', {});
     assert.ok(config && typeof config === 'object', 'getConfig must succeed after rejected load');
 
-    // Verify original objects remain intact after failed loadModel
-    const afterLoadFailObjects = await core.call('listObjects', {});
-    assert.deepEqual(afterLoadFailObjects, beforeObjects, 'Original objects must remain intact after failed loadModel');
-
-    // Also verify addModel with malformed file rejects and leaves objects intact
-    await assert.rejects(
-      core.call('addModel', { path: '/models/malformed.step' }),
-      (err) => {
-        assert.ok(err instanceof Error, 'Rejection should produce an Error');
-        return true;
-      },
-      'Malformed STEP addModel must reject'
-    );
-
-    const afterAddFailObjects = await core.call('listObjects', {});
-    assert.deepEqual(afterAddFailObjects, beforeObjects, 'Original objects must remain intact after failed addModel');
+    // The OCCT-free engine refuses STEP files given directly, with a readable error.
+    for (const op of ['loadModel', 'addModel']) {
+      core.writeFile('/models/direct.step', validBytes);
+      await assert.rejects(
+        core.call(op, { path: '/models/direct.step' }),
+        (err) => {
+          assert.match(err.message, /STEP format is not supported in this build/);
+          return true;
+        },
+        `${op} of a STEP file must explain that the engine has no STEP reader`
+      );
+      assert.deepEqual(await core.call('listObjects', {}), beforeObjects, `Objects must remain intact after rejected ${op}`);
+    }
   });
 
   test('STEP deflection options reject non-positive and non-finite values while keeping project intact', async () => {
-    const validPath = path.join(repoRoot, 'tests', 'data', 'security_classification.step');
-    const validBytes = fs.readFileSync(validPath);
-    await core.loadModel('baseline_deflection.step', validBytes);
+    const validBytes = fixtureBytes('security_classification.step');
+    await core.loadStepMesh('baseline_deflection.step', tessellate(validBytes), { replace: true });
 
     const baselineObjects = await core.call('listObjects', {});
     assert.ok(Array.isArray(baselineObjects) && baselineObjects.length > 0, 'Baseline objects must exist');
 
-    const invalidOptions = [
-      { linear_deflection: 0 },
-      { linear_deflection: -0.01 },
-      { linearDeflection: -1 },
-      { linear_deflection: 'invalid' },
-      { angle_deflection: 0 },
-      { angle_deflection: -0.5 },
-      { angleDeflection: -2 },
-      { angle_deflection: 'invalid' }
+    // Deflection bounds are enforced by the STEP module now; the engine never sees a rejected import.
+    const invalidDeflections = [
+      [0, ANGLE_DEFLECTION],
+      [-0.01, ANGLE_DEFLECTION],
+      [Number.NaN, ANGLE_DEFLECTION],
+      [Number.POSITIVE_INFINITY, ANGLE_DEFLECTION],
+      [LINEAR_DEFLECTION, 0],
+      [LINEAR_DEFLECTION, -0.5],
+      [LINEAR_DEFLECTION, Number.NaN],
+      [LINEAR_DEFLECTION, Number.NEGATIVE_INFINITY]
     ];
 
-    for (const opt of invalidOptions) {
-      await assert.rejects(
-        core.call('loadModel', { path: '/models/baseline_deflection.step', ...opt }),
+    for (const [linear, angle] of invalidDeflections) {
+      assert.throws(
+        () => tessellate(validBytes, linear, angle),
         (err) => {
           assert.ok(err instanceof Error);
           assert.match(err.message, /(linear_deflection|angle_deflection) must be a positive finite number/);
           return true;
         },
-        `loadModel with option ${JSON.stringify(opt)} must reject`
+        `tessellate with deflections ${linear}/${angle} must reject`
       );
-
-      const afterLoad = await core.call('listObjects', {});
-      assert.deepEqual(afterLoad, baselineObjects, `Project objects must remain intact after failed loadModel with ${JSON.stringify(opt)}`);
-
-      await assert.rejects(
-        core.call('addModel', { path: '/models/baseline_deflection.step', ...opt }),
-        (err) => {
-          assert.ok(err instanceof Error);
-          assert.match(err.message, /(linear_deflection|angle_deflection) must be a positive finite number/);
-          return true;
-        },
-        `addModel with option ${JSON.stringify(opt)} must reject`
-      );
-
-      const afterAdd = await core.call('listObjects', {});
-      assert.deepEqual(afterAdd, baselineObjects, `Project objects must remain intact after failed addModel with ${JSON.stringify(opt)}`);
+      assert.deepEqual(await core.call('listObjects', {}), baselineObjects,
+        `Project objects must remain intact after rejected deflections ${linear}/${angle}`);
     }
 
     // Verify valid custom deflection values succeed
-    const validCustomRes = await core.call('loadModel', {
-      path: '/models/baseline_deflection.step',
-      linear_deflection: 0.005,
-      angle_deflection: 0.4
-    });
+    const validCustomRes = await core.loadStepMesh('custom_deflection.step', tessellate(validBytes, 0.005, 0.4), { replace: true });
     assert.ok(validCustomRes && Array.isArray(validCustomRes.objects) && validCustomRes.objects.length > 0);
   });
 });

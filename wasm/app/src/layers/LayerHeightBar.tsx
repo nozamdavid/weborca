@@ -7,6 +7,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { useLayersStore } from './layersStore';
 import type { LayerEditAction } from './types';
 import { useTranslation } from "../i18n";
+import { useObjectListStore } from "../objectlist/objectListStore";
 
 export const LayerHeightBar: React.FC = () => {
     const { t } = useTranslation();
@@ -125,6 +126,31 @@ export const LayerHeightBar: React.FC = () => {
       ctx.stroke();
     }
 
+    // Draw height range modifiers if defined for this object
+    const objectRanges = useObjectListStore.getState().objects.find((o) => o.id === profileData.objectId)?.layerRanges;
+    if (objectRanges && objectRanges.length > 0) {
+      objectRanges.forEach((r) => {
+        const topY = zToY(Math.min(objectHeight, r.maxZ));
+        const botY = zToY(Math.max(0, r.minZ));
+        const bandH = Math.max(2, botY - topY);
+        ctx.fillStyle = 'rgba(0, 150, 136, 0.25)';
+        ctx.fillRect(margin.left, topY, plotW, bandH);
+        ctx.strokeStyle = '#009688';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(margin.left, topY, plotW, bandH);
+
+        const rangeH = parseFloat(r.config?.layer_height || '0');
+        if (rangeH > 0) {
+          const rx = hToX(rangeH);
+          ctx.strokeStyle = '#00e5ff';
+          ctx.beginPath();
+          ctx.moveTo(rx, topY);
+          ctx.lineTo(rx, botY);
+          ctx.stroke();
+        }
+      });
+    }
+
     // Draw profile curve
     if (profile && profile.length >= 4) {
       ctx.strokeStyle = '#22c55e';
@@ -226,8 +252,8 @@ export const LayerHeightBar: React.FC = () => {
       id="layer-height-tool"
       className="layer-height-tool"
       style={{
-        position: 'fixed',
-        top: 120,
+        position: 'absolute',
+        top: 'var(--tool-panel-top, 64px)',
         right: 16,
         background: 'rgba(24, 24, 27, 0.95)',
         backdropFilter: 'blur(12px)',
@@ -236,7 +262,7 @@ export const LayerHeightBar: React.FC = () => {
         padding: '12px 14px',
         color: 'var(--text-color)',
         width: 250,
-        maxHeight: 'calc(100vh - 136px)',
+        maxHeight: 'calc(100% - var(--tool-panel-top, 64px) - var(--plate-actions-clearance, 16px))',
         overflowY: 'auto',
         fontSize: '0.82rem',
         boxShadow: '0 12px 36px rgba(0, 0, 0, 0.5)',

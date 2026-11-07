@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -76,12 +77,8 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     } catch {}
 
     // Wait for app ready
-    await page.waitForFunction(() => {
-      const v = document.getElementById('vendor-select');
-      return v && v.options.length > 1;
-    }, null, { timeout: 15000 });
 
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
 
     await page.waitForFunction(() => {
       const p = document.getElementById('printer-select');
@@ -278,7 +275,7 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     await page.waitForSelector('[data-testid="printer-dialog"]', { state: 'hidden', timeout: 5000 });
 
     // 2. Bambu Lab X1 Carbon: scan_first_layer visible
-    await page.selectOption('#vendor-select', 'BBL');
+    await selectAddedPrinter(page, 'BBL');
     await page.waitForFunction(() => {
       const p = document.getElementById('printer-select');
       return p && !p.disabled && Array.from(p.options).some((o) => o.value === 'Bambu Lab X1 Carbon 0.4 nozzle');
@@ -301,7 +298,7 @@ async function runBrowserSettingsSuite(browserType, browserName) {
     await page.waitForSelector('[data-testid="printer-dialog"]', { state: 'hidden', timeout: 5000 });
 
     // Switch back to Voron
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.waitForFunction(() => {
       const p = document.getElementById('printer-select');
       return p && !p.disabled && Array.from(p.options).some((o) => o.value === 'Voron 2.4 300 0.4 nozzle');
@@ -340,11 +337,7 @@ async function runBrowserSettingsSuite(browserType, browserName) {
       await page.click('#recovery-discard');
       await page.waitForSelector('#recovery-dialog', { state: 'detached' });
     } catch {}
-    await page.waitForFunction(() => {
-      const v = document.getElementById('vendor-select');
-      return v && v.options.length > 1;
-    }, null, { timeout: 15000 });
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.waitForFunction(() => {
       const p = document.getElementById('printer-select');
       return p && !p.disabled && Array.from(p.options).some((o) => o.value === 'Voron 2.4 300 0.4 nozzle');
@@ -543,7 +536,7 @@ async function main() {
   console.log('================================================================================\n');
 
   try {
-    await startServer(PORT, 'settings');
+    await startServer(PORT, 'settings', { frozenDist: true });
 
     const chromiumResults = await runBrowserSettingsSuite(chromium, 'chromium');
     const firefoxResults = await runBrowserSettingsSuite(firefox, 'firefox');

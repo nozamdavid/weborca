@@ -122,13 +122,22 @@ export class OrcaEngine {
     const worker = new Worker(merged.workerUrl, { type: 'module' });
     const engine = new OrcaEngine(worker, merged);
 
-    await engine._call('init', {
-      moduleUrl: merged.moduleUrl,
-      profilesUrl: merged.profilesUrl,
-      threads: merged.threads
-    });
-
-    return engine;
+    const abort = () => engine.dispose();
+    options.signal?.addEventListener('abort', abort, { once: true });
+    try {
+      if (options.signal?.aborted) abort();
+      await engine._call('init', {
+        moduleUrl: merged.moduleUrl,
+        profilesUrl: merged.profilesUrl,
+        threads: merged.threads
+      }, { onProgress: options.onProgress });
+      return engine;
+    } catch (error) {
+      engine.dispose();
+      throw error;
+    } finally {
+      options.signal?.removeEventListener('abort', abort);
+    }
   }
 
   /**
@@ -335,6 +344,19 @@ export class OrcaEngine {
     if (bytes instanceof ArrayBuffer) { payload = new Uint8Array(bytes); transfer = [bytes]; }
     else if (bytes.buffer) { transfer = [bytes.buffer]; }
     return await this._call('writeFile', { path, bytes: payload }, { transfer });
+  }
+
+  /**
+   * Imports the packed mesh produced by the lazily loaded STEP module
+   * (wasm/step, `STM1` format). The engine itself has no STEP reader.
+   * @param {string} fileName Name of the original STEP file (becomes the object name)
+   * @param {Uint8Array|ArrayBuffer} packed
+   * @param {{ replace?: boolean }} [options] `replace` replaces the model like loadModel; default appends like addModel
+   * @returns {Promise<{ objects: Array<{ id: number, name: string, instances: number, volumes: number, size: [number, number, number] }> }>}
+   */
+  async loadStepMesh(fileName, packed, { replace = false } = {}) {
+    const bytes = packed instanceof ArrayBuffer ? new Uint8Array(packed) : packed;
+    return await this._call('loadStepMesh', { fileName, bytes, replace }, { transfer: [bytes.buffer] });
   }
 
   async addModel(fileName, bytes, options = {}) {

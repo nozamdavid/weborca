@@ -1,7 +1,7 @@
 import { useCompareStore } from '../settings/ComparePresetsDialog';
 import { useWizardStore } from '../wizard';
 import { confirmDialog } from '../components/ModalBackdrop';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useCalibrationStore } from '../calibration/calibrationStore';
 import { useInputShapingStore } from '../calibration/inputShapingStore';
 import { useOtherCalibrationStore } from '../calibration/otherCalibrationStore';
@@ -24,6 +24,7 @@ import { usePrefsStore } from '../prefs/prefsStore';
 import { usePreviewStore } from '../preview/previewStore';
 import { useTranslation } from "../i18n";
 import { AutosaveStatus } from './AutosaveStatus';
+import { rovingKeyDown, useRovingFocus } from '../components/rovingFocus';
 
 export type TabId = 'prepare' | 'preview' | 'device' | 'calibration';
 
@@ -53,15 +54,33 @@ const Menu: React.FC<{
 }> = ({ label, entries, openMenu, setOpenMenu }) => {
     const { t } = useTranslation();
   const open = openMenu === label;
+  const menuRef = useRef<HTMLDivElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+  useRovingFocus(popupRef, open);
+  useLayoutEffect(() => {
+    const popup = popupRef.current;
+    const menu = menuRef.current;
+    if (!open || !popup || !menu) return;
+    const place = () => {
+      const anchor = menu.getBoundingClientRect();
+      popup.style.maxHeight = `${Math.max(40, innerHeight - anchor.bottom - 8)}px`;
+      popup.style.left = `${Math.max(8 - anchor.left, Math.min(0, innerWidth - popup.offsetWidth - 8 - anchor.left))}px`;
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(popup);
+    window.addEventListener('resize', place);
+    return () => { observer.disconnect(); window.removeEventListener('resize', place); };
+  }, [open]);
   const positionSubmenu = (event: React.SyntheticEvent<HTMLDivElement>) => {
     const popup = event.currentTarget.querySelector<HTMLElement>('.menu-subpopup');
     if (!popup) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    popup.style.left = `${Math.max(4, Math.min(rect.right, window.innerWidth - popup.offsetWidth - 8))}px`;
+    popup.style.left = `${Math.max(4, rect.right + popup.offsetWidth <= window.innerWidth - 8 ? rect.right : rect.left - popup.offsetWidth)}px`;
     popup.style.top = `${Math.max(4, Math.min(rect.top, window.innerHeight - popup.scrollHeight - 8))}px`;
   };
   return (
-    <div className={`menu ${open ? 'open' : ''}`} onMouseEnter={() => openMenu && setOpenMenu(label)}>
+    <div ref={menuRef} className={`menu ${open ? 'open' : ''}`} onMouseEnter={() => openMenu && setOpenMenu(label)}>
       <button
         className="menu-label"
         aria-haspopup="menu"
@@ -71,24 +90,35 @@ const Menu: React.FC<{
         {label}
       </button>
       {open && (
-        <div className="menu-popup" role="menu">
+        <div ref={popupRef} className="menu-popup ds-menu" role="menu" onKeyDown={(event) => {
+          if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setOpenMenu(null); menuRef.current?.querySelector('button')?.focus(); }
+          else if (event.key === 'ArrowRight') {
+            const item = event.target as HTMLElement;
+            const popup = item.parentElement?.querySelector<HTMLElement>('.menu-subpopup');
+            if (popup) { event.preventDefault(); event.stopPropagation(); popup.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus(); }
+          }
+          else rovingKeyDown(event);
+        }}>
           {entries.map((e, i) => {
-            if (e === 'sep') return <div className="menu-sep" key={i} />;
+            if (e === 'sep') return <div className="menu-sep ds-menu__sep" role="separator" key={i} />;
             if (e.submenu) {
               return (
-                <div key={e.label} className="menu-item menu-submenu" role="menuitem" aria-haspopup="true" tabIndex={0}
+                <div key={e.label} className="menu-submenu"
                   onMouseEnter={positionSubmenu} onFocus={positionSubmenu}>
+                  <button type="button" className="menu-item ds-menu__item" role="menuitem" aria-haspopup="menu" onClick={(event) => event.currentTarget.parentElement?.querySelector<HTMLButtonElement>('.menu-subpopup button:not(:disabled)')?.focus()}>
                   <span>{e.label}</span>
                   <span className="submenu-arrow">▶</span>
-                  <div className="menu-subpopup" role="menu">
+                  </button>
+                  <div className="menu-subpopup ds-menu" role="menu" onKeyDown={rovingKeyDown}>
                     {e.submenu.map((sub, si) => (
                       <button
                         key={sub.label + si}
-                        className="menu-item"
+                        className="menu-item ds-menu__item"
                         role="menuitem"
                         disabled={sub.disabled}
                         onClick={() => {
                           setOpenMenu(null);
+                          menuRef.current?.querySelector('button')?.focus();
                           sub.onClick?.();
                         }}
                       >
@@ -104,28 +134,21 @@ const Menu: React.FC<{
               <button
                 key={e.label}
                 id={e.id}
-                className={`menu-item ${isCheckbox ? 'menu-item-checkbox' : ''}`}
+                className={`menu-item ds-menu__item ${isCheckbox ? 'menu-item-checkbox' : ''}`}
                 role={isCheckbox ? 'menuitemcheckbox' : 'menuitem'}
                 aria-checked={e.checked}
                 disabled={e.disabled}
                 onClick={() => {
                   setOpenMenu(null);
+                  menuRef.current?.querySelector('button')?.focus();
                   e.onClick?.();
                 }}
               >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span className="menu-item-label">
                   {isCheckbox ? (
                     <span
                       className="menu-check"
                       aria-hidden="true"
-                      style={{
-                        display: 'inline-block',
-                        width: 14,
-                        textAlign: 'center',
-                        color: 'var(--accent-color)',
-                        fontWeight: 'bold',
-                        fontSize: 12
-                      }}
                     >
                       {e.checked ? '✓' : ''}
                     </span>
@@ -149,6 +172,14 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
     const { t } = useTranslation();
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const barRef = useRef<HTMLElement>(null);
+  const menusRef = useRef<HTMLDetailsElement>(null);
+  useLayoutEffect(() => {
+    const wide = window.matchMedia('(min-width: 1200px)');
+    const arrange = () => { if (menusRef.current) menusRef.current.open = wide.matches; };
+    arrange();
+    wide.addEventListener('change', arrange);
+    return () => wide.removeEventListener('change', arrange);
+  }, []);
   const fileInput = useRef<HTMLInputElement>(null);
   const projectFileInput = useRef<HTMLInputElement>(null);
   const gcodeFileInput = useRef<HTMLInputElement>(null);
@@ -243,6 +274,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest?.('[role="dialog"], [role="alertdialog"], [role="menu"]')) return;
       if ((e.target as HTMLElement | null)?.closest?.('input, textarea, select')) {
         return;
       }
@@ -592,15 +624,30 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
   return (
     <header className="topbar" ref={barRef}>
       <div className="topbar-left">
-        <div className="topbar-logo">
+        <div className="topbar-logo" title={t("OrcaSlicer Web")}>
           <img src="/icons/OrcaSlicer.svg" alt="" />
-          {t("OrcaSlicer Web")}</div>
-        {menus.map(([label, entries]) => (
-          <Menu key={label} label={t(label)} entries={entries} openMenu={openMenu} setOpenMenu={setOpenMenu} />
-        ))}
+          <span>{t("OrcaSlicer Web")}</span></div>
+        <details ref={menusRef} className="topbar-menus" onToggle={(event) => {
+          if (!event.currentTarget.open) setOpenMenu(null);
+        }} onBlur={(event) => {
+          if (window.innerWidth < 1200 && !event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false;
+        }} onKeyDown={(event) => {
+          if (window.innerWidth < 1200 && event.key === 'Escape' && !openMenu) {
+            event.preventDefault();
+            event.currentTarget.open = false;
+            event.currentTarget.querySelector('summary')?.focus();
+          }
+        }}>
+          <summary>{t('More')}</summary>
+          <div className="topbar-menu-items">
+            {menus.map(([label, entries]) => (
+              <Menu key={label} label={t(label)} entries={entries} openMenu={openMenu} setOpenMenu={setOpenMenu} />
+            ))}
+          </div>
+        </details>
       </div>
 
-      <nav className="tabs" role="tablist">
+      <nav className="tabs ds-tabs" role="tablist" aria-label={t('OrcaSlicer Web')}>
         {TABS.map((tab) => (
           <button
             key={tab.id}
@@ -608,7 +655,15 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
             data-testid={`tab-${tab.id}`}
             role="tab"
             aria-selected={activeTab === tab.id}
-            className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            className={`tab ds-tab ${activeTab === tab.id ? 'active' : ''}`}
+            onKeyDown={(event) => {
+              const index = TABS.findIndex(item => item.id === tab.id);
+              const next = event.key === 'ArrowRight' ? (index + 1) % TABS.length : event.key === 'ArrowLeft' ? (index + TABS.length - 1) % TABS.length : event.key === 'Home' ? 0 : event.key === 'End' ? TABS.length - 1 : -1;
+              if (next < 0) return;
+              event.preventDefault(); setActiveTab(TABS[next].id);
+              document.getElementById(`tab-${TABS[next].id}`)?.focus();
+            }}
             onClick={() => setActiveTab(tab.id)}
           >
             {t(tab.label)}
@@ -617,13 +672,14 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
       </nav>
 
       <div className="topbar-right">
+        {import.meta.env.VITE_ALPHA_GATE_ENABLED === '1' && <div data-alpha-access-slot />}
         <AutosaveStatus />
         <input
           type="file"
           id="project-file-input"
           data-testid="project-file-input"
           ref={projectFileInput}
-          style={{ display: 'none' }}
+          hidden
           accept=".3mf"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -636,7 +692,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           id="model-file"
           data-testid="model-file"
           ref={fileInput}
-          style={{ display: 'none' }}
+          hidden
           accept=".stl,.obj,.3mf,.amf,.step,.stp,.svg,.zip"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -649,7 +705,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           id="gcode-file-input"
           data-testid="gcode-file-input"
           ref={gcodeFileInput}
-          style={{ display: 'none' }}
+          hidden
           accept=".gcode"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -658,7 +714,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           }}
         />
         <button
-          className="icon-btn"
+          className="ds-icon-btn icon-btn"
           id="import-btn"
           title={t("Import model (Ctrl+I)")}
           aria-label={t("Import model")}
@@ -668,7 +724,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           <ImportIcon />
         </button>
         <button
-          className="icon-btn"
+          className="ds-icon-btn icon-btn"
           id="undo-btn"
           data-testid="undo-btn"
           title={t("Undo (Ctrl+Z)")}
@@ -679,7 +735,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           <UndoIcon />
         </button>
         <button
-          className="icon-btn"
+          className="ds-icon-btn icon-btn"
           id="redo-btn"
           data-testid="redo-btn"
           title={t("Redo (Ctrl+Y)")}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { create } from 'zustand';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { useTranslation } from "../i18n";
 
 export const useHelpStore = create<{ dialog: 'about' | 'shortcuts' | null; open: (d: 'about' | 'shortcuts') => void; close: () => void }>((set) => ({
@@ -45,8 +45,8 @@ export const HelpDialogs: React.FC = () => {
   const { dialog, close } = useHelpStore();
   if (!dialog) return null;
   return (
-    <ModalBackdrop onClose={close} role="dialog" aria-label={dialog === 'about' ? 'About' : 'Keyboard shortcuts'}>
-      <div className="modal-content" style={{ width: 'min(520px, 92vw)' }} onClick={(e) => e.stopPropagation()}>
+    <Dialog onClose={close} role="dialog" aria-label={t(dialog === "about" ? "About" : "Keyboard shortcuts")}>
+      <div className="modal-content ds-dialog" onClick={(e) => e.stopPropagation()}>
         {dialog === 'about' ? (
           <>
             <h3 style={{ marginBottom: 8 }}>{t("OrcaSlicer Web")}</h3>
@@ -79,10 +79,10 @@ export const HelpDialogs: React.FC = () => {
           </>
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-          <button className="btn btn-primary" onClick={close}>
+          <button className="ds-btn ds-btn--primary" onClick={close}>
             {t("Close")}</button>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

@@ -1,10 +1,11 @@
+import './ManagePresetsDialog.css';
 import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { PresetInheritance } from './PresetInheritance';
 import type { PresetKind, ConflictStrategy } from './types';
 import { exportPresetBundle, downloadPresetBundle, BUNDLE_BOUNDARY_NOTE } from './presetBundle';
 import { exportDesktopPresetsZip, downloadBinaryArchive } from './presetArchive';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from "../components/Dialog";
 import { useTranslation } from "../i18n";
 
 export const ManagePresetsDialog: React.FC = () => {
@@ -260,22 +261,15 @@ export const ManagePresetsDialog: React.FC = () => {
   };
 
   return (
-    <ModalBackdrop onClose={closeManagePresetsDialog} data-testid="manage-presets-dialog">
+    <Dialog className="ds-scrim" role="dialog" aria-modal="true" aria-label={t("Manage Presets")} onClose={closeManagePresetsDialog} data-testid="manage-presets-dialog">
       <div
-        className="modal-box preset-modal"
-        style={{
-          width: 580,
-          maxWidth: '92vw',
-          maxHeight: '88vh',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
+        className="ds-dialog manage-presets-panel"
       >
-        <div className="modal-header">
-          <div className="modal-title">{t("Manage Presets")}</div>
+        <div className="ds-dialog__head">
+          <h2 className="ds-title ds-title--dialog">{t("Manage Presets")}</h2>
           <button
             type="button"
-            className="modal-close-btn"
+            className="ds-icon-btn"
             data-testid="manage-preset-close-btn"
             onClick={closeManagePresetsDialog}
             aria-label={t("Close Manage Presets dialog")}
@@ -286,11 +280,7 @@ export const ManagePresetsDialog: React.FC = () => {
 
         {/* Kind Tabs */}
         <div
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid var(--control-bg)',
-            background: 'var(--panel-bg)'
-          }}
+          className="manage-presets-panel__tabs"
         >
           {(['process', 'filament', 'printer'] as PresetKind[]).map((k) => (
             <button
@@ -299,78 +289,42 @@ export const ManagePresetsDialog: React.FC = () => {
               data-testid={`manage-tab-${k}`}
               disabled={isSelectingPreset}
               onClick={() => handleKindChange(k)}
-              style={{
-                flex: 1,
-                padding: '8px 12px',
-                background: activeKind === k ? 'var(--canvas-bg)' : 'transparent',
-                color: activeKind === k ? '#38bdf8' : 'var(--text-muted)',
-                border: 'none',
-                borderBottom: activeKind === k ? '2px solid #38bdf8' : 'none',
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: '0.85rem',
-                textTransform: 'capitalize'
-              }}
+              className={["ds-btn managepresets-dialog__button-38", (activeKind === k  ? "managepresets-dialog__state-32" : "managepresets-dialog__state-33"), (activeKind === k  ? "managepresets-dialog__state-34" : "managepresets-dialog__state-35"), (activeKind === k  ? "managepresets-dialog__state-36" : "managepresets-dialog__state-37")].join(" ")}
             >
-              {k} {t("Presets")}</button>
+              {t(k.charAt(0).toUpperCase() + k.slice(1))} {t("Presets")}</button>
           ))}
         </div>
 
         <div
-          className="modal-body"
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 14,
-            padding: 16
-          }}
+          className="ds-dialog__body managepresets-dialog__row-31"
         >
           {error && (
             <div
-              className="preset-error-banner"
               data-testid="preset-error-msg"
-              style={{
-                color: '#f87171',
-                background: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                borderRadius: 4,
-                padding: '8px 12px',
-                fontSize: '0.85rem'
-              }}
+              className="preset-error-banner managepresets-dialog__card-30"
             >
-              {error}
+              {t(error)}
             </div>
           )}
 
           {successMsg && (
             <div
-              className="preset-success-banner"
               data-testid="preset-success-msg"
-              style={{
-                color: '#4ade80',
-                background: 'rgba(74, 222, 128, 0.15)',
-                border: '1px solid rgba(74, 222, 128, 0.3)',
-                borderRadius: 4,
-                padding: '8px 12px',
-                fontSize: '0.85rem'
-              }}
+              className="preset-success-banner managepresets-dialog__card-29"
             >
-              {successMsg}
+              {t(successMsg)}
             </div>
           )}
 
           <PresetInheritance kind={activeKind} name={selectedPreset} />
           {/* Preset Selector / List */}
-          <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label htmlFor="manage-preset-target-select" style={{ fontSize: '0.85rem', color: 'var(--text-color)', fontWeight: 500 }}>
+          <div className="form-group managepresets-dialog__row-12">
+            <label htmlFor="manage-preset-target-select" className="managepresets-dialog__label-28">
               {t("Select Preset to Manage:")}</label>
             <select
               id="manage-preset-target-select"
               data-testid="manage-preset-select"
               disabled={isSelectingPreset}
-              className="form-control"
               value={selectedPreset}
               onChange={(e) => {
                 setSelectedPreset(e.target.value);
@@ -378,14 +332,7 @@ export const ManagePresetsDialog: React.FC = () => {
                 setSuccessMsg(null);
                 setRenameName(e.target.value);
               }}
-              style={{
-                background: 'var(--panel-bg)',
-                color: 'var(--text-color)',
-                border: '1px solid var(--border-color)',
-                padding: '6px 10px',
-                borderRadius: 4,
-                fontSize: '0.9rem'
-              }}
+              className="ds-input managepresets-dialog__select-27"
             >
               {currentUserPresets.length > 0 && (
                 <optgroup label={t("User Presets (Editable)")}>
@@ -405,38 +352,29 @@ export const ManagePresetsDialog: React.FC = () => {
                 </optgroup>
               )}
             </select>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <div className="managepresets-dialog__label-5">
               {t("Status:")}{' '}
               {isSelectedUserPreset ? (
-                <span style={{ color: '#38bdf8', fontWeight: 500 }}>{t("User Preset (Customizable)")}</span>
+                <span className="managepresets-dialog__span-26">{t("User Preset (Customizable)")}</span>
               ) : (
-                <span style={{ color: '#eab308', fontWeight: 500 }}>{t("System Preset (Read-Only)")}</span>
+                <span className="managepresets-dialog__span-25">{t("System Preset (Read-Only)")}</span>
               )}
             </div>
           </div>
 
           {/* Duplicate Section */}
           <div
-            style={{
-              background: 'var(--panel-bg)',
-              padding: 12,
-              borderRadius: 6,
-              border: '1px solid var(--control-bg)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8
-            }}
+            className="managepresets-dialog__row-24"
           >
-            <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-color)' }}>
+            <div className="managepresets-dialog__div-15">
               {t("Duplicate Preset")}</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              {t("Create an editable copy of")}<strong>{selectedPreset || 'selected preset'}</strong> {t("preserving all base values.")}</div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="managepresets-dialog__label-5">
+              {t("Create an editable copy of")}<strong>{selectedPreset || t('Preset')}</strong> {t("preserving all base values.")}</div>
+            <div className="managepresets-dialog__row-23">
               <input
                 type="text"
                 data-testid="duplicate-preset-input"
                 disabled={isSelectingPreset}
-                className="form-control"
                 placeholder={t("Name for duplicate copy...")}
                 value={duplicateName}
                 onChange={(e) => {
@@ -444,23 +382,14 @@ export const ManagePresetsDialog: React.FC = () => {
                   if (error) setError(null);
                   if (successMsg) setSuccessMsg(null);
                 }}
-                style={{
-                  flex: 1,
-                  background: 'var(--canvas-bg)',
-                  color: '#fff',
-                  border: '1px solid var(--border-color)',
-                  padding: '5px 8px',
-                  borderRadius: 4,
-                  fontSize: '0.85rem'
-                }}
+                className="ds-input managepresets-dialog__input-22"
               />
               <button
                 type="button"
-                className="btn btn-primary"
                 data-testid="duplicate-preset-confirm-btn"
                 disabled={isSelectingPreset || !duplicateName.trim()}
                 onClick={handleDuplicate}
-                style={{ whiteSpace: 'nowrap' }}
+                className="ds-btn ds-btn--primary managepresets-dialog__button-21"
               >
                 {t("Duplicate")}</button>
             </div>
@@ -469,26 +398,17 @@ export const ManagePresetsDialog: React.FC = () => {
           {/* Rename Section (User presets only) */}
           {isSelectedUserPreset && (
             <div
-              style={{
-                background: 'var(--panel-bg)',
-                padding: 12,
-                borderRadius: 6,
-                border: '1px solid var(--control-bg)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8
-              }}
+              className="managepresets-dialog__row-24"
             >
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-color)' }}>
+              <div className="managepresets-dialog__div-15">
                 {t("Rename User Preset")}</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              <div className="managepresets-dialog__label-5">
                 {t("Change the name of")}<strong>{selectedPreset}</strong>{t(". Active selection will be retained.")}</div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className="managepresets-dialog__row-23">
                 <input
                   type="text"
                   data-testid="rename-preset-input"
                   disabled={isSelectingPreset}
-                  className="form-control"
                   placeholder={t("New preset name...")}
                   value={renameName}
                   onChange={(e) => {
@@ -496,23 +416,14 @@ export const ManagePresetsDialog: React.FC = () => {
                     if (error) setError(null);
                     if (successMsg) setSuccessMsg(null);
                   }}
-                  style={{
-                    flex: 1,
-                    background: 'var(--canvas-bg)',
-                    color: '#fff',
-                    border: '1px solid var(--border-color)',
-                    padding: '5px 8px',
-                    borderRadius: 4,
-                    fontSize: '0.85rem'
-                  }}
+                  className="ds-input managepresets-dialog__input-22"
                 />
                 <button
                   type="button"
-                  className="btn btn-secondary"
                   data-testid="rename-preset-confirm-btn"
                   disabled={isSelectingPreset || !renameName.trim() || renameName.trim() === selectedPreset}
                   onClick={handleRename}
-                  style={{ whiteSpace: 'nowrap' }}
+                  className="ds-btn managepresets-dialog__button-21"
                 >
                   {t("Rename")}</button>
               </div>
@@ -522,25 +433,16 @@ export const ManagePresetsDialog: React.FC = () => {
           {/* Delete Section (User presets only) */}
           {isSelectedUserPreset && (
             <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '8px 12px',
-                background: 'rgba(239, 68, 68, 0.08)',
-                border: '1px solid rgba(239, 68, 68, 0.2)',
-                borderRadius: 6
-              }}
+              className="managepresets-dialog__row-20"
             >
-              <div style={{ fontSize: '0.82rem', color: '#fca5a5' }}>
+              <div className="managepresets-dialog__div-19">
                 {t("Delete this user preset permanently")}</div>
               <button
                 type="button"
-                className="btn btn-danger"
                 data-testid="delete-preset-confirm-btn"
                 disabled={isSelectingPreset}
                 onClick={handleDelete}
-                style={{ fontSize: '0.82rem', padding: '4px 10px' }}
+                className="ds-btn ds-btn--danger managepresets-dialog__button-18"
               >
                 {t("Delete Preset")}</button>
             </div>
@@ -548,88 +450,68 @@ export const ManagePresetsDialog: React.FC = () => {
 
           {/* Preset Bundles Section */}
           <div
-            style={{
-              background: 'var(--panel-bg)',
-              padding: 12,
-              borderRadius: 6,
-              border: '1px solid var(--control-bg)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 10
-            }}
+            className="managepresets-dialog__row-17"
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-              <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-color)' }}>
+            <div className="managepresets-dialog__row-16">
+              <div className="managepresets-dialog__div-15">
                 {t("Preset Bundles & Archives (Import & Export)")}</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <div className="managepresets-dialog__row-14">
                 <button
                   type="button"
-                  className="btn btn-secondary"
                   data-testid="export-bundle-btn"
                   disabled={isSelectingPreset}
                   onClick={handleExportBundle}
-                  style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                  className="ds-btn managepresets-dialog__button-13"
                   aria-label={t("Export all user presets to bundle JSON")}
                 >
                   {t("Export Bundle JSON")}</button>
                 <button
                   type="button"
-                  className="btn btn-secondary"
                   data-testid="export-desktop-printer-btn"
                   onClick={() => handleExportArchive('printer')}
                   disabled={isSelectingPreset || activeKind !== 'printer' || !isSelectedUserPreset}
-                  style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                  className="ds-btn managepresets-dialog__button-13"
                   aria-label={t("Export printer preset archive")}
                 >
                   {t("Export .orca_printer")}</button>
                 <button
                   type="button"
-                  className="btn btn-secondary"
                   data-testid="export-desktop-filament-btn"
                   onClick={() => handleExportArchive('filament')}
                   disabled={isSelectingPreset || activeKind !== 'filament' || !isSelectedUserPreset}
-                  style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                  className="ds-btn managepresets-dialog__button-13"
                   aria-label={t("Export filament preset archive")}
                 >
                   {t("Export .orca_filament")}</button>
                 <button
                   type="button"
-                  className="btn btn-secondary"
                   data-testid="export-desktop-zip-btn"
                   disabled={isSelectingPreset}
                   onClick={handleExportZipArchive}
-                  style={{ fontSize: '0.78rem', padding: '4px 8px' }}
+                  className="ds-btn managepresets-dialog__button-13"
                   aria-label={t("Export all presets as zip archive")}
                 >
                   {t("Export .zip")}</button>
               </div>
             </div>
 
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            <div className="managepresets-dialog__label-5">
               {t("Import and export presets in native OrcaSlicer formats (.orca_printer, .orca_filament, .zip, .json, .ini) or web bundles. System presets remain immutable.")}</div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="managepresets-dialog__row-12">
               <label
                 htmlFor="bundle-conflict-strategy"
-                style={{ fontSize: '0.8rem', color: 'var(--text-color)', fontWeight: 500 }}
+                className="managepresets-dialog__label-11"
               >
                 {t("Conflict Resolution Strategy for Existing Presets:")}</label>
               <select
                 id="bundle-conflict-strategy"
                 data-testid="bundle-conflict-strategy"
                 disabled={isSelectingPreset}
-                className="form-control"
                 value={conflictStrategy}
                 onChange={(e) => setConflictStrategy(e.target.value as ConflictStrategy)}
                 aria-label={t("Conflict resolution strategy")}
-                style={{
-                  background: 'var(--canvas-bg)',
-                  color: '#fff',
-                  border: '1px solid var(--border-color)',
-                  padding: '5px 8px',
-                  borderRadius: 4,
-                  fontSize: '0.85rem'
-                }}
+                className="ds-input managepresets-dialog__select-10"
               >
                 <option value="overwrite">{t("Overwrite existing presets")}</option>
                 <option value="rename">{t("Rename imported presets on conflict")}</option>
@@ -637,7 +519,7 @@ export const ManagePresetsDialog: React.FC = () => {
               </select>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div className="managepresets-dialog__row-9">
               <input
                 type="file"
                 ref={fileInputRef}
@@ -647,24 +529,23 @@ export const ManagePresetsDialog: React.FC = () => {
                 accept=".json,.ini,.zip,.orca_printer,.orca_filament,.orca_bundle,application/json"
                 onChange={handleFileImport}
                 aria-label={t("Import preset bundle file")}
-                style={{ display: 'none' }}
+                className="managepresets-dialog__input-8"
               />
               <button
                 type="button"
-                className="btn btn-primary"
                 data-testid="import-bundle-btn"
                 disabled={isSelectingPreset}
                 onClick={() => fileInputRef.current?.click()}
-                style={{ fontSize: '0.85rem', padding: '6px 12px' }}
+                className="ds-btn ds-btn--primary managepresets-dialog__button-7"
                 aria-label={t("Choose preset bundle or archive file to import")}
               >
                 {t("Import Archive / Preset File...")}</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="managepresets-dialog__row-6">
               <label
                 htmlFor="bundle-json-textarea"
-                style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}
+                className="managepresets-dialog__label-5"
               >
                 {t("Or paste bundle JSON, preset JSON, or INI directly:")}</label>
               <textarea
@@ -679,48 +560,34 @@ export const ManagePresetsDialog: React.FC = () => {
                   if (error) setError(null);
                   if (successMsg) setSuccessMsg(null);
                 }}
-                className="form-control"
-                style={{
-                  width: '100%',
-                  minHeight: 60,
-                  maxHeight: 120,
-                  background: 'var(--canvas-bg)',
-                  color: '#fff',
-                  border: '1px solid var(--border-color)',
-                  padding: '6px 8px',
-                  borderRadius: 4,
-                  fontSize: '0.8rem',
-                  fontFamily: 'monospace',
-                  resize: 'vertical'
-                }}
+                className="ds-input managepresets-dialog__textarea-4"
               />
               <button
                 type="button"
-                className="btn btn-secondary"
                 data-testid="import-bundle-json-btn"
                 disabled={isSelectingPreset || !bundleJsonText.trim()}
                 onClick={handleJsonImport}
-                style={{ alignSelf: 'flex-start', fontSize: '0.8rem', padding: '4px 10px' }}
+                className="ds-btn managepresets-dialog__button-3"
               >
                 {t("Import Pasted Content")}</button>
             </div>
 
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', fontStyle: 'italic', marginTop: 2 }}>
+            <div className="managepresets-dialog__div-2">
               {t("Supported formats: .orca_printer, .orca_filament, .zip, .json, .ini (")}{BUNDLE_BOUNDARY_NOTE})
             </div>
           </div>
         </div>
 
-        <div className="modal-footer" style={{ borderTop: '1px solid var(--control-bg)', padding: 12 }}>
+        <div className="ds-dialog__foot managepresets-dialog__div-1">
           <button
             type="button"
-            className="btn btn-secondary"
+            className="ds-btn"
             data-testid="manage-preset-done-btn"
             onClick={closeManagePresetsDialog}
           >
             {t("Done")}</button>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

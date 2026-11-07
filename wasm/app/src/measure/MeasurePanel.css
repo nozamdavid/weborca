@@ -1,0 +1,198 @@
+.measure-panel {
+  position: absolute;
+  top: var(--tool-panel-top, 64px);
+  max-height: calc(100% - var(--tool-panel-top, 64px) - var(--plate-actions-clearance, 16px));
+  overflow-y: auto;
+  right: var(--canvas-inset, 24px);
+  width: 280px;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-2);
+  z-index: var(--z-panel, 100);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  color: var(--text-primary);
+  font-family: var(--font-sans, inherit);
+  backdrop-filter: blur(8px);
+}
+
+.measure-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.measure-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.measure-close-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--text-md);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.measure-close-btn:hover {
+  color: var(--text-primary);
+  background: var(--control-bg-hover);
+}
+
+.measure-snap-bar {
+  display: flex;
+  gap: var(--space-1);
+  background: var(--surface-2);
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.measure-snap-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  height: var(--ctl-h-sm);
+  cursor: pointer;
+  padding: 0 var(--space-1);
+  transition: all var(--dur-fast) var(--ease-standard);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.measure-snap-btn:hover {
+  color: var(--text-primary);
+  background: var(--control-bg-hover);
+}
+
+.measure-snap-btn[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: 500;
+}
+
+.measure-hint {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.measure-error {
+  font-size: var(--text-xs);
+  color: var(--danger-fg);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  line-height: 1.4;
+}
+
+.measure-selection-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+}
+
+.measure-selection-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.measure-feature-tag {
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: capitalize;
+}
+
+.measure-result-grid {
+  font-size: var(--text-sm);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.measure-result-grid span {
+  color: var(--text-secondary);
+}
+
+.measure-result-grid b,
+.measure-result-grid span.measure-val {
+  color: var(--text-primary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.measure-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.measure-btn-reset {
+  flex: 1;
+  height: var(--ctl-h);
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--ctl-radius);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--dur-fast) var(--ease-standard);
+}
+
+.measure-btn-reset:hover {
+  background: var(--control-bg-hover);
+  border-color: var(--border-strong);
+}
+
+@media (max-width: 800px) {
+  .measure-panel {
+    right: 12px;
+    width: min(320px, calc(100vw - 24px));
+    padding: var(--space-3);
+  }
+
+  .measure-snap-btn {
+    height: var(--ctl-h);
+    font-size: var(--text-sm);
+  }
+
+  .measure-btn-reset {
+    height: var(--ctl-h);
+    font-size: var(--text-sm);
+  }
+
+  .measure-close-btn {
+    min-width: var(--ctl-h);
+    min-height: var(--ctl-h);
+  }
+}

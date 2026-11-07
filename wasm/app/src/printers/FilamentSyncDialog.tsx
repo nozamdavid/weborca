@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../i18n';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { useAppStore } from '../store/appStore';
 import { usePrinterConnectionStore } from './connectionStore';
 import type { PrinterFilament } from './types';
@@ -36,8 +36,8 @@ const SyncEditor: React.FC<{ slots: PrinterFilament[]; onClose: () => void }> = 
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
-  return <ModalBackdrop onClose={() => { if (!busy) onClose(); }} role="dialog" aria-label={t("Sync printer filaments")}>
-    <div className="modal-content" style={{ maxWidth: 620 }}>
+  return <Dialog onClose={() => { if (!busy) onClose(); }} role="dialog" aria-label={t("Sync printer filaments")}>
+    <div className="modal-content ds-dialog">
       <h2>{t("Sync printer filaments")}</h2>
       <p>{t("Match each loaded printer slot to a compatible slicer preset. This updates the project and saved device setup.")}</p>
       {slots.map((slot, i) => <label key={slot.id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -48,10 +48,10 @@ const SyncEditor: React.FC<{ slots: PrinterFilament[]; onClose: () => void }> = 
         </select>
       </label>)}
       {error && <p role="alert">{error}</p>}
-      <div className="modal-footer"><button className="btn btn-secondary" disabled={busy} onClick={onClose}>{t("Cancel")}</button>
-        <button id="sync-filaments-apply" className="btn btn-primary" disabled={busy || choices.some((c) => !c)} onClick={() => void apply()}>{t("Sync")}</button></div>
+      <div className="modal-footer ds-dialog__foot"><button className="ds-btn" disabled={busy} onClick={onClose}>{t("Cancel")}</button>
+        <button id="sync-filaments-apply" className="ds-btn ds-btn--primary" disabled={busy || choices.some((c) => !c)} onClick={() => void apply()}>{t("Sync")}</button></div>
     </div>
-  </ModalBackdrop>;
+  </Dialog>;
 };
 
 export const FilamentSyncButton: React.FC = () => {
@@ -60,6 +60,6 @@ export const FilamentSyncButton: React.FC = () => {
   const busy = useAppStore((s) => !s.isEngineReady || s.isSlicing || s.isModelLoading || s.isSelectingPreset);
   const [open, setOpen] = useState(false);
   if (!slots?.length) return null;
-  return <><button id="sync-printer-filaments" className="btn btn-secondary" disabled={busy} onClick={() => setOpen(true)}>{t("Sync printer filaments...")}</button>
+  return <><button id="sync-printer-filaments" className="ds-btn" disabled={busy} onClick={() => setOpen(true)}>{t("Sync printer filaments...")}</button>
     {open && <SyncEditor slots={slots.filter((slot, i) => (slot.slotIndex ?? i) < 16).slice(0, 16)} onClose={() => setOpen(false)} />}</>;
 };

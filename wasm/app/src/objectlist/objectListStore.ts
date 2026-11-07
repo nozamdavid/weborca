@@ -3,14 +3,18 @@ import { getEngine } from '../engine/orcaEngine';
 import { usePlateStore } from '../plate/plateStore';
 import { useAppStore } from '../store/appStore';
 import { useHistoryStore } from '../history';
-import type { ObjectTreeNode, AddVolumeParams } from './types';
+import type { ObjectTreeNode, AddVolumeParams, VolumeType, LayerRangeTreeNode } from './types';
+import { placeAddedVolume } from '../plate/volumePlacement';
+import { syncLayerRangesToEngine, validateRangeBounds } from './layerRangeSync';
 
 
 async function refreshVolumeGeometry(objectId: number) {
   const plate = usePlateStore.getState();
   const cache = new Map(plate.meshCache);
+  const viewerCache = new Map(plate.viewerMeshCache);
   cache.delete(objectId);
-  usePlateStore.setState({ meshCache: cache });
+  viewerCache.delete(objectId);
+  usePlateStore.setState({ meshCache: cache, viewerMeshCache: viewerCache });
   await plate.refreshObjects();
   useAppStore.getState().invalidateSlicePreview();
 }
@@ -19,12 +23,13 @@ export interface ObjectListState {
   objects: ObjectTreeNode[];
   selectedObjectId: number | null;
   selectedVolumeId: number | null;
+  selectedRangeIndex: number | null;
   isLoading: boolean;
   error: string | null;
 
   // Actions
   refreshTree: () => Promise<ObjectTreeNode[]>;
-  selectItem: (objectId: number | null, volumeId?: number | null) => void;
+  selectItem: (objectId: number | null, volumeId?: number | null, rangeIndex?: number | null) => void;
   addVolume: (params: AddVolumeParams) => Promise<number>;
   deleteVolume: (objectId: number, volumeId: number) => Promise<void>;
   deleteObject: (objectId: number) => Promise<void>;
@@ -47,9 +52,31 @@ export interface ObjectListState {
     volumeId: number,
     extruder: number
   ) => Promise<void>;
+  setVolumeType: (
+    objectId: number,
+    volumeId: number,
+    type: VolumeType
+  ) => Promise<void>;
+
   setObjectExtruder: (
     objectId: number,
     extruder: number
+  ) => Promise<void>;
+
+  // Layer range actions
+  addLayerRange: (objectId: number, minZ?: number, maxZ?: number) => Promise<void>;
+  deleteLayerRange: (objectId: number, rangeIndex: number) => Promise<void>;
+  deleteAllLayerRanges: (objectId: number) => Promise<void>;
+  editLayerRange: (objectId: number, rangeIndex: number, newMinZ: number, newMaxZ: number) => Promise<void>;
+  setLayerRangeConfig: (
+    objectId: number,
+    rangeIndex: number,
+    options: Record<string, string>
+  ) => Promise<{ errors: Array<{ key: string; error: string }> }>;
+  resetLayerRangeConfig: (
+    objectId: number,
+    rangeIndex: number,
+    keys?: string[]
   ) => Promise<void>;
 }
 
@@ -57,6 +84,7 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
   objects: [],
   selectedObjectId: null,
   selectedVolumeId: null,
+  selectedRangeIndex: null,
   isLoading: false,
   error: null,
 
@@ -76,11 +104,12 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
       // Auto-select first object if nothing selected
       const currentSelected = get().selectedObjectId;
       if (currentSelected === null && objects.length > 0) {
-        set({ selectedObjectId: objects[0].id, selectedVolumeId: null });
+        set({ selectedObjectId: objects[0].id, selectedVolumeId: null, selectedRangeIndex: null });
       } else if (currentSelected !== null && !objects.some((o) => o.id === currentSelected)) {
         set({
           selectedObjectId: objects.length > 0 ? objects[0].id : null,
-          selectedVolumeId: null
+          selectedVolumeId: null,
+          selectedRangeIndex: null
         });
       }
 
@@ -91,8 +120,8 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
     }
   },
 
-  selectItem: (objectId: number | null, volumeId: number | null = null) => {
-    set({ selectedObjectId: objectId, selectedVolumeId: volumeId });
+  selectItem: (objectId: number | null, volumeId: number | null = null, rangeIndex: number | null = null) => {
+    set({ selectedObjectId: objectId, selectedVolumeId: volumeId, selectedRangeIndex: rangeIndex });
     if (objectId !== null) {
       const plateStore = usePlateStore.getState();
       if (plateStore.selectedObjectId !== objectId) {
@@ -112,10 +141,12 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
         res = await engine.call('addVolume', params);
       }
       const volumeId = res.volumeId || res.id;
+      // Imports bypass this creation action and retain their assembly geometry.
+      if (params.offset === undefined) await placeAddedVolume(params.objectId, volumeId);
       await refreshVolumeGeometry(params.objectId);
       await get().refreshTree();
       // Select newly added volume
-      set({ selectedObjectId: params.objectId, selectedVolumeId: volumeId });
+      set({ selectedObjectId: params.objectId, selectedVolumeId: volumeId, selectedRangeIndex: null });
       try {
         await useHistoryStore.getState().commitTransaction('Add volume');
       } catch (_) {}
@@ -155,7 +186,7 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
       const plateStore = usePlateStore.getState();
       await plateStore.deleteObject(objectId);
       if (get().selectedObjectId === objectId) {
-        set({ selectedObjectId: null, selectedVolumeId: null });
+        set({ selectedObjectId: null, selectedVolumeId: null, selectedRangeIndex: null });
       }
       await get().refreshTree();
     } catch (err: any) {
@@ -334,6 +365,31 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
     }
   },
 
+  setVolumeType: async (
+    objectId: number,
+    volumeId: number,
+    type: VolumeType
+  ) => {
+    try {
+      set({ isLoading: true, error: null });
+      const engine = await getEngine();
+      if (typeof (engine as any).setVolumeType === 'function') {
+        await (engine as any).setVolumeType({ objectId, volumeId, type });
+      } else {
+        await engine.call('setVolumeType', { objectId, volumeId, type });
+      }
+      await refreshVolumeGeometry(objectId);
+      await get().refreshTree();
+      get().selectItem(objectId, volumeId);
+      try {
+        await useHistoryStore.getState().commitTransaction('Change part type');
+      } catch (_) {}
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to set volume type' });
+      throw err;
+    }
+  },
+
   setObjectExtruder: async (
     objectId: number,
     extruder: number
@@ -359,6 +415,273 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
       set({ error: err.message || 'Failed to set object extruder' });
       throw err;
     }
+  },
+
+  addLayerRange: async (objectId: number, minZ?: number, maxZ?: number) => {
+    try {
+      set({ error: null });
+      const { objects } = get();
+      const objIndex = objects.findIndex((o) => o.id === objectId);
+      if (objIndex === -1) throw new Error('Object not found');
+
+      const targetObj = objects[objIndex];
+      const existingRanges = [...(targetObj.layerRanges || [])].sort((a, b) => a.minZ - b.minZ);
+
+      // Determine object height
+      const plateObj = usePlateStore.getState().objects.find((o) => o.id === objectId);
+      const objHeight = plateObj?.size?.[2] || 20.0;
+
+      let newMinZ = minZ;
+      let newMaxZ = maxZ;
+
+      if (newMinZ === undefined || newMaxZ === undefined) {
+        if (existingRanges.length === 0) {
+          newMinZ = 0;
+          newMaxZ = Math.min(2.0, objHeight);
+        } else {
+          // Look for gaps between ranges
+          let gapFound = false;
+          let candidateMin = 0;
+          for (const r of existingRanges) {
+            if (r.minZ - candidateMin >= 0.05) {
+              newMinZ = candidateMin;
+              newMaxZ = Math.min(r.minZ, candidateMin + 2.0);
+              gapFound = true;
+              break;
+            }
+            candidateMin = Math.max(candidateMin, r.maxZ);
+          }
+          if (!gapFound) {
+            const lastMax = existingRanges[existingRanges.length - 1].maxZ;
+            if (lastMax < objHeight - 0.01) {
+              newMinZ = lastMax;
+              newMaxZ = Math.min(lastMax + 2.0, objHeight);
+            } else {
+              const lastRange = existingRanges[existingRanges.length - 1];
+              const span = lastRange.maxZ - lastRange.minZ;
+              const mid = Number((lastRange.minZ + span / 2).toFixed(2));
+              lastRange.maxZ = mid;
+              newMinZ = mid;
+              newMaxZ = Number((mid + span / 2).toFixed(2));
+            }
+          }
+        }
+      }
+
+      newMinZ = Number(newMinZ!.toFixed(2));
+      newMaxZ = Number(newMaxZ!.toFixed(2));
+
+      const validation = validateRangeBounds(newMinZ, newMaxZ, objHeight, existingRanges);
+      if (!validation.valid) {
+        throw new Error(validation.error || 'Invalid layer range bounds');
+      }
+
+      const defaultLayerHeight = useAppStore.getState().currentConfig['layer_height'] || '0.2';
+      const newRange: LayerRangeTreeNode = {
+        minZ: newMinZ,
+        maxZ: newMaxZ,
+        config: { layer_height: defaultLayerHeight },
+        overrides: ['layer_height']
+      };
+
+      const updatedRanges = [...existingRanges, newRange].sort((a, b) => a.minZ - b.minZ);
+      const newRangeIndex = updatedRanges.findIndex((r) => r.minZ === newMinZ && r.maxZ === newMaxZ);
+
+      const updatedObjects = objects.map((o, idx) =>
+        idx === objIndex ? { ...o, layerRanges: updatedRanges } : o
+      );
+
+      set({ objects: updatedObjects, isLoading: false });
+      get().selectItem(objectId, null, newRangeIndex >= 0 ? newRangeIndex : 0);
+      try {
+        await useHistoryStore.getState().commitTransaction('Add layer range');
+      } catch (_) {}
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to add layer range' });
+      throw err;
+    }
+  },
+
+  deleteLayerRange: async (objectId: number, rangeIndex: number) => {
+    try {
+      set({ error: null });
+      const { objects } = get();
+      const objIndex = objects.findIndex((o) => o.id === objectId);
+      if (objIndex === -1) throw new Error('Object not found');
+
+      const targetObj = objects[objIndex];
+      const updatedRanges = [...(targetObj.layerRanges || [])];
+      updatedRanges.splice(rangeIndex, 1);
+
+      const updatedObjects = objects.map((o, idx) =>
+        idx === objIndex ? { ...o, layerRanges: updatedRanges } : o
+      );
+
+      const nextRangeIdx = updatedRanges.length > 0 ? Math.min(rangeIndex, updatedRanges.length - 1) : null;
+      set({ objects: updatedObjects, isLoading: false });
+      get().selectItem(objectId, null, nextRangeIdx);
+      try {
+        await useHistoryStore.getState().commitTransaction('Delete layer range');
+      } catch (_) {}
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to delete layer range' });
+      throw err;
+    }
+  },
+
+  deleteAllLayerRanges: async (objectId: number) => {
+    try {
+      set({ error: null });
+      const { objects } = get();
+      const objIndex = objects.findIndex((o) => o.id === objectId);
+      if (objIndex === -1) throw new Error('Object not found');
+
+      const updatedObjects = objects.map((o, idx) =>
+        idx === objIndex ? { ...o, layerRanges: [] } : o
+      );
+
+      set({ objects: updatedObjects, isLoading: false });
+      get().selectItem(objectId, null, null);
+      try {
+        await useHistoryStore.getState().commitTransaction('Clear layer ranges');
+      } catch (_) {}
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to clear layer ranges' });
+      throw err;
+    }
+  },
+
+  editLayerRange: async (objectId: number, rangeIndex: number, newMinZ: number, newMaxZ: number) => {
+    try {
+      set({ error: null });
+      const { objects } = get();
+      const objIndex = objects.findIndex((o) => o.id === objectId);
+      if (objIndex === -1) throw new Error('Object not found');
+
+      const targetObj = objects[objIndex];
+      const existingRanges = [...(targetObj.layerRanges || [])];
+      if (!existingRanges[rangeIndex]) throw new Error('Range not found');
+
+      const plateObj = usePlateStore.getState().objects.find((o) => o.id === objectId);
+      const objHeight = plateObj?.size?.[2] || 20.0;
+
+      const validation = validateRangeBounds(newMinZ, newMaxZ, objHeight, existingRanges, rangeIndex);
+      if (!validation.valid) {
+        throw new Error(validation.error || 'Invalid layer range bounds');
+      }
+
+      const currentConfig = { ...existingRanges[rangeIndex].config };
+      const currentOverrides = [...existingRanges[rangeIndex].overrides];
+
+      existingRanges[rangeIndex] = {
+        minZ: Number(newMinZ.toFixed(2)),
+        maxZ: Number(newMaxZ.toFixed(2)),
+        config: currentConfig,
+        overrides: currentOverrides
+      };
+
+      const sortedRanges = [...existingRanges].sort((a, b) => a.minZ - b.minZ);
+      const newIdx = sortedRanges.findIndex(
+        (r) => r.minZ === Number(newMinZ.toFixed(2)) && r.maxZ === Number(newMaxZ.toFixed(2))
+      );
+
+      const updatedObjects = objects.map((o, idx) =>
+        idx === objIndex ? { ...o, layerRanges: sortedRanges } : o
+      );
+
+      set({ objects: updatedObjects, isLoading: false });
+      get().selectItem(objectId, null, newIdx >= 0 ? newIdx : 0);
+      try {
+        await useHistoryStore.getState().commitTransaction('Edit layer range');
+      } catch (_) {}
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to edit layer range' });
+      throw err;
+    }
+  },
+
+  setLayerRangeConfig: async (objectId: number, rangeIndex: number, options: Record<string, string>) => {
+    try {
+      set({ error: null });
+      const { objects } = get();
+      const objIndex = objects.findIndex((o) => o.id === objectId);
+      if (objIndex === -1) throw new Error('Object not found');
+
+      const targetObj = objects[objIndex];
+      const ranges = [...(targetObj.layerRanges || [])];
+      if (!ranges[rangeIndex]) throw new Error('Range not found');
+
+      const updatedConfig = { ...ranges[rangeIndex].config, ...options };
+      const updatedOverrides = Object.keys(updatedConfig);
+
+      ranges[rangeIndex] = {
+        ...ranges[rangeIndex],
+        config: updatedConfig,
+        overrides: updatedOverrides
+      };
+
+      const updatedObjects = objects.map((o, idx) =>
+        idx === objIndex ? { ...o, layerRanges: ranges } : o
+      );
+
+      set({ objects: updatedObjects, isLoading: false });
+      get().selectItem(objectId, null, rangeIndex);
+      try {
+        await useHistoryStore.getState().commitTransaction('Set layer range config');
+      } catch (_) {}
+      return { errors: [] };
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to set layer range config' });
+      throw err;
+    }
+  },
+
+  resetLayerRangeConfig: async (objectId: number, rangeIndex: number, keys?: string[]) => {
+    try {
+      set({ error: null });
+      const { objects } = get();
+      const objIndex = objects.findIndex((o) => o.id === objectId);
+      if (objIndex === -1) throw new Error('Object not found');
+
+      const targetObj = objects[objIndex];
+      const ranges = [...(targetObj.layerRanges || [])];
+      if (!ranges[rangeIndex]) throw new Error('Range not found');
+
+      const defaultLayerHeight = useAppStore.getState().currentConfig['layer_height'] || '0.2';
+      let updatedConfig = { ...ranges[rangeIndex].config };
+
+      if (keys && keys.length > 0) {
+        for (const k of keys) {
+          if (k === 'layer_height') {
+            updatedConfig['layer_height'] = defaultLayerHeight;
+          } else {
+            delete updatedConfig[k];
+          }
+        }
+      } else {
+        updatedConfig = { layer_height: defaultLayerHeight };
+      }
+
+      const updatedOverrides = Object.keys(updatedConfig);
+      ranges[rangeIndex] = {
+        ...ranges[rangeIndex],
+        config: updatedConfig,
+        overrides: updatedOverrides
+      };
+
+      const updatedObjects = objects.map((o, idx) =>
+        idx === objIndex ? { ...o, layerRanges: ranges } : o
+      );
+
+      set({ objects: updatedObjects, isLoading: false });
+      get().selectItem(objectId, null, rangeIndex);
+      try {
+        await useHistoryStore.getState().commitTransaction('Reset layer range config');
+      } catch (_) {}
+    } catch (err: any) {
+      set({ isLoading: false, error: err.message || 'Failed to reset layer range config' });
+      throw err;
+    }
   }
 }));
 
@@ -376,7 +699,8 @@ queueMicrotask(() => {
     if (state.selectedObjectId !== current.selectedObjectId) {
       useObjectListStore.setState({
         selectedObjectId: state.selectedObjectId,
-        selectedVolumeId: null
+        selectedVolumeId: null,
+        selectedRangeIndex: null
       });
     }
   });

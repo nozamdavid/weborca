@@ -8,6 +8,7 @@ export interface HistorySelection {
   objectIndex?: number;
   instanceIndex?: number;
   volumeId?: number;
+  volumeIndex?: number;
 }
 
 export interface HistoryPaintState {
@@ -60,6 +61,7 @@ export interface HistorySnapshot {
   modelFileName: string | null;
   plateState?: HistoryPlateState;
   settings?: HistorySettingsState;
+  layerRanges?: { objectIndex: number; ranges: any[] }[];
 }
 
 export interface HistoryStoreState {

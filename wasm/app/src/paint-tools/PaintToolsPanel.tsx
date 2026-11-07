@@ -1,3 +1,4 @@
+import './PaintToolsPanel.css';
 import React, { useEffect } from 'react';
 import {
   usePaintToolsStore,
@@ -99,43 +100,19 @@ export const PaintToolsPanel: React.FC = () => {
   return (
     <div
       id="paint-tools-panel"
-      className="paint-tools-panel"
-      style={{
-        position: 'fixed',
-        top: 120,
-        right: 16,
-        background: 'rgba(24, 24, 27, 0.96)',
-        backdropFilter: 'blur(14px)',
-        border: '1px solid rgba(255, 255, 255, 0.15)',
-        borderRadius: 10,
-        padding: '12px 16px',
-        color: 'var(--text-color)',
-        width: 270,
-        maxHeight: 'calc(100vh - 136px)',
-        overflowY: 'auto',
-        fontSize: '0.85rem',
-        boxShadow: '0 16px 40px rgba(0, 0, 0, 0.6)',
-        zIndex: 45
-      }}
+      className="paint-tools-panel ds-float paint-tools-panel"
     >
       {/* Panel Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: '1.1rem' }}>{t("🖌️")}</span>
-          <strong id="paint-tools-title" style={{ fontSize: '0.95rem', color: '#38bdf8' }}>
+      <div className="paint-tools-panel__head">
+        <div className="painttools-panel__row-42">
+          <span className="painttools-panel__span-41">{t("🖌️")}</span>
+          <strong id="paint-tools-title" className="ds-title ds-title--panel paint-tools-panel__title">
             {t("Painting Tools")}</strong>
         </div>
         <button
           type="button"
           onClick={stopPainting}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            fontSize: '1rem',
-            padding: '2px 6px'
-          }}
+          className="ds-btn painttools-panel__button-39"
           title={t("Close painting tools")}
         >
           ✕
@@ -145,35 +122,28 @@ export const PaintToolsPanel: React.FC = () => {
       {error && (
         <div
           id="paint-error-banner"
-          style={{
-            background: 'rgba(239, 68, 68, 0.2)',
-            color: '#fca5a5',
-            padding: '6px 8px',
-            borderRadius: 6,
-            marginBottom: 8,
-            fontSize: '0.75rem'
-          }}
+          className="painttools-panel__card-38"
         >
-          {error}
+          {t(error)}
         </div>
       )}
 
       {volumes.length > 1 && (
-        <label style={{ display: 'block', marginBottom: 10, fontSize: '0.75rem' }}>
+        <label className="painttools-panel__label-37">
           {t("Volume")}<select id="paint-volume-select" value={selectedVolumeId ?? ''} onChange={(event) => setSelectedVolume(Number(event.target.value))}
-            style={{ display: 'block', width: '100%', marginTop: 4, background: 'var(--panel-bg)', color: '#fff' }}>
-            {volumes.map((volume) => <option key={volume.volumeId} value={volume.volumeId}>{`Volume ${volume.volumeId}`}</option>)}
+            className="ds-input painttools-panel__select-36">
+            {volumes.map((volume) => <option key={volume.volumeId} value={volume.volumeId}>{`${t('Volume')} ${volume.volumeId}`}</option>)}
           </select>
         </label>
       )}
 
       {/* Layer Tabs: Support / Seam / Color / Fuzzy */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 4 }}>{t("Layer")}</div>
+      <div className="painttools-panel__div-9">
+        <div className="painttools-panel__div-23">{t("Layer")}</div>
         <div
           role="group"
           aria-label={t("Painting Layer")}
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}
+          className="painttools-panel__grid-35"
         >
           {layers.map((l) => (
             <button
@@ -183,17 +153,7 @@ export const PaintToolsPanel: React.FC = () => {
               aria-pressed={layer === l.id}
               onClick={() => setLayer(l.id)}
               disabled={isLoading}
-              style={{
-                padding: '4px 2px',
-                background: layer === l.id ? '#0284c7' : 'var(--panel-bg)',
-                color: '#fff',
-                border: layer === l.id ? '1px solid #38bdf8' : '1px solid var(--control-bg)',
-                borderRadius: 6,
-                cursor: isLoading ? 'not-allowed' : 'pointer',
-                fontSize: '0.72rem',
-                fontWeight: 500,
-                textAlign: 'center'
-              }}
+              className={["ds-btn painttools-panel__button-34", (layer === l.id  ? "painttools-panel__state-32" : "painttools-panel__state-17"), (layer === l.id  ? "painttools-panel__state-33" : "painttools-panel__span-12"), (layer === l.id  ? "painttools-panel__state-19" : "painttools-panel__state-20"), (isLoading  ? "painttools-panel__state-2" : "painttools-panel__state-3")].join(" ")}
             >
               {l.label}
             </button>
@@ -203,11 +163,11 @@ export const PaintToolsPanel: React.FC = () => {
 
       {/* Filament Palette (Color layer only) */}
       {layer === 'color' && (
-        <div style={{ marginBottom: 10, background: 'var(--canvas-bg)', padding: '8px', borderRadius: 8 }}>
-          <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 6 }}>
-            {t("Filament Palette")}<span style={{ color: '#64748b' }}>{t("(Keys 1..9)")}</span>
+        <div className="painttools-panel__card-31">
+          <div className="painttools-panel__div-30">
+            {t("Filament Palette")}<span className="painttools-panel__span-14">{t("(Keys 1..9)")}</span>
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <div className="painttools-panel__row-29">
             {filamentColors.map((col, idx) => {
               const slot = idx + 1;
               const isSelected = activeFilament === slot;
@@ -218,24 +178,8 @@ export const PaintToolsPanel: React.FC = () => {
                   id={`filament-slot-${slot}`}
                   aria-pressed={isSelected}
                   onClick={() => setActiveFilament(slot)}
-                  title={`Filament ${slot}: ${col} (Key ${slot})`}
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: '50%',
-                    background: col,
-                    border: isSelected ? '3px solid #38bdf8' : '2px solid var(--border-color)',
-                    boxShadow: isSelected ? '0 0 8px #38bdf8' : 'none',
-                    cursor: 'pointer',
-                    color: '#fff',
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    textShadow: '0 0 3px #000',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 0
-                  }}
+                  title={ `${t('Filament')} ${slot}: ${col} (${t('(Keys 1..9)')})` }
+                  className={["ds-btn painttools-panel__button-28", (isSelected  ? "painttools-panel__state-24" : "painttools-panel__state-25"), (isSelected  ? "painttools-panel__state-26" : "painttools-panel__state-27")].join(" ")} style={{ background: col }}
                 >
                   {slot}
                 </button>
@@ -246,12 +190,12 @@ export const PaintToolsPanel: React.FC = () => {
       )}
 
       {/* Tool Choices (Circle, Sphere, Smart fill, Bucket fill, Triangle) */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 4 }}>{t("Tool")}</div>
+      <div className="painttools-panel__div-9">
+        <div className="painttools-panel__div-23">{t("Tool")}</div>
         <div
           role="group"
           aria-label={t("Painting Tool")}
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}
+          className="painttools-panel__grid-22"
         >
           {tools.map((t) => (
             <button
@@ -262,22 +206,10 @@ export const PaintToolsPanel: React.FC = () => {
               onClick={() => setTool(t.id)}
               disabled={isLoading}
               title={t.label}
-              style={{
-                padding: '6px 2px',
-                background: tool === t.id ? 'rgba(56, 189, 248, 0.25)' : 'var(--panel-bg)',
-                color: tool === t.id ? '#38bdf8' : 'var(--text-color)',
-                border: tool === t.id ? '1px solid #38bdf8' : '1px solid var(--control-bg)',
-                borderRadius: 6,
-                cursor: isLoading ? 'not-allowed' : 'pointer',
-                fontSize: '0.7rem',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 2
-              }}
+              className={["ds-btn painttools-panel__button-21", (tool === t.id  ? "painttools-panel__state-16" : "painttools-panel__state-17"), (tool === t.id  ? "painttools-panel__state-18" : "painttools-panel__span-12"), (tool === t.id  ? "painttools-panel__state-19" : "painttools-panel__state-20"), (isLoading  ? "painttools-panel__state-2" : "painttools-panel__state-3")].join(" ")}
             >
               <span>{t.icon}</span>
-              <span style={{ fontSize: '0.62rem' }}>{t.label}</span>
+              <span className="painttools-panel__span-15">{t.label}</span>
             </button>
           ))}
         </div>
@@ -285,10 +217,10 @@ export const PaintToolsPanel: React.FC = () => {
 
       {/* Brush Radius Slider (for Circle & Sphere) */}
       {(tool === 'circle' || tool === 'sphere') && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: 2 }}>
-            <span>{t("Brush Size")}<span style={{ color: '#64748b' }}>{t("(Alt+wheel)")}</span></span>
-            <span id="cursor-radius-value" style={{ color: 'var(--text-color)' }}>{cursorRadius.toFixed(2)} {t("mm")}</span>
+        <div className="painttools-panel__div-9">
+          <div className="painttools-panel__row-13">
+            <span>{t("Brush Size")}<span className="painttools-panel__span-14">{t("(Alt+wheel)")}</span></span>
+            <span id="cursor-radius-value" className="painttools-panel__span-12">{cursorRadius.toFixed(2)} {t("mm")}</span>
           </div>
           <input
             type="range"
@@ -298,17 +230,17 @@ export const PaintToolsPanel: React.FC = () => {
             step={CURSOR_RADIUS_STEP}
             value={cursorRadius}
             onChange={(e) => setCursorRadius(parseFloat(e.target.value))}
-            style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
+            className="painttools-panel__input-11"
           />
         </div>
       )}
 
       {/* Smart Fill Angle Slider (for Smart fill & Bucket) */}
       {(tool === 'smart_fill' || tool === 'bucket') && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: 2 }}>
+        <div className="painttools-panel__div-9">
+          <div className="painttools-panel__row-13">
             <span>{t("Smart Fill Angle")}</span>
-            <span id="smart-fill-angle-value" style={{ color: 'var(--text-color)' }}>{smartFillAngle}°</span>
+            <span id="smart-fill-angle-value" className="painttools-panel__span-12">{smartFillAngle}°</span>
           </div>
           <input
             type="range"
@@ -318,17 +250,17 @@ export const PaintToolsPanel: React.FC = () => {
             step={SMART_FILL_ANGLE_STEP}
             value={smartFillAngle}
             onChange={(e) => setSmartFillAngle(parseFloat(e.target.value))}
-            style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
+            className="painttools-panel__input-11"
           />
         </div>
       )}
 
       {/* Overhang Highlight Angle (Support layer only) */}
       {layer === 'support' && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#94a3b8', marginBottom: 2 }}>
+        <div className="painttools-panel__div-9">
+          <div className="painttools-panel__row-13">
             <span>{t("Highlight Overhangs")}</span>
-            <span id="overhang-angle-value" style={{ color: 'var(--text-color)' }}>{overhangAngle}°</span>
+            <span id="overhang-angle-value" className="painttools-panel__span-12">{overhangAngle}°</span>
           </div>
           <input
             type="range"
@@ -338,16 +270,16 @@ export const PaintToolsPanel: React.FC = () => {
             step={OVERHANG_ANGLE_STEP}
             value={overhangAngle}
             onChange={(e) => setOverhangAngle(parseFloat(e.target.value))}
-            style={{ width: '100%', accentColor: '#38bdf8', cursor: 'pointer' }}
+            className="painttools-panel__input-11"
           />
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', marginTop: 4, cursor: 'pointer' }}>
+          <label className="painttools-panel__label-10">
             <input
               type="checkbox"
               id="overhang-only-checkbox"
               checked={overhangOnly}
               onChange={(e) => setOverhangOnly(e.target.checked)}
-              style={{ accentColor: '#38bdf8' }}
+              className="painttools-panel__input-7"
             />
             <span>{t("On highlighted overhangs only")}</span>
           </label>
@@ -355,14 +287,14 @@ export const PaintToolsPanel: React.FC = () => {
       )}
 
       {/* Triangle Splitting Toggle */}
-      <div style={{ marginBottom: 10 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', cursor: 'pointer' }}>
+      <div className="painttools-panel__div-9">
+        <label className="painttools-panel__label-8">
           <input
             type="checkbox"
             id="triangle-splitting-checkbox"
             checked={triangleSplitting}
             onChange={(e) => setTriangleSplitting(e.target.checked)}
-            style={{ accentColor: '#38bdf8' }}
+            className="painttools-panel__input-7"
           />
           <span>{t("Triangle splitting (adaptive mesh subdivision)")}</span>
         </label>
@@ -371,15 +303,7 @@ export const PaintToolsPanel: React.FC = () => {
       {/* Controls Hint / Desktop Mapping */}
       <div
         id="paint-shortcuts-hint"
-        style={{
-          background: 'rgba(39, 39, 42, 0.6)',
-          borderRadius: 6,
-          padding: '6px 8px',
-          fontSize: '0.7rem',
-          color: 'var(--text-muted)',
-          marginBottom: 10,
-          lineHeight: '1.4'
-        }}
+        className="painttools-panel__card-6"
       >
         {layer === 'support' && (
           <>
@@ -410,40 +334,20 @@ export const PaintToolsPanel: React.FC = () => {
       </div>
 
       {/* Erase All & Done Buttons */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div className="painttools-panel__row-5">
         <button
           type="button"
           id="paint-erase-all-btn"
           onClick={clearCurrentPaint}
           disabled={isLoading}
-          style={{
-            flex: 1,
-            padding: '6px 8px',
-            background: 'rgba(239, 68, 68, 0.2)',
-            color: '#fca5a5',
-            border: '1px solid rgba(239, 68, 68, 0.4)',
-            borderRadius: 6,
-            cursor: isLoading ? 'not-allowed' : 'pointer',
-            fontSize: '0.75rem',
-            fontWeight: 500
-          }}
+          className={["ds-btn painttools-panel__button-4", (isLoading  ? "painttools-panel__state-2" : "painttools-panel__state-3")].join(" ")}
         >
           {t("Erase All")}</button>
         <button
           type="button"
           id="paint-done-btn"
           onClick={stopPainting}
-          style={{
-            flex: 1,
-            padding: '6px 8px',
-            background: '#0284c7',
-            color: '#fff',
-            border: '1px solid #38bdf8',
-            borderRadius: 6,
-            cursor: 'pointer',
-            fontSize: '0.75rem',
-            fontWeight: 500
-          }}
+          className="ds-btn painttools-panel__button-1"
         >
           {t("Done")}</button>
       </div>

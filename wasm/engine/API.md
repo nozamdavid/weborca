@@ -53,6 +53,7 @@ Jobs run strictly in submission order.
 | `setupCalibration` | `{"mode": CalibMode, "start", "end", "step", "extruder_id", "print_numbers", "nozzle_based_resize", "vfa_layer_height", "speeds": [...], "accelerations": [...], "test_model", "freqStartX", "freqEndX", "freqStartY", "freqEndY", "shaper_type", "meshes": {"<model>.drc": "<decoded STL path>"}}` | `{"ok": true}`; ports desktop `Plater::calib_*` (CalibMode 1-3 PA, 6 temperature, 7 max volumetric speed, 8 VFA, 9 retraction, 10 input shaping frequency (`start` is the damping factor), 11 input shaping damping (`start`/`end` damping, `freqStartX/Y`, `shaper_type`), 12 cornering (`start`/`end`, `test_model` 0-2)) (wasm/engine/CalibOps.cpp): replaces the plate with the calibration model, cuts and configures it like desktop, and stores the calib params `slice` applies. The engine has no Draco decoder, so the caller decodes `resources/calib/**/*.drc` to STL first. `loadModel`, `addModel` and `openProject` reset the calib mode, as desktop does on file load |
 | `parsePreset` | `{"format": "json" \| "ini", "text": "..."}` | `{"config": {key: serializedValue}, "meta": {"name", "inherits", "type", ...}, "droppedKeys": [...]}`; loads one desktop preset file with desktop's loader (`load_from_json` / `load_from_ini_string`), including legacy key migration; unknown keys are dropped; error on malformed JSON |
 | `loadModel` | `{"path": "/models/x.stl"}` | `{"objects": [{"name", "instances", "volumes", "size": [x, y, z]}]}`; replaces the current model |
+| `loadStepMesh` | `{"path": "/models/x.step.stm", "name": "x.step", "replace": false}` | `{"objects": [{"id", "name", "instances", "volumes", "size": [x, y, z]}]}`; imports the packed `STM1` mesh written by the lazily loaded STEP module (wasm/step, `step_tessellate_to_file`) and removes the file from MEMFS. Builds the model the OCCT importer built: one object named `name` (directory parts are stripped) and one volume per solid with the solid's name, each through `TriangleMesh::from_stl`, so the mesh is bit-identical to the former `loadModel` of the STEP file. `replace: true` replaces the current model like `loadModel`; the default `false` appends and centers like `addModel`. The packed file is parsed completely before the model is touched, so malformed input (bad magic, truncation, trailing bytes, non-finite positions, out-of-range indices, no solids) throws `Malformed STEP mesh: ...` / `Meshing of a model file failed or no valid shape.` and leaves the model unchanged. The engine is built with `SLIC3R_WITH_OCCT=OFF`; `loadModel`/`addModel` of a `.step`/`.stp` file throws `STEP format is not supported in this build (OCCT disabled); ...`. Packed layout (little endian): `"STM1"`, `u32 solid_count`, per solid `u32 name_length`, UTF-8 name, `u32 vertex_count`, `u32 triangle_count`, `f32 xyz[vertex_count*3]`, `u32 indices[triangle_count*3]` (wasm/step/main.cpp) |
 | `arrange` | `{}` | `{}`; centers on the bed and arranges, same as wasm/spike/slice_driver.cpp |
 | `slice` | `{"outPath": "/out/plate_1.gcode", "threads": n}` | `{"gcodePath", "gcodeBytes", "layers", "printTimeS", "filamentMm", "filamentG", "warnings": ["..."]}` |
 | `getConfigDef` | `{"keys": [...]}` (optional, all keys when absent; unknown keys are skipped) | `{key: {"type", "label", "fullLabel", "category", "tooltip", "sidetext", "mode", "min", "max", "default", "enumValues", "enumLabels", "nullable", "readonly", "multiline", "guiType", "guiFlags"}}` from `print_config_def`; unset fields are omitted, strings are untranslated. Full schema and examples: API-configdef.md |
@@ -78,6 +79,7 @@ core.writeFile(path, bytes); core.readFile(path) -> Uint8Array; core.mkdirp(path
 await core.call(op, args, { onProgress, signal }) // submit + poll every 16 ms; AbortSignal calls cancel()
 await core.addVendorBundle(bundle)                // writes a packed vendor bundle into /data/system
 await core.loadModel(fileName, bytes)             // writes /models/<fileName>, runs loadModel
+await core.loadStepMesh(fileName, packed, { replace }) // writes /models/<fileName>.stm, runs loadStepMesh
 core.dispose()
 ```
 
@@ -92,6 +94,7 @@ await engine.getConfig();
 await engine.setOptions({ layer_height: '0.2' });
 await engine.resetOptions();
 await engine.loadModel(fileName, bytes);
+await engine.loadStepMesh(fileName, packedMesh, { replace: false }); // STEP: packed mesh from the STEP module (the engine has no OCCT)
 await engine.arrange();
 const r = await engine.slice({ onProgress, signal }); // r.gcode is a Uint8Array plus the slice stats
 engine.dispose();

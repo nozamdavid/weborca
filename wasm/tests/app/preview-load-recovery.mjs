@@ -10,7 +10,10 @@ await startServer(port, 'preview-load-recovery', {
 });
 try {
   for (const browserType of [chromium, firefox]) {
-    const browser = await browserType.launch({ args: browserType === chromium ? ['--enable-unsafe-swiftshader'] : [] });
+    const browser = await browserType.launch({
+      headless: process.env.APP_TEST_HEADED !== '1',
+      args: browserType === chromium ? ['--enable-unsafe-swiftshader'] : []
+    });
     try {
       const page = await browser.newPage();
       await page.goto(`http://127.0.0.1:${port}/preview`);

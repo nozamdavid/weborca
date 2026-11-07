@@ -8,8 +8,88 @@ import type { PreviewStatistics, LegendData } from './types';
 let previewModulePromise: Promise<any> | null = null;
 let previewModule: any = null;
 let previewInstance: any = null;
+let previewGeneration = 0;
 let pendingFrame: number | null = null;
 let lowQuality = false;
+let lightingEnabled = true;
+
+export interface PreviewPerformance {
+  idle: boolean;
+  fps: number | null;
+  cpuMs: number | null;
+}
+const performanceListeners = new Set<(sample: PreviewPerformance) => void>();
+let performanceSample: PreviewPerformance = { idle: true, fps: null, cpuMs: null };
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+let burstStart = 0;
+let lastDraw: number | null = null;
+let drawCount = 0;
+let cpuTotal = 0;
+let lastPublication = 0;
+const idleDelay = 1200;
+
+function publishPerformance(sample: PreviewPerformance): void {
+  performanceSample = sample;
+  performanceListeners.forEach(listener => listener(sample));
+}
+
+function resetPerformance(): void {
+  if (idleTimer !== null) clearTimeout(idleTimer);
+  idleTimer = null;
+  lastDraw = null;
+  drawCount = 0;
+  cpuTotal = 0;
+  publishPerformance({ idle: true, fps: null, cpuMs: null });
+}
+
+/** Observation only: subscribing never requests a draw. The last observer owns cleanup. */
+export function subscribePerformance(listener: (sample: PreviewPerformance) => void): () => void {
+  performanceListeners.add(listener);
+  listener(performanceSample);
+  return () => {
+    performanceListeners.delete(listener);
+    if (!performanceListeners.size) resetPerformance();
+  };
+}
+
+export function getPerformanceSnapshot(): PreviewPerformance {
+  return performanceSample;
+}
+
+function settlePerformance(): void {
+  idleTimer = null;
+  if (lastDraw === null) return;
+  const remaining = idleDelay - (performance.now() - lastDraw);
+  if (remaining > 0) {
+    idleTimer = setTimeout(settlePerformance, remaining);
+    return;
+  }
+  lastDraw = null;
+  publishPerformance({ idle: true, fps: null, cpuMs: drawCount ? cpuTotal / drawCount : performanceSample.cpuMs });
+}
+
+function completedDraw(start: number, end: number): void {
+  // A gap above one second starts a fresh burst; sparse draws must not suggest peak refresh.
+  if (lastDraw === null || end - lastDraw > 1000) {
+    burstStart = end;
+    drawCount = 0;
+    cpuTotal = 0;
+  }
+  lastDraw = end;
+  drawCount++;
+  cpuTotal += end - start;
+  if (performanceSample.idle || end - lastPublication >= 1000) {
+    publishPerformance({ idle: false,
+      fps: drawCount > 1 && end > burstStart ? (drawCount - 1) * 1000 / (end - burstStart) : null,
+      cpuMs: cpuTotal / drawCount });
+    lastPublication = end;
+    // Keep both metrics local to the latest publication window.
+    burstStart = end;
+    drawCount = 1;
+    cpuTotal = end - start;
+  }
+  if (idleTimer === null) idleTimer = setTimeout(settlePerformance, idleDelay);
+}
 // This is a parse identity marker, not an owner of the potentially large source.
 let loadedGcode: WeakRef<Uint8Array> | null = null;
 let bedPolygon: [number, number][] | null = null;
@@ -70,7 +150,14 @@ export async function getPreviewModule(canvas?: HTMLCanvasElement): Promise<any>
 }
 
 export async function initPreview(canvas: HTMLCanvasElement): Promise<any> {
+  const generation = ++previewGeneration;
   const mod = await getPreviewModule(canvas);
+  if (generation !== previewGeneration) {
+    const error = new Error('Preview initialization canceled');
+    error.name = 'AbortError';
+    throw error;
+  }
+  resetPerformance();
   mod.canvas = canvas;
   (window as any).Module = mod;
 
@@ -80,22 +167,29 @@ export async function initPreview(canvas: HTMLCanvasElement): Promise<any> {
     } catch (_) {}
     previewInstance = null;
   }
+  (window as any).preview = null;
 
   if (!canvas.id) {
     canvas.id = 'canvas';
   }
 
   loadedGcode = null;
-  previewInstance = new mod.OrcaPreview();
-  const selector = `#${canvas.id}`;
-  const ok = previewInstance.init(selector);
-  if (!ok) {
-    throw new Error('Failed to initialize WebGL2 context on preview canvas');
-  }
+  const instance = new mod.OrcaPreview();
+  try {
+    instance.setLightingEnabled(lightingEnabled);
+    const selector = `#${canvas.id}`;
+    if (!instance.init(selector)) {
+      throw new Error('Failed to initialize WebGL2 context on preview canvas');
+    }
 
-  // Layout may size the canvas before the asynchronous native instance exists.
-  previewInstance.resize(canvas.width, canvas.height);
-  previewInstance.setLowQuality?.(lowQuality);
+    // Layout may size the canvas before the asynchronous native instance exists.
+    instance.resize(canvas.width, canvas.height);
+    instance.setLowQuality?.(lowQuality);
+  } catch (error) {
+    instance.delete();
+    throw error;
+  }
+  previewInstance = instance;
 
   // Also expose on window for automated verification and debugging
   (window as any).preview = previewInstance;
@@ -105,12 +199,15 @@ export async function initPreview(canvas: HTMLCanvasElement): Promise<any> {
 }
 
 export function disposePreview(): void {
+  ++previewGeneration;
+  resetPerformance();
   if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
   pendingFrame = null;
   previewInstance?.delete();
   previewInstance = null;
   bedPolygon = null;
   loadedGcode = null;
+  if (typeof window !== 'undefined') (window as any).preview = null;
 }
 
 export function getPreviewInstance(): any {
@@ -119,6 +216,7 @@ export function getPreviewInstance(): any {
 
 /** Discard a closed project's toolpaths while retaining the initialized viewer and bed. */
 export function clearGcode(): void {
+  resetPerformance();
   if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
   pendingFrame = null;
   previewInstance?.clearGcode();
@@ -291,12 +389,20 @@ export function setLowQuality(enabled: boolean): void {
   previewInstance?.setLowQuality?.(enabled);
 }
 
+export function setLightingEnabled(enabled: boolean): void {
+  lightingEnabled = enabled;
+  previewInstance?.setLightingEnabled(enabled);
+}
+
 export function render(): void {
   if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
   pendingFrame = null;
   if (previewInstance) {
     previewInstance.setLightTheme?.(document.documentElement.dataset.theme === 'light');
+    const measured = performanceListeners.size > 0;
+    const start = measured ? performance.now() : 0;
     previewInstance.render();
+    if (measured && performanceListeners.size > 0) completedDraw(start, performance.now());
   }
 }
 

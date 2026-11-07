@@ -1,3 +1,4 @@
+import './FlowRateModal.css';
 /**
  * @file FlowRateModal.tsx
  * Modal dialog for Flow Rate Calibration test generation and flow evaluation calculator.
@@ -6,7 +7,7 @@
 import React from 'react';
 import { useCalibrationStore } from './calibrationStore';
 import type { InfillPattern } from './types';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from "../components/Dialog";
 import { useTranslation } from "../i18n";
 
 export const FlowRateModal: React.FC = () => {
@@ -39,23 +40,16 @@ export const FlowRateModal: React.FC = () => {
   if (!isOpen) return null;
 
   return (
-    <ModalBackdrop onClose={closeDialog} data-testid="calibration-dialog" id="calibration-dialog">
+    <Dialog className="ds-scrim" role="dialog" aria-modal="true" aria-label={t("Flow Rate Calibration")} onClose={closeDialog} data-testid="calibration-dialog" id="calibration-dialog">
       <div
-        className="modal-box preset-modal"
-        style={{
-          width: 540,
-          maxWidth: '92vw',
-          maxHeight: '88vh',
-          display: 'flex',
-          flexDirection: 'column'
-        }}
+        className="ds-dialog flow-rate-panel"
       >
         {/* Header */}
-        <div className="modal-header">
-          <div className="modal-title">{t("Flow Rate Calibration")}</div>
+        <div className="ds-dialog__head">
+          <h2 className="ds-title ds-title--dialog">{t("Flow Rate Calibration")}</h2>
           <button
             type="button"
-            className="modal-close-btn"
+            className="ds-icon-btn"
             data-testid="calib-close-btn"
             onClick={closeDialog}
             aria-label={t("Close Calibration dialog")}
@@ -66,100 +60,55 @@ export const FlowRateModal: React.FC = () => {
 
         {/* Tab navigation */}
         <div
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid var(--control-bg)',
-            background: 'var(--panel-bg)'
-          }}
+          className="flow-rate-panel__tabs"
         >
           <button
             type="button"
             data-testid="calib-tab-generator"
-            style={{
-              padding: '8px 16px',
-              border: 'none',
-              background: activeTab === 'generator' ? 'var(--control-bg)' : 'transparent',
-              color: activeTab === 'generator' ? '#fff' : 'var(--text-muted)',
-              fontWeight: activeTab === 'generator' ? 600 : 400,
-              cursor: 'pointer',
-              borderBottom: activeTab === 'generator' ? '2px solid #38bdf8' : '2px solid transparent'
-            }}
+            className={["ds-btn flowrate-modal__button-44", (activeTab === 'generator'  ? "flowrate-modal__state-37" : "flowrate-modal__state-38"), (activeTab === 'generator'  ? "flowrate-modal__state-39" : "flowrate-modal__state-40"), (activeTab === 'generator'  ? "flowrate-modal__span-25" : "flowrate-modal__state-41"), (activeTab === 'generator'  ? "flowrate-modal__state-42" : "flowrate-modal__state-43")].join(" ")}
             onClick={() => setActiveTab('generator')}
           >
             {t("Test Generator")}</button>
           <button
             type="button"
             data-testid="calib-tab-calculator"
-            style={{
-              padding: '8px 16px',
-              border: 'none',
-              background: activeTab === 'calculator' ? 'var(--control-bg)' : 'transparent',
-              color: activeTab === 'calculator' ? '#fff' : 'var(--text-muted)',
-              fontWeight: activeTab === 'calculator' ? 600 : 400,
-              cursor: 'pointer',
-              borderBottom: activeTab === 'calculator' ? '2px solid #38bdf8' : '2px solid transparent'
-            }}
+            className={["ds-btn flowrate-modal__button-44", (activeTab === 'calculator'  ? "flowrate-modal__state-37" : "flowrate-modal__state-38"), (activeTab === 'calculator'  ? "flowrate-modal__state-39" : "flowrate-modal__state-40"), (activeTab === 'calculator'  ? "flowrate-modal__span-25" : "flowrate-modal__state-41"), (activeTab === 'calculator'  ? "flowrate-modal__state-42" : "flowrate-modal__state-43")].join(" ")}
             onClick={() => setActiveTab('calculator')}
           >
             {t("Flow Rate Calculator")}</button>
         </div>
 
         {/* Body */}
-        <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
+        <div className="ds-dialog__body flowrate-modal__div-36">
           {errorMessage && (
             <div
               data-testid="calib-error-message"
-              style={{
-                marginBottom: 12,
-                padding: '8px 12px',
-                background: 'rgba(239, 68, 68, 0.15)',
-                border: '1px solid #ef4444',
-                borderRadius: 4,
-                color: '#fca5a5',
-                fontSize: '0.85rem'
-              }}
+              className="flowrate-modal__card-35"
             >
-              {errorMessage}
+              {t(errorMessage)}
             </div>
           )}
 
           {statusMessage && (
             <div
               data-testid="calib-status-message"
-              style={{
-                marginBottom: 12,
-                padding: '8px 12px',
-                background: 'rgba(59, 130, 246, 0.15)',
-                border: '1px solid #3b82f6',
-                borderRadius: 4,
-                color: '#93c5fd',
-                fontSize: '0.85rem'
-              }}
+              className="flowrate-modal__card-34"
             >
-              {statusMessage}
+              {t(statusMessage)}
             </div>
           )}
 
           {activeTab === 'generator' && (
             <div>
               {/* Test Type Selection */}
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontWeight: 600, marginBottom: 8, fontSize: '0.9rem' }}>
+              <div className="flowrate-modal__div-23">
+                <label className="flowrate-modal__label-33">
                   {t("Calibration Pass")}</label>
-                <div style={{ display: 'flex', gap: 12 }}>
+                <div className="flowrate-modal__row-32">
                   <label
-                    style={{
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      padding: '10px 14px',
-                      background: selectedPass === 1 ? 'rgba(56, 189, 248, 0.1)' : 'var(--canvas-bg)',
-                      border: selectedPass === 1 ? '1px solid #38bdf8' : '1px solid var(--control-bg)',
-                      borderRadius: 6,
-                      cursor: 'pointer'
-                    }}
+                    className={["flowrate-modal__label-31", (selectedPass === 1  ? "flowrate-modal__state-27" : "flowrate-modal__state-28"), (selectedPass === 1  ? "flowrate-modal__state-29" : "flowrate-modal__state-30")].join(" ")}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <div className="flowrate-modal__row-26">
                       <input
                         type="radio"
                         name="calib-pass"
@@ -168,25 +117,16 @@ export const FlowRateModal: React.FC = () => {
                         onChange={() => setSelectedPass(1)}
                         disabled={isCalibrating}
                       />
-                      <span style={{ fontWeight: 600 }}>{t("Pass 1 (Coarse)")}</span>
+                      <span className="flowrate-modal__span-25">{t("Pass 1 (Coarse)")}</span>
                     </div>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    <span className="flowrate-modal__span-24">
                       {t("Range: -20% to +20% (step 5%) · 9 chips")}</span>
                   </label>
 
                   <label
-                    style={{
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      padding: '10px 14px',
-                      background: selectedPass === 2 ? 'rgba(56, 189, 248, 0.1)' : 'var(--canvas-bg)',
-                      border: selectedPass === 2 ? '1px solid #38bdf8' : '1px solid var(--control-bg)',
-                      borderRadius: 6,
-                      cursor: 'pointer'
-                    }}
+                    className={["flowrate-modal__label-31", (selectedPass === 2  ? "flowrate-modal__state-27" : "flowrate-modal__state-28"), (selectedPass === 2  ? "flowrate-modal__state-29" : "flowrate-modal__state-30")].join(" ")}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <div className="flowrate-modal__row-26">
                       <input
                         type="radio"
                         name="calib-pass"
@@ -195,34 +135,33 @@ export const FlowRateModal: React.FC = () => {
                         onChange={() => setSelectedPass(2)}
                         disabled={isCalibrating}
                       />
-                      <span style={{ fontWeight: 600 }}>{t("Pass 2 (Fine)")}</span>
+                      <span className="flowrate-modal__span-25">{t("Pass 2 (Fine)")}</span>
                     </div>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    <span className="flowrate-modal__span-24">
                       {t("Range: -9% to 0% (step 1%) · Fine tuning")}</span>
                   </label>
                 </div>
               </div>
 
               {/* Surface Pattern */}
-              <div style={{ marginBottom: 16 }}>
+              <div className="flowrate-modal__div-23">
                 <label
                   htmlFor="calib-pattern-select"
-                  style={{ display: 'block', fontWeight: 600, marginBottom: 6, fontSize: '0.9rem' }}
+                  className="flowrate-modal__label-22"
                 >
                   {t("Top Surface Pattern")}</label>
                 <select
                   id="calib-pattern-select"
                   data-testid="calib-pattern-select"
-                  className="preset-select"
                   value={selectedPattern}
                   onChange={(e) => setSelectedPattern(e.target.value as InfillPattern)}
                   disabled={isCalibrating}
-                  style={{ width: '100%', padding: '6px 10px', background: 'var(--canvas-bg)', color: 'var(--text-color)', border: '1px solid var(--control-bg)', borderRadius: 4 }}
+                  className="ds-input flowrate-modal__input-12"
                 >
                   <option value="archimedeanchords">{t("Archimedean Chords (Recommended)")}</option>
                   <option value="monotonic">{t("Monotonic")}</option>
                 </select>
-                <span style={{ display: 'block', marginTop: 4, fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                <span className="flowrate-modal__span-21">
                   {t("Archimedean Chords creates a distinct center spiral lip that tactilely reveals over/under-extrusion.")}</span>
               </div>
 
@@ -230,61 +169,11 @@ export const FlowRateModal: React.FC = () => {
               {showConfirmReplace && (
                 <div
                   data-testid="calib-confirm-banner"
-                  style={{
-                    margin: '16px 0',
-                    padding: '12px 14px',
-                    background: 'rgba(234, 179, 8, 0.15)',
-                    border: '1px solid #eab308',
-                    borderRadius: 6,
-                    color: '#fef08a'
-                  }}
+                  className="flowrate-modal__card-20"
                 >
-                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("Replace current plate?")}</div>
-                  <div style={{ fontSize: '0.82rem', marginBottom: 10, color: '#fde047' }}>
+                  <div className="flowrate-modal__div-19">{t("Replace current plate?")}</div>
+                  <div className="flowrate-modal__div-18">
                     {t("Objects are currently loaded on the build plate. Generating calibration will replace the plate with test chips.\n                    You can restore your current project at any time using Undo (Ctrl+Z).")}</div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      type="button"
-                      id="calib-confirm-proceed"
-                      data-testid="calib-confirm-proceed"
-                      className="btn btn-primary"
-                      onClick={confirmReplaceAndStart}
-                      disabled={isCalibrating}
-                    >
-                      {t("Proceed")}</button>
-                    <button
-                      type="button"
-                      id="calib-confirm-cancel"
-                      data-testid="calib-confirm-cancel"
-                      className="btn btn-secondary"
-                      onClick={cancelConfirmReplace}
-                      disabled={isCalibrating}
-                    >
-                      {t("Cancel")}</button>
-                  </div>
-                </div>
-              )}
-
-              {/* Action buttons */}
-              {!showConfirmReplace && (
-                <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={closeDialog}
-                    disabled={isCalibrating}
-                  >
-                    {t("Close")}</button>
-                  <button
-                    type="button"
-                    id="calib-generate-btn"
-                    data-testid="calib-generate-btn"
-                    className="btn btn-primary"
-                    onClick={startCalibration}
-                    disabled={isCalibrating}
-                  >
-                    {isCalibrating ? 'Loading...' : 'Generate Calibration Plate'}
-                  </button>
                 </div>
               )}
             </div>
@@ -292,12 +181,12 @@ export const FlowRateModal: React.FC = () => {
 
           {activeTab === 'calculator' && (
             <div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 16 }}>
+              <p className="flowrate-modal__p-15">
                 {t("Print the calibration plate and inspect the top surface of the chips with your finger.\n                Select the chip with the smoothest surface without gaps or rough over-extrusion ridges.")}</p>
 
               {/* Current flow ratio */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-color)', marginBottom: 4 }}>
+              <div className="flowrate-modal__div-14">
+                <label className="flowrate-modal__label-13">
                   {t("Current Flow Ratio:")}</label>
                 <input
                   type="number"
@@ -305,20 +194,13 @@ export const FlowRateModal: React.FC = () => {
                   id="calib-calc-current" data-testid="calib-calc-current"
                   value={customOldFlow}
                   onChange={(e) => setCustomOldFlow(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                  style={{
-                    width: '100%',
-                    padding: '6px 10px',
-                    background: 'var(--canvas-bg)',
-                    color: 'var(--text-color)',
-                    border: '1px solid var(--control-bg)',
-                    borderRadius: 4
-                  }}
+                  className="ds-input flowrate-modal__input-12"
                 />
               </div>
 
               {/* Modifier input */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-color)', marginBottom: 4 }}>
+              <div className="flowrate-modal__div-14">
+                <label className="flowrate-modal__label-13">
                   {t("Selected Chip Modifier (%):")}</label>
                 <input
                   type="number"
@@ -327,42 +209,25 @@ export const FlowRateModal: React.FC = () => {
                   placeholder={t("e.g. 5, -5, 0, -10")}
                   value={calculatorModifier}
                   onChange={(e) => setCalculatorModifier(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                  style={{
-                    width: '100%',
-                    padding: '6px 10px',
-                    background: 'var(--canvas-bg)',
-                    color: 'var(--text-color)',
-                    border: '1px solid var(--control-bg)',
-                    borderRadius: 4
-                  }}
+                  className="ds-input flowrate-modal__input-12"
                 />
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                <span className="flowrate-modal__span-11">
                   {t("Enter the chip label number (e.g. 5 for +5%, -10 for -10%).")}</span>
               </div>
 
               {/* Calculated Result Card */}
               <div
-                style={{
-                  margin: '16px 0',
-                  padding: '12px 14px',
-                  background: 'var(--canvas-bg)',
-                  border: '1px solid var(--control-bg)',
-                  borderRadius: 6
-                }}
+                className="flowrate-modal__card-10"
               >
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 4 }}>
-                  {t("Formula:")}<code style={{ color: '#38bdf8' }}>{t("New Flow = Old Flow × (100 + Modifier) / 100")}</code>
+                <div className="flowrate-modal__div-9">
+                  {t("Formula:")}<code className="flowrate-modal__code-8">{t("New Flow = Old Flow × (100 + Modifier) / 100")}</code>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                  <span style={{ fontSize: '0.9rem', color: 'var(--text-color)' }}>{t("New Flow Ratio:")}</span>
+                <div className="flowrate-modal__row-7">
+                  <span className="flowrate-modal__span-6">{t("New Flow Ratio:")}</span>
                   <span
                     id="calib-calc-result"
                     data-testid="calib-calc-result"
-                    style={{
-                      fontSize: '1.25rem',
-                      fontWeight: 700,
-                      color: calculatedNewFlow !== null ? '#34d399' : 'var(--text-dim)'
-                    }}
+                    className={["flowrate-modal__span-5", (calculatedNewFlow !== null  ? "flowrate-modal__state-3" : "flowrate-modal__state-4")].join(" ")}
                   >
                     {calculatedNewFlow !== null ? calculatedNewFlow.toFixed(4) : '--'}
                   </span>
@@ -372,25 +237,39 @@ export const FlowRateModal: React.FC = () => {
               {calculatorMessage && (
                 <div
                   data-testid="calib-calc-message"
-                  style={{
-                    marginBottom: 12,
-                    padding: '8px 12px',
-                    background: 'rgba(52, 211, 153, 0.15)',
-                    border: '1px solid #34d399',
-                    borderRadius: 4,
-                    color: '#a7f3d0',
-                    fontSize: '0.85rem'
-                  }}
+                  className="flowrate-modal__card-2"
                 >
-                  {calculatorMessage}
+                  {t(calculatorMessage)}
                 </div>
               )}
-
-              {/* Apply Button */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+            </div>
+          )}
+        </div>
+        {activeTab === 'generator' && !showConfirmReplace && (
+                <div className="ds-dialog__foot flowrate-modal__row-16">
+                  <button
+                    type="button"
+                    className="ds-btn"
+                    onClick={closeDialog}
+                    disabled={isCalibrating}
+                  >
+                    {t("Close")}</button>
+                  <button
+                    type="button"
+                    id="calib-generate-btn"
+                    data-testid="calib-generate-btn"
+                    className="ds-btn ds-btn--primary"
+                    onClick={startCalibration}
+                    disabled={isCalibrating}
+                  >
+                    {isCalibrating ? t('Loading...') : t('Generate Calibration Plate')}
+                  </button>
+                </div>
+              )}
+        {activeTab === 'calculator' && (<div className="ds-dialog__foot flowrate-modal__row-1">
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="ds-btn"
                   onClick={closeDialog}
                 >
                   {t("Close")}</button>
@@ -398,16 +277,34 @@ export const FlowRateModal: React.FC = () => {
                   type="button"
                   id="calib-calc-apply"
                   data-testid="calib-calc-apply"
-                  className="btn btn-primary"
+                  className="ds-btn ds-btn--primary"
                   onClick={applyCalculatedFlow}
                   disabled={calculatedNewFlow === null}
                 >
                   {t("Apply Flow Ratio")}</button>
-              </div>
-            </div>
-          )}
-        </div>
+              </div>)}
+        {activeTab === 'generator' && showConfirmReplace && (<div className="ds-dialog__foot flowrate-modal__row-17">
+                    <button
+                      type="button"
+                      id="calib-confirm-cancel"
+                      data-testid="calib-confirm-cancel"
+                      className="ds-btn"
+                      onClick={cancelConfirmReplace}
+                      disabled={isCalibrating}
+                    >
+                      {t("Cancel")}</button>
+<button
+                      type="button"
+                      id="calib-confirm-proceed"
+                      data-testid="calib-confirm-proceed"
+                      className="ds-btn ds-btn--primary"
+                      onClick={confirmReplaceAndStart}
+                      disabled={isCalibrating}
+                    >
+                      {t("Proceed")}</button>
+                    
+                  </div>)}
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

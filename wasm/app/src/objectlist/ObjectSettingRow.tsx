@@ -111,8 +111,8 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
           data-testid={`override-input-${optionKey}`}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={optType === 'int' || optType === 'float' ? 'setting-number' : 'setting-text'}
-          style={{ flex: 1, minWidth: 60, fontSize: '0.8rem' }}
+          className={optType === 'int' || optType === 'float' ? 'setting-number object-setting-input' : 'setting-text object-setting-input'}
+          style={{ flex: 1, fontSize: '0.8rem' }}
         />
         {unit && <span className="setting-unit" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{unit}</span>}
       </div>
@@ -123,34 +123,25 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
     <div
       id={`override-row-${optionKey}`}
       data-testid={`override-row-${optionKey}`}
-      className="setting-row"
+      className={`setting-row object-setting-row ${optType === 'bool' || optType === 'bools' ? 'object-setting-row-bool' : 'wm-field'}`}
       title={tooltip}
       style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '4px 8px',
         borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
         gap: 8
       }}
     >
       <label
         htmlFor={`override-input-${optionKey}`}
-        className="setting-label"
-        style={{
-          flex: '0 0 45%',
-          fontSize: '0.8rem',
-          color: 'var(--text-color)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap'
-        }}
+        className="setting-label object-setting-label wm-field-label"
         title={tooltip}
       >
         {label}
       </label>
 
-      <div style={{ flex: '1 1 auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div className="object-setting-controls" style={{ flex: '1 1 auto', display: 'flex', alignItems: 'center', gap: 6 }}>
         <div style={{ flex: 1 }}>{renderInput()}</div>
         <button
           type="button"

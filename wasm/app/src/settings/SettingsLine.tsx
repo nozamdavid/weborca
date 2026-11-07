@@ -2,7 +2,8 @@ import React from 'react';
 import { useAppStore } from '../store/appStore';
 import { SettingInput } from './SettingInput';
 import type { LayoutLine } from './types';
-import { getLineDocUrl } from './settingDocs';
+import { getSettingDocUrl } from './settingDocs';
+import './settings-ui.css';
 import { isModeVisible } from './visibility';
 import { useTranslation } from "../i18n";
 
@@ -16,10 +17,11 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
   const { configDefs, rulesState, settingsMode, highlightedKey } = useAppStore();
 
   const helpLink = (keys: Array<string | undefined>) => {
-    const url = getLineDocUrl(keys);
+    const key = keys.find(key => getSettingDocUrl(key));
+    const url = getSettingDocUrl(key);
+    const description = key ? configDefs[key]?.tooltip : undefined;
     return url ? (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="setting-help-link" title={t("Open documentation")} aria-label={t("Open documentation")}
-        style={{ marginLeft: 4, color: 'var(--text-dim)', textDecoration: 'none', fontSize: 11, fontWeight: 'bold' }}>?</a>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="setting-help-link" title={description ? t(description) : undefined} aria-label={t("Open documentation")}>?</a>
     ) : null;
   };
 

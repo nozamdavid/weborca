@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { autoFlushMatrix, readFlushMatrix } from './flushVolume';
-import { ModalBackdrop } from '../components/ModalBackdrop';
+import { Dialog } from '../components/Dialog';
 import { useTranslation } from "../i18n";
 
 const MAX = 20000;
@@ -25,18 +25,18 @@ export const FlushVolumesDialog: React.FC<{ onClose: () => void }> = ({ onClose 
     await applyOptionChange('flush_multiplier', String(multiplier), 'filament', undefined, null);
     onClose();
   };
-  const swatch = (i: number) => <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: colours[i] || '#888', border: '1px solid rgba(255,255,255,0.4)', verticalAlign: 'middle' }} />;
+  const swatch = (i: number) => <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: 3, background: colours[i] || '#888', border: '1px solid var(--border-strong)', verticalAlign: 'middle' }} />;
 
   return (
-    <ModalBackdrop onClose={onClose} id="flush-dialog" role="dialog" aria-label={t("Flushing volumes")}>
-      <div className="modal-content" style={{ width: 'min(620px, 94vw)', padding: 20, display: 'flex', flexDirection: 'column', gap: 12, maxHeight: '90vh', overflow: 'auto' }}>
+    <Dialog onClose={onClose} id="flush-dialog" role="dialog" aria-label={t("Flushing volumes")}>
+      <div className="modal-content ds-dialog ds-dialog--lg">
         <h3 style={{ margin: 0 }}>{t("Flushing volumes")}</h3>
-        <span style={{ fontSize: 12, color: 'var(--text-muted, #a0a0a0)' }}>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
           {t("Material purged on the prime tower when changing from the filament in a row to the one in a column, in mm³. The multiplier scales every value.")}</span>
         <table style={{ borderCollapse: 'collapse', alignSelf: 'center' }}>
           <thead>
             <tr>
-              <th style={{ padding: 4, fontSize: 11 }}>{t("from \\ to")}</th>
+              <th style={{ padding: 4, fontSize: '0.6875rem' }}>{t("from \\ to")}</th>
               {selectedFilaments.map((_, j) => <th key={j} style={{ padding: 4 }}>{swatch(j)} {j + 1}</th>)}
             </tr>
           </thead>
@@ -49,7 +49,7 @@ export const FlushVolumesDialog: React.FC<{ onClose: () => void }> = ({ onClose 
                     <input
                       id={`flush-${i}-${j}`} aria-label={`from ${i + 1} to ${j + 1}`} type="number" min={0} max={MAX} disabled={i === j}
                       value={matrix[i * count + j]} onChange={(e) => setCell(i * count + j, e.target.value)}
-                      style={{ width: 72, background: 'var(--control-bg, #3a3a3a)', color: 'inherit', border: '1px solid var(--border-color, var(--border-color))', borderRadius: 4, padding: '3px 5px' }}
+                      style={{ width: 72, background: 'var(--control-bg)', color: 'inherit', border: '1px solid var(--border-color, var(--border-color))', borderRadius: 4, padding: '3px 5px' }}
                     />
                   </td>
                 ))}
@@ -57,18 +57,18 @@ export const FlushVolumesDialog: React.FC<{ onClose: () => void }> = ({ onClose 
             ))}
           </tbody>
         </table>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.75rem' }}>
           {t("Flush multiplier")}<input id="flush-multiplier" type="number" step={0.05} min={0} max={10} value={multiplier} onChange={(e) => setMultiplier(parseFloat(e.target.value) || 0)}
-            style={{ width: 72, background: 'var(--control-bg, #3a3a3a)', color: 'inherit', border: '1px solid var(--border-color, var(--border-color))', borderRadius: 4, padding: '3px 5px' }} />
+            style={{ width: 72, background: 'var(--control-bg)', color: 'inherit', border: '1px solid var(--border-color, var(--border-color))', borderRadius: 4, padding: '3px 5px' }} />
         </label>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between' }}>
-          <button className="btn btn-secondary" id="flush-auto" title={t("Estimate from the filament colours")} onClick={() => setMatrix(autoFlushMatrix(colours.slice(0, count)))}>{t("Auto-calculate")}</button>
+          <button className="ds-btn" id="flush-auto" title={t("Estimate from the filament colours")} onClick={() => setMatrix(autoFlushMatrix(colours.slice(0, count)))}>{t("Auto-calculate")}</button>
           <span style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-secondary" id="flush-cancel" onClick={onClose}>{t("Cancel")}</button>
-            <button className="btn btn-primary" id="flush-apply" onClick={() => void apply()}>{t("OK")}</button>
+            <button className="ds-btn" id="flush-cancel" onClick={onClose}>{t("Cancel")}</button>
+            <button className="ds-btn ds-btn--primary" id="flush-apply" onClick={() => void apply()}>{t("OK")}</button>
           </span>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

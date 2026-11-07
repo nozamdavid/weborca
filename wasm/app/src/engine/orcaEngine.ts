@@ -4,6 +4,9 @@
  */
 
 import { OrcaEngine } from '../../../web/orca-engine.js';
+import { usePrefsStore } from '../prefs/prefsStore';
+import { resolveSlicingThreads } from '../prefs/slicingThreads';
+import { isStepFileName, tessellateStep } from './stepModule';
 import type {
   ParsedPreset,
   LayerEvent,
@@ -37,17 +40,27 @@ export type {
 
 let engineInstance: OrcaEngine | null = null;
 let initPromise: Promise<OrcaEngine> | null = null;
+let initController: AbortController | null = null;
+let generation = 0;
+let suspended = false;
+export type EngineLoadProgress = { phase: 'downloading' | 'initializing'; loaded?: number; total?: number };
+let progressListener: ((progress: EngineLoadProgress) => void) | undefined;
+export function onEngineLoadProgress(listener?: (progress: EngineLoadProgress) => void): void {
+  progressListener = listener;
+  if (listener) suspended = false;
+}
 
 export async function getEngine(): Promise<OrcaEngine> {
+  if (suspended) throw new Error('Engine startup canceled');
   if (engineInstance) return engineInstance;
   if (initPromise) return initPromise;
 
+  const current = generation;
+  const controller = new AbortController();
+  initController = controller;
   initPromise = (async () => {
     try {
-      const threads = Math.min(
-        typeof navigator !== 'undefined' && navigator.hardwareConcurrency ? navigator.hardwareConcurrency : 4,
-        8
-      );
+      const threads = resolveSlicingThreads(usePrefsStore.getState().general.slicingThreads);
 
       // Using /engine-worker.js, /engine/orca_engine.mjs, and /profiles/ which are
       // served directly via Vite middleware in dev and copied to dist/ in production.
@@ -55,16 +68,18 @@ export async function getEngine(): Promise<OrcaEngine> {
         workerUrl: '/engine-worker.js',
         moduleUrl: '/engine/orca_engine.mjs',
         profilesUrl: '/profiles/',
-        threads
+        threads,
+        signal: controller.signal,
+        onProgress: progress => { if (current === generation) progressListener?.(progress); }
       });
-
+      if (current !== generation) { engine.dispose(); throw new Error('Engine startup canceled'); }
       engineInstance = engine;
       if (typeof window !== 'undefined') {
         (window as any).__orcaEngine = engine;
       }
       return engine;
     } catch (err) {
-      initPromise = null;
+      if (current === generation) initPromise = null;
       throw err;
     }
   })();
@@ -161,18 +176,32 @@ export async function resetOptions(args?: {
   layoutIndex?: number;
   overrides?: Record<string, string>;
   baseline?: Record<string, string>;
+  removeFilamentSlot?: boolean;
 }): Promise<{ filamentOverrides?: Record<string, string> }> {
   const engine = await getEngine();
   return (await engine.call('resetOptions', args || {})) as { filamentOverrides?: Record<string, string> };
 }
 
+/**
+ * STEP files are tessellated by the lazily loaded STEP module and handed to the
+ * engine as a packed mesh; the engine itself has no STEP reader. A failure in
+ * the module leaves the engine's project untouched.
+ */
+async function importStep(fileName: string, bytes: Uint8Array | ArrayBuffer, options: StepImportOptions | undefined, replace: boolean): Promise<LoadModelResult> {
+  const engine = await getEngine();
+  const packed = await tessellateStep(bytes, options);
+  return (await engine.loadStepMesh(fileName, packed, { replace })) as LoadModelResult;
+}
+
 export async function loadModel(fileName: string, bytes: Uint8Array | ArrayBuffer, options?: StepImportOptions): Promise<LoadModelResult> {
+  if (isStepFileName(fileName)) return await importStep(fileName, bytes, options, true);
   const engine = await getEngine();
   const res = await engine.loadModel(fileName, bytes, options);
   return res as LoadModelResult;
 }
 
 export async function addModel(fileName: string, bytes: Uint8Array | ArrayBuffer, options?: StepImportOptions): Promise<LoadModelResult> {
+  if (isStepFileName(fileName)) return await importStep(fileName, bytes, options, false);
   const engine = await getEngine();
   const res = await engine.addModel(fileName, bytes, options);
   return res as LoadModelResult;
@@ -264,6 +293,25 @@ export async function resetObjectConfig(params: {
   await engine.resetObjectConfig(params);
 }
 
+export async function mergeObjects(params: {
+  instances?: Array<{ objectId: number; instanceId: number }>;
+  objectIds?: number[];
+  name?: string;
+  plateIndex?: number;
+}): Promise<{ objectId: number; id: number; instanceId: number; name: string; volumesCount: number }> {
+  const engine = await getEngine();
+  return await engine.call('mergeObjects', params);
+}
+
+export async function setVolumeType(params: {
+  objectId: number;
+  volumeId: number;
+  type: string;
+}): Promise<{ objectId: number; volumeId: number; type: string }> {
+  const engine = await getEngine();
+  return await engine.call('setVolumeType', params);
+}
+
 export async function setVolumeExtruder(objectId: number, volumeId: number, extruder: number): Promise<void> {
   const engine = await getEngine();
   await engine.setVolumeExtruder(objectId, volumeId, extruder);
@@ -345,6 +393,13 @@ export async function openProject(fileName: string, bytes: Uint8Array | ArrayBuf
 }
 
 export function disposeEngine(): void {
+  generation++;
+  suspended = true;
+  initController?.abort();
+  initController = null;
+  initPromise = null;
+  progressListener = undefined;
+  if (typeof window !== 'undefined') delete (window as any).__orcaEngine;
   if (engineInstance) {
     try {
       engineInstance.dispose();

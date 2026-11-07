@@ -1,3 +1,5 @@
+import { MobileInput } from '../mobile/MobileInput';
+import { MobileSelect } from '../mobile/MobileSelect';
 import { useTranslation } from '../i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -18,6 +20,8 @@ import {
 
 export interface CrealityCloudLoginProps {
   initialRegion?: CrealityRegion;
+  initialSession?: { session: CrealityCloudAuthSession; devices: CrealityCloudDevice[] };
+  onRegionChange?: (region: CrealityRegion) => void;
   gatewayTarget?: CrealityGatewayTarget;
   onSelectDevice: (device: CrealityCloudDevice, session: CrealityCloudAuthSession, region: CrealityRegion) => void;
   onCancel?: () => void;
@@ -25,6 +29,8 @@ export interface CrealityCloudLoginProps {
 
 export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
   initialRegion = 'global',
+  initialSession,
+  onRegionChange,
   gatewayTarget = {},
   onSelectDevice,
   onCancel
@@ -44,8 +50,8 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
   const [qrExpired, setQrExpired] = useState(false);
 
   // Authenticated state & device selection
-  const [session, setSession] = useState<CrealityCloudAuthSession | null>(null);
-  const [devices, setDevices] = useState<CrealityCloudDevice[]>([]);
+  const [session, setSession] = useState<CrealityCloudAuthSession | null>(initialSession?.session ?? null);
+  const [devices, setDevices] = useState<CrealityCloudDevice[]>(initialSession?.devices ?? []);
 
   // Generation guard and active abort controller to prevent stale fetches and rescheduling
   const generationRef = useRef(0);
@@ -74,6 +80,9 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
   const handleRegionChange = (newRegion: CrealityRegion) => {
     cancelPending();
     setRegion(newRegion);
+    setSession(null);
+    setDevices([]);
+    onRegionChange?.(newRegion);
     setLoading(false);
     setError(null);
     setQrResult(null);
@@ -106,6 +115,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
       setQrResult(res);
       setLoading(false);
 
+      const confirmation = { userId: '' };
       const pollStep = async () => {
         if (generationRef.current !== currentGen || controller.signal.aborted) return;
 
@@ -116,7 +126,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
         }
 
         try {
-          const auth = await pollCrealityCloudQr(res.identical, { ...gatewayTarget, region }, controller.signal);
+          const auth = await pollCrealityCloudQr(res.identical, { ...gatewayTarget, region }, controller.signal, confirmation);
           if (generationRef.current !== currentGen || controller.signal.aborted) return;
 
           if (auth) {
@@ -214,16 +224,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
     color: 'var(--text-color, #eee)',
     borderRadius: 8,
     maxWidth: 440,
-    fontSize: 13
-  };
-
-  const inputStyle: React.CSSProperties = {
-    background: 'var(--control-bg, #3a3a3a)',
-    color: 'inherit',
-    border: '1px solid var(--border-color, #444)',
-    borderRadius: 4,
-    padding: '6px 10px',
-    fontSize: 13
+    fontSize: '0.8125rem'
   };
 
   const buttonStyle: React.CSSProperties = {
@@ -237,22 +238,23 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
   };
 
   return (
-    <div style={containerStyle}>
-      <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>{t("Creality Cloud Login")}</h3>
+    <div className="creality-cloud-login" style={containerStyle}>
+      <h3 style={{ margin: '0 0 4px', fontSize: '1rem' }}>{t("Creality Cloud Login")}</h3>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span>{t("Region:")}</span>
-        <select
+      <label className="cc-region wm-field">
+        <span className="wm-field-label">{t("Region:")}</span>
+        <MobileSelect
+          aria-label={t('Region:')}
           id="cc-region"
           value={region}
-          disabled={loading || session !== null}
-          onChange={(e) => handleRegionChange(e.target.value as CrealityRegion)}
-          style={inputStyle}
+          disabled={loading}
+          onValueChange={(value) => handleRegionChange(value as CrealityRegion)}
+          className="cc-input"
         >
           <option value="global">{t("Global (api.crealitycloud.com)")}</option>
           <option value="china">{t("China (api.crealitycloud.cn)")}</option>
-        </select>
-      </div>
+        </MobileSelect>
+      </label>
 
       {error && (
         <div
@@ -262,7 +264,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
             color: 'var(--error-color, #ffaaaa)',
             padding: 8,
             borderRadius: 4,
-            fontSize: 12
+            fontSize: '0.75rem'
           }}
         >
           {error}
@@ -271,7 +273,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
 
       {!session ? (
         <>
-          <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color, #444)', gap: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: '1px solid var(--border-color, #444)', gap: 8 }}>
             <button
               type="button"
               className="btn btn-tab"
@@ -319,7 +321,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
                 </button>
               ) : (
                 <>
-                  <div style={{ fontSize: 12, textAlign: 'center', color: 'var(--text-muted, #aaa)' }}>
+                  <div style={{ fontSize: '0.75rem', textAlign: 'center', color: 'var(--text-muted, #aaa)' }}>
                     {t("Scan with Creality Cloud mobile app:")}
                   </div>
                   <div
@@ -341,7 +343,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
                     />
                   </div>
                   {qrExpired ? (
-                    <div style={{ color: 'var(--error-color, #ff6666)', fontSize: 12 }}>
+                    <div style={{ color: 'var(--error-color, #ff6666)', fontSize: '0.75rem' }}>
                       {t('QR code expired.')}{' '}
                       <button
                         type="button"
@@ -353,7 +355,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
                       </button>
                     </div>
                   ) : (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted, #888)' }}>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted, #888)' }}>
                       {t("Waiting for app authorization...")}
                     </div>
                   )}
@@ -361,27 +363,27 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
               )}
             </div>
           ) : (
-            <form onSubmit={handlePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span style={{ fontSize: 12 }}>{t("Account (Email or Phone):")}</span>
-                <input
+            <form className="printer-provider-fields" onSubmit={handlePasswordSubmit}>
+              <label className="cc-field wm-field">
+                <span className="wm-field-label">{t("Account (Email or Phone):")}</span>
+                <MobileInput
                   id="cc-account"
                   type="text"
                   value={account}
                   onChange={(e) => setAccount(e.target.value)}
                   placeholder="user@example.com"
-                  style={inputStyle}
+                  className="cc-input"
                   required
                 />
               </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <span style={{ fontSize: 12 }}>{t("Password:")}</span>
-                <input
+              <label className="cc-field wm-field">
+                <span className="wm-field-label">{t("Password:")}</span>
+                <MobileInput
                   id="cc-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  style={inputStyle}
+                  className="cc-input"
                   required
                 />
               </label>
@@ -389,7 +391,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
                 id="cc-password-login"
                 type="submit"
                 className="btn btn-primary"
-                style={{ ...buttonStyle, marginTop: 6 }}
+                style={buttonStyle}
                 disabled={loading || !account.trim() || !password}
               >
                 {t(loading ? 'Logging in...' : 'Sign In')}
@@ -399,12 +401,12 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
         </>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ fontSize: 12, color: 'var(--success-color, #88cc88)' }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--success-color, #88cc88)' }}>
             {t('Authenticated as user ID: {{id}}', { id: session.userId })}
           </div>
           <div style={{ fontWeight: 500 }}>{t("Select a bound printer:")}</div>
           {devices.length === 0 ? (
-            <div style={{ color: 'var(--text-muted, #aaa)', fontSize: 12 }}>
+            <div style={{ color: 'var(--text-muted, #aaa)', fontSize: '0.75rem' }}>
               {t(loading ? 'Loading devices...' : 'No bound 3D printers found in this account.')}
             </div>
           ) : (
@@ -423,7 +425,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
                 >
                   <div>
                     <div style={{ fontWeight: 500 }}>{dev.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted, #aaa)' }}>
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-muted, #aaa)' }}>
                       {dev.model} • {t(dev.online ? 'Online' : 'Offline')} • DN: {dev.dn}
                     </div>
                   </div>
@@ -432,7 +434,7 @@ export const CrealityCloudLogin: React.FC<CrealityCloudLoginProps> = ({
                     data-dn={dev.dn}
                     type="button"
                     className="btn btn-primary"
-                    style={{ ...buttonStyle, padding: '4px 8px', fontSize: 12 }}
+                    style={{ ...buttonStyle, padding: '4px 8px', fontSize: '0.75rem' }}
                     onClick={() => onSelectDevice(dev, session, region)}
                   >
                     {t("Select")}

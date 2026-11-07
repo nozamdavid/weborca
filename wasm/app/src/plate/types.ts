@@ -21,6 +21,18 @@ export interface MeshVolumePartition {
   facetCount: number;
 }
 
+export interface ViewerVolume extends MeshVolumePartition, PlateInstance {
+  volumeId: number;
+  firstVertex: number;
+  vertexCount: number;
+  type: 'part' | 'negative' | 'modifier' | 'support_blocker' | 'support_enforcer';
+  localBounds: { min: [number, number, number]; max: [number, number, number] } | null;
+}
+
+export interface ViewerMeshData extends MeshBufferData {
+  volumes: ViewerVolume[];
+}
+
 export interface MeshBufferData {
   vertexCount: number;
   triangleCount: number;

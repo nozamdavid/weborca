@@ -40,11 +40,12 @@ export interface CrealityCloudGatewayOptions extends GatewayConfig {
 
 export const CREALITY_CLOUD_HOSTS = {
   global: {
-    auth: 'model-admin2.creality.com',
+    // CrealityPrint v6.0.3 resources/web/homepage/config.js (configRelease).
+    auth: 'api.crealitycloud.com',
     api: 'api.crealitycloud.com'
   },
   china: {
-    auth: 'model-admin.crealitygroup.com',
+    auth: 'api.crealitycloud.cn',
     api: 'api.crealitycloud.cn'
   }
 } as const;
@@ -52,7 +53,7 @@ export const CREALITY_CLOUD_HOSTS = {
 export const CREALITY_CLOUD_AUTH_ALLOWLIST = new Set([
   'POST /api/cxy/account/v2/qrLogin',
   'POST /api/cxy/account/v2/qrQuery',
-  'POST /api/account/loginV2',
+  'POST /api/cxy/account/v2/loginV2',
   'POST /api/cxy/v2/user/getInfo'
 ]);
 
@@ -250,7 +251,7 @@ export async function handleCrealityCloudRequest(
   }
 
   // 7. Execute upstream request
-  const requestFn = targetProtocol === 'http' ? http.request : https.request;
+  const requestFn: typeof https.request = targetProtocol === 'http' ? http.request : https.request;
   return new Promise<boolean>((resolve) => {
     const creq = requestFn(
       {

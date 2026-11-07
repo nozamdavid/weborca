@@ -1,6 +1,7 @@
 export type PresetKind = 'process' | 'filament' | 'printer';
 
 export interface UserPreset {
+  cloudRef?: { accountId: string; id: string };
   name: string;
   kind: PresetKind;
   inherits: string;

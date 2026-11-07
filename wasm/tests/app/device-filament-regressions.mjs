@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { chromium, firefox } from 'playwright';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { seedAddedPrinters } from './lib/printer.mjs';
 
 const PORT = parseInt(process.env.PORT || '5225', 10);
 const BASE = `http://127.0.0.1:${PORT}`;
 const VORON = 'Voron 2.4 300 0.4 nozzle';
+const BBL_DEFAULT = 'Bambu Lab X1 Carbon 0.4 nozzle';
+const BBL_TARGET = 'Bambu Lab X1 Carbon 0.6 nozzle';
 const dev = (id, name, presets, colors) => ({
   id, name, preset: VORON, vendor: 'Voron', host_type: 'moonraker', print_host: '127.0.0.1:1', use_gateway: false,
   filamentPresets: presets, filamentColors: colors
@@ -31,6 +34,7 @@ async function runSuite(browserType, bName) {
   });
 
   const page = await ctx.newPage();
+  await seedAddedPrinters(ctx, [VORON, 'Voron 2.4 350 0.4 nozzle', BBL_TARGET]);
   const native = () => page.evaluate(() => window.__orcaEngine.getConfig());
   const waitReady = async () => {
     await page.goto(BASE);
@@ -39,6 +43,58 @@ async function runSuite(browserType, bName) {
 
   try {
     await waitReady();
+    // Real picker chain: chooseVendor selects the BBL default before the requested 0.6 profile.
+    // Pause after that default, then change the selected device during the async pick.
+    const raceDevices = [
+      { ...dev('race-a', 'Race A', ['Bambu PLA Basic @BBL X1C'], ['#135790']), preset: BBL_DEFAULT, vendor: 'BBL' },
+      { ...dev('race-b', 'Race B', ['Bambu PETG Basic @BBL X1C'], ['#246801']), preset: BBL_DEFAULT, vendor: 'BBL' }
+    ];
+    await page.evaluate(async (devices) => {
+      for (const device of devices) window.__printerStore.getState().savePrinter(device);
+      // A project/profile can differ from the saved physical-device binding.
+      // Select the device while the engine is unavailable, then retain the Voron project.
+      window.__appStore.setState({ isEngineReady: false });
+      window.__printerStore.getState().selectPrinter('race-a');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      window.__appStore.setState({ isEngineReady: true });
+    }, raceDevices);
+    await page.evaluate(async () => {
+      await window.__appStore.getState().chooseVendor('Voron');
+      const original = window.__appStore.getState().choosePrinter;
+      window.__appStore.setState({ choosePrinter: async (name) => {
+        await original(name);
+        if (name === 'Bambu Lab X1 Carbon 0.4 nozzle' && !window.__defaultPaused) {
+          window.__defaultPaused = true;
+          await new Promise((resolve) => { window.__releaseDefault = resolve; });
+        }
+      } });
+      window.__originalChoosePrinter = original;
+    });
+    const snapshots = () => page.evaluate(() => window.__printerStore.getState().printers.filter((p) => p.id.startsWith('race-')));
+    const beforeDefault = await snapshots();
+    await page.selectOption('#printer-select', BBL_TARGET);
+    await page.waitForFunction(() => window.__defaultPaused);
+    const duringDefault = await snapshots();
+    try {
+      assert.deepEqual(duringDefault, beforeDefault, 'intermediate brand default must preserve both saved device snapshots');
+    } catch (error) {
+      await page.evaluate(() => window.__releaseDefault());
+      throw error;
+    }
+    await page.evaluate(() => window.__printerStore.getState().selectPrinter('race-b'));
+    await page.evaluate(() => window.__releaseDefault());
+    await page.waitForFunction(() => !window.__appStore.getState().isSelectingPreset && window.__appStore.getState().isEngineReady && window.__appStore.getState().currentConfig.filament_colour.toLowerCase() === '#246801', null, { timeout: 60000 });
+    assert.deepEqual(await snapshots(), beforeDefault, 'selection changes during the pick must preserve both devices and skip rebinding');
+    assert.equal(await page.evaluate(() => window.__appStore.getState().selectedPrinter), BBL_DEFAULT);
+    const raceConfig = await native();
+    assert.equal(raceConfig.filament_colour.toLowerCase(), '#246801');
+    assert.equal(raceConfig.nozzle_diameter, '0.4', 'native profile follows the final selected device');
+    console.log(`[${bName}] intermediate default and async device switch preserved`, JSON.stringify(await snapshots()));
+    await page.evaluate(() => {
+      window.__appStore.setState({ choosePrinter: window.__originalChoosePrinter });
+      window.__printerStore.getState().selectPrinter('a');
+    });
+    await page.waitForFunction(() => window.__appStore.getState().isEngineReady && window.__appStore.getState().currentConfig.filament_colour.toLowerCase() === '#112233;#445566');
     // 1. Seeded Device A: 2 filaments, verify dropdowns and native colors
     await page.waitForFunction(() => window.__appStore.getState().selectedFilaments.length === 2);
     let cfg = await native();
@@ -209,8 +265,10 @@ async function runSuite(browserType, bName) {
       return dev?.preset === 'Voron 2.4 350 0.4 nozzle';
     });
 
-    await page.locator('#filament-color-input-1').fill('#654321');
-    await page.locator('#filament-color-input-1').dispatchEvent('change');
+    await page.locator('#filament-color-input-1').evaluate((input) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '#654321');
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     await page.waitForFunction(() => {
       const dev = window.__printerStore.getState().printers.find((p) => p.id === 'b');
       return dev?.filamentColors?.[0]?.toLowerCase() === '#654321';
@@ -288,7 +346,11 @@ async function runSuite(browserType, bName) {
       error: window.__appStore?.getState().engineError,
       filaments: window.__appStore?.getState().selectedFilaments,
       temperature: window.__appStore?.getState().currentConfig.nozzle_temperature,
-      active: window.__appStore?.getState().activeUserPreset
+      active: window.__appStore?.getState().activeUserPreset,
+      colors: window.__appStore?.getState().currentConfig.filament_colour,
+      selected: window.__printerStore?.getState().selectedPrinterId,
+      devices: window.__printerStore?.getState().printers,
+      busy: window.__appStore?.getState().isSelectingPreset
     })));
     throw err;
   } finally {
@@ -296,7 +358,7 @@ async function runSuite(browserType, bName) {
   }
 }
 
-await startServer(PORT, 'device-filament-regressions');
+await startServer(PORT, 'device-filament-regressions', { frozenDist: true });
 try {
   await runSuite(chromium, 'chromium');
   await runSuite(firefox, 'firefox');

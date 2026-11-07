@@ -1181,6 +1181,25 @@ class Print;
         // Cached get_machine_config_idx() value; its inputs (active extruder + recorder occupancy)
         // change only on filament-change events, where it is recomputed.
         int m_machine_config_idx{0};
+
+        enum class MoveCacheBucket : unsigned char {
+            Travel = 0,
+            Retract = 1,
+            Print = 2,
+            Count = 3
+        };
+        struct CachedMoveState {
+            float acceleration{0.0f};
+            float jerk_x{0.0f};
+            float jerk_y{0.0f};
+            float jerk_z{0.0f};
+            float jerk_e{0.0f};
+            float jerk_xy_min{0.0f};
+        };
+        std::array<CachedMoveState, static_cast<size_t>(MoveCacheBucket::Count)> m_move_state_cache{};
+        bool m_move_state_cache_valid{false};
+        void invalidate_move_state_cache() { m_move_state_cache_valid = false; }
+        void update_move_state_cache();
         ExtruderColors m_extruder_colors;
         ExtruderTemps m_extruder_temps;
         bool  m_is_XL_printer = false;
@@ -1301,6 +1320,7 @@ class Print;
         // Orca: if true, only change new layer if ETags::Layer_Change occurs
         // otherwise when we got a lift of z during extrusion, a new layer will be added
         void detect_layer_based_on_tag(bool enabled) { m_detect_layer_based_on_tag = enabled; }
+
 
     private:
         void register_commands();

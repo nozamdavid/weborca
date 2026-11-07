@@ -1,0 +1,28 @@
+.oe-panel { min-width: 0; font-size: 13px; color: var(--text-primary, var(--text-color)); overflow-wrap: anywhere; }
+.oe-panel h4 { margin: 0 0 8px; font-size: 13px; }
+.oe-panel p { margin: 8px 0; color: var(--text-secondary); line-height: 1.45; max-width: 72ch; }
+.oe-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.oe-panel .ds-btn { text-decoration: none; white-space: normal; }
+.oe-panel .ds-btn[aria-pressed=true] { border-color: var(--accent-color); color: var(--accent-color); }
+.oe-panel label { display: grid; gap: 4px; margin: 8px 0; min-width: 0; }
+.oe-panel input:not([type=checkbox]), .oe-panel select { min-width: 0; width: 100%; box-sizing: border-box; }
+.oe-panel details { border-top: 1px solid var(--border-color); padding: 12px 0; }
+.oe-panel summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.oe-panel :focus-visible { outline: 2px solid var(--focus-ring, var(--accent-color)); outline-offset: 2px; }
+.oe-panel dl { margin: 8px 0; }
+.oe-panel dt { color: var(--text-secondary); }
+.oe-panel dd { margin: 2px 0 8px; }
+.oe-file { padding: 10px 0; border-bottom: 1px solid var(--border-color); }
+.oe-camera { overflow: hidden; }
+.oe-camera-view { display: grid; place-items: center; width: 100%; max-width: 420px; aspect-ratio: 1; overflow: hidden; }
+.oe-camera img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; }
+.oe-remote { padding: 16px; width: 100%; box-sizing: border-box; overflow: auto; }
+.oe-connection { margin: 12px 0; }
+.oe-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 0 12px; }
+.oe-options label:has(input[type=checkbox]) { display: flex; align-items: center; }
+#device-controls[data-remote=true] .jog-btn { white-space: nowrap; padding-inline: 4px; }
+@media (max-width: 800px), (pointer: coarse) {
+  .oe-panel button, .oe-panel summary, .oe-panel select, .oe-panel input:not([type=checkbox]), .oe-options label:has(input[type=checkbox]) { min-height: 44px; }
+  .oe-panel summary { box-sizing: border-box; padding-block: 12px; }
+}
+@media (max-width: 480px) { .oe-remote { padding: 12px; } .oe-actions > * { max-width: 100%; } }

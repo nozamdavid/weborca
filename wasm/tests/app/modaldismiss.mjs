@@ -37,7 +37,7 @@ async function runSuite(browserType, name) {
     log('a click inside does not');
     await openPrinter();
     await dlg.waitFor();
-    await dlg.locator('h3').click();
+    await dlg.locator('h2').click();
     assert.equal(await dlg.count(), 1);
 
     log('an edited dialog asks before closing; keeping it leaves the edit');

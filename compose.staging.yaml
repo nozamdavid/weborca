@@ -12,5 +12,6 @@ services:
     memswap_limit: 512m
     environment:
       ORCA_HOST: ${ORCA_HOST:-weborca.noz.am}
+      MOBILE_SLICE_STEPS: ${MOBILE_SLICE_STEPS-layer_height,wall_loops,sparse_infill_density,sparse_infill_pattern,enable_support,support_type}
     ports:
       - "${ORCA_BIND_ADDRESS:-0.0.0.0}:${ORCA_PORT:-8080}:8080"

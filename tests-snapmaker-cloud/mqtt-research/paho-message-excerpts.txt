@@ -1,0 +1,43 @@
+56:class message
+57:{
+58:public:
+59:    /** The default QoS for a message */
+60:    static constexpr int DFLT_QOS = 0;
+61:    /** The default retained flag */
+62:    static constexpr bool DFLT_RETAINED = false;
+63:
+64:private:
+65:    /** Initializer for the C struct (from the C library) */
+66:    static constexpr MQTTAsync_message DFLT_C_STRUCT MQTTAsync_message_initializer;
+67:    /** A const string to use for references */
+68:    static const string EMPTY_STR;
+69:    /** A const binary to use for references */
+70:    static const binary EMPTY_BIN;
+71:
+72:    /** The underlying C message struct */
+73:    MQTTAsync_message msg_{DFLT_C_STRUCT};
+119:     * @param payload the bytes to use as the message payload
+120:     * @param len the number of bytes in the payload
+121:     */
+122:    message(string_ref topic, const void* payload, size_t len)
+123:        : message(std::move(topic), payload, len, DFLT_QOS, DFLT_RETAINED) {}
+124:    /**
+125:     * Constructs a message from a byte buffer.
+126:     * Note that the payload accepts copy or move semantics.
+127:     * @param topic The message topic
+128:     * @param payload A byte buffer to use as the message payload.
+129:     * @param qos The quality of service for the message.
+130:     * @param retained Whether the message should be retained by the broker.
+131:     * @param props The MQTT v5 properties for the message.
+132:     */
+133:    message(
+134:        string_ref topic, binary_ref payload, int qos, bool retained,
+135:        const properties& props = properties()
+136:    );
+137:    /**
+138:     * Constructs a message from a byte buffer.
+139:     * Note that the payload accepts copy or move semantics.
+140:     * @param topic The message topic
+141:     * @param payload A byte buffer to use as the message payload.
+142:     */
+143:    message(string_ref topic, binary_ref payload)

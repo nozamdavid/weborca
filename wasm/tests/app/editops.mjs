@@ -14,6 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
 import { startServer, stopServer } from './lib/dist.mjs';
+import { selectAddedPrinter } from './lib/printer.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = 5121;
@@ -101,7 +102,7 @@ async function runSuite(browserType, name) {
     await page.goto(BASE_URL, { waitUntil: 'load' });
     await page.waitForFunction(() => window.__appStore?.getState().isEngineReady, null, { timeout: 90000 });
 
-    await page.selectOption('#vendor-select', 'Voron');
+    await selectAddedPrinter(page, 'Voron');
     await page.selectOption('#printer-select', 'Voron 2.4 300 0.4 nozzle');
     await page.selectOption('#filament-select', 'Generic PLA @System');
     await page.selectOption('#process-select', '0.20mm Standard @Voron');

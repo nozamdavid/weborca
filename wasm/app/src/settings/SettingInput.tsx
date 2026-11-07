@@ -1,3 +1,6 @@
+import { MobileInput } from '../mobile/MobileInput';
+import { MobileSelect } from '../mobile/MobileSelect';
+import { useMobile } from "../mobile/useMobile";
 import React, { useEffect, useState } from 'react';
 import { useAppStore, pendingOptionKey } from '../store/appStore';
 import type { ConfigOptionDef, FieldState } from '../engine/types';
@@ -11,6 +14,8 @@ interface SettingInputProps {
   def?: ConfigOptionDef;
   fieldState?: FieldState;
   kind?: 'print' | 'filament' | 'printer';
+  /** Local editor value; commit through the normal store action only on Apply. */
+  draft?: { value: string; onChange: (value: string) => void };
 }
 
 export const SettingInput: React.FC<SettingInputProps> = ({
@@ -18,9 +23,11 @@ export const SettingInput: React.FC<SettingInputProps> = ({
   index,
   def,
   fieldState,
-  kind
+  kind,
+  draft
 }) => {
   const { t } = useTranslation();
+  const mobile = useMobile();
   const {
     currentConfig,
     pendingOptions,
@@ -30,7 +37,8 @@ export const SettingInput: React.FC<SettingInputProps> = ({
     activeFilamentSlot,
     selectedFilaments,
     activeDialog,
-    isSelectingPreset
+    isSelectingPreset,
+    isEngineReady
   } = useAppStore();
 
   const isFilament = kind === 'filament' || (activeDialog === 'filament' && kind !== 'print' && kind !== 'printer');
@@ -48,7 +56,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
   useEffect(() => {
     let cancelled = false;
     const shouldProject = isFilament || layoutIdx !== undefined || def?.type === 'string';
-    if (!shouldProject) {
+    if (!shouldProject || !isEngineReady) {
       return;
     }
 
@@ -78,7 +86,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [targetKey, optionKey, filamentSlot, layoutIdx, rawVal, rawPresetVal, isFilament, def?.type]);
+  }, [isEngineReady, targetKey, optionKey, filamentSlot, layoutIdx, rawVal, rawPresetVal, isFilament, def?.type]);
 
   const effectiveNativeCurrent = (nativeCurrent && nativeCurrent.targetKey === targetKey && nativeCurrent.rawVal === rawVal)
     ? nativeCurrent.value
@@ -138,7 +146,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
 
   const pending = pendingOptions[pendingOptionKey(kind ?? (isFilament ? 'filament' : activeDialog === 'printer' ? 'printer' : 'print'), optionKey, filamentSlot, layoutIdx)];
   const pendingValue = pending ? (isNumericVector ? extractScalarCell(pending.value, 0) ?? pending.value : pending.value) : serverValue;
-  const displayValue = (localInput && localInput.targetKey === targetKey)
+  const displayValue = draft ? draft.value : (localInput && localInput.targetKey === targetKey)
     ? localInput.value
     : pendingValue;
 
@@ -146,11 +154,12 @@ export const SettingInput: React.FC<SettingInputProps> = ({
     baselineValue !== '' &&
     (serverValue !== baselineValue || displayValue !== baselineValue)
   );
-  const isEnabled = !isSelectingPreset && fieldState?.enabled !== false;
+  const isEnabled = isEngineReady && !isSelectingPreset && fieldState?.enabled !== false;
 
   const stride = isNumericVector ? getOptionStride(rawVal, totalSlots, extrudersCount) : 1;
 
   const handleChange = (newVal: string) => {
+    if (draft) { draft.onChange(newVal); return; }
     const payload = (isFilament && layoutIdx === undefined && stride > 1)
       ? Array(stride).fill(newVal).join(',')
       : newVal;
@@ -158,6 +167,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
   };
 
   const handleInputChange = (newVal: string) => {
+    if (draft) { draft.onChange(newVal); return; }
     setLocalInput({ targetKey, value: newVal });
     // Clearing a number is an intermediate editing state, not an engine value.
     if (!newVal.trim() && /^(?:ints?|floats?|percents?|floats?OrPercents?)$/.test(def?.type ?? '')) return;
@@ -167,6 +177,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
   const handleReset = (e: React.MouseEvent) => {
     e.stopPropagation();
     setLocalInput(null);
+    if (draft) { draft.onChange(baselineValue); return; }
     resetOption(optionKey, isFilament ? 'filament' : kind, index);
   };
 
@@ -176,8 +187,9 @@ export const SettingInput: React.FC<SettingInputProps> = ({
     if (optType === 'bool' || optType === 'bools') {
       const isChecked = displayValue === '1' || displayValue === 'true';
       return (
-        <input
+        <MobileInput
           type="checkbox"
+          aria-label={t(fieldState?.label || def?.label || optionKey)}
           id={`setting-input-${optionKey}`}
           data-testid={`setting-input-${optionKey}`}
           name={optionKey}
@@ -192,14 +204,15 @@ export const SettingInput: React.FC<SettingInputProps> = ({
 
     if ((optType === 'enum' || optType === 'enums') && def?.enumValues && def.enumValues.length > 0) {
       return (
-        <select
+        <MobileSelect
+          aria-label={t(fieldState?.label || def?.label || optionKey)}
           id={`setting-input-${optionKey}`}
           data-testid={`setting-input-${optionKey}`}
           name={optionKey}
           value={displayValue}
           aria-busy={Boolean(pending)}
           disabled={!isEnabled}
-          onChange={(e) => handleChange(e.target.value)}
+          onValueChange={(value) => handleChange(value)}
           className="setting-select"
         >
           {def.enumValues.map((val, idx) => (
@@ -207,13 +220,14 @@ export const SettingInput: React.FC<SettingInputProps> = ({
               {def.enumLabels && def.enumLabels[idx] ? def.enumLabels[idx] : val}
             </option>
           ))}
-        </select>
+        </MobileSelect>
       );
     }
 
     if (def?.multiline) {
       return (
         <textarea
+          aria-label={t(fieldState?.label || def?.label || optionKey)}
           id={`setting-input-${optionKey}`}
           data-testid={`setting-input-${optionKey}`}
           name={optionKey}
@@ -221,7 +235,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
           onBlur={() => setLocalInput(null)}
           disabled={!isEnabled}
           onChange={(e) => handleInputChange(e.target.value)}
-          className="setting-textarea font-mono"
+          className={`setting-textarea font-mono ${mobile ? 'ds-input' : ''}`}
           rows={4}
         />
       );
@@ -235,8 +249,11 @@ export const SettingInput: React.FC<SettingInputProps> = ({
     ) {
       const step = optType.startsWith('int') ? '1' : 'any';
       return (
-        <input
+        <MobileInput
           type="number"
+          inputMode={def?.min !== undefined && def.min >= 0 && !def.nullable &&
+            (optType === 'int' || optType === 'float' || index !== undefined || isFilament) ? 'decimal' : 'text'}
+          aria-label={t(fieldState?.label || def?.label || optionKey)}
           id={`setting-input-${optionKey}`}
           data-testid={`setting-input-${optionKey}`}
           name={optionKey}
@@ -266,8 +283,10 @@ export const SettingInput: React.FC<SettingInputProps> = ({
 
     // Default text input for strings, percent, floatOrPercent
     return (
-      <input
+      <MobileInput
         type="text"
+        aria-label={t(fieldState?.label || def?.label || optionKey)}
+        inputMode="text"
         id={`setting-input-${optionKey}`}
         data-testid={`setting-input-${optionKey}`}
         name={optionKey}
@@ -292,7 +311,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
           data-testid={`reset-btn-${optionKey}`}
           title={t('Reset to preset ({{value}})', { value: baselineValue })}
           onClick={handleReset}
-          disabled={isSelectingPreset}
+          disabled={!isEnabled}
         >
           ↺
         </button>

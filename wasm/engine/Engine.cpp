@@ -16,6 +16,7 @@
 #include "RepairOps.hpp"
 #include "CutConnectorOps.hpp"
 #include "LayerEventOps.hpp"
+#include "MeasureOps.hpp"
 #include "libslic3r/Arrange.hpp"
 
 #include "libslic3r/libslic3r.h"
@@ -53,6 +54,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstring>
 #include <deque>
 #include <limits>
 #include <filesystem>
@@ -268,6 +270,8 @@ private:
     json op_arrange(const json& args);
     json op_placeObjects(const json& args);
     json op_addModel(const json& args);
+    json op_loadStepMesh(const json& args);
+    json commit_loaded_model(Slic3r::Model&& loaded_model, const std::string& path, bool replace);
     json op_listObjects(const json& args);
     json op_getMesh(const json& args);
     json op_setInstanceTransform(const json& args);
@@ -290,6 +294,8 @@ private:
     json op_setObjectConfig(const json& args);
     json op_resetObjectConfig(const json& args);
     json op_setVolumeExtruder(const json& args);
+    json op_mergeObjects(const json& args);
+    json op_setVolumeType(const json& args);
     json op_listPlates(const json& args);
     json op_addPlate(const json& args);
     json op_duplicatePlate(const json& args);
@@ -516,10 +522,16 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_loadModel(args);
         } else if (op == "addModel") {
             result_data = op_addModel(args);
+        } else if (op == "loadStepMesh") {
+            result_data = op_loadStepMesh(args);
         } else if (op == "listObjects") {
             result_data = op_listObjects(args);
         } else if (op == "getMesh") {
             result_data = op_getMesh(args);
+        } else if (op == "getVolume") {
+            result_data = OrcaWasm::getVolume(m_model, args);
+        } else if (op == "setVolumeTransform") {
+            result_data = OrcaWasm::setVolumeTransform(m_model, args);
         } else if (op == "setInstanceTransform") {
             result_data = op_setInstanceTransform(args);
         } else if (op == "deleteInstances") {
@@ -566,6 +578,14 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_resetObjectConfig(args);
         } else if (op == "setVolumeExtruder") {
             result_data = op_setVolumeExtruder(args);
+        } else if (op == "mergeObjects") {
+            result_data = op_mergeObjects(args);
+        } else if (op == "setVolumeType") {
+            result_data = op_setVolumeType(args);
+        } else if (op == "getMeasurementFeature") {
+            result_data = OrcaWasm::getMeasurementFeature(m_model, args);
+        } else if (op == "measureFeatures") {
+            result_data = OrcaWasm::measureFeatures(args);
         } else if (op == "listPlates") {
             result_data = op_listPlates(args);
         } else if (op == "duplicatePlate") {
@@ -1474,6 +1494,54 @@ json Engine::Impl::op_resetOptions(const json& args) {
     const auto* colours = baseline_config.option<Slic3r::ConfigOptionStrings>("filament_colour");
     const size_t total_slots = colours ? colours->values.size() : (m_selected_filaments.empty() ? 1 : m_selected_filaments.size());
 
+    if (args.contains("removeFilamentSlot") && !args.at("removeFilamentSlot").is_boolean())
+        throw Slic3r::RuntimeError("removeFilamentSlot must be a boolean");
+    if (args.value("removeFilamentSlot", false)) {
+        // This is a pure projection of supplied project overrides, before the
+        // caller changes selected presets and therefore the native slot count.
+        if (total_slots < 2 || m_bundle->filament_presets.size() != total_slots)
+            throw Slic3r::RuntimeError("Invalid current filament slot count");
+        if (!args.contains("filamentIndex") || !args.at("filamentIndex").is_number_integer() ||
+            (!args.at("filamentIndex").is_number_unsigned() && args.at("filamentIndex").get<int64_t>() < 0) ||
+            args.at("filamentIndex").get<uint64_t>() >= total_slots)
+            throw Slic3r::RuntimeError("Invalid filament index");
+        if (!args.contains("overrides") || !args.at("overrides").is_object())
+            throw Slic3r::RuntimeError("Filament overrides must be an object");
+        if (args.contains("baseline") && !args.at("baseline").is_object())
+            throw Slic3r::RuntimeError("Preset baseline must be an object");
+
+        const size_t slot = args.at("filamentIndex").get<size_t>();
+        const auto& filament_keys = Slic3r::Preset::filament_options();
+        json remaining_overrides = json::object();
+        for (const auto& [key, value] : args.at("overrides").items()) {
+            const auto* definition = Slic3r::print_config_def.get(key);
+            if (!definition) throw Slic3r::RuntimeError("Unknown option key: " + key);
+            if (key != "filament_colour" && std::find(filament_keys.begin(), filament_keys.end(), key) == filament_keys.end()) {
+                remaining_overrides[key] = value;
+                continue;
+            }
+            std::unique_ptr<Slic3r::ConfigOption> option(definition->create_empty_option());
+            auto* vector = dynamic_cast<Slic3r::ConfigOptionVectorBase*>(option.get());
+            if (!vector) {
+                remaining_overrides[key] = value;
+                continue;
+            }
+            if (!value.is_string() || !valid_numeric_option(*option, value.get<std::string>()) ||
+                !option->deserialize(value.get<std::string>()))
+                throw Slic3r::RuntimeError("Invalid serialized filament option: " + key);
+            if (vector->size() < total_slots || vector->size() % total_slots != 0)
+                throw Slic3r::RuntimeError("Invalid filament vector stride: " + key);
+            const size_t stride = vector->size() / total_slots;
+            const size_t start = slot * stride;
+            const size_t remaining_size = vector->size() - stride;
+            for (size_t i = start; i < remaining_size; ++i)
+                vector->set_at(option.get(), i, i + stride);
+            vector->resize(remaining_size);
+            remaining_overrides[key] = option->serialize();
+        }
+        return json{{"filamentOverrides", remaining_overrides}};
+    }
+
     if (args.contains("filamentIndex") && !args.at("filamentIndex").is_null()) {
         if (!args.at("filamentIndex").is_number_integer() || args.at("filamentIndex").get<int64_t>() < 0) {
             throw Slic3r::RuntimeError("Invalid filament index");
@@ -1623,7 +1691,8 @@ bool is_step_file(const std::string& path) {
 Slic3r::Model read_model_file(const std::string& path, const json& args) {
     if (is_step_file(path)) {
 #ifdef SLIC3R_NO_OCCT
-        throw Slic3r::RuntimeError("STEP format is not supported in this build (OCCT disabled)");
+        throw Slic3r::RuntimeError("STEP format is not supported in this build (OCCT disabled); "
+                                   "tessellate it with the STEP module and use loadStepMesh");
 #else
         double linear_deflection = 0.003;
         if (args.contains("linear_deflection")) {
@@ -1683,33 +1752,156 @@ Slic3r::Model read_model_file(const std::string& path, const json& args) {
 
 json Engine::Impl::op_loadModel(const json& args) {
     std::string path = args.at("path").get<std::string>();
-    Slic3r::Model loaded_model = read_model_file(path, args);
-    m_calib_params.mode = Slic3r::CalibMode::Calib_None; // as desktop load_files() does
-    if (loaded_model.objects.empty())
-        throw Slic3r::RuntimeError("No objects loaded from file: " + path);
-
-    m_model = std::move(loaded_model);
-
-    json objects_arr = json::array();
-    for (const auto* obj : m_model.objects) {
-        Slic3r::Vec3d sz = obj->bounding_box_exact().size();
-        objects_arr.push_back({
-            {"id", obj->id().id},
-            {"name", obj->name},
-            {"instances", obj->instances.size()},
-            {"volumes", obj->volumes.size()},
-            {"size", {sz.x(), sz.y(), sz.z()}}
-        });
-    }
-    return json{{"objects", objects_arr}};
+    return commit_loaded_model(read_model_file(path, args), path, true);
 }
 
 json Engine::Impl::op_addModel(const json& args) {
     std::string path = args.at("path").get<std::string>();
-    Slic3r::Model loaded_model = read_model_file(path, args);
+    return commit_loaded_model(read_model_file(path, args), path, false);
+}
+
+namespace {
+
+// Packed tessellation written by the standalone STEP module (wasm/step/main.cpp),
+// little endian: "STM1", u32 solid count, then per solid u32 name length, UTF-8
+// name, u32 vertex count, u32 triangle count, f32 xyz[vertex count * 3] and
+// u32 indices[triangle count * 3].
+struct PackedStepSolid {
+    std::string           name;
+    std::vector<float>    positions;
+    std::vector<uint32_t> indices;
+};
+
+std::vector<PackedStepSolid> parse_packed_step_mesh(const std::string& bytes) {
+    const char* data = bytes.data();
+    const uint64_t size = bytes.size();
+    uint64_t off = 0;
+    auto need = [&](uint64_t n) {
+        if (n > size - off)
+            throw Slic3r::RuntimeError("Malformed STEP mesh: unexpected end of data");
+    };
+    auto read_u32 = [&]() {
+        need(4);
+        const uint8_t* p = reinterpret_cast<const uint8_t*>(data + off);
+        off += 4;
+        return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
+    };
+
+    need(4);
+    if (std::memcmp(data, "STM1", 4) != 0)
+        throw Slic3r::RuntimeError("Malformed STEP mesh: bad magic");
+    off = 4;
+    const uint32_t solid_count = read_u32();
+
+    std::vector<PackedStepSolid> solids;
+    for (uint32_t s = 0; s < solid_count; ++s) {
+        PackedStepSolid solid;
+        const uint32_t name_length = read_u32();
+        need(name_length);
+        solid.name.assign(data + off, name_length);
+        off += name_length;
+        const uint32_t vertex_count = read_u32();
+        const uint32_t triangle_count = read_u32();
+        const uint64_t position_bytes = uint64_t(vertex_count) * 3 * sizeof(float);
+        need(position_bytes);
+        solid.positions.resize(size_t(vertex_count) * 3);
+        if (position_bytes > 0)
+            std::memcpy(solid.positions.data(), data + off, position_bytes);
+        off += position_bytes;
+        const uint64_t index_bytes = uint64_t(triangle_count) * 3 * sizeof(uint32_t);
+        need(index_bytes);
+        solid.indices.resize(size_t(triangle_count) * 3);
+        if (index_bytes > 0)
+            std::memcpy(solid.indices.data(), data + off, index_bytes);
+        off += index_bytes;
+
+        for (float v : solid.positions)
+            if (!std::isfinite(v))
+                throw Slic3r::RuntimeError("Malformed STEP mesh: non-finite vertex position");
+        for (uint32_t i : solid.indices)
+            if (i >= vertex_count)
+                throw Slic3r::RuntimeError("Malformed STEP mesh: vertex index out of range");
+        solids.push_back(std::move(solid));
+    }
+    if (off != size)
+        throw Slic3r::RuntimeError("Malformed STEP mesh: trailing data");
+    return solids;
+}
+
+} // namespace
+
+// Imports the packed mesh of the STEP module. Builds the same Model that
+// Step::mesh() produced: one object named after the STEP file and one volume
+// per solid, each through TriangleMesh::from_stl.
+json Engine::Impl::op_loadStepMesh(const json& args) {
+    const std::string path = args.at("path").get<std::string>();
+    std::string name = args.at("name").get<std::string>();
+    const size_t slash = name.find_last_of("/\\");
+    if (slash != std::string::npos)
+        name.erase(0, slash + 1);
+    if (name.empty())
+        throw Slic3r::RuntimeError("loadStepMesh requires the STEP file name");
+    const bool replace = args.value("replace", false);
+
+    std::string bytes;
+    {
+        std::ifstream in(path, std::ios::binary);
+        if (!in.is_open())
+            throw Slic3r::RuntimeError("Cannot open STEP mesh: " + path);
+        std::ostringstream buffer;
+        buffer << in.rdbuf();
+        bytes = buffer.str();
+    }
+    // The packed file is only a hand-off from the STEP module; free its MEMFS storage.
+    std::remove(path.c_str());
+    const std::vector<PackedStepSolid> solids = parse_packed_step_mesh(bytes);
+    bytes = std::string();
+
+    const std::string input_file = "/models/" + name;
+    Slic3r::Model loaded_model;
+    Slic3r::ModelObject* new_object = loaded_model.add_object();
+    new_object->name = name;
+    new_object->input_file = input_file;
+    for (const PackedStepSolid& solid : solids) {
+        //BBS: maybe mesh is empty from step file. Don't add
+        if (solid.indices.empty())
+            continue;
+        Slic3r::TriangleMesh triangle_mesh = Slic3r::step_indexed_to_triangle_mesh(
+            solid.positions.data(), solid.indices.data(), solid.indices.size() / 3);
+        Slic3r::ModelVolume* new_volume = new_object->add_volume(std::move(triangle_mesh));
+        new_volume->name = solid.name;
+        new_volume->source.input_file = input_file;
+        new_volume->source.object_idx = 0;
+        new_volume->source.volume_idx = (int)new_object->volumes.size() - 1;
+    }
+    if (new_object->volumes.empty())
+        throw Slic3r::RuntimeError("Meshing of a model file failed or no valid shape.");
+    loaded_model.add_default_instances();
+
+    return commit_loaded_model(std::move(loaded_model), path, replace);
+}
+
+json Engine::Impl::commit_loaded_model(Slic3r::Model&& loaded_model, const std::string& path, bool replace) {
     m_calib_params.mode = Slic3r::CalibMode::Calib_None; // as desktop load_files() does
     if (loaded_model.objects.empty())
         throw Slic3r::RuntimeError("No objects loaded from file: " + path);
+
+    if (replace) {
+        m_model = std::move(loaded_model);
+
+        json objects_arr = json::array();
+        for (const auto* obj : m_model.objects) {
+            Slic3r::Vec3d sz = obj->bounding_box_exact().size();
+            objects_arr.push_back({
+                {"id", obj->id().id},
+                {"name", obj->name},
+                {"instances", obj->instances.size()},
+                {"volumes", obj->volumes.size()},
+                {"size", {sz.x(), sz.y(), sz.z()}}
+            });
+        }
+        return json{{"objects", objects_arr}};
+    }
 
     json objects_arr = json::array();
     for (const auto* obj : loaded_model.objects) {
@@ -1788,11 +1980,13 @@ json Engine::Impl::op_getMesh(const json& args) {
 
     Slic3r::TriangleMesh mesh;
     json volumes_meta = json::array();
+    const bool for_viewer = args.value("forViewer", false);
     for (const Slic3r::ModelVolume* v : obj->volumes) {
-        if (v && v->is_model_part()) {
+        if (v && (for_viewer || v->is_model_part())) {
             uint32_t first_facet = static_cast<uint32_t>(mesh.its.indices.size());
+            uint32_t first_vertex = static_cast<uint32_t>(mesh.its.vertices.size());
             Slic3r::TriangleMesh vol_mesh(v->mesh());
-            vol_mesh.transform(v->get_matrix());
+            if (!for_viewer) vol_mesh.transform(v->get_matrix());
             mesh.merge(vol_mesh);
             uint32_t facet_count = static_cast<uint32_t>(vol_mesh.its.indices.size());
             volumes_meta.push_back({
@@ -1800,9 +1994,15 @@ json Engine::Impl::op_getMesh(const json& args) {
                 {"firstFacet", first_facet},
                 {"facetCount", facet_count}
             });
+            if (for_viewer) {
+                auto& meta = volumes_meta.back();
+                meta.update(OrcaWasm::getVolume(m_model, {{"objectId", object_id}, {"volumeId", v->id().id}}));
+                meta["firstVertex"] = first_vertex;
+                meta["vertexCount"] = vol_mesh.its.vertices.size();
+            }
         }
     }
-    if (mesh.empty()) {
+    if (mesh.empty() && !for_viewer) {
         volumes_meta = json::array();
         for (const Slic3r::ModelVolume* v : obj->volumes) {
             if (v) {
@@ -1825,7 +2025,7 @@ json Engine::Impl::op_getMesh(const json& args) {
 
     std::string out_dir = "/out";
     std::filesystem::create_directories(out_dir);
-    std::string out_path = out_dir + "/mesh_" + std::to_string(object_id) + ".bin";
+    std::string out_path = out_dir + "/mesh_" + std::to_string(object_id) + (for_viewer ? "_viewer.bin" : ".bin");
 
     std::ofstream os(out_path, std::ios::binary);
     if (!os.is_open()) {
@@ -2337,6 +2537,19 @@ json Engine::Impl::op_setVolumeExtruder(const json& args) {
     return OrcaWasm::setVolumeExtruder(m_model, args);
 }
 
+json Engine::Impl::op_mergeObjects(const json& args) {
+    if (!m_bundle) {
+        return OrcaWasm::mergeObjects(m_model, args, &m_plate_data, nullptr);
+    }
+    Slic3r::DynamicPrintConfig config = m_bundle->full_config();
+    config.apply(m_options_override);
+    return OrcaWasm::mergeObjects(m_model, args, &m_plate_data, &config);
+}
+
+json Engine::Impl::op_setVolumeType(const json& args) {
+    return OrcaWasm::setVolumeType(m_model, args);
+}
+
 json Engine::Impl::op_listPlates(const json& args) {
     if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
     Slic3r::DynamicPrintConfig config = m_bundle->full_config();
@@ -2578,8 +2791,8 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
             bool any_printable = false;
             for (size_t ii = 0; ii < mo->instances.size(); ++ii) {
                 bool is_on_plate = plate_pairs.count({static_cast<int>(oi), static_cast<int>(ii)}) > 0;
-                mo->instances[ii]->printable = is_on_plate;
-                if (is_on_plate) any_printable = true;
+                mo->instances[ii]->printable = mo->printable && mo->instances[ii]->printable && is_on_plate;
+                if (mo->instances[ii]->printable) any_printable = true;
             }
             mo->printable = any_printable;
         }

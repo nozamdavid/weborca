@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { create } from 'zustand';
-import { ModalBackdrop, confirmDiscard } from '../components/ModalBackdrop';
+import { confirmDiscard } from '../components/ModalBackdrop';
+import { Dialog } from "../components/Dialog";
 import { useAppStore } from '../store/appStore';
 import { useTranslation } from "../i18n";
 import { getOption } from '../engine/orcaEngine';
@@ -30,17 +31,17 @@ const NotesEditor: React.FC = () => {
       if (!useAppStore.getState().engineError) close();
     } finally { setSaving(false); }
   };
-  return <ModalBackdrop onClose={() => void requestClose()} role="dialog" aria-label={t("Project notes")}>
-    <div className="modal-content" style={{ width: 'min(640px, 94vw)' }}>
+  return <Dialog onClose={() => void requestClose()} role="dialog" aria-label={t("Project notes")}>
+    <div className="modal-content ds-dialog">
       <h2>{t("Project notes")}</h2>
       <p>{t("Notes are saved in the project and included as comments in exported G-code.")}</p>
       <textarea id="project-notes" aria-label={t("Project notes")} rows={14} value={notes}
         disabled={saving || initial === null} onChange={(e) => setNotes(e.target.value)} style={{ width: '100%', resize: 'vertical' }} />
-      <div className="modal-footer">
-        <button className="btn btn-secondary" disabled={saving} onClick={() => void requestClose()}>{t("Cancel")}</button>
-        <button id="project-notes-save" className="btn btn-primary" disabled={saving || initial === null} onClick={() => void save()}>{t("Save notes")}</button>
+      <div className="modal-footer ds-dialog__foot">
+        <button className="ds-btn" disabled={saving} onClick={() => void requestClose()}>{t("Cancel")}</button>
+        <button id="project-notes-save" className="ds-btn ds-btn--primary" disabled={saving || initial === null} onClick={() => void save()}>{t("Save notes")}</button>
       </div>
     </div>
-  </ModalBackdrop>;
+  </Dialog>;
 };
 export const ProjectNotesDialog: React.FC = () => useProjectNotesStore((s) => s.open) ? <NotesEditor /> : null;

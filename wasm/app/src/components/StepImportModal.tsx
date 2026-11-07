@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import { ModalBackdrop } from './ModalBackdrop';
+import { Dialog } from './Dialog';
 import { useTranslation } from "../i18n";
 
 // Mirrors desktop StepMeshDialog: same defaults and accepted ranges.
@@ -29,8 +29,8 @@ export const StepImportModal: React.FC = () => {
   };
 
   return (
-    <ModalBackdrop onClose={() => setStepImportState(null)} dirty={linear !== LINEAR.def || angle !== ANGLE.def} dirtyWhat="import options" data-testid="step-import-modal">
-      <div className="modal-content" style={{ maxWidth: '400px' }}>
+    <Dialog onClose={() => setStepImportState(null)} dirty={linear !== LINEAR.def || angle !== ANGLE.def} dirtyWhat="import options" data-testid="step-import-modal">
+      <div className="modal-content ds-dialog">
         <h3>{t("STEP Import Options")}</h3>
         <p>
           {t("Smaller linear and angular deflections result in higher-quality transformations but increase the\n          processing time for")}<strong>{file.name}</strong>.
@@ -47,7 +47,7 @@ export const StepImportModal: React.FC = () => {
             onChange={(e) => setLinear(e.target.value)}
             style={{ width: '100%', padding: '6px', marginTop: '4px' }}
           />
-          {!linearOk && <small style={{ color: '#e57373' }}>{t("Enter a value from 0.001 to 0.1.")}</small>}
+          {!linearOk && <small style={{ color: 'var(--danger-fg)' }}>{t("Enter a value from 0.001 to 0.1.")}</small>}
         </div>
 
         <div className="form-group" style={{ marginBottom: '24px' }}>
@@ -61,16 +61,16 @@ export const StepImportModal: React.FC = () => {
             onChange={(e) => setAngle(e.target.value)}
             style={{ width: '100%', padding: '6px', marginTop: '4px' }}
           />
-          {!angleOk && <small style={{ color: '#e57373' }}>{t("Enter a value from 0.01 to 1.0.")}</small>}
+          {!angleOk && <small style={{ color: 'var(--danger-fg)' }}>{t("Enter a value from 0.01 to 1.0.")}</small>}
         </div>
 
-        <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button className="btn btn-secondary" onClick={() => setStepImportState(null)}>
+        <div className="modal-actions ds-dialog__foot" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button className="ds-btn" onClick={() => setStepImportState(null)}>
             {t("Cancel")}</button>
-          <button className="btn btn-primary" onClick={handleImport} disabled={!linearOk || !angleOk}>
+          <button className="ds-btn ds-btn--primary" onClick={handleImport} disabled={!linearOk || !angleOk}>
             {t("Import")}</button>
         </div>
       </div>
-    </ModalBackdrop>
+    </Dialog>
   );
 };

@@ -1,0 +1,39 @@
+.preview-fps-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  color: var(--text-color);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.preview-performance {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 14;
+  display: flex;
+  gap: 12px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-color);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.preview-performance > span:first-child { min-width: 48px; }
+.preview-performance > span:last-child { min-width: 80px; }
+.mobile-preview .preview-performance { left: 12px; bottom: 40px; }
+
+@media (min-width: 801px) {
+  #orca-preview-view #preview-top-controls { max-width: calc(100% - 32px); width: max-content; }
+  #orca-preview-view #preview-legend-panel,
+  #orca-preview-view .preview-detail-panels { top: var(--preview-controls-clearance, 70px); }
+  #orca-preview-view #preview-legend-panel { max-height: calc(100% - var(--preview-controls-clearance, 70px) - 90px); }
+}

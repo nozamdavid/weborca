@@ -12,6 +12,7 @@
 #include "LowQualitySegments.hpp"
 
 #include <cstdint>
+#include <cstring>
 #include "../include/Types.hpp"
 #include <array>
 #include "../include/PathVertex.hpp"
@@ -886,6 +887,7 @@ void ViewerImpl::init(const std::string& opengl_context_version)
     m_uni_segments_exposure_id               = glGetUniformLocation(m_segments_shader_id, "exposure");
     m_uni_segments_saturation_id             = glGetUniformLocation(m_segments_shader_id, "saturation");
     m_uni_segments_light_top_dir_id          = glGetUniformLocation(m_segments_shader_id, "light_top_dir");
+    m_uni_segments_enhanced_lighting_id      = glGetUniformLocation(m_segments_shader_id, "enhanced_lighting");
     m_uni_segments_layer_colors.init(m_segments_shader_id);
     glcheck();
     assert(m_uni_segments.view_matrix != -1 &&
@@ -1566,12 +1568,32 @@ void ViewerImpl::update_colors()
     // If some part of the preview should be rendered in dark grey, it is taken
     // care of in the shaders, see set_layer_colors(). That is to avoid the need to recalculate
     // the "normal" color on every slider move.
-    for (size_t i = 0; i < m_vertices.size(); ++i)
-        m_vertices_colors[i] = encode_color(get_vertex_color(m_vertices[i]));
+    const ColorRange* previous_range = nullptr;
+    uint32_t previous_value_bits = 0;
+    float previous_color = 0.0f;
+    for (size_t i = 0; i < m_vertices.size(); ++i) {
+        const VertexColorInput input = get_vertex_color_input(m_vertices[i]);
+        if (input.range != nullptr) {
+            uint32_t value_bits;
+            static_assert(sizeof(value_bits) == sizeof(input.value));
+            std::memcpy(&value_bits, &input.value, sizeof(value_bits));
+            // Ranges and palettes stay fixed for this call. Compare bits so signed
+            // zero and distinct NaN payloads never share a memo entry.
+            if (input.range != previous_range || value_bits != previous_value_bits) {
+                previous_color = encode_color(resolve_vertex_color(input));
+                previous_value_bits = value_bits;
+            }
+            m_vertices_colors[i] = previous_color;
+        }
+        else
+            m_vertices_colors[i] = encode_color(input.color);
+        previous_range = input.range;
+    }
     
     update_colors_texture();
     m_settings.update_colors = false;
 #ifdef ENABLE_OPENGL_ES
+    m_palette_reset_unapplied = false;
     if (m_settings.low_quality) {
         m_settings_used_for_enabled_entities.reset();
         m_settings.update_enabled_entities = true;
@@ -1589,6 +1611,8 @@ void ViewerImpl::apply_pending_updates()
         update_heights_widths();
     if (m_settings.update_colors)
         update_colors();
+    else if (m_settings.update_enabled_entities && !m_vertices.empty())
+        update_color_ranges();
     if (m_settings.update_enabled_entities)
         update_enabled_entities();
 #else
@@ -1784,6 +1808,21 @@ AABox ViewerImpl::get_extrusion_bounding_box(const std::vector<EGCodeExtrusionRo
     return { min, max };
 }
 
+#ifdef ENABLE_OPENGL_ES
+static bool visibility_affects_vertex_colors(EViewType type)
+{
+    switch (type) {
+    case EViewType::FeatureType:
+    case EViewType::Tool:
+    case EViewType::Summary:
+    case EViewType::ColorPrint:
+        return false;
+    default:
+        return true;
+    }
+}
+#endif
+
 bool ViewerImpl::is_option_visible(EOptionType type) const
 {
     return m_settings.options_visibility[size_t(type)];
@@ -1803,7 +1842,12 @@ void ViewerImpl::toggle_option_visibility(EOptionType type)
             m_view_range.set_visible(new_enabled_range[0], visible_range[1]);
     }
     m_settings.update_enabled_entities = true;
+#ifdef ENABLE_OPENGL_ES
+    m_settings.update_colors = m_settings.update_colors || m_palette_reset_unapplied ||
+        m_vertices.empty() || visibility_affects_vertex_colors(m_settings.view_type);
+#else
     m_settings.update_colors = true;
+#endif
 }
 
 bool ViewerImpl::is_extrusion_role_visible(EGCodeExtrusionRole role) const
@@ -1816,7 +1860,12 @@ void ViewerImpl::toggle_extrusion_role_visibility(EGCodeExtrusionRole role)
     m_settings.extrusion_roles_visibility[size_t(role)] = ! m_settings.extrusion_roles_visibility[size_t(role)];
     update_view_full_range();
     m_settings.update_enabled_entities = true;
+#ifdef ENABLE_OPENGL_ES
+    m_settings.update_colors = m_settings.update_colors || m_palette_reset_unapplied ||
+        m_vertices.empty() || visibility_affects_vertex_colors(m_settings.view_type);
+#else
     m_settings.update_colors = true;
+#endif
 }
 
 void ViewerImpl::set_view_visible_range(Interval::value_type min, Interval::value_type max)
@@ -1856,19 +1905,31 @@ float ViewerImpl::get_estimated_time_at(size_t id) const
 
 Color ViewerImpl::get_vertex_color(const PathVertex& v) const
 {
+    return resolve_vertex_color(get_vertex_color_input(v));
+}
+
+Color ViewerImpl::resolve_vertex_color(const VertexColorInput& input) const
+{
+    if (input.range == nullptr)
+        return input.color;
+#ifdef ENABLE_OPENGL_ES
+    const size_t color_count = m_settings.low_quality ? 8 : 0;
+#else
+    constexpr size_t color_count = 0;
+#endif
+    return input.range->get_color_at(input.value, color_count);
+}
+
+ViewerImpl::VertexColorInput ViewerImpl::get_vertex_color_input(const PathVertex& v) const
+{
     if (v.type == EMoveType::Noop)
         return DUMMY_COLOR;
 
     if ((v.is_wipe() && (m_settings.view_type != EViewType::Speed && m_settings.view_type != EViewType::ActualSpeed && m_settings.view_type != EViewType::Acceleration && m_settings.view_type != EViewType::Jerk)) || v.is_option())
         return get_option_color(move_type_to_option(v.type));
 
-#ifdef ENABLE_OPENGL_ES
-    const size_t color_count = m_settings.low_quality ? 8 : 0;
-#else
-    constexpr size_t color_count = 0;
-#endif
-    const auto range_color = [color_count](const ColorRange& range, float value) {
-        return range.get_color_at(value, color_count);
+    const auto range_color = [](const ColorRange& range, float value) {
+        return VertexColorInput(range, value);
     };
 
     switch (m_settings.view_type)
@@ -1977,6 +2038,9 @@ void ViewerImpl::set_extrusion_role_color(EGCodeExtrusionRole role, const Color&
 void ViewerImpl::reset_default_extrusion_roles_colors()
 {
     m_extrusion_roles_colors = DEFAULT_EXTRUSION_ROLES_COLORS;
+#ifdef ENABLE_OPENGL_ES
+    m_palette_reset_unapplied = true;
+#endif
 }
 
 const Color& ViewerImpl::get_option_color(EOptionType type) const
@@ -1993,6 +2057,9 @@ void ViewerImpl::set_option_color(EOptionType type, const Color& color)
 void ViewerImpl::reset_default_options_colors()
 {
     m_options_colors = DEFAULT_OPTIONS_COLORS;
+#ifdef ENABLE_OPENGL_ES
+    m_palette_reset_unapplied = true;
+#endif
 }
 
 const ColorRange& ViewerImpl::get_color_range(EViewType type) const
@@ -2398,6 +2465,7 @@ void ViewerImpl::render_segments(const Mat4x4& view_matrix, const Mat4x4& projec
         glsafe(glUniform1f(m_uni_segments_exposure_id, m_exposure));
         glsafe(glUniform1f(m_uni_segments_saturation_id, m_saturation));
         glsafe(glUniform3fv(m_uni_segments_light_top_dir_id, 1, m_light_top_dir.data()));
+        glsafe(glUniform1i(m_uni_segments_enhanced_lighting_id, m_enhanced_lighting));
         set_layer_colors(m_uni_segments_layer_colors);
     }
 

@@ -1,0 +1,60 @@
+--- a/src/api/optimize.c	2026-10-18 03:01:12.597244381 +0200
++++ b/src/api/optimize.c	2026-10-18 03:01:12.597686315 +0200
+@@ -435,6 +435,7 @@
+     stop.stop_msg = &(opt->errmsg);
+ 
+     switch (algorithm) {
++#ifdef NLOPT_KEEP_ALL_ALGORITHMS
+     case NLOPT_GN_DIRECT:
+     case NLOPT_GN_DIRECT_L:
+     case NLOPT_GN_DIRECT_L_RAND:
+@@ -518,6 +519,7 @@
+ #else
+         return NLOPT_INVALID_ARGS;
+ #endif
++#endif /* NLOPT_KEEP_ALL_ALGORITHMS */
+ 
+ #if 0
+         /* lacking a free/open-source license, we no longer use
+@@ -561,6 +563,7 @@
+         }
+ #endif
+ 
++#ifdef NLOPT_KEEP_ALL_ALGORITHMS
+     case NLOPT_LN_PRAXIS:
+         {
+             double step;
+@@ -704,6 +707,7 @@
+             }
+             return ret;
+         }
++#endif /* NLOPT_KEEP_ALL_ALGORITHMS */
+ 
+     case NLOPT_LN_NELDERMEAD:
+     case NLOPT_LN_SBPLX:
+@@ -726,6 +730,7 @@
+             return ret;
+         }
+ 
++#ifdef NLOPT_KEEP_ALL_ALGORITHMS
+     case NLOPT_AUGLAG:
+     case NLOPT_AUGLAG_EQ:
+     case NLOPT_LN_AUGLAG:
+@@ -764,14 +769,17 @@
+         if (!finite_domain(n, lb, ub))
+             RETURN_ERR(NLOPT_INVALID_ARGS, opt, "finite domain required for global algorithm");
+         return isres_minimize(ni, f, f_data, (int) (opt->m), opt->fc, (int) (opt->p), opt->h, lb, ub, x, minf, &stop, (int) POP(0));
++#endif /* NLOPT_KEEP_ALL_ALGORITHMS */
+ 
+     case NLOPT_GN_ESCH:
+         if (!finite_domain(n, lb, ub))
+             RETURN_ERR(NLOPT_INVALID_ARGS, opt, "finite domain required for global algorithm");
+         return chevolutionarystrategy(n, f, f_data, lb, ub, x, minf, &stop, (unsigned) POP(0), (unsigned) (POP(0) * 1.5));
+ 
++#ifdef NLOPT_KEEP_ALL_ALGORITHMS
+     case NLOPT_LD_SLSQP:
+         return nlopt_slsqp(n, f, f_data, opt->m, opt->fc, opt->p, opt->h, lb, ub, x, minf, &stop);
++#endif
+ 
+     default:
+         return NLOPT_INVALID_ARGS;

@@ -25,11 +25,11 @@ export const BedAssetsSettings: React.FC = () => {
       if (useAppStore.getState().engineError) throw new Error(useAppStore.getState().engineError!);
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
   };
-  return <fieldset className="bed-assets-settings" style={{ margin: '12px 0', display: 'grid', gap: 8, border: '1px solid var(--border-color)' }}>
+  return <fieldset className="bed-assets-settings" style={{ margin: '12px 0', padding: 12, minWidth: 0, display: 'grid', gap: 8, border: '1px solid var(--border-color)' }}>
     <legend>{t('Custom bed appearance')}</legend>
     {([['bed_custom_texture', 'Bed image', '.png,.jpg,.jpeg,.svg'], ['bed_custom_model', 'Bed model', '.stl']] as const).map(([key, label, accept]) =>
-      <label key={key} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span>{t(label)}</span><input type="file" id={key} accept={accept} onChange={(e) => { void upload(e.target.files?.[0], key); e.target.value = ''; }} />
+      <label key={key} className="wm-field" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span className="wm-field-label">{t(label)}</span><input type="file" id={key} accept={accept} style={{ width: '100%', maxWidth: '100%', minWidth: 0 }} onChange={(e) => { void upload(e.target.files?.[0], key); e.target.value = ''; }} />
         {(config[key] || '') !== (presetConfig[key] || '') && <button id={`reset-${key}`} type="button" className="btn btn-secondary" onClick={() => void reset(key, 'printer')}>{t('Use profile default')}</button>}
       </label>)}
     {error && <p role="alert">{error}</p>}

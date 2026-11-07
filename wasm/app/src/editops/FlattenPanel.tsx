@@ -22,7 +22,9 @@ export const FlattenPanel: React.FC = () => {
       className="canvas-panel"
       style={{
         position: 'absolute',
-        top: 24,
+        top: 'var(--tool-panel-top, 64px)',
+        maxHeight: 'calc(100% - var(--tool-panel-top, 64px) - var(--plate-actions-clearance, 16px))',
+        overflowY: 'auto',
         right: 24,
         width: 280,
         background: 'var(--panel-bg)',
@@ -37,21 +39,21 @@ export const FlattenPanel: React.FC = () => {
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>{t("Place on Face (F)")}</h3>
+        <h3 style={{ margin: 0, fontSize: '0.875rem', fontWeight: 600 }}>{t("Place on Face (F)")}</h3>
         <button className="icon-btn" onClick={stopFlatten} aria-label={t("Close")}>✕</button>
       </div>
 
-      <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted)' }}>
+      <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
         {t("Click a face cluster in the 3D viewport or pick a flat facet below to lay it on the print bed.")}</p>
 
-      {error && <div style={{ color: 'var(--danger-color)', fontSize: 12 }}>{error}</div>}
+      {error && <div style={{ color: 'var(--danger-color)', fontSize: '0.75rem' }}>{error}</div>}
 
       {isLoadingClusters ? (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t("Detecting planar facets...")}</div>
+        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t("Detecting planar facets...")}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
           {flattenClusters.length === 0 ? (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t("No planar facets found")}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t("No planar facets found")}</div>
           ) : (
             flattenClusters.map((cluster, idx) => (
               <button
@@ -66,7 +68,7 @@ export const FlattenPanel: React.FC = () => {
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   padding: '6px 10px',
-                  fontSize: 12,
+                  fontSize: '0.75rem',
                   textAlign: 'left'
                 }}
               >

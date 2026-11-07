@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { isDefaultPlateName, plateTitle } from './plateName';
 import { PlateSettingsPopover } from './PlateSettingsPopover';
 import { usePlatesStore } from './platesStore';
 import { useAppStore } from '../store/appStore';
 import { useTranslation } from "../i18n";
+import { useSliceReadiness } from '../shell/sliceReadiness';
 
 export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ style }) => {
     const { t } = useTranslation();
@@ -17,11 +18,32 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
   const sliceAll = usePlatesStore((s) => s.sliceAll);
 
   const isSlicing = useAppStore((s) => s.isSlicing);
+  const sliceDisabledReason = useSliceReadiness();
   const isBusy = useAppStore((s) => s.isSlicing || s.isModelLoading || !s.isEngineReady);
 
   const [sliceMenuOpen, setSliceMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [renaming, setRenaming] = useState<{ index: number; value: string } | null>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const tab = barRef.current?.querySelector<HTMLElement>(`#plate-tab-${activePlateIndex}`);
+    const row = tab?.parentElement;
+    if (!tab || !row) return;
+    // Scroll only the tab row, without moving the canvas or surrounding sheet.
+    if (tab.offsetLeft < row.scrollLeft) row.scrollLeft = tab.offsetLeft;
+    else if (tab.offsetLeft + tab.offsetWidth > row.scrollLeft + row.clientWidth)
+      row.scrollLeft = tab.offsetLeft + tab.offsetWidth - row.clientWidth;
+  }, [activePlateIndex, plates.length]);
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const view = bar?.parentElement;
+    if (!bar || !view) return;
+    const reserveSpace = () => view.style.setProperty('--plate-actions-clearance', `${view.clientHeight - bar.offsetTop + 8}px`);
+    reserveSpace();
+    const observer = new ResizeObserver(reserveSpace);
+    observer.observe(bar); observer.observe(view);
+    return () => { observer.disconnect(); view.style.removeProperty('--plate-actions-clearance'); };
+  }, []);
 
   // An empty title goes back to the default "Plate N".
   const commitRename = () => {
@@ -35,6 +57,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
   return (
     <div
       id="plate-selector-bar"
+      ref={barRef}
       data-testid="plate-selector-bar"
       style={{
         position: 'absolute',
@@ -43,10 +66,13 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
         transform: 'translateX(-50%)',
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
+        gap: 10,
+        // Sized to its content: with left:50% the browser would otherwise offer only the right half and squeeze the buttons.
+        width: 'max-content',
+        maxWidth: 'calc(100% - 24px)',
         background: 'var(--panel-bg)',
         backdropFilter: 'blur(8px)',
-        padding: '6px 12px',
+        padding: '8px 12px',
         borderRadius: 8,
         border: '1px solid var(--border-color)',
         zIndex: 20,
@@ -55,7 +81,7 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
       }}
     >
       {/* Plate Tabs */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, overflowX: 'auto' }}>
         {plates.map((plate) => {
           const isActive = plate.index === activePlateIndex;
           return (
@@ -63,15 +89,28 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
               key={plate.index}
               id={`plate-tab-${plate.index}`}
               data-testid={`plate-tab-${plate.index}`}
+              role="button"
+              tabIndex={isBusy ? -1 : 0}
+              aria-pressed={isActive}
+              aria-disabled={isBusy}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget || isBusy) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setActivePlate(plate.index);
+                }
+              }}
               onClick={() => { if (!isBusy) setActivePlate(plate.index); }}
               onDoubleClick={() => !isBusy && setRenaming({ index: plate.index, value: isDefaultPlateName(plate.name, plate.index) ? '' : plate.name })}
               title={t("Double-click to rename")}
               style={{
                 display: 'flex',
+                flexShrink: 0,
                 alignItems: 'center',
                 gap: 6,
-                padding: '4px 10px',
-                borderRadius: 4,
+                minHeight: 32,
+                padding: '0 14px',
+                borderRadius: 6,
                 background: isActive ? 'var(--accent-color)' : 'var(--control-bg)',
                 color: isActive ? '#fff' : 'var(--text-color)',
                 fontSize: '0.85rem',
@@ -148,46 +187,51 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
           background: 'var(--control-bg)',
           border: '1px dashed var(--border-color)',
           color: 'var(--text-color)',
-          borderRadius: 4,
-          padding: '4px 10px',
+          borderRadius: 6,
+          minHeight: 32,
+          padding: '0 14px',
           fontSize: '0.85rem',
           cursor: 'pointer',
           fontWeight: 500,
           whiteSpace: 'nowrap',
+          flexShrink: 0,
           transition: 'background 0.15s ease'
         }}
       >
         {t("+ Add Plate")}</button>
 
       {/* Settings of the active plate */}
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative', flexShrink: 0 }}>
         <button
           type="button" id="plate-settings-btn" data-testid="plate-settings-btn" aria-expanded={settingsOpen}
           disabled={isBusy}
           onClick={() => setSettingsOpen(!settingsOpen)} title={t("Settings of this plate")}
-          style={{ background: settingsOpen ? 'var(--accent-color)' : 'var(--control-bg)', border: '1px solid var(--border-color)', color: settingsOpen ? '#fff' : 'var(--text-color)', borderRadius: 4, padding: '4px 10px', fontSize: '0.85rem', cursor: 'pointer' }}
+          style={{ background: settingsOpen ? 'var(--accent-color)' : 'var(--control-bg)', border: '1px solid var(--border-color)', color: settingsOpen ? '#fff' : 'var(--text-color)', borderRadius: 6, minHeight: 32, padding: '0 14px', fontSize: '0.85rem', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
         >
           {t("Plate settings")}</button>
         {settingsOpen && plates.find((p) => p.index === activePlateIndex) && <PlateSettingsPopover plate={plates.find((p) => p.index === activePlateIndex)!} />}
       </div>
 
       {/* Vertical separator */}
-      <div style={{ width: 1, height: 20, background: 'var(--border-color)', margin: '0 4px' }} />
+      <div style={{ width: 1, height: 20, background: 'var(--border-color)', margin: '0 2px', flexShrink: 0 }} />
 
       {/* Slice Menu */}
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         <button
           type="button"
           id="slice-plate-btn"
           data-testid="slice-plate-btn"
-          disabled={isBusy}
+          disabled={!!sliceDisabledReason}
+          title={t(sliceDisabledReason)}
           onClick={() => slicePlate(activePlateIndex)}
           style={{
             background: 'var(--accent-color, #009688)',
             border: 'none',
             color: '#fff',
-            borderRadius: '4px 0 0 4px',
-            padding: '5px 12px',
+            borderRadius: '6px 0 0 6px',
+            minHeight: 32,
+            padding: '0 16px',
+            whiteSpace: 'nowrap',
             fontSize: '0.85rem',
             cursor: isSlicing ? 'not-allowed' : 'pointer',
             fontWeight: 600,
@@ -200,15 +244,16 @@ export const PlateSelectorBar: React.FC<{ style?: React.CSSProperties }> = ({ st
           type="button"
           id="slice-menu-toggle-btn"
           data-testid="slice-menu-toggle-btn"
-          disabled={isBusy}
+          disabled={!!sliceDisabledReason}
           onClick={() => setSliceMenuOpen(!sliceMenuOpen)}
           style={{
             background: 'var(--accent-hover, #008172)',
             border: 'none',
             borderLeft: '1px solid rgba(255, 255, 255, 0.2)',
             color: '#fff',
-            borderRadius: '0 4px 4px 0',
-            padding: '5px 8px',
+            borderRadius: '0 6px 6px 0',
+            minHeight: 32,
+            padding: '0 10px',
             fontSize: '0.85rem',
             cursor: isSlicing ? 'not-allowed' : 'pointer'
           }}

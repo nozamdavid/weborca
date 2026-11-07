@@ -2,15 +2,23 @@ import { useTranslation } from './i18n';
 import { ConfirmHost } from './components/ModalBackdrop';
 import { ComparePresetsDialog } from './settings/ComparePresetsDialog';
 import { WizardDialog } from './wizard';
-import React, { useCallback, useEffect, useState } from 'react';
+import { CloudDialog } from './orcaCloud/CloudDialog';
+import { CloudStartup } from './orcaCloud/CloudStartup';
+import { CloudAutoSync } from './orcaCloud/CloudAutoSync';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import './App.css';
+import './mobile/mobile.css';
+import { useMobile } from './mobile/useMobile';
+import { MobilePrepare } from './mobile/MobilePrepare';
+import { MobileHeader, MobileNavigation } from './mobile/MobileShell';
 import { FlowRateModal } from './calibration/FlowRateModal';
 import { OtherCalibrationsDialogs } from './calibration/OtherCalibrationsDialogs';
 import { OtherCalibrationsMenu } from './calibration/OtherCalibrationsMenu';
 import { ErrorBanner } from './components/ErrorBanner';
 import { IsolationNotice } from './components/IsolationNotice';
 import { StepImportModal } from './components/StepImportModal';
-import { disposeEngine } from './engine/orcaEngine';
+import { stopAppStartup } from './store/appStore';
+import { EngineLoadingIndicator } from './components/EngineLoadingIndicator';
 import { PlateView } from './plate/PlateView';
 import { PreviewView } from './preview/PreviewView';
 import { ManagePresetsDialog } from './presets/ManagePresetsDialog';
@@ -23,6 +31,7 @@ import { CalibrationPage } from './shell/CalibrationPage';
 import { HelpDialogs } from './shell/HelpDialogs';
 import { PrepareSidebar } from './shell/PrepareSidebar';
 import { TopBar } from './shell/TopBar';
+import { SlicingGuard } from './shell/SlicingGuard';
 import { RecoveryDialog } from './shell/RecoveryDialog';
 import { ProjectNotesDialog } from './shell/ProjectNotesDialog';
 import { SlicingWarningsDialog } from './shell/SlicingWarningsDialog';
@@ -40,10 +49,13 @@ function tabFromPath(): TabId {
 }
 
 export const App: React.FC = () => {
+  const mountGeneration = useRef(0);
+  const mobile = useMobile();
   const { t } = useTranslation();
   const isIsolated = useAppStore((state) => state.isIsolated);
   const initApp = useAppStore((state) => state.initApp);
   const sliceResult = useAppStore((state) => state.sliceResult);
+  const sessionRecovery = useAppStore((state) => state.sessionRecovery);
   const isSlicing = useAppStore((state) => state.isSlicing);
   const isModelLoading = useAppStore((state) => state.isModelLoading);
   const sliceStatusText = useAppStore((state) => state.sliceStatusText);
@@ -51,6 +63,10 @@ export const App: React.FC = () => {
   const cancelSlice = useAppStore((state) => state.cancelSlice);
   const showSidebar = usePrefsStore((state) => state.display.showSidebar);
   const themePref = usePrefsStore((state) => state.display.theme);
+  const fontScale = usePrefsStore((state) => state.display.fontScale);
+  useEffect(() => {
+    document.documentElement.style.setProperty('--ui-font-scale', String(fontScale / 100));
+  }, [fontScale]);
   useEffect(() => {
     const query = window.matchMedia('(prefers-color-scheme: light)');
     const apply = () => { document.documentElement.dataset.theme = themePref === 'system' ? (query.matches ? 'light' : 'dark') : themePref; };
@@ -79,14 +95,18 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     initApp();
+    const current = ++mountGeneration.current;
     return () => {
-      disposeEngine();
+      // StrictMode replays effects synchronously. Keep its one startup/download,
+      // while an actual unmount invalidates the pending initialization.
+      queueMicrotask(() => { if (mountGeneration.current === current) stopAppStartup(); });
     };
   }, [initApp]);
 
   useEffect(() => {
-    if (sliceResult?.gcode && !isSlicing) setActiveTab('preview');
-  }, [sliceResult, isSlicing]);
+    if (sessionRecovery === 'restored') setActiveTab('prepare');
+    else if (sessionRecovery === 'idle' && sliceResult?.gcode && !isSlicing) setActiveTab('preview');
+  }, [sliceResult, isSlicing, sessionRecovery, setActiveTab]);
 
   // Opening Preview with nothing sliced yet starts the slice, like desktop.
   useEffect(() => {
@@ -135,13 +155,18 @@ export const App: React.FC = () => {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100vh',
+        height: '100dvh',
         width: '100vw',
         overflow: 'hidden'
       }}
     >
       <ErrorBanner />
-      <TopBar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <CloudStartup />
+      <CloudAutoSync />
+      <CloudDialog />
+      <SlicingGuard />
+      {mobile ? <MobileHeader /> : <TopBar activeTab={activeTab} setActiveTab={setActiveTab} />}
+      <EngineLoadingIndicator />
       <StepImportModal />
       <RecoveryDialog />
       <ProjectNotesDialog />
@@ -149,8 +174,7 @@ export const App: React.FC = () => {
 
       <main className="workspace orca-workspace" aria-busy={isModelLoading}>
         <div className="tab-page prepare-page" hidden={activeTab !== 'prepare'}>
-          {showSidebar && <PrepareSidebar />}
-          <PlateView />
+          {mobile ? <MobilePrepare /> : <>{showSidebar && <PrepareSidebar />}<PlateView /></>}
         </div>
         <div className="tab-page" style={{ position: 'relative' }} hidden={activeTab !== 'preview'}>
           <PreviewView active={activeTab === 'preview'} />
@@ -165,7 +189,7 @@ export const App: React.FC = () => {
         {isSlicing && (
           <div id="preview-slicing-overlay" className="model-loading-overlay">
             <div className="model-loading-card" role="status" aria-live="polite" aria-atomic="true" style={{ flexDirection: 'column', alignItems: 'stretch', minWidth: 320 }}>
-              <strong>{t("Slicing")}</strong>
+              <strong data-testid="slicing-warning" className="slicing-progress-warning">{t("Slicing (don't leave this tab)")}</strong>
               <div className="progress-bar-wrapper"><div className="progress-bar-fill" id="preview-progress-bar" style={{ width: `${slicePercent}%` }} /></div>
               <p id="preview-slicing-status">{sliceStatusText}</p>
               <button className="btn-danger-wide" id="preview-cancel-btn" onClick={() => cancelSlice()}>{t("Cancel")}</button>
@@ -184,6 +208,7 @@ export const App: React.FC = () => {
           </div>
         )}
       </main>
+      {mobile && <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />}
 
       <SettingsDialog />
       <FixesDialog />
@@ -196,7 +221,7 @@ export const App: React.FC = () => {
       <HelpDialogs />
       <ComparePresetsDialog />
       <ConfirmHost />
-      <WizardDialog />
+      <WizardDialog autoOpen={!mobile} />
       <PreferencesDialog />
       <EditOpsDialogs />
       <ToastContainer />

@@ -1,3 +1,4 @@
+import './SliceStatsPanel.css';
 import { usePlatesStore } from '../plates/platesStore';
 /**
  * @file SliceStatsPanel.tsx
@@ -13,7 +14,7 @@ import { SendToPrinterDialog } from '../printers/SendToPrinterDialog';
 import { exportGcode } from '../shell/exportGcode';
 import { useTranslation } from "../i18n";
 
-function formatPrintTime(seconds: number): string {
+export function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
   const hrs = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
@@ -31,7 +32,7 @@ interface SlotFilamentStat {
   g: number;
 }
 
-function parseFilamentStats(
+export function parseFilamentStats(
   gcodeBytes: Uint8Array | undefined,
   selectedFilaments: string[],
   currentConfig: Record<string, string>
@@ -69,7 +70,7 @@ function parseFilamentStats(
     return {
       slot: idx + 1,
       name,
-      color: rawColors[idx] || '#009688',
+      color: rawColors[idx] || 'var(--accent)',
       mm: mmValues[idx] || 0,
       g: gValues[idx] || 0
     };
@@ -101,7 +102,7 @@ export const SliceStatsPanel: React.FC = () => {
   const selectedFilaments = useAppStore((s) => s.selectedFilaments);
   const currentConfig = useAppStore((s) => s.currentConfig);
 
-  const [isBreakdownOpen, setIsBreakdownOpen] = useState(true);
+  const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
 
   const filamentStats = useMemo(() => {
     return parseFilamentStats(sliceResult?.gcode, selectedFilaments, currentConfig);
@@ -122,193 +123,111 @@ export const SliceStatsPanel: React.FC = () => {
   return (
     <div
       id="stats-section"
-      className="slice-stats-panel"
       data-testid="slice-stats-panel"
-      style={{
-        position: 'absolute',
-        bottom: 70,
-        right: 90,
-        width: 290,
-        maxHeight: 'calc(100% - 280px)',
-        background: 'rgba(24, 24, 27, 0.90)',
-        backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
-        borderRadius: 8,
-        display: 'flex',
-        flexDirection: 'column',
-        zIndex: 15,
-        fontSize: '0.8rem',
-        color: 'var(--text-color)',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
-        overflow: 'hidden'
-      }}
+      data-expanded={showStatsPanel}
+      className="slice-stats-panel ds-float slice-stats-panel"
     >
       {/* Header */}
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '8px 12px',
-          background: 'rgba(39, 39, 42, 0.6)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.1)'
-        }}
+        className="slice-stats-panel__head"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
-          <span>{t("📊 Slicing Statistics")}</span>
-          <span id="status-text" style={{ display: 'none' }}>{t("Slicing complete!")}</span>
+        <div className="slicestats-panel__row-31">
+          <span>{t("Slicing Statistics")}</span>
+          <span id="status-text" className="slicestats-panel__span-30">{t("Slicing complete!")}</span>
         </div>
         <button
           type="button"
           onClick={toggleStatsPanel}
-          title={showStatsPanel ? 'Minimize' : 'Expand'}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            padding: 2
-          }}
+          title={showStatsPanel ? t('Minimize') : t('Expand')}
+          className="ds-btn slicestats-panel__button-29"
         >
           {showStatsPanel ? '✕' : '▼'}
         </button>
       </div>
 
       {showStatsPanel && (
-        <div style={{ padding: '10px 12px', overflowY: 'auto' }}>
+        <>
+        <div className="slice-stats-panel__body">
           {/* Key Summary Cards Grid */}
           <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              gap: 8,
-              marginBottom: 10
-            }}
+            className="slice-stats-panel__summary"
           >
             <div
-              style={{
-                background: 'rgba(255, 255, 255, 0.04)',
-                padding: '6px 8px',
-                borderRadius: 6,
-                border: '1px solid rgba(255, 255, 255, 0.06)'
-              }}
+              className="ds-stat slicestats-panel__card-24"
             >
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{t("Total Layers")}</div>
-              <div style={{ fontSize: '1rem', fontWeight: 600, color: '#38bdf8' }} id="stat-layers">
+              <div className="ds-stat__label slicestats-panel__div-22">{t("Total Layers")}</div>
+              <div className="ds-stat__value slicestats-panel__div-26" id="stat-layers">
                 {stats.layers}
               </div>
             </div>
 
             <div
-              style={{
-                background: 'rgba(255, 255, 255, 0.04)',
-                padding: '6px 8px',
-                borderRadius: 6,
-                border: '1px solid rgba(255, 255, 255, 0.06)'
-              }}
+              className="ds-stat slicestats-panel__card-24"
             >
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{t("Print Time")}</div>
-              <div style={{ fontSize: '1rem', fontWeight: 600, color: '#10b981' }} id="stat-time">
+              <div className="ds-stat__label slicestats-panel__div-22">{t("Print Time")}</div>
+              <div className="ds-stat__value slicestats-panel__div-25" id="stat-time">
                 {timeFormatted}
               </div>
             </div>
 
             <div
-              style={{
-                background: 'rgba(255, 255, 255, 0.04)',
-                padding: '6px 8px',
-                borderRadius: 6,
-                border: '1px solid rgba(255, 255, 255, 0.06)'
-              }}
+              className="ds-stat slicestats-panel__card-24"
             >
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{t("Filament Length")}</div>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f59e0b' }} id="stat-filament-mm">
+              <div className="ds-stat__label slicestats-panel__div-22">{t("Filament Length")}</div>
+              <div className="ds-stat__value slicestats-panel__div-21" id="stat-filament-mm">
                 {filamentM}
               </div>
             </div>
 
             <div
-              style={{
-                background: 'rgba(255, 255, 255, 0.04)',
-                padding: '6px 8px',
-                borderRadius: 6,
-                border: '1px solid rgba(255, 255, 255, 0.06)'
-              }}
+              className="ds-stat slicestats-panel__card-24"
             >
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{t("Filament Weight")}</div>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f59e0b' }} id="stat-filament-g">
+              <div className="ds-stat__label slicestats-panel__div-22">{t("Filament Weight")}</div>
+              <div className="ds-stat__value slicestats-panel__div-21" id="stat-filament-g">
                 {filamentG}
               </div>
             </div>
           </div>
 
           {filamentCost > 0 && (
-            <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '6px 8px', borderRadius: 6, border: '1px solid rgba(255, 255, 255, 0.06)', marginBottom: 10 }}>
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{t("Filament Cost")}</div>
-              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#f59e0b' }} id="stat-filament-cost">{filamentCost.toFixed(2)}</div>
+            <div className="slicestats-panel__card-23">
+              <div className="ds-stat__label slicestats-panel__div-22">{t("Filament Cost")}</div>
+              <div className="ds-stat__value slicestats-panel__div-21" id="stat-filament-cost">{filamentCost.toFixed(2)}</div>
+              <p className="filament-cost-basis">{t('From G-code, based on filament cost/kg. Currency not specified.')}</p>
             </div>
           )}
 
           {/* Multi-filament Breakdown */}
           {filamentStats.length > 0 && (
-            <div id="stat-filaments-section" style={{ marginBottom: 10 }}>
+            <div id="stat-filaments-section" className="slicestats-panel__div-20">
               <div
-                style={{
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  color: '#94a3b8',
-                  marginBottom: 6,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between'
-                }}
+                className="slicestats-panel__row-19"
               >
                 <span>{t("Filaments (")}{filamentStats.length})</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div className="slicestats-panel__row-18">
                 {filamentStats.map((item) => (
                   <div
                     key={item.slot}
                     id={`stat-filament-slot-${item.slot}`}
-                    className="stat-filament-row"
                     data-testid={`stat-filament-slot-${item.slot}`}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '4px 8px',
-                      background: 'rgba(255, 255, 255, 0.04)',
-                      borderRadius: 4,
-                      border: '1px solid rgba(255, 255, 255, 0.06)',
-                      fontSize: '0.75rem'
-                    }}
+                    className="stat-filament-row slicestats-panel__row-17"
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+                    <div className="slicestats-panel__row-16">
                       <span
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: '50%',
-                          backgroundColor: item.color,
-                          flexShrink: 0
-                        }}
+                        className="slicestats-panel__span-15" style={{ backgroundColor: item.color }}
                       />
-                      <span style={{ color: '#38bdf8', fontWeight: 600 }}>#{item.slot}</span>
+                      <span className="slicestats-panel__span-14">#{item.slot}</span>
                       <span
-                        style={{
-                          color: 'var(--text-color)',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }}
+                        className="slicestats-panel__span-13"
                         title={item.name}
                       >
                         {item.name}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, color: '#f59e0b', fontWeight: 500, flexShrink: 0, fontSize: '0.7rem' }}>
+                    <div className="slicestats-panel__row-12">
                       <span>{formatFilamentLength(item.mm)}</span>
-                      <span style={{ color: 'var(--text-muted)' }}>({item.g.toFixed(2)} {t("g)")}</span>
+                      <span className="slicestats-panel__span-5">({item.g.toFixed(2)} {t("g)")}</span>
                     </div>
                   </div>
                 ))}
@@ -318,41 +237,26 @@ export const SliceStatsPanel: React.FC = () => {
 
           {/* Feature Breakdown Table */}
           {stats.features && stats.features.length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <div
+            <div className="slicestats-panel__div-11">
+              <button type="button" aria-expanded={isBreakdownOpen}
                 onClick={() => setIsBreakdownOpen(!isBreakdownOpen)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  padding: '4px 0',
-                  fontWeight: 600,
-                  fontSize: '0.75rem',
-                  color: '#94a3b8',
-                  borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
-                }}
+                className="slicestats-panel__row-10"
               >
                 <span>{t("Time by Feature")}</span>
                 <span>{isBreakdownOpen ? '▼' : '▶'}</span>
-              </div>
+              </button>
 
               {isBreakdownOpen && (
-                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div className="slicestats-panel__row-9">
                   {stats.features.map((feat, idx) => (
                     <div
                       key={idx}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        fontSize: '0.75rem'
-                      }}
+                      className="slicestats-panel__row-8"
                     >
-                      <span style={{ color: 'var(--text-color)' }}>{feat.name}</span>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <span style={{ color: 'var(--text-muted)' }}>{formatPrintTime(feat.timeS)}</span>
-                        <span style={{ color: 'var(--text-dim)', minWidth: 40, textAlign: 'right' }}>
+                      <span className="slicestats-panel__span-7">{feat.name}</span>
+                      <div className="slicestats-panel__row-6">
+                        <span className="slicestats-panel__span-5">{formatPrintTime(feat.timeS)}</span>
+                        <span className="slicestats-panel__span-4">
                           {feat.percent.toFixed(1)}%
                         </span>
                       </div>
@@ -363,35 +267,23 @@ export const SliceStatsPanel: React.FC = () => {
             </div>
           )}
 
-          {/* Download G-code Link */}
+        </div>
+          {/* Export stays reachable while the statistics body scrolls. */}
           {gcodeUrl && (
-            <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+            <div className="slicestats-panel__row-3">
               <a
                 id="download-link"
                 href={gcodeUrl}
                 onClick={(event) => { event.preventDefault(); void exportGcode(); }}
                 download={downloadFileName}
-                className="btn btn-download"
-                style={{
-                  display: 'block',
-                  flex: 1,
-                  textAlign: 'center',
-                  background: '#009688',
-                  color: '#fff',
-                  padding: '6px 12px',
-                  borderRadius: 6,
-                  textDecoration: 'none',
-                  fontWeight: 600,
-                  fontSize: '0.8rem'
-                }}
+                className="ds-btn ds-btn--primary slicestats-panel__a-2"
               >
-                {t("⬇️ Download")}</a>
+                {t("Export G-code")}</a>
               <button
-                className="btn btn-primary"
-                style={{ flex: 1, padding: '6px 12px', borderRadius: 6, fontWeight: 600, fontSize: '0.8rem', background: '#3b82f6', color: '#fff', border: 'none', cursor: 'pointer' }}
+                className="ds-btn ds-btn--primary slicestats-panel__button-1"
                 onClick={() => openSendDialog()}
               >
-                {t("🖨️ Send to Printer")}</button>
+                {t("Send to Printer")}</button>
             </div>
           )}
           <SendToPrinterDialog 
@@ -403,7 +295,7 @@ export const SliceStatsPanel: React.FC = () => {
              }}
              defaultFilename={downloadFileName}
           />
-        </div>
+        </>
       )}
     </div>
   );

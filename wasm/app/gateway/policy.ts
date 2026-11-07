@@ -12,6 +12,10 @@ export interface GatewayConfig {
   proxy?: string;
   /** Only allow requests that cannot change anything on the printer. */
   readOnly?: boolean;
+  /** Explicitly allow plain Moonraker G-code uploads while keeping read-only command filters. */
+  allowUpload?: boolean;
+  /** Maximum multipart upload bytes, including framing. */
+  uploadMaxBytes?: number;
   /** Comma list of cloud services (keys of CLOUD_SERVICES) to enable (dedicated bridges or restricted HTTPS hosts). */
   cloud?: string;
 }
@@ -21,7 +25,9 @@ export const CLOUD_SERVICES: Record<string, string[]> = {
   'prusa-connect': ['connect.prusa3d.com'],
   // Dedicated cloud bridges must not open the generic HTTP proxy.
   'bambu-cloud': [],
-  'creality-cloud': []
+  'creality-cloud': [],
+  'snapmaker-cloud': [],
+  'orca-cloud': []
 };
 
 export function cloudHosts(config: GatewayConfig): Set<string> {
@@ -33,7 +39,14 @@ export function cloudHosts(config: GatewayConfig): Set<string> {
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
-  return { proxy: env.ORCA_PRINTER_PROXY?.trim() || undefined, readOnly: env.ORCA_PRINTER_PROXY_READONLY === '1', cloud: env.ORCA_PRINTER_CLOUD?.trim() || undefined };
+  return {
+    proxy: env.ORCA_PRINTER_PROXY?.trim() || undefined,
+    readOnly: env.ORCA_PRINTER_PROXY_READONLY === '1',
+    allowUpload: env.ORCA_PRINTER_PROXY_ALLOW_UPLOAD === '1',
+    uploadMaxBytes: env.ORCA_PRINTER_PROXY_UPLOAD_MAX_BYTES === undefined ? 1024 ** 3
+      : /^[1-9]\d*$/.test(env.ORCA_PRINTER_PROXY_UPLOAD_MAX_BYTES) ? Number(env.ORCA_PRINTER_PROXY_UPLOAD_MAX_BYTES) : NaN,
+    cloud: env.ORCA_PRINTER_CLOUD?.trim() || undefined
+  };
 }
 
 export class GatewayError extends Error {
@@ -238,6 +251,48 @@ export function bambuRequestAllowedInReadOnly(payload: unknown): boolean {
   const body = (payload as Record<string, unknown>)[keys[0]];
   const command = body && typeof body === 'object' ? (body as { command?: unknown }).command : undefined;
   return (keys[0] === 'info' && command === 'get_version') || (keys[0] === 'pushing' && command === 'pushall');
+}
+
+/** Regular expression matching safe single G-code command lines. */
+const SAFE_GCODE_LINE = /^(?:G28(?:\s+[XYZ]+)*|G[01](?:\s+[XYZEF]-?\d+(?:\.\d+)?)*|G9[01]|M83|M10[4679](?:\s+[A-Z]-?\d+(?:\.\d+)?)*|M14[01](?:\s+[A-Z]-?\d+(?:\.\d+)?)*|M190(?:\s+[A-Z]-?\d+(?:\.\d+)?)*|M22[01](?:\s+[A-Z]-?\d+(?:\.\d+)?)*|SET_HEATER_TEMPERATURE\s+HEATER=\w+\s+TARGET=\d+(?:\.\d+)?)\s*$/i;
+
+/** Returns true if a multiline G-code script contains only known safe commands. */
+export function isSafeGcode(gcode: string): boolean {
+  if (typeof gcode !== 'string') return false;
+  const lines = gcode.split('\n').map((l) => l.replace(/;.*$/, '').trim()).filter(Boolean);
+  if (lines.length === 0) return false;
+  return lines.every((line) => SAFE_GCODE_LINE.test(line));
+}
+
+/** Bambu MQTT requests allowed in read-write gateway mode: report requests plus safe printer controls. */
+export function bambuRequestAllowed(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+  const keys = Object.keys(payload);
+  if (keys.length !== 1) return false;
+  const key = keys[0];
+  const body = (payload as Record<string, unknown>)[key];
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  const command = (body as { command?: unknown }).command;
+  if (typeof command !== 'string') return false;
+
+  if (key === 'info') return command === 'get_version';
+  if (key === 'pushing') return command === 'pushall';
+  if (key === 'print') {
+    if (command === 'pause' || command === 'resume' || command === 'stop') return true;
+    if (command === 'print_speed') {
+      const param = (body as { param?: unknown }).param;
+      return param === '1' || param === '2' || param === '3' || param === '4' || param === 1 || param === 2 || param === 3 || param === 4;
+    }
+    if (command === 'gcode_file') {
+      const param = (body as { param?: unknown }).param;
+      return typeof param === 'string' && /^\/sdcard\/[\w .()+-]+\.(gcode|3mf)$/i.test(param);
+    }
+    if (command === 'gcode_line') {
+      const param = (body as { param?: unknown }).param;
+      return typeof param === 'string' && isSafeGcode(param);
+    }
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------------------------

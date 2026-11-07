@@ -3,6 +3,8 @@
  * under the names the rest of the app already uses.
  */
 :root {
+  --ui-font-scale: 1;
+  font-size: calc(16px * var(--ui-font-scale));
   --panel-bg: #2d2d31;          /* window background */
   --panel-header-bg: #36363c;   /* sidebar title bars, cards */
   --topbar-bg: #2d2d30;
@@ -27,7 +29,7 @@
 body {
   background-color: var(--panel-bg);
   color: var(--text-color);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -59,6 +61,18 @@ body {
 :root[data-theme="light"] .view-buttons { background: var(--panel-bg); }
 :root[data-theme="light"] .modal-content,
 :root[data-theme="light"] .modal-box { color: var(--text-color); }
+:root[data-theme="light"] :is(#selection-panel, #cut-tool-panel, #text-emboss-panel, #paint-tools-panel, #layer-height-tool, #layer-slider-container, #move-slider-container, #preview-top-controls, .slice-stats-panel, .mobile-preview-stats) {
+  background: var(--panel-bg) !important;
+  border-color: var(--border-color) !important;
+}
+:root[data-theme="light"] :is(.orca-object-list-panel, .slice-stats-panel) > div:first-child {
+  background: var(--panel-header-bg) !important;
+  border-color: var(--border-color) !important;
+}
+:root[data-theme="light"] #view-cube [role=button] { background: var(--control-bg) !important; border-color: var(--border-color) !important; }
+:root[data-theme="light"] #numeric-transform > div > span { color: var(--text-muted) !important; }
+:root[data-theme="light"] :is(.modal-header, .modal-footer) { background: var(--panel-header-bg); color: var(--text-color); }
+:root[data-theme="light"] .calib-tile:hover { background: var(--control-hover-bg); }
 
 /* Checkboxes follow the palette instead of the browser's native control. */
 input[type="checkbox"] {

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createEngineCore } from '../../web/engine-core.js';
+import { unzipSync, zipSync, strFromU8, strToU8 } from '../../app/node_modules/fflate/esm/index.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -108,6 +109,38 @@ describe('Orca WASM Engine Multiple Plates Test Suite', () => {
     if (core) {
       core.dispose();
     }
+  });
+
+  test('per-plate slicing preserves disabled instance printability and enabled-only G-code', async () => {
+    await core.call('loadModel', { path: '/models/cube.obj' });
+    await core.call('addModel', { path: '/models/cube.obj' });
+    const objects = await core.call('listObjects');
+    for (let i = 0; i < 2; ++i) await core.call('setInstanceTransform', {
+      objectId: objects[i].id, instanceId: objects[i].instances[0].id, offset: [80 + i * 100, 80, 10]
+    });
+    await core.call('saveProject', { path: '/out/disabled.3mf' });
+    const archive = unzipSync(core.readFile('/out/disabled.3mf'));
+    const modelPath = '3D/3dmodel.model';
+    let count = 0;
+    archive[modelPath] = strToU8(strFromU8(archive[modelPath]).replace(/<item\b[^>]*>/g,
+      item => ++count === 2 ? item.replace(/printable="1"/, 'printable="0"') : item));
+    assert.equal(count, 2);
+    core.writeFile('/out/disabled.3mf', zipSync(archive));
+    await core.call('openProject', { path: '/out/disabled.3mf' });
+    const enabledOnly = await core.slice({ outPath: '/out/enabled-only.gcode', threads: 1 });
+    const plate = await core.slice({ plateIndex: 0, outPath: '/out/disabled-plate.gcode', threads: 1 });
+    const expected = path.join(scratchDir, 'enabled-only.gcode');
+    const actual = path.join(scratchDir, 'disabled-plate.gcode');
+    fs.writeFileSync(expected, enabledOnly.gcode);
+    fs.writeFileSync(actual, plate.gcode);
+    execFileSync('bash', [path.join(repoRoot, 'wasm/spike/compare_gcode.sh'), expected, actual], { stdio: 'inherit' });
+    const controller = new AbortController();
+    await assert.rejects(core.slice({ plateIndex: 0, outPath: '/out/disabled-canceled.gcode', threads: 1,
+      signal: controller.signal, onProgress: () => controller.abort()
+    }), error => error.name === 'AbortError');
+    await core.call('saveProject', { path: '/out/after-disabled-slice.3mf' });
+    const after = strFromU8(unzipSync(core.readFile('/out/after-disabled-slice.3mf'))[modelPath]);
+    assert.deepEqual(after.match(/<item\b[^>]*>/g).map(item => item.match(/printable="(\d)"/)[1]), ['1', '0']);
   });
 
   test('listPlates returns initial plate 1 with origin at (0, 0, 0)', async () => {

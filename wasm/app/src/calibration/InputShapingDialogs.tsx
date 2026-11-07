@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import { CalibrationDialogWrapper } from './CalibrationDialogWrapper';
+import { CalibrationDialogWrapper, useCalibrationError } from './CalibrationDialogWrapper';
 import { runOtherCalibration } from './calibrationUtils';
 import { useInputShapingStore } from './inputShapingStore';
 import { useTranslation } from "../i18n";
@@ -56,13 +56,14 @@ const Radios = ({ label, options, value, onChange }: { label: string; options: s
   </fieldset>
 );
 
-const Field = ({ label, unit, value, onChange, disabled }: { label: string; unit?: string; value: string; onChange: (v: string) => void; disabled?: boolean }) => (
-  <div className="field-row">
-    <label>{label}: <input aria-label={label} type="number" step="any" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} /> {unit}</label>
-  </div>
-);
+const Field = ({ label, name, field, unit, value, onChange, disabled }: { label: string; name: string; field: ReturnType<typeof useCalibrationError>['field']; unit?: string; value: string; onChange: (v: string) => void; disabled?: boolean }) => {
+  const unitId = useId();
+  return <div className="field-row">
+    <label>{label}: <input {...field(name, unit ? unitId : undefined)} aria-label={label} type="number" step="any" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />{unit && <span id={unitId} className="calibration-unit">{unit}</span>}</label>
+  </div>;
+};
 
-const Note = ({ children }: { children: string }) => <p style={{ color: '#888', whiteSpace: 'pre-line', fontSize: 12 }}>{children}</p>;
+const Note = ({ children }: { children: string }) => <p className="calibration-note">{children}</p>;
 
 function FrequencyDialog({ onClose }: { onClose: () => void }) {
     const { t } = useTranslation();
@@ -74,18 +75,24 @@ function FrequencyDialog({ onClose }: { onClose: () => void }) {
   const [startY, setStartY] = useState('15');
   const [endY, setEndY] = useState('110');
   const [damping, setDamping] = useState('0.150');
-  const [error, setError] = useState<string | null>(null);
+  const { error, errorId, setError, clearError, field } = useCalibrationError();
   const [loading, setLoading] = useState(false);
 
   const run = async () => {
     const [sx, ex, damp] = [startX, endX, damping].map(Number);
     const sy = fw.reprap ? sx : Number(startY);
     const ey = fw.reprap ? ex : Number(endY);
-    if ([sx, ex, sy, ey].some((v) => !Number.isFinite(v)) || sx < 0 || ex > 500 || sy < 0 || ey > 500 || sx >= ex || sy >= ey) {
-      return setError('Please input valid values:\n(0 < FreqStart < FreqEnd < 500)');
+    const invalid = [
+      !Number.isFinite(sx) || sx < 0 || sx >= ex ? 'startX' : '',
+      !Number.isFinite(ex) || ex > 500 || sx >= ex ? 'endX' : '',
+      !fw.reprap && (!Number.isFinite(sy) || sy < 0 || sy >= ey) ? 'startY' : '',
+      !fw.reprap && (!Number.isFinite(ey) || ey > 500 || sy >= ey) ? 'endY' : ''
+    ].filter(Boolean);
+    if (invalid.length) {
+      return setError('Please input valid values:\n(0 < FreqStart < FreqEnd < 500)', invalid);
     }
     if (!Number.isFinite(damp) || damp < 0 || damp >= 1) {
-      return setError('Please input a valid damping factor (0 < Damping/zeta factor <= 1)');
+      return setError('Please input a valid damping factor (0 < Damping/zeta factor <= 1)', ['damping']);
     }
     setError(null);
     setLoading(true);
@@ -103,24 +110,24 @@ function FrequencyDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <CalibrationDialogWrapper title={t("Input shaping Frequency test")} onClose={onClose} onOk={run} error={error} isLoading={loading}>
+    <CalibrationDialogWrapper title={t("Input shaping Frequency test")} onClose={onClose} onOk={run} error={error} errorId={errorId} onEdit={clearError} isLoading={loading}>
       <Radios label={t("Test model")} options={MODELS.slice(0, 2).map((m) => t(m.label))} value={model} onChange={setModel} />
       <Radios label={t("Input shaper type")} options={fw.shaperTypes} value={type} onChange={setType} />
       <Note>{fw.note}</Note>
       {fw.reprap ? (
         <>
-          <Field label={t("Frequency start")} unit="Hz" value={startX} onChange={setStartX} />
-          <Field label={t("Frequency end")} unit="Hz" value={endX} onChange={setEndX} />
+          <Field field={field} name="startX" label={t("Frequency start")} unit="Hz" value={startX} onChange={setStartX} />
+          <Field field={field} name="endX" label={t("Frequency end")} unit="Hz" value={endX} onChange={setEndX} />
         </>
       ) : (
         <>
-          <Field label={t("X start")} unit="Hz" value={startX} onChange={setStartX} />
-          <Field label={t("X end")} unit="Hz" value={endX} onChange={setEndX} />
-          <Field label={t("Y start")} unit="Hz" value={startY} onChange={setStartY} />
-          <Field label={t("Y end")} unit="Hz" value={endY} onChange={setEndY} />
+          <Field field={field} name="startX" label={t("X start")} unit="Hz" value={startX} onChange={setStartX} />
+          <Field field={field} name="endX" label={t("X end")} unit="Hz" value={endX} onChange={setEndX} />
+          <Field field={field} name="startY" label={t("Y start")} unit="Hz" value={startY} onChange={setStartY} />
+          <Field field={field} name="endY" label={t("Y end")} unit="Hz" value={endY} onChange={setEndY} />
         </>
       )}
-      <Field label={t("Damp")} value={damping} onChange={setDamping} />
+      <Field field={field} name="damping" label={t("Damp")} value={damping} onChange={setDamping} />
       <Note>{'Recommended: Set Damp to 0.\nThis will use the printer\'s default or saved value.'}</Note>
     </CalibrationDialogWrapper>
   );
@@ -135,18 +142,26 @@ function DampingDialog({ onClose }: { onClose: () => void }) {
   const [freqY, setFreqY] = useState('30');
   const [dampStart, setDampStart] = useState('0.000');
   const [dampEnd, setDampEnd] = useState('0.400');
-  const [error, setError] = useState<string | null>(null);
+  const { error, errorId, setError, clearError, field } = useCalibrationError();
   const [loading, setLoading] = useState(false);
 
   const run = async () => {
     const fx = Number(freqX);
     const fy = fw.reprap ? fx : Number(freqY);
     const [start, end] = [Number(dampStart), Number(dampEnd)];
-    if ([fx, fy, start, end].some((v) => !Number.isFinite(v)) || fx < 0 || fx > 500 || fy < 0 || fy > 500) {
-      return setError('Please input valid values:\n(0 < Freq < 500)');
+    const invalid = [
+      !Number.isFinite(fx) || fx < 0 || fx > 500 ? 'freqX' : '',
+      !fw.reprap && (!Number.isFinite(fy) || fy < 0 || fy > 500) ? 'freqY' : ''
+    ].filter(Boolean);
+    if (invalid.length) {
+      return setError('Please input valid values:\n(0 < Freq < 500)', invalid);
     }
-    if (start < 0 || end > 1 || start >= end) {
-      return setError('Please input a valid damping factor (0 <= DampingStart < DampingEnd <= 1)');
+    const invalidDamping = [
+      !Number.isFinite(start) || start < 0 || start >= end ? 'dampStart' : '',
+      !Number.isFinite(end) || end > 1 || start >= end ? 'dampEnd' : ''
+    ].filter(Boolean);
+    if (invalidDamping.length) {
+      return setError('Please input a valid damping factor (0 <= DampingStart < DampingEnd <= 1)', invalidDamping);
     }
     setError(null);
     setLoading(true);
@@ -164,20 +179,20 @@ function DampingDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <CalibrationDialogWrapper title={t("Input shaping Damp test")} onClose={onClose} onOk={run} error={error} isLoading={loading}>
+    <CalibrationDialogWrapper title={t("Input shaping Damp test")} onClose={onClose} onOk={run} error={error} errorId={errorId} onEdit={clearError} isLoading={loading}>
       <Radios label={t("Test model")} options={MODELS.slice(0, 2).map((m) => t(m.label))} value={model} onChange={setModel} />
       <Radios label={t("Input shaper type")} options={fw.shaperTypes} value={type} onChange={setType} />
       <Note>{fw.note}</Note>
       {fw.reprap ? (
-        <Field label={t("Frequency")} unit="Hz" value={freqX} onChange={setFreqX} />
+        <Field field={field} name="freqX" label={t("Frequency")} unit="Hz" value={freqX} onChange={setFreqX} />
       ) : (
         <>
-          <Field label={t("Frequency X")} unit="Hz" value={freqX} onChange={setFreqX} />
-          <Field label={t("Frequency Y")} unit="Hz" value={freqY} onChange={setFreqY} />
+          <Field field={field} name="freqX" label={t("Frequency X")} unit="Hz" value={freqX} onChange={setFreqX} />
+          <Field field={field} name="freqY" label={t("Frequency Y")} unit="Hz" value={freqY} onChange={setFreqY} />
         </>
       )}
-      <Field label={t("Damp start")} value={dampStart} onChange={setDampStart} />
-      <Field label={t("Damp end")} value={dampEnd} onChange={setDampEnd} />
+      <Field field={field} name="dampStart" label={t("Damp start")} value={dampStart} onChange={setDampStart} />
+      <Field field={field} name="dampEnd" label={t("Damp end")} value={dampEnd} onChange={setDampEnd} />
       <Note>{t("Note: Use previously calculated frequencies.")}</Note>
     </CalibrationDialogWrapper>
   );
@@ -190,15 +205,19 @@ function CorneringDialog({ onClose }: { onClose: () => void }) {
   const [model, setModel] = useState(0);
   const [start, setStart] = useState(jd ? '0.000' : '1.000');
   const [end, setEnd] = useState(jd ? '0.250' : '15.000');
-  const [error, setError] = useState<string | null>(null);
+  const { error, errorId, setError, clearError, field } = useCalibrationError();
   const [loading, setLoading] = useState(false);
   const maxEnd = jd ? 0.3 : 100;
   const warnAbove = jd ? 0.25 : 20;
 
   const run = async () => {
     const [s, e] = [Number(start), Number(end)];
-    if (!Number.isFinite(s) || !Number.isFinite(e) || s < 0 || e > maxEnd || s >= e) {
-      return setError(`Please input valid values:\n(0 <= Cornering <= ${maxEnd.toFixed(3)})`);
+    const invalid = [
+      !Number.isFinite(s) || s < 0 || s >= e ? 'start' : '',
+      !Number.isFinite(e) || e > maxEnd || s >= e ? 'end' : ''
+    ].filter(Boolean);
+    if (invalid.length) {
+      return setError(`Please input valid values:\n(0 <= Cornering <= ${maxEnd.toFixed(3)})`, invalid);
     }
     setError(null);
     setLoading(true);
@@ -214,10 +233,10 @@ function CorneringDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <CalibrationDialogWrapper title={t("Cornering test")} onClose={onClose} onOk={run} error={error} isLoading={loading}>
+    <CalibrationDialogWrapper title={t("Cornering test")} onClose={onClose} onOk={run} error={error} errorId={errorId} onEdit={clearError} isLoading={loading}>
       <Radios label={t("Test model")} options={MODELS.map((m) => t(m.label))} value={model} onChange={setModel} />
-      <Field label={t("Start")} unit={jd ? 'mm' : 'mm/s'} value={start} onChange={setStart} />
-      <Field label={t("End")} unit={jd ? 'mm' : 'mm/s'} value={end} onChange={setEnd} />
+      <Field field={field} name="start" label={t("Start")} unit={jd ? 'mm' : 'mm/s'} value={start} onChange={setStart} />
+      <Field field={field} name="end" label={t("End")} unit={jd ? 'mm' : 'mm/s'} value={end} onChange={setEnd} />
       <Note>{t("Note: Lower values = sharper corners but slower speeds.")}</Note>
       {Number(end) > warnAbove && <Note>{`NOTE: High values may cause Layer shift (>${warnAbove.toFixed(3)})`}</Note>}
       {fw.flavor === 'marlin2' && <Note>{jd

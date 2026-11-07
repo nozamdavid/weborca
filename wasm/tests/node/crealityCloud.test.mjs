@@ -26,6 +26,7 @@ describe('Creality Cloud Integration & Security Gateway', () => {
   let mockUpstreamPort;
   let gatewayServer;
   let gatewayPort;
+  const realFetch = globalThis.fetch;
 
   // Track upstream calls
   let qrPollCount = 0;
@@ -42,7 +43,7 @@ describe('Creality Cloud Integration & Security Gateway', () => {
         const parsedBody = body ? JSON.parse(body) : {};
 
         // Auth: Password login
-        if (req.method === 'POST' && url === '/api/account/loginV2') {
+        if (req.method === 'POST' && url === '/api/cxy/account/v2/loginV2') {
           if (parsedBody.account === 'valid@user.com' && parsedBody.password === 'secret123') {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
@@ -353,9 +354,12 @@ describe('Creality Cloud Integration & Security Gateway', () => {
     });
 
     gatewayPort = await listen(gatewayServer);
+    globalThis.fetch = (url, init) => realFetch(typeof url === 'string' && url.startsWith('/')
+      ? `http://127.0.0.1:${gatewayPort}${url}` : url, init);
   });
 
   after(async () => {
+    globalThis.fetch = realFetch;
     if (gatewayServer) await close(gatewayServer);
     if (mockUpstreamServer) await close(mockUpstreamServer);
   });
@@ -364,7 +368,7 @@ describe('Creality Cloud Integration & Security Gateway', () => {
     let rejected = false;
     const req = {
       method: 'POST',
-      url: '/_printer/creality-cloud/global/auth/api/account/loginV2'
+      url: '/_printer/creality-cloud/global/auth/api/cxy/account/v2/loginV2'
     };
     const res = {
       headersSent: false,
@@ -458,7 +462,7 @@ describe('Creality Cloud Integration & Security Gateway', () => {
 
   test('Auth Headers vs Device Headers separation', () => {
     const authHeaders = createCrealityAuthHeaders({ userId: 'u1', token: 't1' });
-    assert.equal(authHeaders['__CXY_PLATFORM_'], '14', 'Auth headers must use platform 14 per CloudAPI.js');
+    assert.equal(authHeaders['__CXY_PLATFORM_'], '11', 'Auth headers use CrealityPrint platform 11');
     assert.equal(authHeaders['__CXY_OS_LANG_'], '0', 'Auth headers must use OS_LANG 0 per CloudAPI.js');
     assert.ok(authHeaders['__CXY_DUID_'], 'Auth headers must include DUID');
     assert.equal(authHeaders['__CXY_UID_'], 'u1');

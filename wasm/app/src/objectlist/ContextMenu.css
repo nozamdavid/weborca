@@ -1,0 +1,24 @@
+#object-list-context-menu [role="menuitem"],
+[id^="submenu-"][role="menu"] [role="menuitem"] {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+#object-list-context-menu [role="menuitem"]:focus-visible,
+[id^="submenu-"][role="menu"] [role="menuitem"]:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+@media (max-width: 800px), (pointer: coarse) {
+  #object-list-context-menu [role="menuitem"],
+  [id^="submenu-"][role="menu"] [role="menuitem"] {
+    min-height: 44px;
+  }
+}

@@ -46,6 +46,36 @@ async function runSuite(browserType, name) {
     await page.click('#view-top');
     await page.waitForTimeout(600);
 
+    log('Cmd/Ctrl+C copies the exact model after viewer/tree selection and toolbar focus');
+    const meshSnapshot = id => page.evaluate(async id => {
+      const mesh = await window.__plateStore.getState().getMesh(id);
+      return { positions: Array.from(mesh.positions), indices: Array.from(mesh.indices), triangleCount: mesh.triangleCount };
+    }, id);
+    for (const focus of ['viewer', 'tree', 'toolbar']) for (const modifier of ['Control', 'Meta']) {
+      const sourceId = await page.evaluate(() => {
+        const s = window.__plateStore.getState(); s.selectObject(s.objects[0].id);
+        window.__plateStore.setState({ clipboard: [] });
+        const input = document.createElement('input'); input.id = 'copy-focus-input'; document.body.append(input); input.focus();
+        return s.objects[0].id;
+      });
+      if (focus === 'viewer') await page.mouse.click(...await screenOf(0));
+      else if (focus === 'tree') await page.locator(`[data-object-id="${sourceId}"]`).first().click();
+      else await page.focus('#view-top');
+      const originalMesh = await meshSnapshot(sourceId);
+      const beforeCopy = await page.evaluate(() => ({ objects: window.__plateStore.getState().objects, snapshot: window.__historyStore.getState().currentSnapshot?.id }));
+      await page.keyboard.press(`${modifier}+c`);
+      await page.waitForFunction(() => window.__plateStore.getState().clipboard.length === 1);
+      assert.deepEqual(await page.evaluate(() => ({ objects: window.__plateStore.getState().objects, snapshot: window.__historyStore.getState().currentSnapshot?.id })), beforeCopy, 'copy changes neither model nor undo history');
+      await page.keyboard.press(`${modifier}+v`);
+      await page.waitForFunction(() => window.__plateStore.getState().objects.length === 3);
+      const pastedId = await page.evaluate(() => window.__plateStore.getState().selectedObjectId);
+      assert.notEqual(pastedId, sourceId, 'paste is an independent object');
+      assert.deepEqual(await meshSnapshot(pastedId), originalMesh, `${modifier}+C from ${focus} preserves exact native mesh`);
+      await page.keyboard.press(`${modifier}+z`);
+      await page.waitForFunction(() => !window.__historyStore.getState().isRestoring && window.__plateStore.getState().objects.length === 2);
+      await page.evaluate(() => document.getElementById('copy-focus-input').remove());
+    }
+
     log('clicking selects one, Shift-click adds the other');
     const [x0, y0] = await screenOf(0);
     const [x1, y1] = await screenOf(1);
@@ -135,6 +165,9 @@ async function runSuite(browserType, name) {
   }
 }
 
+if (process.argv.includes('--source-focused')) {
+  await (await import('./lib/clipboard-source.mjs')).clipboardSourceTest();
+} else {
 await startServer(PORT, 'multiselect');
 try {
   await runSuite(chromium, 'chromium');
@@ -145,4 +178,5 @@ try {
   process.exitCode = 1;
 } finally {
   await stopServer(PORT);
+}
 }

@@ -1,41 +1,88 @@
 const fs = require('fs');
 const path = require('path');
 
-const catalogs = path.resolve(__dirname, '../src/locales');
-const en = JSON.parse(fs.readFileSync(path.join(catalogs, 'en.json'), 'utf8'));
-const es = JSON.parse(fs.readFileSync(path.join(catalogs, 'es.json'), 'utf8'));
+const catalogsDir = path.resolve(__dirname, '../src/locales');
+const enPath = path.join(catalogsDir, 'en.json');
+if (!fs.existsSync(enPath)) {
+  console.error(`en.json not found at ${enPath}`);
+  process.exit(1);
+}
 
-let errors = 0;
+const en = JSON.parse(fs.readFileSync(enPath, 'utf8'));
+const enKeys = Object.keys(en);
+const totalEn = enKeys.length;
 
-for (const key of Object.keys(en)) {
-  if (!es[key]) {
-    console.error(`Missing key in es.json: "${key}"`);
-    errors++;
+function getMustache(str) {
+  return (str.match(/\{\{\w+\}\}/g) || []).sort().join(',');
+}
+
+function getPrintfTokens(str) {
+  return (str.match(/%(?:\d+\$)?[+-]?(?:\d+)?(?:\.\d+)?[sdifg]|%zu|%[0-9]+%/g) || [])
+    .map(p => p.replace(/%(?:\d+\$)?/, '%'))
+    .sort()
+    .join(',');
+}
+
+const files = fs.readdirSync(catalogsDir)
+  .filter(f => f.endsWith('.json') && f !== 'en.json')
+  .sort();
+
+let totalErrors = 0;
+console.log(`Checking ${files.length} language catalogs against en.json (${totalEn} keys)...`);
+
+for (const file of files) {
+  const filePath = path.join(catalogsDir, file);
+  const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const keys = Object.keys(data);
+  let catalogErrors = 0;
+
+  for (const key of keys) {
+    if (!en.hasOwnProperty(key)) {
+      console.error(`[${file}] Key missing from en.json: "${key}"`);
+      catalogErrors++;
+      continue;
+    }
+
+    const val = data[key];
+    if (typeof val !== 'string') {
+      console.error(`[${file}] Value must be a string for key: "${key}"`);
+      catalogErrors++;
+      continue;
+    }
+
+    if (file === 'es.json' && val.startsWith('[ES] ')) {
+      console.error(`[${file}] Untranslated placeholder in es.json: "${key}"`);
+      catalogErrors++;
+      continue;
+    }
+
+    const enMustache = getMustache(en[key]);
+    const valMustache = getMustache(val);
+    if (enMustache !== valMustache) {
+      console.error(`[${file}] Mustache placeholder mismatch for key: "${key}" (en: "${enMustache}", val: "${valMustache}")`);
+      catalogErrors++;
+    }
+
+    const enPrintf = getPrintfTokens(en[key]);
+    const valPrintf = getPrintfTokens(val);
+    if (enPrintf !== valPrintf) {
+      console.error(`[${file}] Printf placeholder mismatch for key: "${key}" (en: "${enPrintf}", val: "${valPrintf}")`);
+      catalogErrors++;
+    }
   }
-  if (typeof es[key] === 'string' && es[key].startsWith('[ES] ')) {
-    console.error(`Untranslated placeholder in es.json: "${key}"`);
-    errors++;
-  }
-  const placeholders = value => (value.match(/\{\{\w+\}\}/g) || []).sort().join(',');
-  if (typeof en[key] !== 'string' || typeof es[key] !== 'string') {
-    console.error(`Catalog values must be strings: "${key}"`);
-    errors++;
-  } else if (placeholders(en[key]) !== placeholders(es[key])) {
-    console.error(`Interpolation placeholders differ: "${key}"`);
-    errors++;
+
+  const pct = ((keys.length / totalEn) * 100).toFixed(1);
+  if (catalogErrors === 0) {
+    console.log(`✓ ${file.padEnd(12)}: ${keys.length} / ${totalEn} (${pct}%)`);
+  } else {
+    console.error(`✗ ${file.padEnd(12)}: ${catalogErrors} errors found`);
+    totalErrors += catalogErrors;
   }
 }
 
-for (const key of Object.keys(es)) {
-  if (!en[key]) {
-    console.error(`Missing key in en.json: "${key}"`);
-    errors++;
-  }
-}
-
-if (errors > 0) {
-  console.error(`Locale check failed with ${errors} errors.`);
+if (totalErrors > 0) {
+  console.error(`\nLocale check failed with ${totalErrors} errors.`);
   process.exit(1);
 } else {
-  console.log('Locale check passed.');
+  console.log(`\nAll ${files.length} catalogs passed validation.`);
 }

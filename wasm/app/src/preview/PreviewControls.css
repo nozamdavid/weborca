@@ -8,7 +8,7 @@
 }
 
 .layer-handle:focus {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -17,28 +17,31 @@
 }
 
 .layer-handle:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.7), 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: var(--shadow-1) !important;
 }
 
 #layer-handle-min:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.7), 0 2px 6px rgba(0, 0, 0, 0.5) !important;
+  box-shadow: var(--shadow-1) !important;
 }
 
 #btn-play-moves:focus-visible {
-  outline: 2px solid #ffffff;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 #move-slider:focus-visible {
-  outline: 2px solid #38bdf8;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
 /* Layer event controls and popup menu */
+.preview-current-value { color: var(--text-primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+.preview-value-detail { color: var(--text-secondary); font-size: 0.75rem; font-variant-numeric: tabular-nums; }
+
 .layer-event-menu-item {
   display: flex;
   align-items: center;
@@ -111,3 +114,7 @@
 .tick-action-btn.edit:hover {
   background: #0284c7;
 }
+.preview-detail-panels { position: absolute; top: 70px; bottom: var(--plate-actions-clearance, 70px); right: 110px; width: 320px; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; pointer-events: none; }
+.preview-detail-panels > * { pointer-events: auto; }
+.preview-detail-panels:has(#gcode-window) .slice-stats-panel[data-expanded=true] { flex: 1 1 55% !important; }
+#gcode-window-header { flex-shrink: 0; }

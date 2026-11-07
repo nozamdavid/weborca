@@ -16,26 +16,39 @@
  */
 import { handleCrealityCloudRequest } from './gateway/crealityCloud.ts';
 import type { CrealityCloudGatewayOptions } from './gateway/crealityCloud.ts';
+import { handleSnapmakerCloudRequest } from './gateway/snapmakerCloud.ts';
+import type { SnapmakerCloudGatewayOptions } from './gateway/snapmakerCloud.ts';
+import { createSnapmakerMonitor } from './gateway/snapmakerMonitor.ts';
+import type { SnapmakerMonitorOptions } from './gateway/snapmakerMonitor.ts';
+import { handlePrusaConnectRequest } from './gateway/prusaConnect.ts';
+import type { PrusaConnectGatewayOptions } from './gateway/prusaConnect.ts';
+import { handleBambuCloudApi } from './gateway/bambuCloud.ts';
+import type { BambuCloudGatewayOptions } from './gateway/bambuCloud.ts';
 import * as ftp from 'basic-ftp';
 import * as http from 'node:http';
 import * as https from 'node:https';
+import { createReadStream } from 'node:fs';
+import { mkdtemp, open, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import type { Duplex } from 'node:stream';
 import mqtt from 'mqtt';
 import type { MqttClient } from 'mqtt';
 import type { Plugin, PreviewServer, ViteDevServer } from 'vite';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
-  CLOUD_SERVICES, GATEWAY_OFF_MESSAGE, GatewayError, bambuRequestAllowedInReadOnly, checkRpcFrame, configFromEnv,
-  digestAuthorization, httpAllowedInReadOnly, parseDigestChallenge, resolveTarget
+  CLOUD_SERVICES, GATEWAY_OFF_MESSAGE, GatewayError, bambuRequestAllowed, bambuRequestAllowedInReadOnly, checkRpcFrame, configFromEnv,
+  digestAuthorization, httpAllowedInReadOnly, parseDigestChallenge, resolveTarget,
+  isPrivateAddress
 } from './gateway/policy.ts';
 import type { DigestChallenge, GatewayConfig, Resolver, Target } from './gateway/policy.ts';
 
-export interface GatewayOptions extends GatewayConfig, CrealityCloudGatewayOptions {
+export interface GatewayOptions extends GatewayConfig, CrealityCloudGatewayOptions, PrusaConnectGatewayOptions, BambuCloudGatewayOptions, SnapmakerCloudGatewayOptions, SnapmakerMonitorOptions {
   /** Replaces DNS lookups (tests). */
   resolver?: Resolver;
   /** Where Bambu printers listen (tests point this at a local broker). */
   bambu?: { mqttPort?: number; mqttProtocol?: 'mqtt' | 'mqtts'; ftpPort?: number; ftpSecure?: boolean | 'implicit' };
-  bambuCloud?: { apiHost?: string; apiPort?: number; apiProtocol?: 'http' | 'https'; apiRejectUnauthorized?: boolean; mqttHost?: string; mqttPort?: number; mqttProtocol?: 'mqtt' | 'mqtts'; mqttRejectUnauthorized?: boolean };
 }
 
 const HOP_BY_HOP = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'upgrade'];
@@ -43,16 +56,10 @@ const NOT_FORWARDED = ['host', 'origin', 'referer', 'cookie', 'x-orca-auth', 'x-
 const UPSTREAM_IDLE_MS = 60_000;
 const MAX_QUEUED_WS_FRAMES = 200;
 
-const BAMBU_CLOUD_API_HOST = 'api.bambulab.com';
 const BAMBU_CLOUD_MQTT_HOSTS = new Set([
   'cn.mqtt.bambulab.com',
   'us.mqtt.bambulab.com',
   'mqtt.bambu-lab.com',
-]);
-const BAMBU_CLOUD_API_ALLOWLIST = new Set([
-  'POST /v1/user-service/user/login',
-  'GET /v1/iot-service/api/user/bind',
-  'GET /v1/design-user-service/my/preference'
 ]);
 
 
@@ -153,6 +160,112 @@ export interface ProxyMode {
   ownOrigin?: string;
 }
 
+/** Validate the browser's two-part FormData while spooling, before connecting upstream. */
+async function readUpload(req: http.IncomingMessage, config: GatewayConfig) {
+  const limit = config.uploadMaxBytes ?? 1024 ** 3;
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 8 * 1024 ** 3) {
+    throw new GatewayError(503, 'Upload byte limit must be an integer from 1 to 8589934592.');
+  }
+  const declared = req.headers['content-length'];
+  if (declared !== undefined && (!/^\d+$/.test(declared) || Number(declared) > limit)) {
+    req.resume();
+    throw new GatewayError(413, 'Upload exceeds the configured byte limit.');
+  }
+  const type = req.headers['content-type'];
+  const match = typeof type === 'string' ? /^multipart\/form-data;\s*boundary=(?:"([A-Za-z0-9_-]{1,70})"|([A-Za-z0-9_-]{1,70}))$/i.exec(type) : null;
+  const invalid = () => { throw new GatewayError(400, 'Invalid plain-upload multipart body.'); };
+  const refused = () => { throw new GatewayError(403, 'Read-only mode: only a plain G-code upload is allowed.'); };
+  if (!match || req.headers['content-encoding'] || req.headers.trailer) return invalid();
+  const boundary = match![1] ?? match![2];
+  const first = Buffer.from(`--${boundary}\r\n`);
+  const separator = Buffer.from(`\r\n--${boundary}`);
+  let pending: Buffer = Buffer.alloc(0);
+  let state: string = 'first';
+  let field = '';
+  let root: Buffer = Buffer.alloc(0);
+  const fields = new Set<string>();
+  let bytes = 0;
+  const value = (data: Buffer) => {
+    if (field === 'root') {
+      if (root.length + data.length > 6) return refused();
+      root = Buffer.concat([root, data]);
+    }
+  };
+  const inspect = (chunk: Buffer) => {
+    pending = Buffer.concat([pending, chunk]);
+    while (true) {
+      if (state === 'first') {
+        if (pending.length < first.length) return;
+        if (!pending.subarray(0, first.length).equals(first)) return invalid();
+        pending = pending.subarray(first.length);
+        state = 'headers';
+      } else if (state === 'headers') {
+        const end = pending.indexOf('\r\n\r\n');
+        if (end < 0) { if (pending.length > 4096) invalid(); return; }
+        if (end > 4096) return invalid();
+        const header = pending.subarray(0, end).toString('utf8');
+        const disposition = /^Content-Disposition: form-data; name="([^"\r\n]+)"(?:; filename="([^"\r\n]*)")?(?:\r\nContent-Type: application\/octet-stream)?$/i.exec(header);
+        if (!disposition) return invalid();
+        const [, name, filename] = disposition!;
+        if (fields.has(name) || !['root', 'file'].includes(name)) return refused();
+        if (name === 'root' ? filename !== undefined : !filename || Buffer.byteLength(filename) > 255 || !/^[^/\\%\x00-\x1f\x7f]+\.gcode$/i.test(filename) || filename === '..gcode') return refused();
+        fields.add(name);
+        field = name;
+        pending = pending.subarray(end + 4);
+        state = 'body';
+      } else if (state === 'body') {
+        const end = pending.indexOf(separator);
+        if (end < 0) {
+          const count = Math.max(0, pending.length - separator.length);
+          value(pending.subarray(0, count));
+          pending = Buffer.from(pending.subarray(count));
+          return;
+        }
+        value(pending.subarray(0, end));
+        if (field === 'root' && !root.equals(Buffer.from('gcodes'))) return refused();
+        pending = pending.subarray(end + separator.length);
+        state = 'suffix';
+      } else if (state === 'suffix') {
+        if (pending.length < 2) return;
+        const suffix = pending.subarray(0, 2).toString('ascii');
+        if (suffix !== '--' && suffix !== '\r\n') return invalid();
+        pending = pending.subarray(2);
+        state = suffix === '--' ? 'end' : 'headers';
+      } else {
+        if (pending.length > 2 || !Buffer.from('\r\n').subarray(0, pending.length).equals(pending)) return invalid();
+        return;
+      }
+    }
+  };
+  const directory = await mkdtemp(join(tmpdir(), 'orca-upload-'));
+  const path = join(directory, 'body');
+  const cleanup = () => rm(directory, { recursive: true, force: true });
+  try {
+    const file = await open(path, 'wx', 0o600);
+    const timeout = () => req.destroy(new Error('Upload body timed out.'));
+    req.setTimeout(60_000, timeout);
+    try {
+      for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+        bytes += chunk.length;
+        if (bytes > limit) throw new GatewayError(413, 'Upload exceeds the configured byte limit.');
+        inspect(chunk);
+        await file.writeFile(chunk);
+      }
+      if (state !== 'end' || (pending.length !== 0 && pending.length !== 2)) invalid();
+      if (fields.size !== 2 || !root.equals(Buffer.from('gcodes'))) refused();
+    } finally {
+      req.setTimeout(0);
+      req.off('timeout', timeout);
+      await file.close();
+    }
+    return { path, bytes, cleanup };
+  } catch (err) {
+    req.resume();
+    await cleanup();
+    throw err;
+  }
+}
+
 async function handleProxy(
   req: http.IncomingMessage, res: http.ServerResponse, scheme: 'http' | 'https', hostPort: string, path: string,
   options: GatewayOptions, mode: ProxyMode = {}
@@ -162,44 +275,59 @@ async function handleProxy(
   const method = req.method ?? 'GET';
   const override = req.headers['x-http-method-override'] ?? req.headers['x-method-override'] ?? req.headers['x-http-method'];
   const effectiveMethod = (typeof override === 'string' ? override : Array.isArray(override) ? override[0] : method).trim();
+  let uploadBody: Awaited<ReturnType<typeof readUpload>> | undefined;
   if (config.readOnly && (!httpAllowedInReadOnly(method, path) || !httpAllowedInReadOnly(effectiveMethod, path))) {
-    throw new GatewayError(403, 'Read-only mode: this request could change the printer.');
+    if (!config.allowUpload || method !== 'POST' || path !== '/server/files/upload' || override !== undefined || !config.proxy || !isPrivateAddress(target.address)) {
+      throw new GatewayError(403, 'Read-only mode: this request could change the printer.');
+    }
+    uploadBody = await readUpload(req, config);
   }
 
-  const headers: http.OutgoingHttpHeaders = {};
-  for (const [name, value] of Object.entries(req.headers)) {
-    if (!HOP_BY_HOP.includes(name) && !NOT_FORWARDED.includes(name)) headers[name] = value;
-  }
-  const creds = parseDigestCredentials(req.headers['x-orca-auth']);
-  if (creds) {
-    const authorization = await digestHeader(scheme, target, creds, method, path);
-    if (authorization) headers.authorization = authorization;
-  }
+  try {
+    const headers: http.OutgoingHttpHeaders = {};
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (!HOP_BY_HOP.includes(name) && !NOT_FORWARDED.includes(name)) headers[name] = value;
+    }
+    if (uploadBody) {
+      delete headers['transfer-encoding'];
+      headers['content-length'] = uploadBody.bytes;
+      delete headers.expect;
+    }
+    const creds = parseDigestCredentials(req.headers['x-orca-auth']);
+    if (creds) {
+      const authorization = await digestHeader(scheme, target, creds, method, path);
+      if (authorization) headers.authorization = authorization;
+    }
 
-  const upstream = upstreamRequest(scheme, target, method, path, headers);
-  upstream.on('response', (up) => {
-    // A rejected Digest nonce is probably stale: drop it so the next request asks for a new challenge.
-    if (up.statusCode === 401 && creds) digestNonces.delete(`${scheme}://${target.hostPort}`);
-    const out: http.OutgoingHttpHeaders = {};
-    for (const [name, value] of Object.entries(up.headers)) {
-      if (!HOP_BY_HOP.includes(name) && name !== 'set-cookie') out[name] = value;
-    }
-    if (mode.ui) {
-      delete out['x-frame-options'];
-      delete out['content-security-policy'];
-      delete out['content-security-policy-report-only'];
-      out['cross-origin-embedder-policy'] = 'require-corp';
-      out['cross-origin-resource-policy'] = 'cross-origin';
-      if (typeof out.location === 'string' && mode.ownOrigin) out.location = out.location.replace(`${scheme}://${hostPort}`, mode.ownOrigin);
-    }
-    res.writeHead(up.statusCode ?? 502, out);
-    up.pipe(res);
-    up.on('error', () => res.destroy());
-  });
-  upstream.on('timeout', () => upstream.destroy(new Error('The printer did not answer in time.')));
-  upstream.on('error', (err) => fail(res, 502, errorMessage(err)));
-  res.on('close', () => upstream.destroy());
-  req.pipe(upstream);
+    const upstream = upstreamRequest(scheme, target, method, path, headers);
+    upstream.on('response', (up) => {
+      // A rejected Digest nonce is probably stale: drop it so the next request asks for a new challenge.
+      if (up.statusCode === 401 && creds) digestNonces.delete(`${scheme}://${target.hostPort}`);
+      const out: http.OutgoingHttpHeaders = {};
+      for (const [name, value] of Object.entries(up.headers)) {
+        if (!HOP_BY_HOP.includes(name) && name !== 'set-cookie') out[name] = value;
+      }
+      if (mode.ui) {
+        delete out['x-frame-options'];
+        delete out['content-security-policy'];
+        delete out['content-security-policy-report-only'];
+        out['cross-origin-embedder-policy'] = 'require-corp';
+        out['cross-origin-resource-policy'] = 'cross-origin';
+        if (typeof out.location === 'string' && mode.ownOrigin) out.location = out.location.replace(`${scheme}://${hostPort}`, mode.ownOrigin);
+      }
+      res.writeHead(up.statusCode ?? 502, out);
+      up.pipe(res);
+      up.on('error', () => res.destroy());
+    });
+    upstream.on('timeout', () => upstream.destroy(new Error('The printer did not answer in time.')));
+    upstream.on('error', (err) => fail(res, 502, errorMessage(err)));
+    res.on('close', () => upstream.destroy());
+    if (uploadBody) await pipeline(createReadStream(uploadBody.path), upstream);
+    else req.pipe(upstream);
+
+  } finally {
+    await uploadBody?.cleanup();
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -282,10 +410,12 @@ function handleBambuMqtt(wss: WebSocketServer, req: http.IncomingMessage, socket
           return;
         }
         serial = message.serial;
+        const protocol = options.bambu?.mqttProtocol ?? (target.port === 8883 ? 'mqtts' : 'mqtt');
+        const port = options.bambu?.mqttPort ?? target.port;
         broker = mqtt.connect({
-          protocol: options.bambu?.mqttProtocol ?? 'mqtts',
+          protocol,
           host: target.address,
-          port: options.bambu?.mqttPort ?? 8883,
+          port,
           username: 'bblp',
           password: message.accessCode,
           rejectUnauthorized: false,
@@ -317,6 +447,10 @@ function handleBambuMqtt(wss: WebSocketServer, req: http.IncomingMessage, socket
       } else if (message.type === 'publish' && broker?.connected) {
         if (readOnly && !bambuRequestAllowedInReadOnly(message.payload)) {
           send({ type: 'error', message: 'Refused by the printer gateway in read-only mode' });
+          return;
+        }
+        if (!bambuRequestAllowed(message.payload)) {
+          send({ type: 'error', message: 'Refused: command not allowed by gateway policy' });
           return;
         }
         broker.publish(`device/${serial}/request`, JSON.stringify(message.payload));
@@ -367,49 +501,6 @@ async function handleBambuFtp(req: http.IncomingMessage, res: http.ServerRespons
 // Plugin
 // ---------------------------------------------------------------------------------------------
 
-
-async function handleBambuCloudApi(req: http.IncomingMessage, res: http.ServerResponse, path: string, options: GatewayOptions) {
-  if (!(options.cloud ?? configFromEnv().cloud ?? '').split(',').map(value => value.trim()).includes('bambu-cloud')) {
-    fail(res, 403, 'Bambu Cloud is not enabled on this gateway.');
-    return;
-  }
-  const method = (req.method || 'GET').toUpperCase();
-  const allowKey = `${method} ${path}`;
-  if (!BAMBU_CLOUD_API_ALLOWLIST.has(allowKey)) {
-    fail(res, 403, 'Cloud API endpoint not in allowlist');
-    return;
-  }
-
-  const apiHost = options.bambuCloud?.apiHost ?? BAMBU_CLOUD_API_HOST;
-  const reqHeaders: http.OutgoingHttpHeaders = {
-    'host': apiHost,
-    'accept': 'application/json'
-  };
-
-  if (req.headers['content-type']) reqHeaders['content-type'] = req.headers['content-type'];
-  if (req.headers['content-length']) reqHeaders['content-length'] = req.headers['content-length'];
-  if (req.headers['authorization']) reqHeaders['authorization'] = req.headers['authorization'];
-
-  const requestFn = options.bambuCloud?.apiProtocol === 'http' ? http.request : https.request;
-  const creq = requestFn({
-    method,
-    hostname: apiHost,
-    port: options.bambuCloud?.apiPort ?? 443,
-    path,
-    headers: reqHeaders,
-    timeout: 15_000,
-    rejectUnauthorized: options.bambuCloud?.apiRejectUnauthorized ?? true
-  }, (cres) => {
-    res.statusCode = cres.statusCode || 500;
-    res.setHeader('content-type', cres.headers['content-type'] || 'application/json');
-    cres.pipe(res);
-  });
-
-  creq.on('timeout', () => creq.destroy(new Error('Cloud API did not answer in time.')));
-  creq.on('error', (err) => fail(res, 502, errorMessage(err)));
-  res.on('close', () => { if (!res.writableFinished) creq.destroy(); });
-  req.pipe(creq);
-}
 
 function handleBambuCloudMqtt(wss: WebSocketServer, req: http.IncomingMessage, socket: Duplex, head: Buffer, brokerHost: string, options: GatewayOptions) {
   if (!(options.cloud ?? configFromEnv().cloud ?? '').split(',').map(value => value.trim()).includes('bambu-cloud')) {
@@ -496,6 +587,7 @@ const BAMBU_CLOUD_ROUTE = /^\/_printer\/bambu-cloud\/(api|mqtt)\/([^?]+)/;
 /** The gateway's request handlers, independent of the server that hosts them (Vite plugin or the local gateway). */
 export function createGateway(options: GatewayOptions = {}) {
   const sockets = new WebSocketServer({ noServer: true });
+  const snapmakerMonitor = createSnapmakerMonitor(options);
 
   function status() {
     const config = { ...configFromEnv(), ...options };
@@ -522,6 +614,14 @@ export function createGateway(options: GatewayOptions = {}) {
       }
       if (url.startsWith('/_printer/creality-cloud/')) {
         await handleCrealityCloudRequest(req, res, url, options);
+        return true;
+      }
+      if (url.startsWith('/_printer/snapmaker-cloud/')) {
+        await handleSnapmakerCloudRequest(req, res, url, options);
+        return true;
+      }
+      if (url.startsWith('/_printer/prusa-connect/')) {
+        await handlePrusaConnectRequest(req, res, url, options);
         return true;
       }
       const bambu = BAMBU_ROUTE.exec(url);
@@ -569,8 +669,13 @@ export function createGateway(options: GatewayOptions = {}) {
     };
     try {
       const config = { ...configFromEnv(), ...options };
+      if (snapmakerMonitor.handleUpgrade(req, socket, head)) return true;
       if (url.startsWith('/_printer/creality-cloud/')) {
         refuse(400, 'Creality Cloud monitoring uses HTTP requests.');
+        return true;
+      }
+      if (url.startsWith('/_printer/prusa-connect/')) {
+        refuse(400, 'Prusa Connect uses HTTP requests.');
         return true;
       }
       const bambu = BAMBU_ROUTE.exec(url);
