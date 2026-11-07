@@ -646,7 +646,7 @@ cmake_policy(POP)
 add_library(libslic3r_cgal STATIC
     CutSurface.hpp CutSurface.cpp
     IntersectionPoints.hpp IntersectionPoints.cpp
-    MeshBoolean.hpp MeshBoolean.cpp
+    MeshBoolean.hpp MeshBoolean.cpp MeshBooleanIGL.cpp
     MeshRepair.hpp MeshRepair.cpp
     TryCatchSignal.hpp TryCatchSignal.cpp
     Triangulation.hpp Triangulation.cpp
@@ -728,6 +728,7 @@ if (ORCA_WASM_SIZE_TIERS AND EMSCRIPTEN)
             MaterialType.cpp
             Measure.cpp
             MeshBoolean.cpp
+            MeshBooleanIGL.cpp
             Orient.cpp
             PresetBundle.cpp
             PresetCacheFormat.cpp
@@ -904,6 +905,14 @@ if (ORCA_WASM_SIZE_TIERS AND EMSCRIPTEN)
     foreach (_f ${_orca_hot_o2})
         set_source_files_properties(${_f} PROPERTIES COMPILE_OPTIONS "-O2")
     endforeach ()
+endif ()
+
+# Keep the heavy CGAL unit buildable with an explicit, reproducible memory limit workaround.
+set(ORCA_WASM_MESH_BOOLEAN_OPTIMIZATION "" CACHE STRING
+    "Override MeshBoolean.cpp optimization for memory-constrained WASM builds (e.g. -O1)")
+if (EMSCRIPTEN AND ORCA_WASM_MESH_BOOLEAN_OPTIMIZATION)
+    set_property(SOURCE MeshBoolean.cpp APPEND PROPERTY COMPILE_OPTIONS
+        "${ORCA_WASM_MESH_BOOLEAN_OPTIMIZATION}")
 endif ()
 
 # The wasm engine filters Boost.Log at >= warning; trace/debug/info statements are dead code there.

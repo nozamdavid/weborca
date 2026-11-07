@@ -44,6 +44,72 @@ const bundleDir = path.join(repoRoot, 'wasm', 'build', 'tests-node');
 const LINEAR_DEFLECTION = 0.003;
 const ANGLE_DEFLECTION = 0.5;
 
+// These release fixtures exercise the changed mesher and shape collector
+// directly, without treating the former unpatched OCCT engine as an oracle.
+describe('STEP release geometry regressions', () => {
+  let module;
+  before(async () => { module = await (await import(stepModulePath)).default(); });
+  after(() => { module = null; });
+
+  function mesh(bytes, split = false) {
+    module.FS.writeFile('/release.step', bytes);
+    assert.equal(module.step_tessellate_to_file('/release.step', LINEAR_DEFLECTION,
+      ANGLE_DEFLECTION, split, '/release.bin'), '');
+    const solids = parsePackedMesh(module.FS.readFile('/release.bin'));
+    assert.ok(solids.length > 0);
+    for (const solid of solids) {
+      assert.ok(solid.indices.length > 0);
+      assert.ok(solid.positions.every(Number.isFinite));
+      assert.ok(solid.indices.every(index => index < solid.positions.length / 3));
+    }
+    return solids;
+  }
+
+  const fixture = name => fs.readFileSync(path.join(repoRoot, 'tests/data', name));
+
+  test('tilted cone seam produces a closed mesh', t => {
+    const solids = mesh(fixture('cone_tilted_seam_pcurve.step'));
+    assert.equal(solids.length, 1);
+    const { positions, indices } = solids[0];
+    // OCCT duplicates vertices along face boundaries. Weld by exact float32
+    // coordinates before counting incident triangles on the seam and caps.
+    const key = index => Array.from(positions.subarray(index * 3, index * 3 + 3)).join(',');
+    const edges = new Map();
+    for (let i = 0; i < indices.length; i += 3) {
+      const corners = [key(indices[i]), key(indices[i + 1]), key(indices[i + 2])];
+      assert.equal(new Set(corners).size, 3, 'triangle must have three distinct positions');
+      for (let c = 0; c < 3; c++) {
+        const edge = [corners[c], corners[(c + 1) % 3]].sort().join('|');
+        edges.set(edge, (edges.get(edge) || 0) + 1);
+      }
+    }
+    assert.ok([...edges.values()].every(count => count === 2), 'every cone edge must have two incident triangles');
+    const box = bounds([positions]);
+    assert.ok(box.max.every((value, axis) => value > box.min[axis]));
+    t.diagnostic(`${indices.length / 3} triangles, bounds ${JSON.stringify(box)}`);
+  });
+
+  for (const split of [false, true]) {
+    test(`compound of loose faces imports with split=${split}`, () => {
+      const solids = mesh(fixture('surface_model_geometric_set.step'), split);
+      assert.equal(solids.length, 1);
+      assert.deepEqual(bounds(solids.map(solid => solid.positions)), { min: [0, 0, 0], max: [10, 10, 10] });
+      assert.equal(solids[0].indices.length / 3, 4);
+    });
+
+    test(`shell without a solid imports with split=${split}`, () => {
+      const bytes = fixture('security_classification.step').toString('utf8')
+        .replace("FACETED_BREP_SHAPE_REPRESENTATION('',(#21,#22),#17)", "MANIFOLD_SURFACE_SHAPE_REPRESENTATION('',(#21,#22),#17)")
+        .replace("FACETED_BREP('',#23)", "SHELL_BASED_SURFACE_MODEL('',(#23))");
+      assert.match(bytes, /SHELL_BASED_SURFACE_MODEL/);
+      const solids = mesh(Buffer.from(bytes), split);
+      assert.equal(solids.length, 1);
+      assert.equal(solids[0].indices.length / 3, 4);
+      assert.deepEqual(bounds(solids.map(solid => solid.positions)), { min: [0, 0, 0], max: [10, 10, 10] });
+    });
+  }
+});
+
 function alignedCopy(buf, offset, length) {
   const copy = new Uint8Array(length);
   copy.set(buf.subarray(offset, offset + length));

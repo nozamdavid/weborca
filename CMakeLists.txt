@@ -1010,7 +1010,8 @@ endforeach()
 
 find_package(NLopt 1.4 REQUIRED)
 
-if (NOT EMSCRIPTEN)
+if (NOT EMSCRIPTEN AND SLIC3R_GUI)
+# Only the GUI and its stubgen module embed Python; headless core/tests do not.
 # Use bundled Python from deps instead of system Python
 set(_bundled_python_version "3.12.13")
 set(_bundled_python_abi "312")

@@ -12,6 +12,7 @@ get_filename_component(REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
 
 set(BASE_PREFIX "${REPO_ROOT}/wasm/build/prefix-wasm64" CACHE PATH "wasm dependency prefix")
 set(OCCT_PREFIX "${REPO_ROOT}/wasm/build/prefix-occt-step" CACHE PATH "OCCT prefix")
+set(STEP_MODULE_OUT_DIR "${REPO_ROOT}/wasm/build/step-module" CACHE PATH "STEP module output directory")
 
 if (NOT EXISTS "${BASE_PREFIX}/lib/libboost_nowide.a")
     message(FATAL_ERROR "Boost wasm prefix not found at ${BASE_PREFIX}")
@@ -91,7 +92,7 @@ target_link_libraries(step_tessellate PRIVATE
 
 set_target_properties(step_tessellate PROPERTIES
     SUFFIX ".mjs"
-    RUNTIME_OUTPUT_DIRECTORY "${REPO_ROOT}/wasm/build/step-module"
+    RUNTIME_OUTPUT_DIRECTORY "${STEP_MODULE_OUT_DIR}"
 )
 
 target_link_options(step_tessellate PRIVATE

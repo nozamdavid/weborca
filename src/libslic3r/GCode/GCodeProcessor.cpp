@@ -2230,14 +2230,14 @@ void GCodeProcessor::PreCoolingInjector::inject_cooling_heating_command(TimeProc
     };
 
     auto is_pre_cooling_valid = [&nozzle_temps = this->filament_nozzle_temps, &pre_cooling_temps = this->filament_pre_cooling_temps](int idx) -> bool {
-        if (idx < 0 || idx >= (int) pre_cooling_temps.size() || idx >= (int) nozzle_temps.size())
+        if (idx < 0)
             return false;
         const int cooling_temp = get_option_value(pre_cooling_temps, idx);
         return cooling_temp > 0 && cooling_temp < get_option_value(nozzle_temps, idx);
     };
 
     auto get_partial_free_cooling_thres = [&](int idx) -> float {
-        if (idx < 0 || idx >= (int) filament_nozzle_temps.size() || idx >= (int) filament_pre_cooling_temps.size())
+        if (idx < 0)
             return 30.f;
         float temp_in_tower = get_option_value(filament_nozzle_temps, idx);
         return temp_in_tower - static_cast<float>(get_option_value(filament_pre_cooling_temps, idx));
@@ -7548,7 +7548,7 @@ void GCodeProcessor::update_move_state_cache()
     const float retract_acc = get_retract_acceleration(normal_mode);
     const float print_acc = get_acceleration(normal_mode);
 
-    auto compute_bucket = [this, use_jd_jerk, normal_mode](float acc) -> CachedMoveState {
+    auto compute_bucket = [this, use_jd_jerk](float acc) -> CachedMoveState {
         CachedMoveState state;
         state.acceleration = acc;
         auto axis_jerk = [this, use_jd_jerk, acc](Axis axis) {

@@ -211,6 +211,39 @@ function resolveSystemPreset(
   return effectivePreset(kind, name, userPresets).preset;
 }
 
+/** Migrate stored web maps before filtering keys or constructing reset values. */
+async function normalizePersistedOptions(options: Record<string, string>): Promise<Record<string, string>> {
+  const result = await (await getEngine()).call('normalizeOptions', { options }) as {
+    options: Record<string, string>; errors: { key: string; error: string; fatal: boolean }[];
+  };
+  const fatal = result.errors.filter(error => error.fatal);
+  if (fatal.length) throw new Error(fatal.map(error => `${error.key}: ${error.error}`).join('; '));
+  return result.options;
+}
+
+async function canonicalPresetName(kind: PresetKind, name: string): Promise<string | undefined> {
+  try {
+    const result = await (await getEngine()).call('resolvePreset', { kind, name }) as { name: string };
+    return result.name;
+  } catch { return undefined; }
+}
+
+function profileHasName(profile: { name: string; renamed_from?: string | string[] }, name: string): boolean {
+  return profile.name === name || (Array.isArray(profile.renamed_from)
+    ? profile.renamed_from.includes(name) : profile.renamed_from === name);
+}
+
+/** Rename metadata only locates a bundle; native collections resolve the name after loading. */
+async function findPresetVendor(directory: 'machine' | 'process' | 'filament', name: string, vendors: string[], preferred?: string): Promise<string | undefined> {
+  const exact = await findSystemProfileVendor(directory, name, vendors, preferred);
+  if (exact) return exact;
+  for (const vendor of vendors) {
+    const profiles = await systemProfiles(vendor, directory).catch(() => []);
+    if (profiles.some(profile => profileHasName(profile, name))) return vendor;
+  }
+  return undefined;
+}
+
 /** Merge each user filament into its own slot using the desktop config composer. */
 async function reapplyPresetOverrides(filaments: string[], overrides: Record<string, string>): Promise<void> {
   const users = useAppStore.getState().userPresets;
@@ -220,7 +253,7 @@ async function reapplyPresetOverrides(filaments: string[], overrides: Record<str
   const userValues = slots.some(slot => Object.keys(slot.values).length)
     ? await (await getEngine()).call('mergeFilamentPresets', { slots }) as Record<string, string>
     : {};
-  const options = { ...userValues, ...overrides };
+  const options = await normalizePersistedOptions({ ...userValues, ...overrides });
   if (Object.keys(options).length) await setOptions(options);
 }
 
@@ -242,17 +275,17 @@ async function computeBaselineConfig(
     : {};
 
   const baseline: Record<string, string> = { ...systemBaselineConfig };
-  const mergeKnown = (src?: Record<string, string>) => {
+  const mergeKnown = async (src?: Record<string, string>) => {
     if (!src) return;
-    for (const [k, v] of Object.entries(src)) {
+    for (const [k, v] of Object.entries(await normalizePersistedOptions(src))) {
       if (k in systemBaselineConfig) {
         baseline[k] = v;
       }
     }
   };
-  if (printer) mergeKnown(effectivePreset('printer', printer.name, userPresets).values);
-  if (process) mergeKnown(effectivePreset('process', process.name, userPresets).values);
-  mergeKnown(userValues);
+  if (printer) await mergeKnown(effectivePreset('printer', printer.name, userPresets).values);
+  if (process) await mergeKnown(effectivePreset('process', process.name, userPresets).values);
+  await mergeKnown(userValues);
   return baseline;
 }
 
@@ -856,49 +889,54 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     if (nextList.length === 0) return;
     if (get().isSlicing) get().cancelSlice();
-    get().invalidateSlicePreview();
 
     try {
       if (selectedPrinter && selectedProcess) {
-        // Project while native still knows the old slot count and typed strides.
         const { processOverrides, printerOverrides, filamentOverrides } = get();
-        // Imported/project colors can live in native project_config rather than
-        // the override map. They still belong to their surviving slot.
-        const colors = filamentOverrides.filament_colour || get().currentConfig.filament_colour;
-        const projected = await resetOptions({ filamentIndex: removedSlot,
-          overrides: { ...filamentOverrides, ...(colors ? { filament_colour: colors } : {}) }, removeFilamentSlot: true });
-        if (!projected.filamentOverrides) throw new Error('Engine did not project filament overrides');
-        const nextFilOverrides = projected.filamentOverrides;
+        const overrides = { ...processOverrides, ...printerOverrides, ...filamentOverrides };
+        // Imported maps/colors may exist only in native project settings.
+        for (const key of ['filament_map', 'filament_volume_map', 'filament_nozzle_map', 'filament_colour']) {
+          if (!(key in overrides) && get().currentConfig[key] !== undefined) overrides[key] = get().currentConfig[key];
+        }
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
         const systemFilaments = nextList.map((f) => resolveSystemPreset('filament', f, userPresets));
-
-        await selectPresets({
-          printer: systemPrinter,
-          process: systemProcess,
-          filaments: systemFilaments
-        });
-
-        const baselineConfig = await computeBaselineConfig(nextList, userPresets, nextUserPreset);
-        const activeOverrides = { ...processOverrides, ...printerOverrides, ...nextFilOverrides };
-        await reapplyPresetOverrides(nextList, activeOverrides);
-
-        const effectiveConfig = await getConfig();
-
-        const rulesRes = await evaluateRules({ kind: 'print', filamentIndex: nextActive });
-
+        const baselineOverrides = {
+          ...effectivePreset('printer', selectedPrinter, userPresets).values,
+          ...effectivePreset('process', selectedProcess, userPresets).values
+        };
+        // Native stages selection, typed vectors, model painting and plate maps
+        // together. A validation/remap failure leaves the current project intact.
+        const result = await (await getEngine()).call('removeFilamentSlot', {
+          filamentIndex: removedSlot, activeFilamentIndex: nextActive,
+          selection: { printer: systemPrinter, process: systemProcess, filaments: systemFilaments },
+          slots: nextList.map(name => effectivePreset('filament', name, userPresets)),
+          baselineOverrides, overrides
+        }) as { baseline: Record<string, string>; config: Record<string, string>;
+          overrides: Record<string, string>; rules: AppState['rulesState'] };
+        const nextProcessOverrides: Record<string, string> = {};
+        const nextPrinterOverrides: Record<string, string> = {};
+        const nextFilOverrides: Record<string, string> = {};
+        for (const [key, value] of Object.entries(result.overrides)) {
+          if (key in filamentOverrides || key === 'filament_colour') nextFilOverrides[key] = value;
+          else if (key in printerOverrides) nextPrinterOverrides[key] = value;
+          else nextProcessOverrides[key] = value;
+        }
+        get().invalidateSlicePreview();
         set({
           selectedFilaments: nextList,
           selectedFilament: nextList[0],
           activeFilamentSlot: nextActive,
           activeUserPreset: nextUserPreset,
+          processOverrides: nextProcessOverrides,
+          printerOverrides: nextPrinterOverrides,
           filamentOverrides: nextFilOverrides,
-          presetConfig: baselineConfig,
-          currentConfig: effectiveConfig,
+          presetConfig: result.baseline,
+          currentConfig: result.config,
           rulesState: {
-            fields: rulesRes.fields || {},
-            fixes: rulesRes.fixes || [],
-            messages: rulesRes.messages || []
+            fields: result.rules.fields || {},
+            fixes: result.rules.fixes || [],
+            messages: result.rules.messages || []
           }
         });
       } else {
@@ -1510,12 +1548,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       const effectiveConfig = await getConfig();
 
       if (kind === 'print') {
+        const savedName = get().activeUserPreset.process;
+        const savedValues = savedName ? await normalizePersistedOptions(effectivePreset('process', savedName, get().userPresets).values) : {};
         set((state) => {
           const next = { ...state.processOverrides };
-          const saved = state.userPresets.find(preset => preset.kind === 'process' && preset.name === state.activeUserPreset.process);
           // The native engine loads the system parent, so saved user values
           // must remain in the effective override map after a reset.
-          if (saved?.values[key] !== undefined || effectiveConfig[key] !== presetConfig[key]) next[key] = effectiveConfig[key];
+          if (savedValues[key] !== undefined || effectiveConfig[key] !== presetConfig[key]) next[key] = effectiveConfig[key];
           else delete next[key];
           return { processOverrides: next };
         });
@@ -1531,10 +1570,11 @@ export const useAppStore = create<AppState>((set, get) => ({
           return { filamentOverrides: next };
         });
       } else if (kind === 'printer') {
+        const savedName = get().activeUserPreset.printer;
+        const savedValues = savedName ? await normalizePersistedOptions(effectivePreset('printer', savedName, get().userPresets).values) : {};
         set((state) => {
           const next = { ...state.printerOverrides };
-          const saved = state.userPresets.find(preset => preset.kind === 'printer' && preset.name === state.activeUserPreset.printer);
-          if (saved?.values[key] !== undefined || effectiveConfig[key] !== presetConfig[key]) next[key] = effectiveConfig[key];
+          if (savedValues[key] !== undefined || effectiveConfig[key] !== presetConfig[key]) next[key] = effectiveConfig[key];
           else delete next[key];
           return { printerOverrides: next };
         });
@@ -1646,22 +1686,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
 
     try {
-      const systemParent = resolveSystemPreset(kind, name, userPresets);
+      let systemParent = resolveSystemPreset(kind, name, userPresets);
+      systemParent = await canonicalPresetName(kind, systemParent) || systemParent;
       const loadedParents = await listPresets(kind, { compatibleOnly: false });
       const loadedParent = loadedParents.find(parent => parent.name === systemParent);
       let parentVendor = loadedParent?.vendor;
       if (loadedParent && kind === 'printer' && !get().vendors.some(vendor => vendor.name === parentVendor)) {
         // Native vendor display names can differ from packaged bundle identifiers (for example BBL).
-        parentVendor = await findSystemProfileVendor('machine', systemParent, get().vendors.map(vendor => vendor.name));
+        parentVendor = await findPresetVendor('machine', systemParent, get().vendors.map(vendor => vendor.name));
       }
       if (!loadedParent) {
-        parentVendor = await findSystemProfileVendor(
+        parentVendor = await findPresetVendor(
           kind === 'printer' ? 'machine' : kind, systemParent,
           get().vendors.map(vendor => vendor.name), get().selectedVendor,
         );
         if (!parentVendor) throw new Error(`Unknown ${kind} preset: ${systemParent}`);
         // Loading a dependency must not choose defaults or clear saved overrides.
         await loadVendors([parentVendor]);
+        systemParent = await canonicalPresetName(kind, systemParent) || systemParent;
       }
 
       if (kind === 'process') {
@@ -1678,7 +1720,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
 
         const baselineConfig = await computeBaselineConfig(filamentsList, userPresets, targetActive);
-        const nextProcessOverrides = effectivePreset(kind, name, userPresets).values;
+        const nextProcessOverrides = await normalizePersistedOptions(effectivePreset(kind, name, userPresets).values);
         const { filamentOverrides, printerOverrides } = get();
         const allOverrides = { ...nextProcessOverrides, ...filamentOverrides, ...printerOverrides };
         await reapplyPresetOverrides(filamentsList, allOverrides);
@@ -1779,7 +1821,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
 
         const baselineConfig = await computeBaselineConfig(filamentsList, userPresets, targetActive);
-        const nextPrinterOverrides = effectivePreset(kind, name, userPresets).values;
+        const nextPrinterOverrides = await normalizePersistedOptions(effectivePreset(kind, name, userPresets).values);
         const { processOverrides, filamentOverrides } = get();
         const allOverrides = { ...processOverrides, ...filamentOverrides, ...nextPrinterOverrides };
         await reapplyPresetOverrides(filamentsList, allOverrides);
@@ -1895,8 +1937,8 @@ export async function resolveDeviceVendor(device: { id: string; preset?: string;
   const matches = await systemProfiles(hint, 'machine').catch(() => []);
   // The index fallback migrates old names whose brand cannot be inferred. It is
   // not needed again after the successful selection records the actual vendor.
-  const vendor = matches.some(p => p.name === targetPreset) ? hint :
-    await findSystemProfileVendor('machine', targetPreset, (await loadPrinterCatalog()).map(v => v.name));
+  const vendor = matches.some(p => profileHasName(p, targetPreset)) ? hint :
+    await findPresetVendor('machine', targetPreset, (await loadPrinterCatalog()).map(v => v.name));
   if (vendor) {
     const store = usePrinterConnectionStore.getState();
     const saved = store.printers.find((p) => p.id === device.id);
@@ -1916,21 +1958,28 @@ async function restoreLastSetup() {
   const app = () => useAppStore.getState();
   const userOf = (kind: PresetKind, name: string) => app().userPresets.find((p) => p.kind === kind && p.name === name);
   const userPrinter = userOf('printer', saved.printer);
-  const systemPrinter = userPrinter?.inherits || saved.printer;
+  const systemPrinter = resolveSystemPreset('printer', saved.printer, app().userPresets);
   const vendor = await resolveDeviceVendor({ id: '', preset: saved.printer });
   if (!vendor) return;
   if (vendor !== app().selectedVendor) await app().chooseVendor(vendor);
-  if (!app().printers.some((p) => p.name === systemPrinter)) return;
-  await app().choosePrinter(systemPrinter);
+  const canonicalPrinter = await canonicalPresetName('printer', systemPrinter);
+  if (!canonicalPrinter) return;
+  await app().choosePrinter(canonicalPrinter);
   if (userPrinter) await app().selectUserPreset('printer', saved.printer);
   if (saved.process) {
     if (userOf('process', saved.process)) await app().selectUserPreset('process', saved.process);
-    else if (app().processes.some((p) => p.name === saved!.process)) await app().chooseProcess(saved.process);
+    else {
+      const canonical = await canonicalPresetName('process', saved.process);
+      if (canonical) await app().chooseProcess(canonical);
+    }
   }
   for (const [slot, name] of (saved.filaments || []).entries()) {
     if (slot > 0 && slot >= app().selectedFilaments.length) await app().addFilamentSlot();
     if (userOf('filament', name)) await app().selectUserPreset('filament', name, slot);
-    else if (app().filaments.some((f) => f.name === name)) await app().chooseFilament(name, slot);
+    else {
+      const canonical = await canonicalPresetName('filament', name);
+      if (canonical) await app().chooseFilament(canonical, slot);
+    }
   }
 }
 
@@ -1952,10 +2001,9 @@ async function restoreDeviceFilaments() {
   const fallback = app.selectedFilaments[0] || app.selectedFilament;
   // Keep physical slot indices and colors together even if a saved preset
   // was deleted. That slot falls back to the selected printer's default.
-  const valid = device.filamentPresets.map(name =>
-    app.filaments.some(preset => preset.name === name) ||
+  const valid = await Promise.all(device.filamentPresets.map(async name =>
     app.userPresets.some(preset => preset.kind === 'filament' && preset.name === name)
-      ? name : fallback);
+      ? name : await canonicalPresetName('filament', name) || fallback));
   // Use the normal preset path so all per-slot settings reach the engine, not just the dropdowns.
   for (let i = 0; i < valid.length; i++) {
     const user = useAppStore.getState().userPresets.find((p) => p.kind === 'filament' && p.name === valid[i]);
@@ -1980,11 +2028,10 @@ async function applyDevicePreset() {
     const isUser = state.userPresets.some((p) => p.kind === 'printer' && p.name === device.preset);
     if (vendor && vendor !== state.selectedVendor) {
       await state.chooseVendor(vendor);
-    } else if (!isUser && !state.printers.some((p) => p.name === device.preset)) {
-      return;
     }
     const curState = useAppStore.getState();
-    if (!isUser && !curState.printers.some((p) => p.name === device.preset)) return;
+    const canonicalPrinter = isUser ? undefined : await canonicalPresetName('printer', device.preset);
+    if (!isUser && !canonicalPrinter) return;
     if (isUser && !curState.userPresets.some((p) => p.kind === 'printer' && p.name === device.preset)) return;
     // Two devices can share a machine profile and have different spools.
     // Start from its default rather than inheriting the previous device's slots.
@@ -1993,7 +2040,7 @@ async function applyDevicePreset() {
       await useAppStore.getState().choosePrinter(resolveSystemPreset('printer', device.preset, curState.userPresets));
       await useAppStore.getState().selectUserPreset('printer', device.preset);
     } else {
-      await useAppStore.getState().choosePrinter(device.preset);
+      await useAppStore.getState().choosePrinter(canonicalPrinter!);
     }
     await restoreDeviceFilaments();
   } finally {

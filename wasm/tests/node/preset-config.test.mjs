@@ -64,6 +64,18 @@ describe('Engine getPresetConfig', () => {
     assert.deepEqual(await core.call('getConfig', {}), before);
   });
 
+  test('renamed system filament resolves without fallback and selects its canonical name', async () => {
+    const old = 'Printalot ABS @System';
+    const canonical = 'PrintaLot ABS @System';
+    assert.deepEqual(await core.call('resolvePreset', { kind: 'filament', name: old }), { name: canonical });
+    assert.deepEqual(await core.call('getPresetConfig', { kind: 'filament', name: old }),
+      await core.call('getPresetConfig', { kind: 'filament', name: canonical }));
+    const selected = await core.call('selectPresets', { printer: 'Voron 2.4 300 0.4 nozzle',
+      process: '0.20mm Standard @Voron', filaments: [old] });
+    assert.deepEqual(selected.filaments, [canonical]);
+    await assert.rejects(core.call('resolvePreset', { kind: 'filament', name: 'No such preset' }), /Unknown preset/);
+  });
+
   test('unknown names and kinds are errors', async () => {
     await assert.rejects(core.call('getPresetConfig', { kind: 'process', name: 'No such preset' }), /Unknown process preset/);
     await assert.rejects(core.call('getPresetConfig', { kind: 'nope', name: 'x' }), /Unknown preset kind/);

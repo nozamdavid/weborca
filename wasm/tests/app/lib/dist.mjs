@@ -11,7 +11,7 @@ async function isServerRunning(port) {
   const url = `http://127.0.0.1:${port}`;
   return new Promise((resolve) => {
     const req = http.get(url, (res) => {
-      resolve(res.statusCode === 200);
+      resolve(res.statusCode === 200 || (process.env.ORCA_ALPHA_GATE_ENABLED === '1' && res.statusCode === 401));
     });
     req.on('error', () => resolve(false));
     req.setTimeout(1000, () => {

@@ -426,7 +426,7 @@ json paintStroke(Slic3r::Model& model, const json& args) {
             for (const auto& sp : stroke_points) {
                 selector.seed_fill_unselect_all_triangles();
                 selector.seed_fill_select_triangles(sp.mesh_hit, sp.facet, trafo_matrix_not_translate,
-                    clp, smart_fill_angle_deg, overhang_angle_deg, true);
+                    clp, smart_fill_angle_deg, overhang_angle_deg, Slic3r::Vec3f::UnitZ(), true);
                 selector.seed_fill_apply_on_triangles(new_state);
             }
         } else if (tool == "bucket") {

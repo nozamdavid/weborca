@@ -1,5 +1,15 @@
 # WebOrca staging container
 
+CURRENT5070 remains `wasm/build/ui-background-engine-release-20261107`.
+The [local v2.5 integration candidate](../../docs/v2.5.0-integration/README.md)
+is `wasm/build/v250-browser-integration/candidate-gated` in the integration
+worktree; promotion/deployment remains open. Its accepted build explicitly sets
+`ORCA_ENGINE_DIR`, `ORCA_STEP_MODULE_DIR`, `ORCA_PREVIEW_DIR`,
+`ORCA_PROFILES_DIR` and `ORCA_SETTINGS_DIR` to the matching directories in that
+summary. Defaults in the generic Docker/build examples below do not select
+those isolated v2.5 inputs. Keep the frozen module pairs, merged catalog/layout
+and STEP LGPL notices together; retain the existing gate and COOP/COEP contract.
+
 By default, one container serves the built web app on port **8080**, accepting `weborca.noz.am`.
 There is no Caddy, TLS service or LAN printer gateway running in the container; hosted cloud
 adapters require explicit opt-in as described below. Slicing runs in browser
@@ -8,7 +18,7 @@ COOP/COEP headers needed for multithreaded slicing.
 
 ## Optional alpha access
 
-Alpha access and the sampled bug/engine repairs are published on CURRENT5070 as `wasm/build/ui-alpha-design-release-20261107`. The [alpha design publication](../build/tests-alpha-design-20261107/report.md) binds the current release and guarded rollback to the previous gated alpha release. On the authenticated admin page, **Open slicer** issues a separate app token/cookie without creating an invite. Its deadline is the authorizing admin session's original 8-hour expiry. Admin logout or a server restart (including password rotation) invalidates that access and closes owned connections; ordinary app logout leaves admin management signed in. Password changes require restart. Tester/app tokens cannot authorize admin launch or management.
+Alpha access and the sampled bug/engine repairs are retained on CURRENT5070 as `wasm/build/ui-background-engine-release-20261107`. The [alpha design publication](../build/tests-alpha-design-20261107/report.md) records the preceding alpha design release and guarded rollback to the previous gated alpha release. On the authenticated admin page, **Open slicer** issues a separate app token/cookie without creating an invite. Its deadline is the authorizing admin session's original 8-hour expiry. Admin logout or a server restart (including password rotation) invalidates that access and closes owned connections; ordinary app logout leaves admin management signed in. Password changes require restart. Tester/app tokens cannot authorize admin launch or management.
 
 The [previous publication](../build/tests-alpha-access-20261106/publication/report.md) records the initial gated deployment; its rollback disables the gate and is historical. The companion `wasm/build/tests-alpha-access-20261106/candidate-static` remains locally verified. The [integrated report](../build/tests-alpha-access-20261106/integrated.md) records 113 selected passes, packaged-server/full-app recovery, and file-only import/slice/Preview with zero alpha requests. The sampled audit retains the known 804-line legacy macOS oracle mismatch on both pre/post native artifacts; native parity is bounded to the recorded fixtures and retained dependency archives. Real-provider/hardware acceptance remains open.
 

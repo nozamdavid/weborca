@@ -37,6 +37,7 @@ emcmake cmake -S "$REPO_ROOT/wasm/step" -B "$STEP_MODULE_BUILD_DIR" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DBASE_PREFIX="$BASE_PREFIX" \
     -DOCCT_PREFIX="$OCCT_PREFIX" \
+    -DSTEP_MODULE_OUT_DIR="$STEP_MODULE_OUT_DIR" \
     -DCMAKE_C_FLAGS="$WASM_CFLAGS -UOCC_CONVERT_SIGNALS" \
     -DCMAKE_CXX_FLAGS="$WASM_CFLAGS -UOCC_CONVERT_SIGNALS"
 
@@ -44,7 +45,7 @@ echo "Building step_tessellate target (jobs: $JOBS)..."
 cmake --build "$STEP_MODULE_BUILD_DIR" --target step_tessellate -j "$JOBS"
 
 # OCCT's LGPL exception notice must ship next to the module that embeds it.
-OCCT_SRC_DIR="$REPO_ROOT/wasm/build/src/OCCT-8_0_1"
+OCCT_SRC_DIR="${OCCT_SRC_ROOT:-$REPO_ROOT/wasm/build/src/occt-8.0.1-seam-pcurve}/OCCT-8_0_1"
 if [ -d "$OCCT_SRC_DIR" ] && [ -d "$STEP_MODULE_OUT_DIR" ]; then
     cp "$OCCT_SRC_DIR/LICENSE_LGPL_21.txt" "$OCCT_SRC_DIR/OCCT_LGPL_EXCEPTION.txt" "$STEP_MODULE_OUT_DIR/"
 fi

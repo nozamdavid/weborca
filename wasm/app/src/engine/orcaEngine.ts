@@ -124,9 +124,9 @@ export async function selectPresets(selection: {
   printer: string;
   process: string;
   filaments: string[];
-}): Promise<void> {
+}): Promise<{ printer: string; process: string; filaments: string[] }> {
   const engine = await getEngine();
-  await engine.selectPresets(selection);
+  return await engine.selectPresets(selection);
 }
 
 export async function getConfig(): Promise<Record<string, string>> {

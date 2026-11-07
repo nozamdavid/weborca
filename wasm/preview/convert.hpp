@@ -23,11 +23,11 @@ Mat4x4 convert(const Slic3r::Matrix4f& m);
 // Mapping from libvgcode::Color to Slic3r::ColorRGBA
 Slic3r::ColorRGBA convert(const Color& c);
 
-// Mapping from Slic3r::ColorRGBA to libvgcode::Color
-Color convert(const Slic3r::ColorRGBA& c);
+// Mapping from Slic3r::ColorRGBA to libvgcode::ColorWithAlpha
+ColorWithAlpha convert(const Slic3r::ColorRGBA& c);
 
-// Mapping from encoded color string to libvgcode::Color
-Color convert(const std::string& color_str);
+// Mapping from encoded color string to libvgcode::ColorWithAlpha
+ColorWithAlpha convert(const std::string& color_str);
 
 // Mapping from libvgcode::EGCodeExtrusionRole to Slic3r::ExtrusionRole
 Slic3r::ExtrusionRole convert(EGCodeExtrusionRole role);

@@ -13,8 +13,10 @@ TAG="V8_0_1"
 EXPECTED_SHA256="7c033d917ee8f040c0512d289dcc5f02c148889d5bac17c3e25639accb44f0da"
 ARCHIVE_URL="https://github.com/Open-Cascade-SAS/OCCT/archive/refs/tags/${TAG}.zip"
 SRC_ARCHIVE="$REPO_ROOT/wasm/build/src/${DEP_NAME}-${VERSION}.zip"
-# Upstream GitHub release zip extracts to OCCT-8_0_1
-SRC_DIR="$REPO_ROOT/wasm/build/src/OCCT-${TAG#V}"
+# Keep patched sources separate from any existing unpatched dependency build.
+SRC_ROOT="${OCCT_SRC_ROOT:-$REPO_ROOT/wasm/build/src/occt-${VERSION}-seam-pcurve}"
+SRC_DIR="$SRC_ROOT/OCCT-${TAG#V}"
+PATCH_FILE="$REPO_ROOT/deps/OCCT/0001-BRepMesh-seam-pcurve-at-edge-parameter.patch"
 _PREFIX_BASE="$(basename "$WASM_PREFIX")"
 BUILD_SUFFIX=""
 if [ "$_PREFIX_BASE" != "prefix-wasm${WASM_ARCH:-64}" ]; then
@@ -40,11 +42,21 @@ fi
 
 if [ ! -d "$SRC_DIR" ]; then
     echo "Extracting $DEP_NAME $VERSION..."
-    unzip -q -o "$SRC_ARCHIVE" -d "$REPO_ROOT/wasm/build/src"
+    mkdir -p "$SRC_ROOT"
+    unzip -q "$SRC_ARCHIVE" -d "$SRC_ROOT"
 fi
 
 if [ ! -d "$SRC_DIR" ]; then
     echo "Error: Extracted directory not found: $SRC_DIR" >&2
+    exit 1
+fi
+
+# Apply the same OCCT#572 fix as the desktop dependency. A second invocation
+# accepts the already-applied patch; a mismatched patch fails the build.
+if patch -d "$SRC_DIR" -p1 --batch --fuzz=0 --forward --dry-run < "$PATCH_FILE" >/dev/null 2>&1; then
+    patch -d "$SRC_DIR" -p1 --batch --fuzz=0 --forward < "$PATCH_FILE"
+elif ! patch -d "$SRC_DIR" -p1 --batch --fuzz=0 --reverse --dry-run < "$PATCH_FILE" >/dev/null 2>&1; then
+    echo "Error: OCCT seam-pcurve patch does not match $SRC_DIR" >&2
     exit 1
 fi
 

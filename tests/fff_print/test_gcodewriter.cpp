@@ -2127,6 +2127,32 @@ TEST_CASE("Preheat injection handles incomplete physical mappings and thermal ve
     CHECK(heats_second_tool);
 }
 
+TEST_CASE("Post-extrusion cooling broadcasts a short filament temperature list", "[GCodeWriter][PreheatSafety][CoolingFallback]")
+{
+    DynamicPrintConfig config = dual_extruder_toolchange_config();
+    config.set_key_value("physical_extruder_map", new ConfigOptionInts({0, 1}));
+    config.set_key_value("change_filament_gcode", new ConfigOptionString(shipped_change_filament_gcode("H2D")));
+    config.set_key_value("enable_pre_heating", new ConfigOptionBool(true));
+    config.set_key_value("nozzle_temperature", new ConfigOptionInts({220, 220}));
+    config.set_key_value("hotend_cooling_rate", new ConfigOptionFloatsNullable({2.0, 2.0}));
+    config.set_key_value("hotend_heating_rate", new ConfigOptionFloatsNullable({2.0, 2.0}));
+
+    const auto cooling_commands = [&](const std::vector<int>& temperatures) {
+        config.set_key_value("filament_pre_cooling_temperature", new ConfigOptionInts(temperatures));
+        std::istringstream lines(slice_two_object_toolchange(config));
+        std::vector<std::string> commands;
+        std::string line;
+        while (std::getline(lines, line)) {
+            if (line.find(";Multi extruder pre cooling in post extrusion") != std::string::npos)
+                commands.push_back(line);
+        }
+        return commands;
+    };
+    const auto expanded = cooling_commands({180, 180});
+    REQUIRE_FALSE(expanded.empty());
+    CHECK(cooling_commands({180}) == expanded);
+}
+
 TEST_CASE("Initial filament start G-code tolerates a list shorter than the filament count", "[GCodeWriter]")
 {
     // Two filaments but only one filament_start_gcode entry, and the only object prints on
