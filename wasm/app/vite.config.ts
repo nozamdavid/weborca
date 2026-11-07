@@ -50,16 +50,22 @@ const repoRoot = path.resolve(__dirname, '../..');
 // The main engine is built without OpenCASCADE (SLIC3R_WITH_OCCT=OFF, wasm/scripts/build_orca.sh).
 // STEP import lazily loads the separate tessellation module (wasm/scripts/build_step_module.sh) in
 // its own worker and hands the packed mesh to the engine's loadStepMesh op.
-// ORCA_ENGINE_DIR and ORCA_STEP_MODULE_DIR point the app at other builds.
+// Explicit directories bind dev serving and production packaging to the same inputs.
 const engineBuildDir = process.env.ORCA_ENGINE_DIR
   ? path.resolve(process.env.ORCA_ENGINE_DIR)
   : path.resolve(repoRoot, 'wasm/build/orca-wasm64/wasm/engine');
 const stepModuleBuildDir = process.env.ORCA_STEP_MODULE_DIR
   ? path.resolve(process.env.ORCA_STEP_MODULE_DIR)
   : path.resolve(repoRoot, 'wasm/build/step-module');
-const previewBuildDir = path.resolve(repoRoot, 'wasm/build/orca-wasm64-preview/wasm/preview');
-const profilesBuildDir = path.resolve(repoRoot, 'wasm/build/web/profiles');
-const settingsBuildDir = path.resolve(repoRoot, 'wasm/build/settings');
+const previewBuildDir = process.env.ORCA_PREVIEW_DIR
+  ? path.resolve(process.env.ORCA_PREVIEW_DIR)
+  : path.resolve(repoRoot, 'wasm/build/orca-wasm64-preview/wasm/preview');
+const profilesBuildDir = process.env.ORCA_PROFILES_DIR
+  ? path.resolve(process.env.ORCA_PROFILES_DIR)
+  : path.resolve(repoRoot, 'wasm/build/web/profiles');
+const settingsBuildDir = process.env.ORCA_SETTINGS_DIR
+  ? path.resolve(process.env.ORCA_SETTINGS_DIR)
+  : path.resolve(repoRoot, 'wasm/build/settings');
 const webDir = path.resolve(repoRoot, 'wasm/web');
 const calibBuildDir = path.resolve(repoRoot, 'resources/calib');
 const handyModelsDir = path.resolve(repoRoot, 'resources/handy_models');
@@ -191,6 +197,7 @@ function orcaAssetsPlugin() {
           url === '/engine-worker.js' ||
           url === '/step-worker.js' ||
           url === '/engine-core.js' ||
+          url === '/engine-assets.js' ||
           url === '/orca-engine.js'
         ) {
           const fileName = url.substring(1);
@@ -268,7 +275,7 @@ function orcaAssetsPlugin() {
       // 4. Copy web worker & orca-engine files into dist/web and dist/ root
       const distWeb = path.join(distDir, 'web');
       fs.mkdirSync(distWeb, { recursive: true });
-      const webFiles = ['engine-worker.js', 'step-worker.js', 'engine-core.js', 'orca-engine.js', 'orca-engine.d.ts'];
+      const webFiles = ['engine-worker.js', 'step-worker.js', 'engine-core.js', 'engine-assets.js', 'orca-engine.js', 'orca-engine.d.ts'];
       for (const file of webFiles) {
         const src = path.join(webDir, file);
         if (fs.existsSync(src)) {

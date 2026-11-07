@@ -2,7 +2,7 @@
 
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/BoundingBox.hpp"
-#include "libslic3r/MeshBoolean.hpp"
+#include "libslic3r/MeshRepair.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/Point.hpp"
 #include "libslic3r/TriangleMesh.hpp"
@@ -230,25 +230,26 @@ static json repair_object_candidate(
     struct RepairedEntry {
         size_t volume_index;
         Slic3r::TriangleMesh mesh;
-        Slic3r::RepairedMeshErrors errors;
+        bool identical_geometry;
     };
 
     std::vector<RepairedEntry> repaired_entries;
     repaired_entries.reserve(target_indices.size());
 
     int aggregated_edges_fixed = 0;
-    int aggregated_facets_removed = 0;
+    size_t aggregated_facets_removed = 0;
     int aggregated_degenerate_fixed = 0;
     bool geometry_changed = false;
 
     for (size_t vi : target_indices) {
         auto* vol = obj->volumes[vi];
         Slic3r::TriangleMesh candidate_mesh = vol->mesh();
-        Slic3r::RepairedMeshErrors cgal_errors{};
+        Slic3r::MeshRepairStats repair_stats{};
+        int degenerate_removed = 0;
         std::string error_msg;
 
         // Run CGAL repair pipeline
-        bool ok = Slic3r::MeshBoolean::cgal::repair(candidate_mesh, &cgal_errors, &error_msg);
+        bool ok = Slic3r::repair_mesh(candidate_mesh, &repair_stats, &error_msg);
 
         // If initial CGAL repair reported issues, attempt pre-cleaning soup and retry
         if (!ok) {
@@ -259,10 +260,13 @@ static json repair_object_candidate(
 
             Slic3r::TriangleMesh fallback_mesh{std::move(cleaned)};
             std::string retry_error;
-            ok = Slic3r::MeshBoolean::cgal::repair(fallback_mesh, &cgal_errors, &retry_error);
+            Slic3r::MeshRepairStats retry_stats{};
+            ok = Slic3r::repair_mesh(fallback_mesh, &retry_stats, &retry_error);
             if (ok) {
                 candidate_mesh = std::move(fallback_mesh);
-                cgal_errors.degenerate_facets += removed_deg;
+                repair_stats = retry_stats;
+                repair_stats.removed_triangles += removed_deg;
+                degenerate_removed = removed_deg;
             } else {
                 error_msg = retry_error.empty() ? error_msg : retry_error;
             }
@@ -282,19 +286,29 @@ static json repair_object_candidate(
             };
         }
 
-        aggregated_edges_fixed += cgal_errors.edges_fixed;
-        aggregated_facets_removed += cgal_errors.facets_removed;
-        aggregated_degenerate_fixed += cgal_errors.degenerate_facets;
+        // The new pipeline counts removed triangles, not repaired edges. Keep
+        // edgesFixed at zero rather than treating welded vertices as edges.
+        aggregated_facets_removed += repair_stats.removed_triangles;
+        aggregated_degenerate_fixed += degenerate_removed;
         const auto& before = vol->mesh().its;
         const auto& after = candidate_mesh.its;
-        geometry_changed |= before.indices != after.indices || before.vertices != after.vertices;
+        const bool identical_geometry = before.indices == after.indices && before.vertices == after.vertices;
+        geometry_changed |= repair_stats.modified || !identical_geometry;
 
-        repaired_entries.push_back({vi, std::move(candidate_mesh), cgal_errors});
+        repaired_entries.push_back({vi, std::move(candidate_mesh), identical_geometry});
     }
 
     // 3. Apply repaired meshes to target volumes with painting and transform preservation
     for (auto& entry : repaired_entries) {
         auto* vol = obj->volumes[entry.volume_index];
+
+        // Exact vertex and index ordering is unchanged: retain the original
+        // annotations rather than sending them through a lossy spatial remap.
+        if (entry.identical_geometry) {
+            if (!keep_painting) vol->reset_extra_facets();
+            vol->set_new_unique_id();
+            continue;
+        }
 
         const std::optional<Slic3r::TriangleSelector::SavedPainting> saved_painting =
             keep_painting ? vol->save_painting() : std::nullopt;

@@ -1,6 +1,7 @@
 /** Static staging server with explicitly enabled, restricted cloud bridges. */
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { brotliCompress, constants as zc, gzip } from 'node:zlib';
 import { promisify } from 'node:util';
@@ -66,6 +67,27 @@ const brotli = promisify(brotliCompress);
 const gz = promisify(gzip);
 // Compressed once per file version and kept in memory: the engine is 30 MB, so compressing per request would be far too slow.
 const compressed = new Map();
+let enginePair;
+// Bind the loader and binary together, including loader-only releases. Hash by
+// stream once per file version; deployment roots are immutable.
+async function engineVersion() {
+  const files = ['orca_engine.mjs', 'orca_engine.wasm'].map(name => path.join(root, 'engine', name));
+  const infos = await Promise.all(files.map(file => stat(file)));
+  const key = infos.map(info => `${info.size}:${info.mtimeMs}:${info.ctimeMs}`).join('|');
+  if (enginePair?.key !== key) {
+    const version = (async () => {
+      const hash = createHash('sha256');
+      for (const file of files) {
+        hash.update(path.basename(file));
+        for await (const chunk of createReadStream(file)) hash.update(chunk);
+      }
+      return hash.digest('hex');
+    })();
+    enginePair = { key, version };
+    version.catch(() => { if (enginePair?.version === version) enginePair = undefined; });
+  }
+  return enginePair.version;
+}
 function compressedBody(file, info, encoding) {
   const key = `${file}|${info.size}|${info.mtimeMs}|${encoding}`;
   let entry = compressed.get(key);
@@ -184,13 +206,23 @@ const server = http.createServer(async (req, res) => {
     }
     res.setHeader('Content-Type', mime[path.extname(file).toLowerCase()] || 'application/octet-stream');
     res.setHeader('Last-Modified', info.mtime.toUTCString());
+    let pairVersion;
+    if (/^\/engine\/orca_engine\.(?:mjs|wasm)$/.test(pathname)) {
+      const version = pairVersion = await engineVersion();
+      const requestedVersion = new URL(req.url, 'http://localhost').searchParams.get('v');
+      if (requestedVersion && requestedVersion !== version) return reply(res, 409, 'Engine release changed; reload to retry');
+      // The alpha guard above must run even for HEAD and conditional requests.
+      res.setHeader('Cache-Control', 'private, no-cache');
+      res.setHeader('X-Orca-Engine-Version', version);
+      res.setHeader('X-Orca-Decoded-Length', info.size);
+    }
     if (pathname.startsWith('/assets/') && !alpha) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     // Validators let a reload revalidate cheaply instead of re-downloading the 30 MB engine.
-    const etag = `W/"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`;
+    const etag = pairVersion ? `W/"${pairVersion}"` : `W/"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`;
     res.setHeader('ETag', etag);
     const noneMatch = req.headers['if-none-match'];
     const unchanged = noneMatch ? noneMatch.split(',').some((tag) => tag.trim() === etag || tag.trim() === '*')
-      : req.headers['if-modified-since'] && Date.parse(req.headers['if-modified-since']) >= Math.floor(info.mtimeMs / 1000) * 1000;
+      : !pairVersion && req.headers['if-modified-since'] && Date.parse(req.headers['if-modified-since']) >= Math.floor(info.mtimeMs / 1000) * 1000;
     if (unchanged) { res.statusCode = 304; return res.end(); }
     const encoding = info.size > 1024 && compressible.has(path.extname(file).toLowerCase()) ? pickEncoding(req.headers['accept-encoding']) : undefined;
     if (compressible.has(path.extname(file).toLowerCase())) res.setHeader('Vary', 'Accept-Encoding');

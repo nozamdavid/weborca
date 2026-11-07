@@ -1,0 +1,174 @@
+Running as unit: weborca-doop-qa-v250-foundation-configure-1794053608587946344.service
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  /usr/share/cmake-4.2/Modules/CMakeDetermineSystem.cmake:146 (include)
+  CMakeLists.txt:76 (project)
+
+
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  wasm/build/v250-foundation/core/CMakeFiles/4.2.3/CMakeSystem.cmake:6 (include)
+  CMakeLists.txt:76 (project)
+
+
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  /usr/share/cmake-4.2/Modules/Platform/Emscripten.cmake:9 (include)
+  /usr/share/cmake-4.2/Modules/CMakeSystemSpecificInformation.cmake:32 (include)
+  CMakeLists.txt:76 (project)
+
+
+-- SLIC3R_ASAN: OFF
+-- SLIC3R_BUILD_SANDBOXES: OFF
+-- SLIC3R_BUNDLED_WARNINGS: OFF
+-- SLIC3R_CAD: OFF
+-- SLIC3R_DESKTOP_INTEGRATION: ON
+-- SLIC3R_FHS: OFF
+-- SLIC3R_GTK: 3
+-- SLIC3R_GUI: OFF
+-- SLIC3R_MSVC_COMPILE_PARALLEL: ON
+-- SLIC3R_MSVC_PDB: ON
+-- SLIC3R_PCH: OFF
+-- SLIC3R_PROFILE: OFF
+-- SLIC3R_RELATIVE_DEBUG_PATHS: OFF
+-- SLIC3R_STATIC: ON
+-- SLIC3R_WARNINGS: ON
+-- SLIC3R_WITH_ASSIMP: OFF
+-- SLIC3R_WITH_DRACO: OFF
+-- SLIC3R_WITH_FREETYPE: OFF
+-- SLIC3R_WITH_OCCT: OFF
+-- SLIC3R_WITH_OPENCV: OFF
+-- SLIC3R_WITH_OPENSSL: OFF
+-- SLIC3R_WITH_OPENVDB: OFF
+-- Automatically setting CMAKE_INSTALL_PREFIX
+-- CMAKE_INSTALL_PREFIX: /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/OrcaSlicer
+-- DEP_BUILD_DIR: /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/deps/core (generated automatically and saved to cache)
+-- CMAKE_PREFIX_PATH: /mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64 (from cache or command line)
+-- PROJECT_SOURCE_DIR: /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1
+-- CMAKE_MODULE_PATH: /home/david/emsdk/upstream/emscripten/cmake/Modules;/home/david/emsdk/upstream/emscripten/cmake/Modules;/home/david/emsdk/upstream/emscripten/cmake/Modules;/home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/cmake/modules/
+-- Performing Test ORCA_HAS_W_enum_constexpr_conversion
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/4.2.3/CMakeSystem.cmake:6 (include)
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/CMakeScratch/TryCompile-SJwj0H/CMakeLists.txt:6 (project)
+
+
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  /usr/share/cmake-4.2/Modules/Platform/Emscripten.cmake:9 (include)
+  /usr/share/cmake-4.2/Modules/CMakeSystemSpecificInformation.cmake:32 (include)
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/CMakeScratch/TryCompile-SJwj0H/CMakeLists.txt:6 (project)
+
+
+-- Performing Test ORCA_HAS_W_enum_constexpr_conversion - Failed
+-- Performing Test ORCA_HAS_W_enum_constexpr_conversion_arg
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/4.2.3/CMakeSystem.cmake:6 (include)
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/CMakeScratch/TryCompile-VKCQGG/CMakeLists.txt:6 (project)
+
+
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  /usr/share/cmake-4.2/Modules/Platform/Emscripten.cmake:9 (include)
+  /usr/share/cmake-4.2/Modules/CMakeSystemSpecificInformation.cmake:32 (include)
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/CMakeScratch/TryCompile-VKCQGG/CMakeLists.txt:6 (project)
+
+
+-- Performing Test ORCA_HAS_W_enum_constexpr_conversion_arg - Failed
+-- LIBDIR: /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/src
+-- LIBDIR_BIN: /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/src
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/4.2.3/CMakeSystem.cmake:6 (include)
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/CMakeScratch/TryCompile-8OeUqd/CMakeLists.txt:6 (project)
+
+
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  /usr/share/cmake-4.2/Modules/Platform/Emscripten.cmake:9 (include)
+  /usr/share/cmake-4.2/Modules/CMakeSystemSpecificInformation.cmake:32 (include)
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/CMakeScratch/TryCompile-8OeUqd/CMakeLists.txt:6 (project)
+
+
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Performing Test Iconv_IS_BUILT_IN
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/4.2.3/CMakeSystem.cmake:6 (include)
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/CMakeScratch/TryCompile-dReflz/CMakeLists.txt:6 (project)
+
+
+CMake Warning at /home/david/emsdk/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake:26 (message):
+  This version of cmake (4.2.3) does not support emscripten shared libraries.
+  Use cmake < 4.2.0 or cmake > 4.3.3 if you need shared library support
+Call Stack (most recent call first):
+  /usr/share/cmake-4.2/Modules/Platform/Emscripten.cmake:9 (include)
+  /usr/share/cmake-4.2/Modules/CMakeSystemSpecificInformation.cmake:32 (include)
+  /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-foundation/core/CMakeFiles/CMakeScratch/TryCompile-dReflz/CMakeLists.txt:6 (project)
+
+
+-- Performing Test Iconv_IS_BUILT_IN - Success
+-- Found Iconv: built in to C library
+-- Found ZLIB: /mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/lib/libz.a (found version "1.2.13")
+-- TBB found in /mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/lib/cmake/TBB
+-- Found EXPAT: /mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/lib/libexpat.a (found version "2.5.0")
+-- Found PNG: /mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/lib/libpng.a (found version "1.6.35")
+-- Found NLopt: /mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/lib/cmake/nlopt/NLoptConfig.cmake (found suitable version "2.5.0", minimum required is "1.4")
+-- Found NLopt in '/mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/lib'.
+-- Using NLopt include directory '/mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/include'.
+-- Found NLopt RELEASE library: /mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/lib/libnlopt.a
+-- IGL NOT found, using bundled version...
+-- [MCUT] version: 1.2.0
+-- [MCUT] MCUT_INCLUDE_DIR=/home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/deps_src/mcut/include
+-- [MCUT] compilation_flags=-Wall;-Wextra
+-- [MCUT] preprocessor_defs=-DMCUT_WITH_COMPUTE_HELPER_THREADPOOL=1
+-- [MCUT] extra_libs=Threads::Threads
+-- [MCUT] create target: name=mcut type=STATIC
+-- [MCUT] MCUT_LIB_PATH=$<TARGET_FILE:mcut>
+-- qhull Version: 7.2.0 (static linking)
+-- Found libnoise: TRUE
+-- Found libnoise include directory: /mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/include
+-- Found libnoise RELEASE library: /mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/lib/liblibnoise_static.a
+CMake Error at src/libslic3r/CMakeLists.txt:636 (find_package):
+  Could not find a configuration file for package "CGAL" that is compatible
+  with requested version "6.2".
+
+  The following configuration files were considered but not accepted:
+
+    /mnt/appdata/workspace/OrcaSlicer/wasm/build/prefix-wasm64/lib/cmake/CGAL/CGALConfig.cmake, version: 5.6.3
+      The version found is not compatible with the version requested.
+
+
+
+-- Configuring incomplete, errors occurred!
+CGROUP_MEMORY_PEAK_BYTES=268804096
+max 0
+CGROUP_SWAP_PEAK_BYTES=0
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 2.462s
+             CPU time consumed: 2.396s
+                   Memory peak: 256.3M (swap: 0B)

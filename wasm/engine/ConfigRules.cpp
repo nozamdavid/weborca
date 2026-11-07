@@ -605,7 +605,7 @@ void toggle_print_fff_options(const DynamicPrintConfig& config, const RuleContex
     toggle_line("max_volumetric_extrusion_rate_slope_segment_length", have_volumetric_extrusion_rate_slope);
     toggle_line("extrusion_rate_smoothing_external_perimeter_only", have_volumetric_extrusion_rate_slope);
     if (have_volumetric_extrusion_rate_slope) {
-        result.fixes.push_back({"enable_arc_fitting", "0", "Arc fitting disabled when volumetric extrusion rate slope is active"});
+        result.fixes.push_back({"enable_arc_fitting", "disabled", "Arc fitting disabled when volumetric extrusion rate slope is active"});
     }
     if (have_volumetric_extrusion_rate_slope_segment_length < 0.5f) {
         result.fixes.push_back({"max_volumetric_extrusion_rate_slope_segment_length", "1", "Extrusion rate slope segment length reset to 1"});

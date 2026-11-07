@@ -963,8 +963,8 @@ json mergeObjects(Slic3r::Model& model, const json& args, Slic3r::PlateDataPtrs*
             }
         }
 
-        if (!inst->auto_drop) {
-            new_object->instances[0]->auto_drop = false;
+        if (!object->auto_drop) {
+            new_object->auto_drop = false;
         }
 
         for (const auto& range : object->layer_config_ranges)

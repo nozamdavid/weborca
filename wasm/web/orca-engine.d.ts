@@ -4,7 +4,7 @@
 
 export interface CreateEngineOptions {
   signal?: AbortSignal;
-  onProgress?: (progress: { phase: 'downloading' | 'initializing'; loaded?: number; total?: number }) => void;
+  onProgress?: (progress: { phase: 'checking' | 'cached' | 'downloading' | 'initializing'; loaded?: number; total?: number }) => void;
   workerUrl?: string;
   moduleUrl?: string;
   profilesUrl?: string;

@@ -1,5 +1,22 @@
 # WebOrca staging container
 
+CURRENT5070 serves immutable `wasm/build/ui-v250-startup-release-20261107` from
+the integration worktree. Its sole combined production build reuses the exact
+previous frozen v2.5 native/data inputs. The [combined publication report](../../docs/v2.5.0-integration/startup-publication.md)
+binds exact inputs, public checks and rollback to the previous v2.5 release.
+Main promotion remains open. The updated frozen source server is required:
+the previous frozen server lacks engine pair/cache metadata and the authorized
+engine-only `private, no-cache` exception. Package `engine-assets.js` at root
+and under `web/` with its matching worker. Every startup authorizes/version-checks
+the loader before binary CacheStorage reuse. Preserve HTML/API `no-store`,
+COOP `same-origin` and COEP `require-corp`.
+Its accepted build explicitly sets
+`ORCA_ENGINE_DIR`, `ORCA_STEP_MODULE_DIR`, `ORCA_PREVIEW_DIR`,
+`ORCA_PROFILES_DIR` and `ORCA_SETTINGS_DIR` to the matching directories in that
+summary. Defaults in the generic Docker/build examples below do not select
+those isolated v2.5 inputs. Keep the frozen module pairs, merged catalog/layout
+and STEP LGPL notices together; retain the existing gate and COOP/COEP contract.
+
 By default, one container serves the built web app on port **8080**, accepting `weborca.noz.am`.
 There is no Caddy, TLS service or LAN printer gateway running in the container; hosted cloud
 adapters require explicit opt-in as described below. Slicing runs in browser
@@ -8,7 +25,7 @@ COOP/COEP headers needed for multithreaded slicing.
 
 ## Optional alpha access
 
-Alpha access and the sampled bug/engine repairs are published on CURRENT5070 as `wasm/build/ui-alpha-design-release-20261107`. The [alpha design publication](../build/tests-alpha-design-20261107/report.md) binds the current release and guarded rollback to the previous gated alpha release. On the authenticated admin page, **Open slicer** issues a separate app token/cookie without creating an invite. Its deadline is the authorizing admin session's original 8-hour expiry. Admin logout or a server restart (including password rotation) invalidates that access and closes owned connections; ordinary app logout leaves admin management signed in. Password changes require restart. Tester/app tokens cannot authorize admin launch or management.
+Alpha access and the sampled bug/engine repairs are retained on CURRENT5070 as `wasm/build/ui-v250-startup-release-20261107`. The [alpha design publication](../build/tests-alpha-design-20261107/report.md) records the preceding alpha design release and guarded rollback to the previous gated alpha release. On the authenticated admin page, **Open slicer** issues a separate app token/cookie without creating an invite. Its deadline is the authorizing admin session's original 8-hour expiry. Admin logout or a server restart (including password rotation) invalidates that access and closes owned connections; ordinary app logout leaves admin management signed in. Password changes require restart. Tester/app tokens cannot authorize admin launch or management.
 
 The [previous publication](../build/tests-alpha-access-20261106/publication/report.md) records the initial gated deployment; its rollback disables the gate and is historical. The companion `wasm/build/tests-alpha-access-20261106/candidate-static` remains locally verified. The [integrated report](../build/tests-alpha-access-20261106/integrated.md) records 113 selected passes, packaged-server/full-app recovery, and file-only import/slice/Preview with zero alpha requests. The sampled audit retains the known 804-line legacy macOS oracle mismatch on both pre/post native artifacts; native parity is bounded to the recorded fixtures and retained dependency archives. Real-provider/hardware acceptance remains open.
 
@@ -102,9 +119,18 @@ a project between these origins.
 ## Tailscale access
 
 The `weborca-tailscale.service` systemd user unit serves immutable
-`wasm/build/ui-alpha-design-release-20261107` at **https://server-1.barbel-hops.ts.net:5070**.
-The lexical-last `zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-alpha-design.conf` selects the release root
-and byte-identical frozen `wasm/build/tests-alpha-design-20261107/server.mjs`.
+`wasm/build/ui-v250-startup-release-20261107` in
+`/home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1` at **https://server-1.barbel-hops.ts.net:5070**.
+The lexical-last override path is recorded in that worktree's
+`wasm/build/v250-startup-publication/override-path.txt`; it selects both the root
+and updated frozen `wasm/build/v250-startup-publication/server.mjs`.
+All previous drop-ins remain. The exact previous v2.5 root and old frozen
+`tests-alpha-design-20261107/server.mjs` are retained for guarded rollback:
+
+```sh
+bash /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/wasm/build/v250-startup-publication/release.sh --rollback
+```
+
 The retained `zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz-alpha.conf` selects the compatible frozen
 `wasm/build/tests-alpha-access-20261106/publication/server.mjs` baseline and runtime gate.
 It loads `EnvironmentFile=/home/david/.config/weborca/alpha.env` (mode 600), with durable
@@ -113,9 +139,9 @@ One process owns this state file. All prior drop-ins, caps, listeners and Tailsc
 including `ORCA_PRINTER_CLOUD=prusa-connect,creality-cloud,bambu-cloud,snapmaker-cloud` and Orca Cloud
 callback/preset-write settings. OctoEverywhere remains disabled without a production App ID.
 Visitors see the invite-code gate and **Login as admin**; signed-in admins can choose **Open slicer**.
-See the [current publication report](../build/tests-alpha-design-20261107/report.md)
+See the [current publication report](../../docs/v2.5.0-integration/startup-publication.md)
 for exact manifests, public checks and the explicit rollback command. Rollback restores
-the previous **gated** alpha release while preserving private state/environment.
+the previous **gated v2.5** release while preserving current private state/environment.
 The settings/routing batch is published on CURRENT5070 with **CHROMIUM_SYNTHETIC_ONLY** acceptance.
 Preset overwrite preserves inheritance, including normalized numbers; settings tabs/help, mobile controls,
 modified tables and modal spacing are improved. Printer traffic uses the same-origin app backend;

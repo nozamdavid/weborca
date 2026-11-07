@@ -31,10 +31,15 @@ async function storeActions(core, initial) {
   const action = (start, end) => source.slice(source.indexOf(start), source.indexOf(end)).trim().replace(/,$/, '');
   const helpers = source.slice(source.indexOf('function resolveSystemPreset('), source.indexOf('/** Pause UI actions'));
   const compiled = await transform(`export default function(deps:any){
-    const {get,set,getEngine,getConfig,selectPresets,setOptions,resetOptions,evaluateRules,effectivePreset}=deps;
+    const {get,set,getEngine,getConfig,selectPresets,setOptions,setOption,getOption,resetOptions,evaluateRules,effectivePreset}=deps;
     const useAppStore={getState:get};const showToast=()=>{};const storeImportedRecentFile=async()=>{};
+    const LAST_SETUP_KEY='orca.lastSetup';const localStorage=deps.localStorage;
+    const resolveDeviceVendor=async()=> 'Voron';
     ${helpers}
-    return ({${action('  chooseFilament: async', '  addFilamentSlot: async')},
+    ${source.slice(source.indexOf('async function restoreLastSetup()'), source.indexOf('useAppStore.subscribe(', source.indexOf('async function restoreLastSetup()')))}
+    return ({computeBaselineConfig,reapplyPresetOverrides,restoreLastSetup,
+      ${action('  resetOption: async', '  applyFixes: async')},
+      ${action('  chooseFilament: async', '  addFilamentSlot: async')},
       ${action('  removeFilamentSlot: async', '  setSlotColor: async')},
       ${action('  openProjectFile: async', '  saveProjectFile: async')}});
   }`, { loader: 'ts', format: 'esm' });
@@ -42,12 +47,17 @@ async function storeActions(core, initial) {
   let state = { isEngineReady: true, selectedPrinter: 'Voron 2.4 300 0.4 nozzle', selectedProcess: '0.20mm Standard @Voron',
     userPresets: [], processOverrides: {}, printerOverrides: {}, filamentOverrides: {},
     activeUserPreset: { printer: null, process: null, filament: null },
-    activeFilamentSlot: 0, invalidateSlicePreview() {}, ...initial };
+    activeFilamentSlot: 0, configDefs: {}, rulesState: { fields: {}, fixes: [], messages: [] },
+    choosePrinter: async () => {}, selectedVendor: 'Voron', engineError: null,
+    invalidateSlicePreview() {}, ...initial };
   const actions = factory({ get: () => state, set: update => { state = { ...state, ...(typeof update === 'function' ? update(state) : update) }; },
     getEngine: async () => core, getConfig: () => core.call('getConfig', {}),
     selectPresets: args => core.call('selectPresets', args),
     setOptions: options => core.call('setOptions', { options }),
+    setOption: args => core.call('setOption', args), getOption: args => core.call('getOption', args),
+    localStorage: { getItem: () => JSON.stringify(initial.savedSetup || null) },
     resetOptions: args => core.call('resetOptions', args), evaluateRules: async () => ({}), effectivePreset });
+  state = { ...state, ...actions };
   return { ...actions, state: () => state };
 }
 
@@ -106,6 +116,59 @@ describe('Filament Temperature Slot & Vector Resolution', () => {
 
 describe('Filament Temperature Settings Engine Integration', () => {
   let core;
+
+  test('saved boolean arc and aliases form a canonical baseline that survives reset and filament change', async () => {
+    const mod = await import(modulePath);
+    const engine = await createEngineCore({ moduleFactory: mod.createOrcaEngine || mod.default, threads: 2 });
+    try {
+      for (const bundle of ['resources.json', 'profiles/OrcaFilamentLibrary.json', 'profiles/Voron.json'])
+        await engine.addVendorBundle(JSON.parse(fs.readFileSync(path.join(bundleDir, bundle), 'utf8')));
+      await engine.call('init', { resourcesDir: '/resources', dataDir: '/data' });
+      await engine.call('loadVendors', {});
+      const names = ['Generic PLA @System'];
+      await engine.call('selectPresets', { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: names });
+      const saved = { kind: 'process', name: 'Saved process', inherits: '0.20mm Standard @Voron',
+        values: { enable_arc_fitting: '1', tpms_adaptive: 'distance_warp', is_ixex: '1' } };
+      const app = await storeActions(engine, { selectedFilaments: names, selectedFilament: names[0], userPresets: [saved],
+        activeUserPreset: { printer: null, process: saved.name, filament: null }, processOverrides: saved.values });
+      const baseline = await app.computeBaselineConfig(names, [saved]);
+      assert.equal(baseline.enable_arc_fitting, 'enabled');
+      assert.equal(baseline.adaptive_infill_mode, 'distance_warp');
+      assert.equal(baseline.is_imex, '1');
+      assert.equal(baseline.tpms_adaptive, undefined);
+      await app.reapplyPresetOverrides(names, saved.values);
+      await engine.call('setOptions', { options: { enable_arc_fitting: 'sparse_infill' } });
+      // The harness runs the production reset action against the computed baseline.
+      app.state().presetConfig = baseline;
+      await app.resetOption('enable_arc_fitting', 'print');
+      assert.equal(app.state().currentConfig.enable_arc_fitting, 'enabled');
+      assert.equal(app.state().processOverrides.enable_arc_fitting, 'enabled');
+      await engine.call('setOptions', { options: { adaptive_infill_mode: 'disabled' } });
+      await app.resetOption('adaptive_infill_mode', 'print');
+      assert.equal(app.state().processOverrides.adaptive_infill_mode, 'distance_warp');
+      await app.chooseFilament('Generic PETG @System', 0);
+      assert.equal(app.state().currentConfig.enable_arc_fitting, 'enabled');
+      assert.equal(app.state().currentConfig.adaptive_infill_mode, 'distance_warp');
+      assert.equal(app.state().engineError, null);
+    } finally { engine.dispose(); }
+  });
+
+  test('saved renamed filament is restored through native rename resolution', async () => {
+    const mod = await import(modulePath);
+    const engine = await createEngineCore({ moduleFactory: mod.createOrcaEngine || mod.default, threads: 2 });
+    try {
+      for (const bundle of ['resources.json', 'profiles/OrcaFilamentLibrary.json', 'profiles/Voron.json'])
+        await engine.addVendorBundle(JSON.parse(fs.readFileSync(path.join(bundleDir, bundle), 'utf8')));
+      await engine.call('init', { resourcesDir: '/resources', dataDir: '/data' });
+      await engine.call('loadVendors', {});
+      await engine.call('selectPresets', { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: ['Generic PLA @System'] });
+      const app = await storeActions(engine, { selectedFilaments: ['Generic PLA @System'], selectedFilament: 'Generic PLA @System',
+        currentConfig: await engine.call('getConfig', {}), savedSetup: { printer: 'Voron 2.4 300 0.4 nozzle', filaments: ['Printalot ABS @System'] } });
+      await app.restoreLastSetup();
+      assert.deepEqual(app.state().selectedFilaments, ['PrintaLot ABS @System']);
+      assert.equal(app.state().engineError, null);
+    } finally { engine.dispose(); }
+  });
 
   test('prefill and edit temperature options across filament slots preserving sibling slots', async () => {
     const mod = await import(modulePath);
@@ -265,6 +328,79 @@ describe('Filament Temperature Settings Engine Integration', () => {
           assert.equal(value.value, ['M117 first,slot', 'M117 middle;slot', 'M117 last,slot'][original]);
         }
       }
+    } finally { engine.dispose(); }
+  });
+
+  test('slot deletion projects project maps and geometry/feature assignments by surviving identity', async () => {
+    const mod = await import(modulePath);
+    const engine = await createEngineCore({ moduleFactory: mod.createOrcaEngine || mod.default, threads: 2 });
+    try {
+      for (const bundle of ['resources.json', 'profiles/OrcaFilamentLibrary.json', 'profiles/Voron.json'])
+        await engine.addVendorBundle(JSON.parse(fs.readFileSync(path.join(bundleDir, bundle), 'utf8')));
+      await engine.call('init', { resourcesDir: '/resources', dataDir: '/data' });
+      await engine.call('loadVendors', {});
+      const names = ['Generic PLA @System', 'Generic PETG @System', 'Generic ABS @System'];
+      await engine.call('selectPresets', { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: names });
+      engine.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
+      await engine.call('loadModel', { path: '/models/cube.obj' });
+      const { objects: [object] } = await engine.call('getObjectTree', {});
+      await engine.call('setVolumeExtruder', { objectId: object.id, volumeId: object.volumes[0].id, extruder: 3 });
+      const paintArgs = { objectId: object.id, volumeId: object.volumes[0].id, layer: 'color' };
+      const [ox, oy, oz] = object.instances[0].offset;
+      await engine.call('paintStroke', { ...paintArgs, instanceId: object.instances[0].id,
+        tool: 'circle', state: 3, radius: 5, cameraPos: [ox + 10, oy + 10, oz + 120],
+        points: [{ hit: [ox + 10, oy + 10, oz + 20], facet: 2 }], triangleSplitting: true });
+      const paintBefore = await engine.call('getPaintData', paintArgs);
+      const overlayBefore = await engine.call('getPaintOverlay', paintArgs);
+      assert.ok(overlayBefore.states.some(state => state.state === '3' && state.triangleCount > 0));
+      const processOverrides = { filament_map: '1,2,1', filament_volume_map: '0,1,2',
+        sparse_infill_filament_id: '0', internal_solid_filament_id: '3' };
+      assert.deepEqual((await engine.call('setOptions', { options: processOverrides })).errors, []);
+      await engine.call('listPlates', {});
+      await engine.call('setPlateConfig', { plateIndex: 0, config: {
+        filament_map: '2,1,2', filament_nozzle_map: '0,1,0', top_surface_filament_id: '3'
+      } });
+      const beforePlates = await engine.call('listPlates', {});
+      const app = await storeActions(engine, { selectedFilaments: names, selectedFilament: names[0], processOverrides,
+        currentConfig: await engine.call('getConfig', {}) });
+      const beforeConfig = await engine.call('getConfig', {});
+      const beforeTree = await engine.call('getObjectTree', {});
+      // A bad user filament value fails after staging selection/remapping.
+      await assert.rejects(engine.call('removeFilamentSlot', { filamentIndex: 1,
+        selection: { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: [names[0], names[2]] },
+        overrides: processOverrides, baselineOverrides: {},
+        slots: [{ preset: names[0], values: { nozzle_temperature: 'invalid' } }, { preset: names[2], values: {} }] }));
+      assert.deepEqual(await engine.call('getConfig', {}), beforeConfig);
+      assert.deepEqual(await engine.call('getObjectTree', {}), beforeTree);
+      assert.deepEqual(await engine.call('getPaintData', paintArgs), paintBefore);
+      assert.deepEqual(await engine.call('listPlates', {}), beforePlates);
+      // The browser also retains its slots/maps on an invalid projection.
+      app.state().processOverrides = { ...processOverrides, filament_map: '1,2' };
+      await app.removeFilamentSlot(1);
+      assert.match(app.state().engineError, /Failed to remove filament slot/);
+      assert.deepEqual(app.state().selectedFilaments, names);
+      assert.equal(app.state().processOverrides.filament_map, '1,2');
+      assert.deepEqual(await engine.call('getConfig', {}), beforeConfig);
+      assert.deepEqual(await engine.call('getObjectTree', {}), beforeTree);
+      assert.deepEqual(await engine.call('getPaintData', paintArgs), paintBefore);
+      assert.deepEqual(await engine.call('listPlates', {}), beforePlates);
+      app.state().processOverrides = processOverrides;
+      app.state().engineError = null;
+      await app.removeFilamentSlot(1);
+      assert.equal(app.state().engineError, null);
+      assert.equal(app.state().currentConfig.filament_map, '1,1');
+      assert.equal(app.state().currentConfig.filament_volume_map, '0,2');
+      assert.equal(app.state().currentConfig.sparse_infill_filament_id, '0');
+      assert.equal(app.state().currentConfig.internal_solid_filament_id, '2');
+      const tree = await engine.call('getObjectTree', {});
+      assert.equal(tree.objects[0].volumes[0].extruder, 2);
+      const plates = await engine.call('listPlates', {});
+      assert.equal(plates[0].config.filament_map, '2,2');
+      assert.equal(plates[0].config.filament_nozzle_map, '0,0');
+      assert.equal(plates[0].config.top_surface_filament_id, '2');
+      const overlayAfter = await engine.call('getPaintOverlay', paintArgs);
+      assert.deepEqual(overlayAfter.states.map(state => [state.state, state.triangleCount]),
+        overlayBefore.states.map(state => [state.state === '3' ? '2' : state.state, state.triangleCount]));
     } finally { engine.dispose(); }
   });
 });

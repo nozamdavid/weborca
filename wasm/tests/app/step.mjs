@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'path';
 import { startServer, stopServer } from './lib/dist.mjs';
 import { selectAddedPrinter } from './lib/printer.mjs';
+import assert from 'node:assert/strict';
+import { build } from '../../app/node_modules/esbuild/lib/main.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,9 +16,24 @@ const PORT = 5081;
 // worker; the main engine has no OCCT. Set SKIP_FIREFOX=1 to run Chromium only.
 async function runStepSuite(browserType, browserName) {
   const results = [];
-  const browser = await browserType.launch({ headless: true });
+  const browser = await browserType.launch({ headless: true, args: browserName === 'chromium' ? ['--no-sandbox', '--disable-dev-shm-usage', '--renderer-process-limit=2'] : [] });
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 2 });
+    localStorage.setItem('orcaslicer_preferences_v1', JSON.stringify({ general: { slicingThreads: 1, autosave: false, autoSliceAfterChange: false, language: 'en' } }));
+    localStorage.setItem('orca.wizard', JSON.stringify({ printers: ['Voron 2.4 300 0.4 nozzle'], filaments: [] }));
+    localStorage.setItem('orca.lastSetup', JSON.stringify({ vendor: 'Voron', printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: ['Generic PLA @System'] }));
+  });
   const page = await context.newPage();
+  const stepRequests = [];
+  const pageErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/engine/step/')) stepRequests.push(request.url()); });
+  await context.route('**/*', route => {
+    const url = new URL(route.request().url());
+    if (url.origin !== `http://127.0.0.1:${PORT}` || /^\/(_printer|_cloud|_orca-cloud|_octoeverywhere|api)(\/|$)/.test(url.pathname)) return route.abort();
+    return route.continue();
+  });
 
   page.on('console', (msg) => {
     if (msg.type() === 'error' && !msg.text().includes('favicon.ico') && !msg.text().includes('ERR_FAILED')) {
@@ -36,12 +53,19 @@ async function runStepSuite(browserType, browserName) {
   try {
     console.log(`[${browserName}] Navigating to app...`);
     await page.goto(`http://127.0.0.1:${PORT}`);
+    if (process.env.APP_TEST_ALPHA_PASSWORD) {
+      await page.goto(`http://127.0.0.1:${PORT}/_alpha/admin`);
+      await page.getByLabel('Admin password').fill(process.env.APP_TEST_ALPHA_PASSWORD);
+      await page.getByRole('button', { name: 'Sign in as admin', exact: true }).click();
+      await page.getByRole('button', { name: 'Open slicer', exact: true }).click();
+    }
     
     // Wait for engine and UI ready
     await page.waitForFunction(() => {
       const ps = document.getElementById('printer-select'); return window.__appStore && window.__appStore.getState().isEngineReady && ps && !ps.disabled;
     }, null, { timeout: 30000 });
     console.log(`[${browserName}] App and engine ready.`);
+    assert.deepEqual(stepRequests, [], 'STEP module remains lazy through app startup');
     
     // The engine ships without OCCT: the 28 MB STEP-enabled engine is gone.
     const engineBytes = await page.evaluate(async () => (await (await fetch('/engine/orca_engine.wasm')).arrayBuffer()).byteLength);
@@ -64,6 +88,28 @@ async function runStepSuite(browserType, browserName) {
     };
     const plateObjects = () => page.evaluate(() => window.__plateStore.getState().objects.map((o) => o.name));
 
+    // Exercise the production cancellation client against this candidate's actual
+    // worker/module URLs. The app has no exposed in-progress STEP Cancel control.
+    const client = await build({ entryPoints: [path.resolve(repoRoot, 'wasm/app/src/engine/stepModule.ts')], bundle: true, write: false, format: 'iife', globalName: '__stepCancelClient' });
+    await page.addScriptTag({ content: client.outputFiles[0].text });
+    let heldDownload;
+    await context.route('**/engine/step/step_tessellate.wasm', route => { heldDownload = route; });
+    await page.evaluate(data => {
+      window.__stepCancelResult = null;
+      window.__stepCancelPromise = window.__stepCancelClient.tessellateStep(new Uint8Array(data)).then(() => { window.__stepCancelResult = 'unexpected success'; }, error => { window.__stepCancelResult = error.name; });
+    }, Array.from(fs.readFileSync(path.resolve(repoRoot, 'tests/data/utf8_part_names.step'))));
+    for (let i = 0; i < 100 && !heldDownload; i++) await page.waitForTimeout(50);
+    assert.ok(heldDownload, 'cancel runs while actual STEP WASM download is held');
+    await page.evaluate(async () => { window.__stepCancelClient.cancelStepTessellation(); await window.__stepCancelPromise; });
+    assert.equal(await page.evaluate(() => window.__stepCancelResult), 'AbortError');
+    await heldDownload.abort().catch(() => {});
+    await context.unroute('**/engine/step/step_tessellate.wasm');
+    for (let i = 0; i < 50 && !stepWorkers.every(entry => entry.closed); i++) await page.waitForTimeout(100);
+    assert.ok(stepWorkers.every(entry => entry.closed), 'cancel terminates the import worker');
+    assert.deepEqual(await plateObjects(), []);
+    stepWorkers.length = 0;
+    results.push({ name: 'Cancel held STEP worker rejects with AbortError, terminates and preserves project', pass: true });
+
     // 1. Valid STEP import; out-of-range deflection blocks the import as on desktop
     console.log(`[${browserName}] Importing valid STEP fixture...`);
     const validStepPath = path.resolve(__dirname, '../../../tests/data/utf8_part_names.step');
@@ -79,6 +125,7 @@ async function runStepSuite(browserType, browserName) {
     const before = await plateObjects();
     if (before.length !== 1 || !before[0]) throw new Error(`Expected 1 named object, got ${JSON.stringify(before)}`);
     results.push({ name: 'Valid STEP imported successfully', pass: true });
+    results.push({ name: 'Real app import retries successfully after cancellation', pass: true });
 
     if (stepWorkers.length !== 1) throw new Error(`Expected one STEP worker for one import, saw ${stepWorkers.length}`);
     for (let i = 0; i < 50 && !stepWorkers.every((entry) => entry.closed); i++) await page.waitForTimeout(100);
@@ -118,15 +165,15 @@ async function runStepSuite(browserType, browserName) {
 
     // 3. Slice the imported STEP file
     console.log(`[${browserName}] Slicing imported STEP...`);
-    await page.click('#slice-btn');
+    await page.click('#slice-plate-btn');
     
     await page.waitForFunction(() => {
-      const sliceBtn = document.getElementById('slice-btn');
-      return sliceBtn && !sliceBtn.disabled && sliceBtn.innerText.includes('Slice');
+      const state = window.__appStore.getState();
+      return !state.isSlicing && (state.sliceResult?.gcode?.length > 0 || state.engineError);
     }, null, { timeout: 60000 });
 
     const sliceResult = await page.evaluate(() => window.__appStore?.getState().sliceResult);
-    if (!sliceResult || sliceResult.gcodeBytes === 0) throw new Error("G-code should be generated and non-empty");
+    if (!sliceResult?.gcode?.length) throw new Error("G-code should be generated and non-empty");
     console.log(`[${browserName}] Sliced successfully: ${sliceResult.layers} layers, ${sliceResult.gcodeBytes} bytes.`);
     
     results.push({ name: 'STEP model sliced successfully', pass: true });
@@ -140,6 +187,10 @@ async function runStepSuite(browserType, browserName) {
     const plateNames = await plateObjects();
     if (plateNames.length !== before.length + 1) throw new Error(`Plate import should add one object, got ${JSON.stringify(plateNames)}`);
     results.push({ name: 'Plate store STEP import adds an object', pass: true });
+    for (let i = 0; i < 50 && !stepWorkers.every(entry => entry.closed); i++) await page.waitForTimeout(100);
+    assert.ok(stepWorkers.every(entry => entry.closed), 'all completed/failed workers terminate');
+    assert.deepEqual(pageErrors, []);
+    console.log(JSON.stringify({ browserName, results, stepRequests: stepRequests.length }));
 
     console.log(`\nAll checks passed on ${browserName.toUpperCase()}!`);
   } finally {

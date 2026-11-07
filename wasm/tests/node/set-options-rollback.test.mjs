@@ -59,6 +59,45 @@ describe('Engine setOptions batch atomic rollback & error categorization', () =>
     await core.call('resetOptions', {});
   });
 
+  test('persisted aliases normalize before filtering, with canonical precedence and atomic rollback', async () => {
+    const aliases = { tpms_adaptive: 'distance_warp', tpms_interior_density: '25%', tpms_adaptive_gradient: 'quadratic',
+      is_ixex: '1', ixex_carriage_width_x: '25', ixex_carriage_width_y: '30' };
+    const normalized = await core.call('normalizeOptions', { options: aliases });
+    assert.deepEqual(normalized.errors, []);
+    assert.equal(normalized.options.adaptive_infill_mode, 'distance_warp');
+    assert.equal(normalized.options.adaptive_infill_interior_density, '25%');
+    assert.equal(normalized.options.adaptive_infill_gradient, 'quadratic');
+    assert.equal(normalized.options.is_imex, '1');
+    assert.equal(normalized.options.imex_nozzle_clearance_x, '25');
+    assert.equal(normalized.options.imex_nozzle_clearance_y, '30');
+    assert.ok(!Object.keys(normalized.options).some(key => /^(tpms|ixex|is_ixex)/.test(key)));
+    assert.deepEqual((await core.call('setOptions', { options: aliases })).errors, []);
+    assert.equal((await core.call('getConfig', {})).adaptive_infill_mode, 'distance_warp');
+    const collision = { adaptive_infill_mode: 'disabled', tpms_adaptive: 'distance_warp',
+      imex_nozzle_clearance_x: '42', ixex_carriage_width_x: 'bad' };
+    assert.deepEqual((await core.call('setOptions', { options: collision })).errors, []);
+    assert.equal((await core.call('getConfig', {})).adaptive_infill_mode, 'disabled');
+    assert.equal((await core.call('getConfig', {})).imex_nozzle_clearance_x, '42');
+    const before = await core.call('getConfig', {});
+    const failed = await core.call('setOptions', { options: { ...aliases, layer_height: 'bad' } });
+    assert.ok(failed.errors.some(error => error.key === 'layer_height' && error.fatal));
+    assert.deepEqual(await core.call('getConfig', {}), before);
+    const badNormalization = await core.call('normalizeOptions', { options: { ...aliases, layer_height: 'bad' } });
+    assert.deepEqual(badNormalization.options, {});
+    assert.ok(badNormalization.errors.some(error => error.fatal));
+  });
+
+  test('legacy arc booleans normalize for bulk edits and serialized reset projection', async () => {
+    for (const [old, canonical] of [['0', 'disabled'], ['false', 'disabled'], ['1', 'enabled'], ['TRUE', 'enabled']]) {
+      assert.deepEqual((await core.call('setOptions', { options: { enable_arc_fitting: old } })).errors, []);
+      assert.equal((await core.call('getConfig', {})).enable_arc_fitting, canonical);
+      assert.equal((await core.call('getOption', { key: 'enable_arc_fitting', serializedValue: old })).value, canonical);
+    }
+    // Explicit selectors survive normalization without adopting Default.
+    const normalized = await core.call('normalizeOptions', { options: { inner_wall_filament: '2' } });
+    assert.equal(normalized.options.inner_wall_filament_id, '2');
+  });
+
   test('single invalid known option returns fatal error and rolls back without zeroing native config', async () => {
     const baseline = await core.call('getConfig', {});
     assert.strictEqual(baseline.layer_height, '0.2');

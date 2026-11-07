@@ -14,7 +14,7 @@ import { PlateSelectorBar } from '../plates/PlateSelectorBar';
 import { usePaintToolsStore, PaintToolsPanel, StrokeCollector } from '../paint-tools';
 import { useLayersStore, LayerHeightPanel } from '../layers';
 import { getPaintOverlay, parsePaintOverlayBinary } from '../paint-tools/paintToolsApi';
-import type { PaintState } from '../paint-tools/types';
+import type { PaintState, ParsedPaintOverlay } from '../paint-tools/types';
 import { getEngine } from '../engine/orcaEngine';
 import { useHistoryStore } from '../history';
 import { TextPanel, useTextStore } from '../text';
@@ -222,13 +222,11 @@ export const PlateView: React.FC = () => {
       }
     });
 
+    if (!useAppStore.getState().isEngineReady) scene.setBedLoading(false);
     sceneRef.current = scene;
     if (typeof window !== 'undefined') {
       (window as any).__plateScene = scene;
     }
-
-    // Initial objects load
-    refreshObjects();
 
     return () => {
       scene.destroy();
@@ -244,6 +242,13 @@ export const PlateView: React.FC = () => {
     };
   }, []);
 
+  // Mount the JS viewer immediately. Query native geometry only after startup
+  // has selected the printer; an early empty query
+  // must not replace existing/recovered objects or clear their mesh cache.
+  useEffect(() => {
+    if (isEngineReady) void refreshObjects();
+  }, [isEngineReady, refreshObjects]);
+
   // Update bed in scene when config changes
   useEffect(() => {
     if (sceneRef.current) {
@@ -254,10 +259,12 @@ export const PlateView: React.FC = () => {
   const vendor = useAppStore((s) => s.selectedVendor);
   const printer = useAppStore((s) => s.selectedPrinter);
   const userPrinters = useAppStore((s) => s.userPresets);
-  // Hide before the next paint, and invalidate older asynchronous artwork loads.
+  // While native startup is pending, show the JS bed/grid already built by
+  // PlateScene. Once ready, replace it with the selected printer's artwork.
+  // Invalidate older asynchronous artwork loads before the next paint.
   useLayoutEffect(() => {
-    sceneRef.current?.setBedLoading(true);
-  }, [bedConfigLoading, vendor, printer, userPrinters, bedConfig, currentConfig.bed_custom_model, currentConfig.bed_custom_texture]);
+    sceneRef.current?.setBedLoading(isEngineReady);
+  }, [isEngineReady, bedConfigLoading, vendor, printer, userPrinters, bedConfig, currentConfig.bed_custom_model, currentConfig.bed_custom_texture]);
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene || bedConfigLoading || !printer) return;
@@ -415,9 +422,39 @@ export const PlateView: React.FC = () => {
       getPaintOverlay({ objectId: selectedObjectId, volumeId: selectedVolumeId, layer: paintLayer }).then((result) => {
         if (!cancelled && result.buffer) scene.updateToolOverlay(selectedObjectId, parsePaintOverlayBinary(result.buffer, result.states), paintLayer, usePaintToolsStore.getState().filamentColors);
       }).catch(console.error);
+    } else if (!isPaintingActive && isEngineReady && scene) {
+      // Tool annotations are temporary; filament regions also belong in Prepare.
+      // Overlay coordinates are already in merged object space. Combine volumes
+      // before updating the scene, whose overlay update replaces the previous one.
+      const colors = (filamentColours || '').split(';').map(c => c.trim().slice(0, 7));
+      for (const object of objectTree) {
+        void Promise.all(object.volumes.map(async volume => {
+          const result = await getPaintOverlay({ objectId: object.id, volumeId: volume.id, layer: 'color' });
+          return result.buffer ? parsePaintOverlayBinary(result.buffer, result.states) : null;
+        })).then(results => {
+          if (cancelled) return;
+          const overlays = results.filter((overlay): overlay is ParsedPaintOverlay => overlay !== null);
+          const vertexCount = overlays.reduce((sum, overlay) => sum + overlay.vertexCount, 0);
+          const triangleCount = overlays.reduce((sum, overlay) => sum + overlay.triangleCount, 0);
+          if (!triangleCount) return;
+          const merged: ParsedPaintOverlay = {
+            vertexCount, triangleCount, positions: new Float32Array(vertexCount * 3),
+            indices: new Uint32Array(triangleCount * 3), states: [],
+          };
+          let vertexOffset = 0, triangleOffset = 0;
+          for (const overlay of overlays) {
+            merged.positions.set(overlay.positions, vertexOffset * 3);
+            merged.indices.set(overlay.indices.map(index => index + vertexOffset), triangleOffset * 3);
+            merged.states.push(...overlay.states.map(state => ({ ...state, firstTriangle: state.firstTriangle + triangleOffset })));
+            vertexOffset += overlay.vertexCount;
+            triangleOffset += overlay.triangleCount;
+          }
+          scene.updateToolOverlay(object.id, merged, 'color', colors);
+        }).catch(console.error);
+      }
     }
     return () => { cancelled = true; };
-  }, [selectedObjectId, selectedVolumeId, paintLayer, isPaintingActive, meshRevision, paintOverlayRevision]);
+  }, [selectedObjectId, selectedVolumeId, paintLayer, isPaintingActive, meshRevision, paintOverlayRevision, isEngineReady, objectTree, filamentColours]);
 
   useEffect(() => {
     const targetObj = objectTree.find((o) => o.id === selectedObjectId);

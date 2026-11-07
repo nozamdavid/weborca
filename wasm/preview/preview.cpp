@@ -115,6 +115,10 @@ inline std::string to_hex(const libvgcode::Color& c) {
     return std::string(buf);
 }
 
+inline std::string to_hex(const libvgcode::ColorWithAlpha& c) {
+    return to_hex(libvgcode::Color{ c[0], c[1], c[2] });
+}
+
 inline const char* role_name(libvgcode::EGCodeExtrusionRole role) {
     switch (role) {
     case libvgcode::EGCodeExtrusionRole::Perimeter: return "Inner wall";
@@ -558,7 +562,7 @@ public:
 
     void setToolColors(emscripten::val colors) {
         emscripten_webgl_make_context_current(m_ctx);
-        libvgcode::Palette palette = m_viewer.get_tool_colors();
+        libvgcode::PaletteWithAlpha palette = m_viewer.get_tool_colors();
         const unsigned count = std::min(colors["length"].as<unsigned>(), 256u);
         palette.resize(std::max(palette.size(), static_cast<size_t>(count)), libvgcode::convert(std::string("#009688")));
         for (unsigned i = 0; i < count; ++i) {
@@ -585,7 +589,7 @@ public:
 
         libvgcode::GCodeInputData data;
         std::vector<std::pair<float, float>> bed_polygon;
-        float time_s = 0.0f;
+        double time_s = 0.0;
         float filament_mm = 0.0f;
         float filament_g = 0.0f;
         float travel_distance = 0.0f;

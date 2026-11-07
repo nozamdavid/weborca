@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import { captureAutosaveBaseline, clearAutosave, readAutosave, restoreAutosave, startAutosave } from './autosave';
+import { captureAutosaveBaseline, clearAutosave, isRedundantAutosave, readAutosave, restoreAutosave, startAutosave } from './autosave';
 import type { AutosaveRecord } from './autosave';
 import { Dialog } from '../components/Dialog';
 import { useTranslation } from "../i18n";
@@ -29,7 +29,16 @@ export const RecoveryDialog: React.FC = () => {
   // The timer starts after the offer is answered, so an unanswered offer is not overwritten by an empty plate.
   useEffect(() => (isEngineReady && checked && !record ? startAutosave(undefined, autosaveBaseline.current) : undefined), [isEngineReady, checked, record]);
 
-  if (!record) return null;
+  const redundant = isEngineReady && !!record && isRedundantAutosave(record);
+  useEffect(() => {
+    if (!redundant) return;
+    let cancelled = false;
+    void clearAutosave().then(() => { if (!cancelled) setRecord(undefined); });
+    return () => { cancelled = true; };
+  }, [redundant]);
+
+  // Empty legacy records require the startup baseline to prove redundancy.
+  if (!record || redundant || (!isEngineReady && record.objects === 0 && record.bytes === undefined)) return null;
   const restore = async () => {
     setRestoring(true);
     setError('');

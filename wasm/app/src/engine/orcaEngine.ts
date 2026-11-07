@@ -43,7 +43,7 @@ let initPromise: Promise<OrcaEngine> | null = null;
 let initController: AbortController | null = null;
 let generation = 0;
 let suspended = false;
-export type EngineLoadProgress = { phase: 'downloading' | 'initializing'; loaded?: number; total?: number };
+export type EngineLoadProgress = { phase: 'checking' | 'cached' | 'downloading' | 'initializing'; loaded?: number; total?: number };
 let progressListener: ((progress: EngineLoadProgress) => void) | undefined;
 export function onEngineLoadProgress(listener?: (progress: EngineLoadProgress) => void): void {
   progressListener = listener;
@@ -124,9 +124,9 @@ export async function selectPresets(selection: {
   printer: string;
   process: string;
   filaments: string[];
-}): Promise<void> {
+}): Promise<{ printer: string; process: string; filaments: string[] }> {
   const engine = await getEngine();
-  await engine.selectPresets(selection);
+  return await engine.selectPresets(selection);
 }
 
 export async function getConfig(): Promise<Record<string, string>> {

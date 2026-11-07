@@ -26,6 +26,14 @@ struct Settings
 		bool dim_previous_layers{ false };
 		// ORCA: how bright those darkened layers are rendered, 1.0 = unchanged, 0.0 = black
 		float dim_previous_layers_brightness{ 0.4f };
+		// ORCA: when disabled, the filaments are drawn opaque whatever their color's opacity
+#ifdef ENABLE_OPENGL_ES
+        // The web renderer keeps packed RGB and its cached range/ribbon path.
+        // Enable opacity only after those paths and the shaders are ported together.
+        bool translucent_filaments{ false };
+#else
+		bool translucent_filaments{ true };
+#endif
 		bool spiral_vase_mode{ false };
         bool low_quality{ false };
 		//

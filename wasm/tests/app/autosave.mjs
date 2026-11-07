@@ -5,11 +5,17 @@ import { chromium, firefox } from 'playwright';
 import { startServer, stopServer } from './lib/dist.mjs';
 
 const PORT = parseInt(process.env.PORT || '5118', 10);
-const BASE_URL = `http://127.0.0.1:${PORT}`;
+const BASE_URL = process.env.ORCA_APP_URL || `http://127.0.0.1:${PORT}`;
 
 async function runSuite(browserType, name) {
   const browser = await browserType.launch();
   const context = await browser.newContext({ viewport: { width: 1400, height: 850 } });
+  if (process.env.ORCA_QA_PASSWORD) {
+    const login = await context.request.post(BASE_URL + '/_alpha/admin/login', { headers: { Origin: BASE_URL }, data: { password: process.env.ORCA_QA_PASSWORD } });
+    assert.equal(login.status(), 200);
+    const launch = await context.request.post(BASE_URL + '/_alpha/admin/open-slicer', { headers: { Origin: BASE_URL }, data: {} });
+    assert.equal(launch.status(), 200);
+  }
   const page = await context.newPage();
   page.on('pageerror', (err) => console.error(`[${name} pageerror]`, err));
   const log = (msg) => console.log(`[${name}] ${msg}`);
@@ -33,6 +39,43 @@ async function runSuite(browserType, name) {
 
     log('an empty plate writes no backup');
     assert.equal(await page.evaluate(() => window.__autosave.writeAutosave()), false);
+
+    log('remembered user presets are an untouched startup baseline');
+    await page.evaluate(async () => {
+      await window.__appStore.getState().saveCurrentUserPreset('process', 'Remembered recovery baseline');
+      await window.__autosave.clearAutosave();
+    });
+    await ready();
+    assert.equal(await page.evaluate(() => window.__appStore.getState().activeUserPreset.process), 'Remembered recovery baseline');
+    await page.waitForTimeout(1000);
+    await ready();
+    assert.equal(await page.locator('#recovery-dialog').count(), 0, 'untouched refresh has no recovery offer');
+    assert.equal(await page.evaluate(() => window.__autosave.writeAutosave()), false, 'forced cleanup of hydrated presets creates no backup');
+    assert.equal(await page.evaluate(() => window.__autosave.readAutosave()), undefined);
+
+    log('a legacy empty backup already matching startup is redundant');
+    await page.evaluate(async () => {
+      const app = window.__appStore.getState(), plates = window.__platesStore.getState();
+      const record = { savedAt: Date.now(), objects: 0,
+        setup: { vendor: app.selectedVendor, printer: app.selectedPrinter, process: app.selectedProcess,
+          filaments: app.selectedFilaments, options: {}, presetConfig: app.currentConfig },
+        plateState: { activePlateIndex: plates.activePlateIndex, plates: plates.plates.map(p => ({
+          index: p.index, name: p.name, locked: !!p.locked, config: p.config, filamentMaps: p.filamentMaps
+        })) } };
+      await new Promise((resolve, reject) => {
+        const request = indexedDB.open('orca_autosave_db', 1);
+        request.onsuccess = () => {
+          const db = request.result, tx = db.transaction('autosave', 'readwrite');
+          tx.objectStore('autosave').put(record, 'latest');
+          tx.oncomplete = () => { db.close(); resolve(); };
+          tx.onerror = reject;
+        };
+        request.onerror = reject;
+      });
+    });
+    await ready();
+    await waitForBackup(async () => !(await window.__autosave.readAutosave()));
+    assert.equal(await page.locator('#recovery-dialog').count(), 0, 'provably redundant legacy backup is not offered');
 
     log('autosave disabled does not produce backup');
     await page.evaluate(() => { window.__prefsStore.getState().setGeneralPref('autosave', false); });
@@ -122,9 +165,9 @@ async function runSuite(browserType, name) {
     await page.waitForSelector('#project-notes');
     await page.fill('#project-notes', 'Dirty notes content');
     // hit cancel
-    await page.click('button:has-text("Cancel")');
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     // discard dialog should appear
-    await page.waitForSelector('.modal-content:has-text("Discard")');
+    await page.getByRole('alertdialog', { name: 'Discard unsaved changes?', exact: true }).waitFor();
     await page.click('[data-testid="confirm-ok"]');
     await page.waitForSelector('#project-notes', { state: 'detached' });
     
@@ -210,14 +253,14 @@ async function runSuite(browserType, name) {
   }
 }
 
-await startServer(PORT, 'autosave');
+if (!process.env.ORCA_APP_URL) await startServer(PORT, 'autosave');
 try {
   await runSuite(chromium, 'chromium');
-  await runSuite(firefox, 'firefox');
-  console.log('All autosave tests passed on Chromium and Firefox.');
+  if (process.env.ORCA_QA_CHROMIUM_ONLY !== '1') await runSuite(firefox, 'firefox');
+  console.log('All requested autosave browser tests passed.');
 } catch (err) {
   console.error('Autosave tests FAILED:', err);
   process.exitCode = 1;
 } finally {
-  await stopServer(PORT);
+  if (!process.env.ORCA_APP_URL) await stopServer(PORT);
 }

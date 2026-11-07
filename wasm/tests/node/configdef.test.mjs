@@ -65,6 +65,19 @@ describe('Orca WASM Engine getConfigDef Test Suite', () => {
     }
   });
 
+  test('arc fitting exposes and round-trips the canonical v2.5 enum', async () => {
+    const defs = await core.call('getConfigDef', { keys: ['enable_arc_fitting'] });
+    const arc = defs.enable_arc_fitting;
+    assert.equal(arc.type, 'enum');
+    assert.equal(arc.default, 'disabled');
+    assert.deepEqual(arc.enumValues, ['disabled', 'enabled', 'sparse_infill']);
+    for (const value of arc.enumValues) {
+      assert.deepEqual((await core.call('setOptions', { options: { enable_arc_fitting: value } })).errors, []);
+      assert.equal((await core.call('getConfig', {})).enable_arc_fitting, value);
+    }
+    await core.call('resetOptions', {});
+  });
+
   test('getConfigDef for layer_height, sparse_infill_pattern and retraction_length equals API-configdef.md examples', async () => {
     const defs = await core.call('getConfigDef', {
       keys: ['layer_height', 'sparse_infill_pattern', 'retraction_length']

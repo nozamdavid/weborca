@@ -134,6 +134,14 @@ for (const name of browsers) {
       module.FS.writeFile('/lighting.gcode', new Uint8Array(data));
       const stats = JSON.parse(preview.loadGcode('/lighting.gcode'));
       check(!stats.error && preview.getLayersCount() > 1 && preview.getMovesCount() > 0, 'G-code load failed');
+      preview.setViewType('Tool');
+      const toolColors = JSON.parse(preview.getLegendData()).items.map(item => item.color);
+      for (const view of ['ColorPrint', 'Summary']) {
+        preview.setViewType(view);
+        check(JSON.stringify(JSON.parse(preview.getLegendData()).items.map(item => item.color)) === JSON.stringify(toolColors),
+          `${view} must preserve empty color-print palette fallback to tool colors`);
+      }
+      preview.setViewType('FeatureType');
       preview.resetCamera();
       const before = metadata();
       const initialOff = capture('lighting disabled before init and load');
@@ -240,10 +248,72 @@ for (const name of browsers) {
       p.setLightingEnabled(true);
       capture('reload shaded');
       check(capture.state.shadowPasses > 0, 'Reload did not restore shaded geometry');
+
+      // Audit every preserved numeric palette against its low-quality legend path.
+      for (const view of ['Height', 'Width', 'Speed', 'ActualSpeed', 'FanSpeed', 'Temperature',
+        'PressureAdvance', 'Acceleration', 'Jerk', 'VolumetricFlowRate', 'ActualVolumetricFlowRate',
+        'LayerTimeLinear', 'LayerTimeLogarithmic']) {
+        p.setViewType(view);
+        const normalLegend = JSON.parse(p.getLegendData());
+        const normal = capture(`${view} normal`);
+        p.setLowQuality(true);
+        const lowLegend = JSON.parse(p.getLegendData());
+        check(normalLegend.viewType === view && lowLegend.viewType === view, `${view} legend route changed`);
+        check(JSON.stringify(normalLegend.ranges.map(item => item.value)) === JSON.stringify(lowLegend.ranges.map(item => item.value)),
+          `${view} quality changed numeric range values`);
+        check(lowLegend.ranges.every(item => Number.isFinite(item.value) && /^#[0-9a-f]{6}$/.test(item.color)),
+          `${view} has invalid range colors or values`);
+        capture(`${view} low`);
+        p.setLowQuality(false);
+        check(equal(normal, capture(`${view} normal restored`)), `${view} quality roundtrip changed pixels`);
+        check(metadata() === before, `${view} quality changed metadata or ranges`);
+      }
+
+      // Exercise RGBA storage through the unchanged RGB legend and opaque ES path.
+      p.setViewType('Tool');
+      const toolLegend = () => JSON.parse(p.getLegendData()).items;
+      const tool = toolLegend()[0].id;
+      const colors = Array(tool + 1).fill('');
+      for (const color of ['#000000', '#ff0000', '#00ff00', '#0000ff']) {
+        colors[tool] = color;
+        p.setToolColors(colors);
+        check(toolLegend()[0].color === color, `Opaque palette changed ${color}`);
+        capture(`palette ${color}`);
+      }
+      colors[tool] = '#123456ff'; p.setToolColors(colors);
+      const opaque = capture('opaque RGBA');
+      for (const alpha of ['00', '80']) {
+        colors[tool] = `#123456${alpha}`; p.setToolColors(colors);
+        check(toolLegend()[0].color === '#123456', 'Legend must retain RGB schema');
+        check(equal(opaque, capture(`deferred alpha ${alpha}`)), 'ES alpha changed opaque rendering');
+      }
+      colors[tool] = ''; p.setToolColors(colors);
+      p.setToolColors([]);
+      check(toolLegend()[0].color === '#123456', 'Empty palette entries must preserve previous colors');
+      colors[tool] = 'invalid'; p.setToolColors(colors);
+      check(toolLegend()[0].color === '#404040', 'Invalid palette must use opaque dummy RGB');
+      check(metadata() === before, 'Palette edits changed ranges or move metadata');
+      for (const view of ['ColorPrint', 'Summary']) {
+        p.setViewType(view);
+        check(JSON.parse(p.getLegendData()).items.every(item => /^#[0-9a-f]{6}$/.test(item.color)),
+          `${view} must retain RGB legend schema`);
+        capture(`${view} RGBA legend`);
+      }
+
+      // A large total exposes float narrowing while each parser dwell stays exactly representable.
+      const source = new TextDecoder().decode(module.FS.readFile('/lighting.gcode'));
+      const longSource = 'G4 S16777216\n' + source + '\n';
+      module.FS.writeFile('/long-time.gcode', longSource);
+      const longTime = JSON.parse(p.loadGcode('/long-time.gcode'));
+      module.FS.writeFile('/long-time.gcode', longSource + 'G4 S1\n');
+      const plusOne = JSON.parse(p.loadGcode('/long-time.gcode'));
+      check(!longTime.error && !plusOne.error, 'Long total-time fixture failed');
+      check(Math.abs(plusOne.timeS - longTime.timeS - 1) < 0.02, 'Processor total time lost double precision in JSON');
       p.delete();
       return { lightingDifferenceAndExactRoundtrip: true, fourIndependentModes: true,
         normalShadowDifference: true, exactShadowRoundtrip: true, lowQualitySkipsShadows: true,
-        scrubsAndViews: true, clippingRoundtrip: true, mobileAndThemes: true, clearAndReload: true };
+        scrubsAndViews: true, clippingRoundtrip: true, mobileAndThemes: true, clearAndReload: true,
+        rgbaPalettesAndRgbLegends: true, doubleTotalTime: true };
     });
     assert.deepEqual(errors, [], `${name}: browser/module errors`);
     console.log(JSON.stringify({ browser: name, ...initial, ...results, errors }));
