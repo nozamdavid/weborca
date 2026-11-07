@@ -197,6 +197,7 @@ function orcaAssetsPlugin() {
           url === '/engine-worker.js' ||
           url === '/step-worker.js' ||
           url === '/engine-core.js' ||
+          url === '/engine-assets.js' ||
           url === '/orca-engine.js'
         ) {
           const fileName = url.substring(1);
@@ -274,7 +275,7 @@ function orcaAssetsPlugin() {
       // 4. Copy web worker & orca-engine files into dist/web and dist/ root
       const distWeb = path.join(distDir, 'web');
       fs.mkdirSync(distWeb, { recursive: true });
-      const webFiles = ['engine-worker.js', 'step-worker.js', 'engine-core.js', 'orca-engine.js', 'orca-engine.d.ts'];
+      const webFiles = ['engine-worker.js', 'step-worker.js', 'engine-core.js', 'engine-assets.js', 'orca-engine.js', 'orca-engine.d.ts'];
       for (const file of webFiles) {
         const src = path.join(webDir, file);
         if (fs.existsSync(src)) {

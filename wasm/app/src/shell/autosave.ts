@@ -22,6 +22,17 @@ const VFS_PATH = '/out/autosave.3mf';
 let backupGeneration = 0;
 const clearListeners = new Set<() => void>();
 let pendingWrite: Promise<boolean> | undefined;
+let startupBaseline: string | undefined;
+let ownsSessionBackup = false;
+
+/** Capture hydrated preferences before readiness exposes project editing. */
+export async function initializeAutosaveSession(): Promise<void> {
+  // Auth re-entry retains the stores until backup succeeds. Replace their old
+  // geometry/plates with this engine's scene before defining its empty baseline.
+  await usePlateStore.getState().refreshObjects();
+  startupBaseline = captureAutosaveBaseline();
+  ownsSessionBackup = false;
+}
 
 export interface AutosaveRecord {
   savedAt: number;
@@ -99,6 +110,14 @@ async function writeAutosaveRecord(): Promise<boolean> {
   const objects = usePlateStore.getState().objects.length;
   const app = useAppStore.getState();
   if (!app.isEngineReady || app.isSelectingPreset) return false;
+  // Restored device/user presets are already durable preferences. Forced auth
+  // cleanup uses this same writer, even when periodic autosave is disabled.
+  if (objects === 0 && captureAutosaveBaseline() === startupBaseline) {
+    // A return to the initial empty project must retire this session's geometry,
+    // but an untouched engine must never delete an unanswered older recovery.
+    if (ownsSessionBackup) await clearAutosave();
+    return false;
+  }
   const plateState = capturePlateState();
   const changedOptions = Object.fromEntries(Object.entries(app.currentConfig).filter(([key, value]) => value !== app.presetConfig[key]));
   const options = {
@@ -107,7 +126,7 @@ async function writeAutosaveRecord(): Promise<boolean> {
   };
   const hasUserPreset = Object.values(app.activeUserPreset).some(name => name !== null) ||
     app.selectedFilaments.some(name => app.userPresets.some(preset => preset.kind === 'filament' && preset.name === name));
-  if (objects === 0 && Object.keys(changedOptions).length === 0 && !hasUserPreset && !hasPlateChanges(plateState)) {
+  if (startupBaseline === undefined && objects === 0 && Object.keys(changedOptions).length === 0 && !hasUserPreset && !hasPlateChanges(plateState)) {
     await clearAutosave();
     return false;
   }
@@ -132,6 +151,7 @@ async function writeAutosaveRecord(): Promise<boolean> {
       : s.get(KEY));
     if (generation !== backupGeneration) return false;
     if (result === undefined) throw new Error('Could not store the recovery backup');
+    ownsSessionBackup = true;
     useAutosaveStatus.setState({ savedAt: Date.now() });
     return true;
   } finally {
@@ -188,6 +208,25 @@ export async function restoreAutosave(record: AutosaveRecord): Promise<void> {
   }
   const error = useAppStore.getState().engineError;
   if (error) throw new Error(error);
+  ownsSessionBackup = true;
+}
+
+function normalizedPlates(state: HistoryPlateState): HistoryPlateState {
+  return { plates: state.plates.map(plate => ({ ...plate, filamentMaps: plate.filamentMaps ?? [] })), activePlateIndex: state.activePlateIndex };
+}
+
+/** Retire only legacy empty backups whose recovered state is already hydrated. */
+export function isRedundantAutosave(record: AutosaveRecord): boolean {
+  if (startupBaseline === undefined || record.objects !== 0 || record.bytes !== undefined ||
+      !record.setup?.presetConfig || !Object.keys(record.setup.presetConfig).length || !record.plateState) return false;
+  const baseline = JSON.parse(startupBaseline);
+  const setup = record.setup;
+  const values = [setup.presetConfig, setup.options, setup.overrides?.process,
+    setup.overrides?.filament, setup.overrides?.printer];
+  return setup.vendor === baseline.vendor && setup.printer === baseline.printer && setup.process === baseline.process &&
+    JSON.stringify(setup.filaments) === JSON.stringify(baseline.filaments) &&
+    values.every(options => Object.entries(options ?? {}).every(([key, value]) => value === baseline.config[key])) &&
+    JSON.stringify(normalizedPlates(record.plateState)) === JSON.stringify(baseline.plates);
 }
 
 /** Startup device preferences are a baseline, rather than unsaved project edits. */
@@ -195,8 +234,11 @@ export function captureAutosaveBaseline(): string {
   const app = useAppStore.getState();
   return JSON.stringify({
     config: app.currentConfig,
+    vendor: app.selectedVendor,
     printer: app.selectedPrinter, process: app.selectedProcess, filaments: app.selectedFilaments,
-    objects: usePlateStore.getState().objects, plates: capturePlateState()
+    objects: usePlateStore.getState().objects,
+    // Native listPlates hydrates an absent map as []; both mean no mapping.
+    plates: normalizedPlates(capturePlateState())
   });
 }
 

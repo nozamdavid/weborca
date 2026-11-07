@@ -5,6 +5,7 @@
  */
 
 import { createEngineCore } from './engine-core.js';
+import { prepareEngineAssets } from './engine-assets.js';
 
 let core = null;
 let profilesUrl = '/wasm/build/web/profiles/';
@@ -42,40 +43,29 @@ self.onmessage = async (event) => {
           profilesUrl = new URL(profilesUrl, self.location.href).href;
         }
 
-        const absModuleUrl = new URL(moduleUrl || '/wasm/build/orca-wasm64/wasm/engine/orca_engine.mjs', self.location.href).href;
+        const assets = await prepareEngineAssets(
+          new URL(moduleUrl || '/wasm/build/orca-wasm64/wasm/engine/orca_engine.mjs', self.location.href).href,
+          progress => postMessage({ id, progress })
+        );
+        const absModuleUrl = assets.moduleUrl;
         const mod = await import(absModuleUrl);
         const moduleFactory = mod.createOrcaEngine || mod.default;
 
-        // Observe the generated loader's existing fetch. Keep its streaming
-        // compilation and HTTP caching; never prefetch a second WASM copy.
+        // Reuse the generated loader's fetch and streaming compilation.
         const originalFetch = globalThis.fetch;
-        globalThis.fetch = async (...args) => {
-          const response = await originalFetch(...args);
-          if (!String(args[0]).split('?')[0].endsWith('orca_engine.wasm') || !response.ok || !response.body) return response;
-          let loaded = 0;
-          const total = response.headers.get('content-encoding') ? undefined : Number(response.headers.get('content-length')) || undefined;
-          postMessage({ id, progress: { phase: 'downloading', loaded, total } });
-          const body = response.body.pipeThrough(new TransformStream({
-            transform(chunk, controller) {
-              loaded += chunk.byteLength;
-              postMessage({ id, progress: { phase: 'downloading', loaded, total } });
-              controller.enqueue(chunk);
-            },
-            flush() { postMessage({ id, progress: { phase: 'initializing' } }); }
-          }));
-          return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
-        };
+        globalThis.fetch = assets.fetch;
         try {
         core = await createEngineCore({
           moduleFactory,
           locateFile: (path, prefix) => {
             if (path.endsWith('.wasm')) {
-              return new URL(path, absModuleUrl).href;
+              return assets.wasmUrl;
             }
             return (prefix || '') + path;
           },
           threads
         });
+        await assets.finish();
         } finally { globalThis.fetch = originalFetch; }
 
         await core.call('init', { resourcesDir: '/resources', dataDir: '/data' });

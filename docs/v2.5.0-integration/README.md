@@ -7,10 +7,18 @@ production candidate. This milestone retains the staged merge of upstream
 `709ff3ecd09824b4f2bd3a78f398c3a038811243`, on
 `t3/merge-upstream-v250-foundation`. It does not qualify every upstream feature.
 
-CURRENT5070 remains the background-engine release
-`wasm/build/ui-background-engine-release-20261107`. The candidate is local to
-`/home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1`; no main promotion, push,
-deployment or live configuration change forms part of this checkpoint.
+CURRENT5070 serves `wasm/build/ui-v250-empty-recovery-release-20261107` from this
+integration worktree, activated at **2026-11-07 15:03:59 UTC**. The
+[empty-session recovery fix](empty-session-recovery.md) passed public desktop/mobile
+acceptance for untouched sessions, real restore and backup retry. Its exact
+rollback retains the startup/cache/early Prepare release. The combined
+startup work retains the exact native/data inputs below and adds truthful
+download percentages, authorized binary reuse and an interactive early Prepare
+bed/grid. The [combined publication report](startup-publication.md) records
+acceptance, exact files/hashes and rollback to the previous v2.5 release.
+The [original publication](publication.md) remains historical evidence.
+Signed source checkpoint: `77a15ff9238d9b9404b1da4256a575929380401e`.
+Main promotion remains open; deployment publication made no Git changes.
 
 ## Accepted evidence
 
@@ -108,7 +116,7 @@ do not establish hardware performance parity. Transparency remains deferred.
 New belt, IMEX parallel-print, collision-volume, mixing/Hybrid mapped slicing,
 texture, center-of-mass, Python plugin and Design-tab browser workflows require
 separate work and qualification. Passive metadata/config support does not prove
-those features usable. Main promotion and deployment remain separate open work.
+those features usable. Main promotion remains separate open work.
 
 ## History and tracking
 
@@ -120,3 +128,13 @@ those features usable. Main promotion and deployment remain separate open work.
 - [Patch inventory](../../wasm/PATCHES.md), [tracking receipt](tracking.md).
 - [Taproot project](http://192.168.0.199:8789/p/YPttwK6VZASSDf): scoped local
   validation is complete; shipped baseline and remaining qualification stay distinct.
+
+Current deployment: [paint-exit publication](paint-exit-publication.md),
+2026-11-07 17:07:46 UTC. Immutable `wasm/build/v250-paint-exit/candidate` preserves
+the empty-recovery/native/cache baseline; public framebuffer and slicing pass.
+Use its guarded rollback to return to the empty-recovery release.
+
+The later [Export alignment publication](export-alignment-publication.md) is the
+current release at `wasm/build/v250-export-align/candidate`; its guarded rollback
+restores the paint-exit candidate. Source is packaged on
+`integrate/v250-deployed-browser-workflows` for review against `weborca/main`.

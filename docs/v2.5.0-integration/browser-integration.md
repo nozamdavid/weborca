@@ -1,5 +1,8 @@
 # v2.5 browser integration acceptance
 
+The [combined startup publication](startup-publication.md) records the successor
+candidate and current deployment, reusing these exact native/data inputs.
+
 Chromium acceptance passed on **one immutable gated production candidate** with
 Engine S2, the frozen v2.5 Preview pair, patched standalone STEP and merged
 profiles/settings. No native builds/suites, deployment, commits, push or branch

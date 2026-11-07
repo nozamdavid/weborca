@@ -1,4 +1,5 @@
 import { isNoRuleFix } from '../engine/ruleFixes';
+import type { EngineLoadProgress } from '../engine/orcaEngine';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
 import { findSystemProfileVendor, systemProfiles } from '../presets/systemProfiles';
 import { loadPrinterCatalog, usePrinterCatalog } from '../presets/printerCatalog';
@@ -76,7 +77,7 @@ export interface AppState {
   // Engine lifecycle
   isEngineInitializing: boolean;
   isEngineReady: boolean;
-  engineLoad: { phase: 'downloading' | 'initializing'; loaded?: number; total?: number };
+  engineLoad: EngineLoadProgress;
   engineError: string | null;
   setEngineError: (error: string | null) => void;
 
@@ -312,7 +313,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   isEngineInitializing: false,
   isEngineReady: false,
-  engineLoad: { phase: 'downloading' },
+  engineLoad: { phase: 'checking' },
   engineError: null,
   setEngineError: (error) => set({ engineError: error }),
 
@@ -471,7 +472,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ isIsolated: setIsolated });
     if (!isIsolated) return;
 
-    set({ isEngineInitializing: true, engineError: null, engineLoad: { phase: 'downloading' } });
+    set({ isEngineInitializing: true, engineError: null, engineLoad: { phase: 'checking' } });
     onEngineLoadProgress(engineLoad => set({ engineLoad }));
 
     try {
@@ -525,6 +526,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       check();
       if (get().engineError) throw new Error(get().engineError!);
       applyingDevice = false;
+      const { initializeAutosaveSession } = await import('../shell/autosave');
+      check();
+      await initializeAutosaveSession();
+      check();
       set({ isEngineReady: true, isEngineInitializing: false });
     } catch (err: any) {
       if (current !== startupGeneration) return;
