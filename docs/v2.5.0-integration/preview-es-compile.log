@@ -1,0 +1,20 @@
+Running as unit: weborca-doop-qa-v250-foundation-preview-es-1794053459866596319.service
+[1/5] Building CXX object CMakeFiles/libvgcode.dir/src/ViewerImpl.cpp.o
+[2/5] Building CXX object CMakeFiles/libvgcode.dir/src/LowQualitySegments.cpp.o
+[3/5] Building CXX object CMakeFiles/libvgcode.dir/src/ViewRange.cpp.o
+[4/5] Building C object CMakeFiles/libvgcode.dir/glad/src/gles2.c.o
+FAILED: [code=1] CMakeFiles/libvgcode.dir/glad/src/gles2.c.o 
+/usr/bin/cc -DENABLE_OPENGL_ES -I/home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/src/libvgcode/glad/include  -MD -MT CMakeFiles/libvgcode.dir/glad/src/gles2.c.o -MF CMakeFiles/libvgcode.dir/glad/src/gles2.c.o.d -o CMakeFiles/libvgcode.dir/glad/src/gles2.c.o -c /home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/src/libvgcode/glad/src/gles2.c
+/home/david/.t3/worktrees/OrcaSlicer/t3-c8aa6ae1/src/libvgcode/glad/src/gles2.c:768:12: fatal error: glad/egl.h: No such file or directory
+  768 |   #include <glad/egl.h>
+      |            ^~~~~~~~~~~~
+compilation terminated.
+ninja: build stopped: subcommand failed.
+CGROUP_MEMORY_PEAK_BYTES=200749056
+max 0
+CGROUP_SWAP_PEAK_BYTES=0
+          Finished with result: exit-code
+Main processes terminated with: code=exited, status=1/FAILURE
+               Service runtime: 840ms
+             CPU time consumed: 821ms
+                   Memory peak: 191.4M (swap: 0B)

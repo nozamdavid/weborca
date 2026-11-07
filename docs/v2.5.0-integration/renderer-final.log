@@ -1,0 +1,14 @@
+Running as unit: weborca-doop-qa-v250-foundation-final-renderer-1794053657994338549.service
+[1/4] Building CXX object CMakeFiles/libvgcode.dir/src/Settings.cpp.o
+[2/4] Building CXX object CMakeFiles/libvgcode.dir/src/Viewer.cpp.o
+[3/4] Building CXX object CMakeFiles/libvgcode.dir/src/ViewerImpl.cpp.o
+[4/4] Linking CXX static library liblibvgcode.a
+All low-quality CPU regression checks passed
+CGROUP_MEMORY_PEAK_BYTES=205086720
+max 0
+CGROUP_SWAP_PEAK_BYTES=0
+          Finished with result: success
+Main processes terminated with: code=exited, status=0/SUCCESS
+               Service runtime: 1.688s
+             CPU time consumed: 1.646s
+                   Memory peak: 195.5M (swap: 0B)
