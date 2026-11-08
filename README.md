@@ -13,6 +13,49 @@ Optimize your prints with ultra-fast slicing, intelligent support generation, an
 
 This checkout also includes a browser-based WebAssembly port in [wasm/app](wasm/app). See [wasm/deploy/README.md](wasm/deploy/README.md) for web deployment instructions.
 
+The [2026-11-07 installed Flatpak / shipped browser sample comparison](docs/benchmarks/sample-parity-20261107.md)
+corrects the earlier worker-only runs, which are excluded from app results.
+Actual Helium app trials cover all three STLs, with separate benchmark-only
+process timings validated against shipped outputs. Both 3MFs import through the
+project workflow and then fail validation. Strict native/web parity remains open.
+
+For engine/desktop parity findings, benchmark methodology and retained technical
+decisions, start with [KNOWLEDGE.md](KNOWLEDGE.md).
+
+As of 2026-11-08, matching original native Orca executable G-code and slicing
+speed takes priority over custom determinism. Earlier unconditional retention
+recommendations are provisional. The [actual desktop GUI tree baseline](docs/benchmarks/desktop-tree-parity-20261108.md)
+matches web ordered saved geometry; the historical CLI gap does not justify extra
+import normalization. The [tree residual controls](docs/benchmarks/tree-residual-cause-20261108.md)
+leave three solid commands and two wall traversal groups unresolved; isolated
+sort/random/endpoint restorations change no tree commands. Acceptance requires
+matched project state and full headed Helium Slice/Export; strict parity remains open.
+The [internal Arachne trace](docs/benchmarks/arachne-internal-cause-20261108.md)
+localizes two raw tree endpoints to first-within-snap stitch selection under differing
+container visitation order. All 34 stage fixtures and full-app output gates were checked;
+the [explicit native visitation candidate](docs/benchmarks/native-stitch-compatibility-20261108.md)
+now matches all 34 fixtures and fixes the three tree solid commands, with bracket
+commands unchanged. Tree executable differences improve 80 to 79 (15 to 12 when
+diagnostically filtering M73). Warm timing medians rise slightly within overlapping
+ranges in that initial copied-source batch. The [production qualification](docs/benchmarks/native-stitch-qualification-20261108.md)
+retains a minimal stitch-local small_vector patch and native/WASM regression target
+for review: 34/34 fixtures per platform pass, and clean full-app tree/bracket commands
+including M73/configuration match the qualified candidate. Two 21-warm-sample batches
+show no consistent perimeter slowdown; a small whole-process cost remains unresolved.
+The [combined native compatibility publication](docs/benchmarks/native-compatibility-publication-20261108.md)
+supersedes this intermediate release status: tree now matches all 1,373,125 original
+GUI executable commands including M73 locally and publicly. Bracket baseline commands
+remain unchanged. Lily improves in 485 changed directed XYZ/E deposition groups,
+with 11 equal-distance groups and none worse; exact Lily parity remains open.
+Six native GUI state differences, original 3MF validation blocks and native-speed
+parity remain open. This fidelity release does not claim a speed improvement;
+a small whole-process cost remains possible.
+
+The [indexed-chain storage check](docs/benchmarks/stitch-grid-cost-20261108.md) preserves
+all fixture/full-output gates but shows no clear speed benefit, so production retains
+small_vector. Stage reanalysis places the largest historical pooled difference in
+infill; the whole-process cost remains unresolved.
+
 The accumulated WebOrca app, alpha access and startup work is captured on the private
 [`nozamdavid/weborca` main branch](https://github.com/nozamdavid/weborca/tree/main).
 Verification reports and immutable release directories under `wasm/build` are local,
@@ -24,8 +67,13 @@ qualifies the existing browser workflows on the frozen candidate
 `wasm/build/v250-browser-integration/candidate-gated`, on branch
 `t3/merge-upstream-v250-foundation`. Evidence includes 98 native cases / 2,053
 assertions, 43 configuration checks, 10 STEP checks and Chromium acceptance.
-CURRENT5070 serves `wasm/build/v250-export-align/candidate` from the integration
-worktree. The [paint-exit publication](docs/v2.5.0-integration/paint-exit-publication.md)
+CURRENT5070 serves `wasm/build/native-compatibility-publication-20261108/candidate`
+from the integration worktree, WASM SHA256
+`df6c8b6aae6fd8ba1558bcff09c79240de45bd6d3728ddfbfc135096021d7d4a`.
+All nonengine assets and the frozen server are retained. Public exact tree output,
+authorization, exact asset bytes and old-cache upgrade followed by zero-transfer
+warm binary reuse pass. Its guarded rollback restores the Export alignment root.
+The [paint-exit publication](docs/v2.5.0-integration/paint-exit-publication.md)
 is retained beneath the [Export alignment release](docs/v2.5.0-integration/export-alignment-publication.md):
 the Preview Export G-code label is centered, with loaded desktop checks and real
 downloads passing. Its guarded rollback restores the paint-exit candidate. The paint fix

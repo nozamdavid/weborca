@@ -534,6 +534,12 @@ static ExtrusionEntityCollection traverse_extrusions(const PerimeterGenerator& p
                             best_endpoint = it;
                     if (best_endpoint != point_occurrence.cend())
                         start_point = best_endpoint->first;
+                    // Match native traversal for one fully supported open path with distinct endpoints.
+                    // Other topologies retain the supported-endpoint and coordinate preference above.
+                    if (paths.size() == 1 && point_occurrence.size() == 2 &&
+                        !point_occurrence.at(paths.front().first_point()).is_overhang &&
+                        !point_occurrence.at(paths.front().last_point()).is_overhang)
+                        start_point = paths.front().last_point();
                 }
 
                 chain_and_reorder_extrusion_paths(paths, &start_point);
