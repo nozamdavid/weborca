@@ -338,6 +338,7 @@ endif ()
 # Proposal for C++ unit tests and sandboxes
 option(SLIC3R_BUILD_SANDBOXES   "Build development sandboxes" OFF)
 option(BUILD_TESTS       "Build unit tests" OFF)
+option(ORCA_STITCH_REGRESSION "Build focused native/WASM stitch regression target" OFF)
 option(ORCA_TOOLS       "Build Orca tools" OFF)
 
 if (FLATPAK)
@@ -1327,6 +1328,10 @@ endif ()
 
 if(SLIC3R_BUILD_SANDBOXES)
     add_subdirectory(sandboxes)
+endif()
+
+if(ORCA_STITCH_REGRESSION)
+    add_subdirectory(wasm/tests/native-stitch)
 endif()
 
 if(BUILD_TESTS)
