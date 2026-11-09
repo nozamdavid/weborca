@@ -98,7 +98,6 @@ const PresetRow: React.FC<{
 /** The process switches desktop keeps next to the preset: support, brim, prime tower and ironing. */
 const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({ disabled, multiFilament }) => {
     const { t } = useTranslation();
-  const [flushOpen, setFlushOpen] = useState(false);
   const [modifiedOpen, setModifiedOpen] = useState(false);
   const layout = useAppStore((s) => s.layout);
   const presetConfig = useAppStore((s) => s.presetConfig);
@@ -127,14 +126,13 @@ const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({
       ))}
       {changedCount > 0 && <button id="modified-open" className="ds-btn" onClick={() => setModifiedOpen(true)}>{t('Modified')} · {changedCount}</button>}
       {modifiedOpen && <ModifiedSettingsDialog onClose={() => setModifiedOpen(false)} />}
-      {multiFilament && <button id="flush-open" className="ds-btn" disabled={disabled} onClick={() => setFlushOpen(true)}>{t("Flushing volumes...")}</button>}
-      {flushOpen && <FlushVolumesDialog onClose={() => setFlushOpen(false)} />}
     </div>
   );
 };
 
 export const PrepareSidebar: React.FC = () => {
     const { t } = useTranslation();
+  const [flushOpen, setFlushOpen] = useState(false);
   const sidebarWidth = usePrefsStore((s) => s.display.sidebarWidth);
   const sidebarRef = useRef<HTMLElement>(null);
   const [renderedWidth, setRenderedWidth] = useState(sidebarWidth);
@@ -206,6 +204,8 @@ export const PrepareSidebar: React.FC = () => {
 
   const filamentHeaderActions = (
     <Toolbar label={t('Filament')}>
+      {activeFilaments.length > 1 && <button type="button" id="flush-open" className="ds-btn filament-flush-btn"
+        disabled={isBusy || !selectedProcess} onClick={() => setFlushOpen(true)}>{t("Flushing volumes...")}</button>}
       <button
         type="button"
         id="add-filament-btn"
@@ -424,6 +424,8 @@ export const PrepareSidebar: React.FC = () => {
             })}
           </div>
         </Section>
+
+        {flushOpen && <FlushVolumesDialog onClose={() => setFlushOpen(false)} />}
 
         <Section id="process" title={t("Process")}>
           <PresetRow kind="process" disabled={isBusy} selectDisabled={isBusy || !selectedPrinter || processes.length === 0} placeholder={t("Select process...")} system={processes} user={user('process')}

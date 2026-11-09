@@ -30,6 +30,10 @@ async function runSuite(browserType, name) {
     await page.click('#add-filament-btn');
     await page.waitForFunction(() => window.__appStore.getState().selectedFilaments.length === 2, null, { timeout: 15000 });
     await page.waitForSelector('#flush-open');
+    assert.deepEqual(await page.locator('#flush-open').evaluate(button => {
+      const toolbar = button.closest('[role="toolbar"]');
+      return [...toolbar.querySelectorAll('button')].map(item => item.id);
+    }), ['flush-open', 'add-filament-btn', 'remove-filament-btn']);
 
     // Editing slot 2 must not make this project-wide matrix target slot 2.
     await page.click('#edit-filament-btn-2');
@@ -54,8 +58,9 @@ async function runSuite(browserType, name) {
     await page.evaluate(async () => {
       await window.__appStore.getState().applyOptionChange('nozzle_temperature', '237', 'filament', undefined, 1);
     });
-    await page.click('#save-filament-btn-2');
-    await page.fill('#preset-name-input', 'Flush test filament');
+    await page.click('#edit-filament-btn-2');
+    await page.getByTestId('save-dialog-preset-btn').click();
+    await page.locator('[data-testid="save-preset-dialog"] input').fill('Flush test filament');
     await page.evaluate(() => {
       const engine = window.__orcaEngine;
       const original = engine.call.bind(engine);
@@ -85,6 +90,7 @@ async function runSuite(browserType, name) {
     assert.equal(await page.evaluate(() => window.__appStore.getState().engineError), null);
 
     log('the dialog shows what was applied, and auto-calculate replaces the values');
+    await page.getByTestId('close-dialog-btn').click();
     await page.click('#flush-open');
     assert.equal(await page.inputValue('#flush-0-1'), '500');
     await page.click('#flush-auto');

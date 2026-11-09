@@ -58,6 +58,15 @@ export async function getEngine(): Promise<OrcaEngine> {
   const current = generation;
   const controller = new AbortController();
   initController = controller;
+  // User Timing separates cache access/transfer from worker/WASM runtime startup.
+  // A cached binary still needs compilation, memory and native initialization.
+  const mark = (stage: string) => {
+    const name = `orca-engine:${stage}`;
+    performance.clearMarks(name);
+    performance.mark(name);
+  };
+  mark('start');
+  let lastPhase = '';
   initPromise = (async () => {
     try {
       const threads = resolveSlicingThreads(usePrefsStore.getState().general.slicingThreads);
@@ -70,10 +79,15 @@ export async function getEngine(): Promise<OrcaEngine> {
         profilesUrl: '/profiles/',
         threads,
         signal: controller.signal,
-        onProgress: progress => { if (current === generation) progressListener?.(progress); }
+        onProgress: progress => {
+          if (current !== generation) return;
+          if (progress.phase !== lastPhase) { mark(progress.phase); lastPhase = progress.phase; }
+          progressListener?.(progress);
+        }
       });
       if (current !== generation) { engine.dispose(); throw new Error('Engine startup canceled'); }
       engineInstance = engine;
+      mark('runtime-ready');
       if (typeof window !== 'undefined') {
         (window as any).__orcaEngine = engine;
       }

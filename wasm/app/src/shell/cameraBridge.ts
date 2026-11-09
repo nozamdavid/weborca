@@ -22,3 +22,10 @@ export function registerCameraHandler(fn: (view: CameraView) => void): () => voi
 
 export const setCameraView = (view: CameraView) => handler?.(view);
 export const zoomToBed = () => handler?.('BED');
+
+let orbitHandler: ((dx: number, dy: number) => void) | null = null;
+export function registerCameraOrbitHandler(fn: (dx: number, dy: number) => void): () => void {
+  orbitHandler = fn;
+  return () => { if (orbitHandler === fn) orbitHandler = null; };
+}
+export const orbitCamera = (dx: number, dy: number) => orbitHandler?.(dx, dy);

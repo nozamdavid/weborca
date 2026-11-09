@@ -103,7 +103,7 @@ export function MobileHeader() {
 export function MobileNavigation({ activeTab, setActiveTab }: { activeTab: TabId; setActiveTab: (tab: TabId) => void }) {
   const { t } = useTranslation();
   return <nav className="wm-nav" aria-label={t('Main navigation')}>
-    {(['prepare', 'preview', 'device', 'calibration'] as const).map(tab => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined}
+    {(['prepare', 'preview', 'device'] as const).map(tab => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined}
       onClick={() => setActiveTab(tab)}>{t(tab[0].toUpperCase() + tab.slice(1))}</button>)}
   </nav>;
 }

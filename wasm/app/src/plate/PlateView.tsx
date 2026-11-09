@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
 import { useAppStore } from '../store/appStore';
@@ -30,7 +30,7 @@ import { RepairBadge, useRepairStore } from '../repair';
 import { useEditOpsStore, FlattenPanel, BrimEarsPanel } from '../editops';
 import { CanvasToolbar, ViewButtons } from '../shell/CanvasToolbar';
 import type { CanvasTool } from '../shell/CanvasToolbar';
-import { registerCameraHandler, setCameraView } from '../shell/cameraBridge';
+import { registerCameraHandler, registerCameraOrbitHandler, setCameraView } from '../shell/cameraBridge';
 import type { CameraView } from '../shell/cameraBridge';
 import { RedoIcon, UndoIcon } from '../shell/glyphs';
 import { useTranslation } from "../i18n";
@@ -262,9 +262,6 @@ export const PlateView: React.FC = () => {
   // While native startup is pending, show the JS bed/grid already built by
   // PlateScene. Once ready, replace it with the selected printer's artwork.
   // Invalidate older asynchronous artwork loads before the next paint.
-  useLayoutEffect(() => {
-    sceneRef.current?.setBedLoading(isEngineReady);
-  }, [isEngineReady, bedConfigLoading, vendor, printer, userPrinters, bedConfig, currentConfig.bed_custom_model, currentConfig.bed_custom_texture]);
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene || bedConfigLoading || !printer) return;
@@ -735,6 +732,7 @@ export const PlateView: React.FC = () => {
   );
 
   useEffect(() => registerCameraHandler((view) => sceneRef.current?.setCameraView(view)), []);
+  useEffect(() => registerCameraOrbitHandler((dx, dy) => sceneRef.current?.orbitCamera(dx, dy)), []);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

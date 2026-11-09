@@ -27,7 +27,6 @@ import { FixesDialog } from './settings/FixesDialog';
 import { SavePresetDialog } from './settings/SavePresetDialog';
 import { SettingsDialog } from './settings/SettingsDialog';
 import { useAppStore } from './store/appStore';
-import { CalibrationPage } from './shell/CalibrationPage';
 import { HelpDialogs } from './shell/HelpDialogs';
 import { PrepareSidebar } from './shell/PrepareSidebar';
 import { TopBar } from './shell/TopBar';
@@ -41,7 +40,7 @@ import { EditOpsDialogs } from './editops';
 import { PreferencesDialog, usePrefsStore } from './prefs';
 import type { TabId } from './shell/TopBar';
 
-const TAB_IDS: TabId[] = ['prepare', 'preview', 'device', 'calibration'];
+const TAB_IDS: TabId[] = ['prepare', 'preview', 'device'];
 
 function tabFromPath(): TabId {
   const name = window.location.pathname.replace(/^\/+|\/+$/g, '');
@@ -83,7 +82,13 @@ export const App: React.FC = () => {
     if (tabFromPath() !== tab) window.history.pushState(null, '', `/${tab}`);
   }, []);
   useEffect(() => {
-    const onPop = () => setActiveTabState(tabFromPath());
+    const onPop = () => {
+      if (/^\/calibration\/?$/.test(window.location.pathname)) {
+        window.history.replaceState(null, '', `/prepare${window.location.search}${window.location.hash}`);
+      }
+      setActiveTabState(tabFromPath());
+    };
+    onPop();
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
@@ -181,9 +186,6 @@ export const App: React.FC = () => {
         </div>
         <div className="tab-page" hidden={activeTab !== 'device'}>
           <DevicePanel active={activeTab === 'device'} />
-        </div>
-        <div className="tab-page" hidden={activeTab !== 'calibration'}>
-          <CalibrationPage />
         </div>
 
         {isSlicing && (
