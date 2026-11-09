@@ -540,6 +540,7 @@ export class PlateScene {
       const outlineGeo = new THREE.BufferGeometry().setFromPoints(outlinePoints);
       const outlineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 });
       const outlineLine = new THREE.Line(outlineGeo, outlineMat);
+      outlineLine.name = 'bed-boundary';
       this.bedGroup.add(outlineLine);
     }
 
@@ -584,25 +585,17 @@ export class PlateScene {
     this.scene.add(mesh);
   }
 
-  /** Hide every plate surface until its outline and artwork are ready together. */
+  /** Invalidate pending artwork without hiding the usable JS bed. */
   public setBedLoading(loading: boolean): void {
     if (loading) this.bedAssetRevision++;
-    this.bedGroup.visible = !loading;
-    this.extraBedsGroup.visible = !loading;
-    this.plateLabelGroup.visible = !loading;
   }
 
   /** Decorative bed assets are kept outside object picking and never enter the slicing model. */
   public async setBedAssets(assets: { model?: string; texture?: string }): Promise<void> {
     this.setBedLoading(true);
     const revision = this.bedAssetRevision;
-    delete this.scene.userData.lightTheme;
-    this.bedTexture?.dispose();
-    this.bedTexture = null;
-    this.bedModelPoints = null;
-    this.buildBed();
-    this.rebuildPlates();
-    if (this.bedFloorMaterial) { this.bedFloorMaterial.map = null; this.bedFloorMaterial.needsUpdate = true; }
+    let nextTexture: THREE.Texture | null = null;
+    let nextPoints: [number, number][] | null = null;
     const tasks: Promise<void>[] = [];
     if (assets.texture) tasks.push(new THREE.TextureLoader().loadAsync(assets.texture).then((texture) => {
       if (revision !== this.bedAssetRevision || this.isDestroyed) { texture.dispose(); return; }
@@ -619,20 +612,23 @@ export class PlateScene {
       texture.dispose();
       const bedTexture = new THREE.CanvasTexture(canvas);
       bedTexture.colorSpace = THREE.SRGBColorSpace;
-      this.bedTexture = bedTexture;
-      if (this.bedFloorMaterial) { this.bedFloorMaterial.map = bedTexture; this.bedFloorMaterial.color.setHex(0xffffff); this.bedFloorMaterial.needsUpdate = true; }
+      nextTexture = bedTexture;
     }));
     if (assets.model) tasks.push(loadBedModelOutline(assets.model).then((points) => {
       if (revision !== this.bedAssetRevision || this.isDestroyed) return;
-      this.bedModelPoints = points;
-      this.buildBed();
-      this.rebuildPlates();
+      nextPoints = points;
     }));
     for (const result of await Promise.allSettled(tasks)) if (result.status === 'rejected') console.warn('[Bed assets]', result.reason);
     if (revision === this.bedAssetRevision && !this.isDestroyed) {
+      delete this.scene.userData.lightTheme;
+      this.bedTexture?.dispose();
+      this.bedTexture = nextTexture;
+      this.bedModelPoints = nextPoints;
+      this.buildBed();
+      this.rebuildPlates();
       this.setBedLoading(false);
       if (this.initialBedFit && this.hasVisibleSize) this.fitBed();
-    }
+    } else (nextTexture as THREE.Texture | null)?.dispose();
   }
 
   private bedOutline(): [number, number][] {
@@ -667,6 +663,20 @@ export class PlateScene {
     this.plates = plates.length > 0 ? plates : this.plates;
     this.activePlateIndex = activeIndex;
     this.rebuildPlates();
+  }
+
+  public orbitCamera(dx: number, dy: number): void {
+    const controls = this.orbitControls as any;
+    const height = this.renderer.domElement.clientHeight;
+    if (!height || !controls.enabled) return;
+    if (this.perspectiveOnOrbit && usePrefsStore.getState().display.autoPerspective) {
+      this.setCameraType('perspective');
+      usePrefsStore.getState().setDisplayPref('cameraType', 'perspective');
+      this.perspectiveOnOrbit = false;
+    }
+    controls._rotateLeft(2 * Math.PI * dx * controls.rotateSpeed * (this.invertOrbitHorizontal ? -1 : 1) / height);
+    controls._rotateUp(2 * Math.PI * dy * controls.rotateSpeed * (this.invertOrbitVertical ? -1 : 1) / height);
+    controls.update();
   }
 
   /** Moves the view to the given plate, keeping the viewing direction and distance. */
@@ -727,6 +737,8 @@ export class PlateScene {
   }
 
   private rebuildPlates(): void {
+    const boundary = this.bedGroup.getObjectByName("bed-boundary") as THREE.Line | undefined;
+    if (boundary) (boundary.material as THREE.LineBasicMaterial).color.setHex(this.activePlateIndex === 0 ? 0x38bdf8 : 0x475569);
     this.disposeChildren(this.plateLabelGroup);
     this.disposeChildren(this.extraBedsGroup);
     const { width, depth, center } = this.bedConfig;

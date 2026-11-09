@@ -17,7 +17,7 @@ import { exportGcode, exportGcodeToFile } from './exportGcode';
 import { exportPlateAsStl, exportModels } from './exportStl';
 import { exportPlateSlicedFile, exportAllPlateSlicedFiles } from './exportPlateSlicedFile';
 import { getRecentFiles, openRecentFile } from './recentFiles';
-import { ImportIcon, RedoIcon, UndoIcon } from './glyphs';
+import { RedoIcon, UndoIcon } from './glyphs';
 import { useHelpStore } from './HelpDialogs';
 import { useProjectNotesStore } from './ProjectNotesDialog';
 import { usePrefsStore } from '../prefs/prefsStore';
@@ -26,13 +26,12 @@ import { useTranslation } from "../i18n";
 import { AutosaveStatus } from './AutosaveStatus';
 import { rovingKeyDown, useRovingFocus } from '../components/rovingFocus';
 
-export type TabId = 'prepare' | 'preview' | 'device' | 'calibration';
+export type TabId = 'prepare' | 'preview' | 'device';
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'prepare', label: "Prepare" },
   { id: 'preview', label: "Preview" },
-  { id: 'device', label: "Device" },
-  { id: 'calibration', label: "Calibration" }
+  { id: 'device', label: "Device" }
 ];
 
 interface Item {
@@ -713,16 +712,6 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
             e.target.value = '';
           }}
         />
-        <button
-          className="ds-icon-btn icon-btn"
-          id="import-btn"
-          title={t("Import model (Ctrl+I)")}
-          aria-label={t("Import model")}
-          disabled={isBusy}
-          onClick={importModel}
-        >
-          <ImportIcon />
-        </button>
         <button
           className="ds-icon-btn icon-btn"
           id="undo-btn"

@@ -38,10 +38,11 @@ async function runSuite(browserType, name) {
     assert.equal(await visible(), 0);
 
     log('each path opens its tab directly, and an unknown path opens Prepare');
-    for (const [p, index] of [['/calibration', 3], ['/preview', 1], ['/nothing-here', 0]]) {
+    for (const [p, index] of [['/calibration', 0], ['/preview', 1], ['/nothing-here', 0]]) {
       await page.goto(`${BASE_URL}${p}`);
       await ready();
       assert.equal(await visible(), index, p);
+      if (p === '/calibration') assert.equal(await path(), '/prepare');
     }
     log('all checks passed');
   } finally {

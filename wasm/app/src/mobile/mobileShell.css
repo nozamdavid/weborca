@@ -18,7 +18,7 @@
   .wm-brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .wm-brand img { width: 28px; height: 28px; }
   .wm-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-  .wm-nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; border-top: 1px solid #90909a; padding: 8px max(6px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); }
+  .wm-nav { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; border-top: 1px solid #90909a; padding: 8px max(6px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); }
   .wm-nav button { min-width: 0; font-size: .875rem; padding: 8px 1px; text-align: center; overflow-wrap: anywhere; background: transparent; border-color: transparent; }
   .wm-nav button[aria-current=page] { background: var(--accent-subtle); border-color: var(--text-primary); color: var(--text-primary); }
   .wm-header button, .wm-nav button, .wm-prepare button, .wm-sheet button, .wm-sheet summary {

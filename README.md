@@ -56,6 +56,15 @@ all fixture/full-output gates but shows no clear speed benefit, so production re
 small_vector. Stage reanalysis places the largest historical pooled difference in
 infill; the whole-process cost remains unresolved.
 
+Desktop UI polish was published on 2026-11-08: centered tabs, separate desktop
+menus and Calibration dialogs, camera-aligned XYZ cube axes, filament-header
+flushing controls, and one blue active plate. The [acceptance report](docs/v2.5.0-integration/desktop-ui-polish-20261108.md)
+records headed Helium tests, immutable r2 release and guarded rollback. All 1125
+non-UI files and the native compatibility pair are retained. One public warm
+reload transferred no engine WASM; runtime-ready was 400ms and sampled app-ready
+804ms. Cached bytes still require runtime and app/preset setup; no speedup or
+instant startup is claimed.
+
 The accumulated WebOrca app, alpha access and startup work is captured on the private
 [`nozamdavid/weborca` main branch](https://github.com/nozamdavid/weborca/tree/main).
 Verification reports and immutable release directories under `wasm/build` are local,

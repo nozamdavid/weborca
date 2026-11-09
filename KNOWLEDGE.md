@@ -1,5 +1,16 @@
 # WebOrca technical knowledge
 
+Desktop UI polish r2 is live (2026-11-08): centered tabs, separate desktop menus,
+Calibration dialogs, quaternion-projected exterior cube axes with legible XYZ,
+filament-header flush controls and one blue active plate outline. The
+[acceptance report](docs/v2.5.0-integration/desktop-ui-polish-20261108.md) retains
+the immutable candidate, all 1125 retained non-UI files, actual headed Helium
+tests and guarded rollback. Public warm runtime-ready was 400.240ms and sampled
+app-ready 803.795ms, with zero engine WASM requests. Cache reuse saves binary
+transfer; worker/runtime and app/preset setup still run. These bounded observations
+establish neither instant startup nor a speed improvement. Native parity and
+speed work remain open.
+
 Main human and agent entry point for engine/desktop parity and benchmark methodology. Updated 2026-11-08. This records observations, decisions and their limits; detailed reports retain reproduction commands and artifacts.
 
 ## Priority update — 2026-11-08
