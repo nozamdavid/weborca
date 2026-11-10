@@ -3,6 +3,7 @@
 This directory provides the CI workflow template, local validation tooling, and documentation for the OrcaSlicer WebAssembly port.
 
 - **Workflow Template**: [`wasm/ci/wasm.yml`](wasm.yml)
+- **Active Workflow**: [`.github/workflows/wasm.yml`](../../.github/workflows/wasm.yml)
 - **Local / CI Validation Entrypoint**: [`wasm/ci/check.sh`](check.sh)
 
 ---
@@ -16,7 +17,7 @@ bash wasm/ci/check.sh --check
 ```
 
 This lightweight entrypoint statically verifies:
-- YAML syntax of `wasm/ci/wasm.yml` using Python `yaml` (syntax validation only) or `actionlint` (GitHub Actions workflow schema validation when installed).
+- YAML syntax of `wasm/ci/wasm.yml` and `.github/workflows/wasm.yml` using Python `yaml` (syntax validation only) or `actionlint` (GitHub Actions workflow schema validation when installed).
 - Shell script syntax using `bash -n`.
 - Existence of all referenced source files, 15 Node unit test suites, and build scripts.
 - Clean checkout test fixture existence (`tests/data/20mm_cube.obj`, `tests/data/extruder_idler.obj`, `tests/data/frog_legs.obj`, `wasm/tests/data/two_cubes_multi.3mf`).
@@ -29,9 +30,17 @@ This lightweight entrypoint statically verifies:
 
 ---
 
-## 2. Workflow Template Status
+## 2. Enabling the Workflow in CI
 
-`wasm/ci/wasm.yml` is retained as a reference template. This repository has no active GitHub Actions workflows; CI will no longer run.
+The workflow is maintained as both a versioned port template in `wasm/ci/wasm.yml` and an active repository workflow in `.github/workflows/wasm.yml`:
+
+```bash
+mkdir -p .github/workflows
+cp wasm/ci/wasm.yml .github/workflows/wasm.yml
+```
+
+> [!NOTE]
+> The workflow is prepared and locally validated with static checks. Hosted execution on GitHub Actions runners has not run because pushing is not authorized in this environment.
 
 ---
 

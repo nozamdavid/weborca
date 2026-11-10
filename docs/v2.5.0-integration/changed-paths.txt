@@ -13,6 +13,14 @@
 .claude/skills/orca-wxwidgets/references/platforms.md
 .claude/skills/orca-wxwidgets/references/popups-menus.md
 .claude/skills/orca-wxwidgets/references/webview-gl-aui-media.md
+.github/workflows/build_all.yml
+.github/workflows/build_check_cache.yml
+.github/workflows/build_deps.yml
+.github/workflows/build_orca.yml
+.github/workflows/check_locale.yml
+.github/workflows/check_profiles.yml
+.github/workflows/clang_tidy.yml
+.github/workflows/parity_nightly.yml
 CMakeLists.txt
 CONTRIBUTING.md
 README.md
