@@ -1,0 +1,31 @@
+.workflow-quick, .workflow-scope, .workflow-review { padding: 12px; overflow-wrap: anywhere; }
+.workflow-quick fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.workflow-setting { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; margin-block: 14px; }
+.workflow-setting p, .workflow-quick > p, .workflow-review p { color: var(--text-secondary); font-size: 12px; margin: 4px 0 8px; }
+.workflow-setting .setting-control-wrapper { max-width: 100%; }
+.workflow-setting .setting-control-wrapper { flex-wrap: wrap; }
+.workflow-setting .setting-inline-error { flex-basis: 100%; color: var(--danger-fg); }
+.workflow-scope ul { padding-left: 18px; margin-block: 6px; }
+.workflow-scope button { margin-top: 6px; }
+.workflow-review { flex-basis: 100%; }
+.workflow-view-toggle { margin: 8px 12px 0; }
+.workflow-preset-actions { flex: 0 0 auto; }
+.workflow-preset-actions summary { display: flex; align-items: center; justify-content: center; cursor: pointer; min-width: 30px; min-height: 30px; }
+.workflow-preset-actions summary svg { width: 18px; height: 18px; }
+.workflow-preset-actions[open] { flex-basis: 100%; }
+.workflow-preset-actions[open] summary { justify-content: flex-end; }
+#prepare-settings-view:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.workflow-scope summary { cursor: pointer; padding-block: 6px; }
+@media (max-width: 800px) { .workflow-setting p, .workflow-review p { font-size: 14px; } }
+@media (max-width: 800px) {
+  .wm-prepare .workflow-quick { padding: 0; }
+  .wm-prepare .workflow-quick fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .wm-prepare .workflow-setting { display: block; margin: 0; min-width: 0; }
+  .wm-prepare .workflow-setting > svg { display: none; }
+  .wm-prepare .workflow-setting[data-setting="brim_type"] { grid-column: 1 / -1; }
+  .wm-prepare .workflow-setting .mobile-select .ds-dropdown__value { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wm-prepare .workflow-setting p { display: none; }
+  .wm-prepare .workflow-setting label { display: block; margin-block: 6px; }
+  .wm-prepare .workflow-setting :is(input, select) { min-width: 0; max-width: 100%; min-height: 44px; }
+  .wm-prepare .workflow-scope { padding: 0; }
+}

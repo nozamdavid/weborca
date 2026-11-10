@@ -1,0 +1,67 @@
+.canvas-prepare-page { position: relative; min-height: 0; }
+.canvas-prepare { position: absolute; inset: 0; min-height: 0; --canvas-bg: #9e9e9e; }
+.prepare-page .canvas-prepare > .plate-view { position: absolute !important; inset: 0; height: 100% !important; min-height: 0; flex: none; border: 0; }
+[data-theme="dark"] .canvas-prepare { --canvas-bg: #252729; }
+.canvas-prepare-controls { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
+.canvas-prepare-top { display: flex; justify-content: center; gap: 10px; padding: 6px 12px; }
+.canvas-island, .canvas-objects { display: flex; background: #202020; color: #eee; border-radius: 3px; box-shadow: 0 3px 9px #0004; pointer-events: auto; }
+.canvas-island button, .canvas-objects button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 50px; min-height: 50px; padding: 5px 10px; background: transparent; color: inherit; border: 0; border-radius: 3px; font-size: 11px; }
+.canvas-island button:hover, .canvas-objects button:hover { background: #383838; }
+.canvas-island button:disabled { opacity: .4; }
+.canvas-island button[aria-expanded="true"] { background: #414141; }
+.canvas-island svg, .canvas-island img, .canvas-objects img { width: 22px; height: 22px; }
+.canvas-island img, .canvas-objects img { filter: grayscale(1) brightness(0) invert(1); }
+.canvas-printer { flex: 0 1 450px; min-width: 160px; }
+.canvas-printer > button:first-child { flex: 1; flex-direction: row; justify-content: flex-start; min-width: 0; text-align: left; font-size: 13px; }
+.canvas-printer span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas-printer small { display: block; font-size: 11px; overflow: hidden; text-overflow: ellipsis; margin-top: 4px; }
+.canvas-output { background: var(--accent-color, #008f83); }
+.canvas-output > button:first-child { flex-direction: row; font-size: 13px; }
+.canvas-objects { position: absolute; left: 12px; bottom: 18px; }
+.canvas-prepare-panel { pointer-events: auto; position: absolute; top: 68px; right: 16px; width: min(420px, calc(100% - 32px)); max-height: calc(100% - 90px); overflow: auto; background: var(--panel-bg); color: var(--text-color); border-radius: 4px; box-shadow: 0 5px 18px #0005; padding: 12px; }
+.canvas-panel-projects { left: 16px; right: auto; width: 240px; }
+.canvas-panel-objects { left: 72px; right: auto; top: auto; bottom: 18px; }
+.canvas-prepare-panel > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.canvas-project-menu { display: grid; gap: 6px; }
+.prepare-panel-content .sidebar-scroll { overflow: visible; }
+.prepare-panel-content .sidebar-footer { position: static; }
+.canvas-prepare-panel .preset-row { flex-wrap: wrap; }
+.canvas-prepare-panel .preset-row .mobile-select { flex: 1 1 140px; min-width: 0; max-width: 100%; }
+.canvas-scene-tools #plate-selector-bar > div:has(> #plate-settings-popover) { flex-basis: 100%; min-width: 0; }
+.canvas-scene-tools #plate-settings-popover { position: static !important; min-width: 0 !important; width: 100%; max-width: 100%; box-sizing: border-box; margin-top: 8px; }
+.canvas-scene-tools #plate-settings-popover label { flex-wrap: wrap; }
+.canvas-scene-tools #plate-settings-popover select { min-width: 0; max-width: 100%; }
+.canvas-prepare-panel fieldset { border: 0; padding: 0; min-width: 0; }
+.canvas-prepare-panel label { display: block; margin-bottom: 12px; }
+.canvas-prepare .canvas-toolbar { top: auto; bottom: 80px; max-height: calc(100% - 160px); }
+@media (max-width: 700px) {
+  .canvas-prepare-top { flex-wrap: wrap; gap: 5px; padding: 6px; justify-content: flex-start; }
+  .canvas-printer { order: 5; flex-basis: 100%; }
+  .canvas-island button { min-height: 44px; min-width: 44px; padding: 4px 7px; }
+  .canvas-history { display: none; }
+  .canvas-output { margin-left: auto; }
+  .canvas-prepare-panel { top: 120px; max-height: calc(100% - 140px); right: 8px; width: calc(100% - 16px); }
+  .canvas-panel-projects, .canvas-panel-objects { left: 8px; bottom: auto; }
+}
+.canvas-prepare .canvas-toolbar.ds-toolbar { top: auto; bottom: 80px; }
+.canvas-prepare .view-buttons { top: 75px; }
+.canvas-output > button:last-child { min-width: 30px; padding: 4px; }
+.canvas-scene-rail { position: absolute; left: 12px; bottom: 82px; display: flex; flex-direction: column; gap: 2px; padding: 4px; background: #202020; color: #eee; border-radius: 4px; z-index: 18; }
+.canvas-scene-rail button { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 52px; min-height: 44px; padding: 4px; background: transparent; color: inherit; border: 0; font-size: 10px; }
+.canvas-scene-rail svg { width: 22px; height: 22px; }
+.canvas-scene-rail button:hover { background: #414141; }
+.canvas-scene-tools { position: absolute; z-index: 19; left: 76px; bottom: 20px; width: min(430px, calc(100% - 88px)); max-height: calc(100% - 150px); overflow: auto; padding: 12px; background: var(--panel-bg); color: var(--text-color); border-radius: 4px; box-shadow: 0 5px 18px #0005; }
+.canvas-scene-tools header { display: flex; justify-content: space-between; margin-bottom: 12px; }
+.canvas-scene-tool-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 4px; }
+.canvas-scene-tool-grid button { display: flex; align-items: center; flex-direction: column; justify-content: center; gap: 4px; min-height: 52px; font-size: 11px; }
+.canvas-scene-tool-grid button[aria-pressed="true"] { background: var(--accent-color); }
+.canvas-prepare .canvas-scene-tools .view-buttons { position: static; display: flex !important; flex-wrap: wrap; transform: none; margin: 12px 0; }
+.canvas-prepare .canvas-scene-tools #plate-selector-bar { display: flex !important; }
+@media (max-width: 700px) {
+  .canvas-prepare-top { gap: 4px; }
+  .canvas-prepare-top > .canvas-island:not(.canvas-printer) button { min-width: 36px; padding: 4px; font-size: 10px; }
+  .canvas-output > button:first-child { font-size: 11px; }
+  .canvas-scene-tools { left: 8px; bottom: 280px; width: calc(100% - 16px); max-height: calc(100% - 410px); }
+  .canvas-prepare #plate-toolbar { display: flex; top: auto; bottom: 76px; max-width: calc(100% - 24px); max-height: 160px; }
+  .canvas-prepare .view-buttons { top: 130px; }
+}

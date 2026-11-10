@@ -9,12 +9,17 @@ import { slicePrerequisites } from '../shell/slicePrerequisites';
 import type { ProgressNotification, SliceResult } from '../engine/types';
 import { plateTitle } from './plateName';
 import type { PlateInfo } from './types';
+import type { BatchOutput } from './batchOutput';
+
+let outputRevision = 0;
 
 export interface PlatesStoreState {
   plates: PlateInfo[];
   activePlateIndex: number;
   isLoading: boolean;
   error: string | null;
+  batch: { outputs: BatchOutput[]; total: number; running: boolean } | null;
+  invalidateBatch: () => void;
 
   // Actions
   fetchPlates: () => Promise<PlateInfo[]>;
@@ -47,6 +52,11 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
   activePlateIndex: 0,
   isLoading: false,
   error: null,
+  batch: null,
+  invalidateBatch: () => {
+    outputRevision++;
+    set({ batch: null });
+  },
 
   fetchPlates: async () => {
     try {
@@ -96,11 +106,12 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
       const app = useAppStore.getState();
       if (index !== get().activePlateIndex && app.isSlicing) app.cancelSlice();
       set({ activePlateIndex: index });
-      if (app.sliceResult?.plateIndex !== index) app.invalidateSlicePreview();
+      if (app.sliceResult?.plateIndex !== index) app.invalidateSlicePreview(true);
     }
   },
 
   addPlate: async (name?: string, config?: Record<string, string>) => {
+    useAppStore.getState().invalidateSlicePreview();
     try {
       set({ isLoading: true, error: null });
       const engine = await getEngine();
@@ -122,6 +133,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
   },
 
   duplicatePlate: async (index) => {
+    useAppStore.getState().invalidateSlicePreview();
     try {
       set({ isLoading: true, error: null });
       const engine = await getEngine();
@@ -141,6 +153,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
       || get().isLoading || app.isSlicing || app.isModelLoading || app.isSelectingPreset
       || useHistoryStore.getState().isRestoring) return get().plates;
     const active = get().activePlateIndex;
+    app.invalidateSlicePreview();
     try {
       set({ isLoading: true, error: null });
       const engine = await getEngine();
@@ -165,6 +178,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
     name?: string,
     locked?: boolean
   ) => {
+    useAppStore.getState().invalidateSlicePreview();
     try {
       const engine = await getEngine();
       // The engine creates its first plate when the plates are first listed; renaming that one needs it to exist.
@@ -185,6 +199,9 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
   slicePlate: async (plateIndex: number) => {
     const appState = useAppStore.getState();
     if (slicePrerequisites(appState, useHistoryStore.getState().isRestoring)) return false;
+    const revision = outputRevision;
+    const config = { ...appState.currentConfig, ...get().plates.find(plate => plate.index === plateIndex)?.config };
+    const provenance = { printer: appState.selectedPrinter, nozzle: config.nozzle_diameter, filaments: [...appState.selectedFilaments], config };
 
     const abortController = new AbortController();
     useAppStore.setState({
@@ -211,7 +228,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
       });
 
       // A plate switch can cancel a slice just as its worker finishes.
-      if (abortController.signal.aborted) throw new DOMException('Slicing canceled', 'AbortError');
+      if (abortController.signal.aborted || revision !== outputRevision) throw new DOMException('Slicing canceled', 'AbortError');
       set({ activePlateIndex: plateIndex });
 
       const { gcodeUrl: oldUrl } = useAppStore.getState();
@@ -224,7 +241,7 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
         isSlicing: false,
         slicePercent: 100,
         sliceStatusText: `Plate ${plateIndex + 1} slicing complete!`,
-        sliceResult: { ...result, plateIndex },
+        sliceResult: { ...result, plateIndex, provenance },
         sessionRecovery: 'idle',
         gcodeUrl,
         abortController: null
@@ -243,12 +260,25 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
   },
 
   sliceAll: async () => {
-    if (useAppStore.getState().isSlicing) return;
+    if (useAppStore.getState().isSlicing || get().batch?.running) return;
+    const batch = { outputs: [] as BatchOutput[], total: 0, running: true };
+    set({ batch });
     const plates = await get().fetchPlates();
-    for (const plate of plates) {
-      if (!plate.instances.length) continue;
+    if (get().batch !== batch) return;
+    const targets = plates.filter(plate => plate.instances.length);
+    batch.total = targets.length;
+    set({ batch });
+    for (const plate of targets) {
+      if (get().batch !== batch) break;
       if (!await get().slicePlate(plate.index)) break;
+      if (get().batch !== batch) break;
+      const result = useAppStore.getState().sliceResult;
+      if (!result?.gcode.length || result.plateIndex !== plate.index) break;
+      batch.outputs = [...batch.outputs, { plateIndex: plate.index, name: plate.name, gcode: result.gcode, provenance: result.provenance }];
+      // Keep a stable identity for invalidation across intermediate result updates.
+      set({ batch });
     }
+    if (get().batch === batch) set({ batch: { ...batch, running: false } });
   }
 }));
 

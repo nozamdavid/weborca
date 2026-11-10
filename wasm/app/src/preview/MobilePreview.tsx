@@ -13,6 +13,8 @@ import { GCodeWindow } from './GCodeWindow';
 import { formatPrintTime } from './SliceStatsPanel';
 import type { PreviewViewType } from './types';
 import './MobilePreview.css';
+import { OutputReview } from './OutputReview';
+import { hasPlateOutput } from '../plates/resultState';
 
 const schemes: [PreviewViewType, string][] = [
   ['FeatureType', 'Line type'], ['Speed', 'Speed'], ['ActualSpeed', 'Actual speed'],
@@ -87,7 +89,7 @@ export function MobilePreview({ canvas, active, loading, error, resetCamera }: {
   const input = useRef<HTMLInputElement>(null);
   const [sheet, setSheet] = useState<'controls' | 'stats' | null>(null);
   const ready = p.isInitialized && p.layersCount > 0 && !loading && !p.isLoading && !error && !slicing;
-  const canExport = ready && !!result?.gcode?.length && (result.plateIndex ?? plate) === plate;
+  const canExport = ready && hasPlateOutput(result, plate);
   useEffect(() => { if (!active || !ready) setSheet(null); }, [active, ready]);
   const close = () => setSheet(null);
   return <div className="mp-preview">
@@ -122,6 +124,7 @@ export function MobilePreview({ canvas, active, loading, error, resetCamera }: {
         <button disabled={!canSlice || !!engineError || slicing} onClick={() => void startSlice()}>{t('Re-slice')}</button></>}
     </section>}
     <footer className="mp-footer">
+      {canExport && <OutputReview />}
       <input ref={input} hidden type="file" accept=".gcode" aria-label={t('Open G-code')} onChange={e => {
         const file = e.target.files?.[0]; e.target.value = ''; if (file) void openGcode(file);
       }} />

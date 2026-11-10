@@ -180,7 +180,7 @@ export class PlateScene {
   private initialBedFit = true;
   private isInViewport = true;
 
-  constructor(container: HTMLElement, bedConfig: BedConfig, callbacks: PlateSceneCallbacks) {
+  constructor(container: HTMLElement, bedConfig: BedConfig, callbacks: PlateSceneCallbacks, private canvasFirst = false) {
     this.container = container;
     this.bedConfig = bedConfig;
     this.callbacks = callbacks;
@@ -191,6 +191,7 @@ export class PlateScene {
     this.showAxes = prefs.display.showAxes;
     this.showLabels = prefs.display.showLabels;
     this.showBuildVolume = prefs.display.showBuildVolume;
+    if (canvasFirst) { this.showGrid = false; this.showBuildVolume = false; this.showAxes = false; }
     this.showWireframe = prefs.display.showWireframe;
     this.cameraType = prefs.display.cameraType || prefs.camera.defaultCameraType || 'perspective';
     this.invertMouseWheelZoom = prefs.camera.invertMouseWheelZoom;
@@ -515,6 +516,12 @@ export class PlateScene {
     const cy = center[1];
     const points = this.bedOutline();
     const { floor: floorGeo, grid: gridGeo } = createBedGeometry(this.bedConfig, points);
+    // SVG bed artwork contains alpha. Keep the real outline beneath it opaque.
+    if (this.canvasFirst) {
+      const foundation = new THREE.Mesh(floorGeo.clone(), new THREE.MeshBasicMaterial({ color: 0x363636, side: THREE.DoubleSide }));
+      foundation.position.set(cx, cy, -0.2);
+      this.bedGroup.add(foundation);
+    }
 
     // 1. Bed Floor Mesh (slightly below Z=0 to prevent z-fighting with models)
     const floorMat = new THREE.MeshBasicMaterial({
@@ -946,7 +953,7 @@ export class PlateScene {
       for (const [x, y] of this.bedOutline()) bounds.expandByPoint(new THREE.Vector3(x + origin[0], y + origin[1], origin[2]));
     }
     const { span } = this.plateLayout();
-    this.fitBounds(bounds, new THREE.Vector3(0, -1.5, 1.2), span * Math.hypot(1.5, 1.2));
+    this.fitBounds(bounds, this.canvasFirst ? new THREE.Vector3(-0.65, -1.5, 1.6) : new THREE.Vector3(0, -1.5, 1.2), span * (this.canvasFirst ? 1.45 : Math.hypot(1.5, 1.2)));
   }
 
   private fitBounds(bounds: THREE.Box3, direction: THREE.Vector3, minimumDistance: number): void {
@@ -2436,7 +2443,7 @@ export class PlateScene {
     this.orthographicCamera.updateProjectionMatrix();
 
     this.renderer.setSize(width, height);
-    if (this.initialViewportFit) {
+    if (this.initialViewportFit || (this.canvasFirst && this.initialBedFit)) {
       this.initialViewportFit = false;
       this.fitBed();
     }
@@ -2464,8 +2471,8 @@ export class PlateScene {
     if (this.scene.userData.lightTheme !== light) {
       this.scene.userData.lightTheme = light;
       this.updateVolumeMaterials();
-      (this.scene.background as THREE.Color).setHex(light ? 0xe7e9ec : 0x1e1e24);
-      this.bedFloorMaterial?.color.setHex(this.bedTexture ? 0xffffff : light ? 0xd4d8dd : 0x27272a);
+      (this.scene.background as THREE.Color).setHex(this.canvasFirst ? (light ? 0x9e9e9e : 0x727272) : light ? 0xe7e9ec : 0x1e1e24);
+      this.bedFloorMaterial?.color.setHex(this.bedTexture ? 0xffffff : this.canvasFirst ? 0x363636 : light ? 0xd4d8dd : 0x27272a);
     }
     // See-through when the camera is below the bed, so parts stay visible from underneath.
     if (this.bedFloorMaterial) this.bedFloorMaterial.opacity = this.camera.position.z < 0 ? 0.25 : 1;

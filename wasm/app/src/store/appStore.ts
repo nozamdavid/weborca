@@ -12,6 +12,7 @@ import { clearExportGcodeCache } from '../shell/gcodeThumbnails';
  */
 
 import { create } from 'zustand';
+import { usePlatesStore } from '../plates/platesStore';
 import { resolveSlicingThreads } from '../prefs/slicingThreads';
 import type { PlateObject } from '../plate/types';
 import {
@@ -184,7 +185,7 @@ export interface AppState {
   openGcodeFile: (file: File) => Promise<void>;
   startSlice: () => Promise<void>;
   cancelSlice: () => void;
-  invalidateSlicePreview: () => void;
+  invalidateSlicePreview: (preserveBatch?: boolean) => void;
 
   // Settings Actions
   applyOptionChange: (key: string, value: string, explicitKind?: 'print' | 'filament' | 'printer', layoutIndex?: number, filamentSlot?: number | null) => Promise<void>;
@@ -1253,6 +1254,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const abortController = new AbortController();
+    const sliceConfig = get();
+    const provenance = { printer: sliceConfig.selectedPrinter, nozzle: sliceConfig.currentConfig.nozzle_diameter, filaments: [...sliceConfig.selectedFilaments], config: { ...sliceConfig.currentConfig } };
     set({
       isSlicing: true,
       slicePercent: 0,
@@ -1324,7 +1327,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         isSlicing: false,
         slicePercent: 100,
         sliceStatusText: 'Slicing complete!',
-        sliceResult: { ...result, plateIndex: currentPlateIndex ?? 0 },
+        sliceResult: { ...result, plateIndex: currentPlateIndex ?? 0, provenance },
         sessionRecovery: 'idle',
         gcodeUrl,
         abortController: null
@@ -1357,7 +1360,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  invalidateSlicePreview: () => {
+  invalidateSlicePreview: (preserveBatch = false) => {
+    if (!preserveBatch) usePlatesStore.getState().invalidateBatch();
     const { gcodeUrl } = get();
     if (gcodeUrl) {
       try {
@@ -1935,6 +1939,11 @@ async function restoreLastSetup() {
 }
 
 useAppStore.subscribe((state, previous) => {
+  if (state.currentConfig !== previous.currentConfig || state.modelFile !== previous.modelFile
+    || state.selectedPrinter !== previous.selectedPrinter || state.selectedProcess !== previous.selectedProcess
+    || state.selectedFilaments !== previous.selectedFilaments) {
+    usePlatesStore.getState().invalidateBatch();
+  }
   if (applyingDevice || !state.isEngineReady || state.isModelLoading || state.engineError || !state.selectedPrinter) return;
   if (state.selectedPrinter === previous.selectedPrinter && state.selectedProcess === previous.selectedProcess &&
       state.selectedFilaments === previous.selectedFilaments) return;

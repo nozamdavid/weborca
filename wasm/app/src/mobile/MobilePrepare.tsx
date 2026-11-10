@@ -9,6 +9,9 @@ import { MobileImport, MobileSheet, mobileBusy } from './MobileShell';
 import { MobileProcessSettings } from './MobileProcessSettings';
 import { NumericTransform } from '../plate/NumericTransform';
 import { useSliceReadiness } from '../shell/sliceReadiness';
+import { PlateScope } from '../shell/PlateScope';
+import { ReadinessAction } from '../shell/ReadinessAction';
+import { QuickSettings } from '../shell/QuickSettings';
 
 export function MobilePrepare() {
   const { t } = useTranslation();
@@ -37,13 +40,15 @@ export function MobilePrepare() {
       object={selectedObject} instance={selectedInstance} mode={mode === 'translate' ? 'move' : 'scale'} idPrefix="mobile-nt" />}
     <button aria-expanded={tools} onClick={() => { setTools(!tools); window.dispatchEvent(new Event('resize')); }}>{t('Plate tools')}</button>
     <button className="wm-row" aria-haspopup="dialog" onClick={() => setSheet('objects')}><strong>{t('Objects')} · {objects.length}</strong><span>{t('Open')} ›</span></button>
-    <section className="wm-card"><div className="wm-row"><h2>{t('Process Settings')}</h2><button aria-haspopup="dialog" onClick={() => setSheet('settings')}>{t('Settings')}</button></div>
+    <section className="wm-process-context"><div className="wm-row"><h2>{t('Process Settings')}</h2><button aria-haspopup="dialog" onClick={() => setSheet('settings')}>{t('Full settings')}</button></div>
       <p>{s.selectedProcess || t('No process preset selected')}</p><small>{s.selectedFilaments.join(', ') || s.selectedFilament || t('No filament selected')}</small>
     </section>
+    <QuickSettings />
     <MobileImport disabled={busy} />
-    <button className="wm-primary" disabled={!!sliceDisabledReason} aria-describedby={sliceDisabledReason ? 'mobile-slice-readiness' : undefined}
-      onClick={() => void plates.slicePlate(plates.activePlateIndex)}>{t('Slice plate')}</button>
-    {sliceDisabledReason && <p id="mobile-slice-readiness" className="wm-help">{t(sliceDisabledReason)}</p>}
+    <PlateScope />
+    <button className="wm-primary" disabled={!s.isSlicing && !!sliceDisabledReason} aria-describedby={sliceDisabledReason ? 'mobile-slice-readiness' : undefined}
+      onClick={() => s.isSlicing ? s.cancelSlice() : void plates.slicePlate(plates.activePlateIndex)}>{t(s.isSlicing ? 'Cancel' : 'Slice this plate')}</button>
+    {sliceDisabledReason && <div role="status"><p id="mobile-slice-readiness" className="wm-help">{t(sliceDisabledReason)}</p><ReadinessAction reason={sliceDisabledReason} /></div>}
     {sheet === 'objects' && <MobileSheet title={`${t('Objects')} · ${objects.length}`} onClose={() => setSheet(null)}>
       {objects.length ? <ObjectListPanel /> : <div className="wm-empty"><h2>{t('No objects yet')}</h2><p>{t('Add a model to arrange it on the plate and edit its settings.')}</p><MobileImport disabled={busy} onImported={() => setSheet(null)} /></div>}
     </MobileSheet>}

@@ -29,6 +29,7 @@ import { resolveBedAssets } from './bedAssets';
 import { RepairBadge, useRepairStore } from '../repair';
 import { useEditOpsStore, FlattenPanel, BrimEarsPanel } from '../editops';
 import { CanvasToolbar, ViewButtons } from '../shell/CanvasToolbar';
+import { Icon } from '../shell/Icon';
 import type { CanvasTool } from '../shell/CanvasToolbar';
 import { registerCameraHandler, setCameraView } from '../shell/cameraBridge';
 import type { CameraView } from '../shell/cameraBridge';
@@ -51,7 +52,17 @@ function formatPrintTime(seconds: number): string {
   return `${secs}s`;
 }
 
-export const PlateView: React.FC = () => {
+export const PlateView: React.FC<{ floatingShell?: boolean }> = ({ floatingShell = false }) => {
+  const [sceneToolsOpen, setSceneToolsOpen] = useState(false);
+  useEffect(() => {
+    if (!sceneToolsOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (document.querySelector('[aria-modal="true"]')) return;
+      if (event.target instanceof Element && !event.target.closest('.canvas-scene-tools, .canvas-scene-rail')) setSceneToolsOpen(false);
+    };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [sceneToolsOpen]);
     const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<PlateScene | null>(null);
@@ -220,7 +231,7 @@ export const PlateView: React.FC = () => {
           void store.addBrimEar(position);
         }
       }
-    });
+    }, floatingShell);
 
     sceneRef.current = scene;
     if (typeof window !== 'undefined') {
@@ -1110,7 +1121,7 @@ export const PlateView: React.FC = () => {
       <ArrangeDialog />
       <MeasurePanel />
       <ExplodePanel />
-      {showNavigator && <ViewCube getCameraQuaternion={getCameraQuaternion} />}
+      {showNavigator && !floatingShell && <ViewCube getCameraQuaternion={getCameraQuaternion} />}
 
       {/* 3D WebGL Canvas Container */}
       <div
@@ -1124,12 +1135,25 @@ export const PlateView: React.FC = () => {
         style={{ width: '100%', height: '100%', outline: 'none', cursor: isPaintingActive ? 'crosshair' : 'grab' }}
       />
 
-      <CanvasToolbar groups={toolGroups} />
-      {objects.length === 0 && !busy && <div className="desktop-prepare-empty">
+      {floatingShell ? <>
+        <div className="canvas-scene-rail">
+          <button disabled={busy} title={t('Add model')} onClick={() => document.getElementById('model-file')?.click()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 4v16M4 12h16" /></svg><span>{t('Add model')}</span></button>
+          {toolGroups.at(-1)!.slice(0, 1).map(tool => <button key={tool.id} disabled={tool.disabled} onClick={tool.onClick}><Icon name={tool.icon as string} /><span>{tool.label}</span></button>)}
+          <button aria-expanded={sceneToolsOpen} onClick={() => setSceneToolsOpen(!sceneToolsOpen)}><Icon name="toolbar_move" /><span>{t('Tools')}</span></button>
+          {selectedObject && <button disabled={busy} onClick={() => deleteSelected()}><Icon name="delete" /><span>{t('Delete')}</span></button>}
+        </div>
+        {sceneToolsOpen && <section className="canvas-scene-tools" aria-label={t('Tools')}>
+          <header><strong>{t('Tools')}</strong><button onClick={() => setSceneToolsOpen(false)}>{t('Close')}</button></header>
+          <div className="canvas-scene-tool-grid">{toolGroups.slice(1, -1).flat().map(tool => <button key={tool.id} id={tool.id} disabled={tool.disabled} aria-pressed={!!tool.active} onClick={tool.onClick}>{typeof tool.icon === 'string' ? <Icon name={tool.icon} /> : tool.icon}<span>{t(tool.label)}</span></button>)}</div>
+          <ViewButtons />
+          <PlateSelectorBar style={{ position: 'relative', inset: 'auto', transform: 'none', maxWidth: '100%', flexWrap: 'wrap' }} />
+        </section>}
+      </> : <CanvasToolbar groups={toolGroups} />}
+      {!floatingShell && objects.length === 0 && !busy && <div className="desktop-prepare-empty">
         <button className="ds-btn ds-btn--primary" onClick={() => document.getElementById('model-file')?.click()}>{t('Add model')}</button>
         <p>{t('Or drop a model onto the plate')}</p>
       </div>}
-      <ViewButtons />
+      {!floatingShell && <ViewButtons />}
 
       <PaintToolsPanel />
       <LayerHeightPanel objectMeshes={sceneRef.current?.getObjectMeshes()} />
@@ -1225,7 +1249,7 @@ export const PlateView: React.FC = () => {
       )}
 
       {/* Plate Selector Bar */}
-      <PlateSelectorBar />
+      {!floatingShell && <PlateSelectorBar />}
       {renamingPlate && (
         <PlateRenameDialog
           index={renamingPlate.index}

@@ -29,7 +29,7 @@ import { SettingsDialog } from './settings/SettingsDialog';
 import { useAppStore } from './store/appStore';
 import { CalibrationPage } from './shell/CalibrationPage';
 import { HelpDialogs } from './shell/HelpDialogs';
-import { PrepareSidebar } from './shell/PrepareSidebar';
+import { CanvasPrepare } from './shell/CanvasPrepare';
 import { TopBar } from './shell/TopBar';
 import { SlicingGuard } from './shell/SlicingGuard';
 import { RecoveryDialog } from './shell/RecoveryDialog';
@@ -165,7 +165,7 @@ export const App: React.FC = () => {
       <CloudAutoSync />
       <CloudDialog />
       <SlicingGuard />
-      {mobile ? <MobileHeader /> : <TopBar activeTab={activeTab} setActiveTab={setActiveTab} />}
+      {activeTab !== 'prepare' && (mobile ? <MobileHeader /> : <TopBar activeTab={activeTab} setActiveTab={setActiveTab} />)}
       <EngineLoadingIndicator />
       <StepImportModal />
       <RecoveryDialog />
@@ -173,8 +173,8 @@ export const App: React.FC = () => {
       <SlicingWarningsDialog />
 
       <main className="workspace orca-workspace" aria-busy={isModelLoading}>
-        <div className="tab-page prepare-page" hidden={activeTab !== 'prepare'}>
-          {mobile ? <MobilePrepare /> : <>{showSidebar && <PrepareSidebar />}<PlateView /></>}
+        <div className="tab-page prepare-page canvas-prepare-page" hidden={activeTab !== 'prepare'}>
+          {activeTab === 'prepare' && <CanvasPrepare navigate={setActiveTab} />}
         </div>
         <div className="tab-page" style={{ position: 'relative' }} hidden={activeTab !== 'preview'}>
           <PreviewView active={activeTab === 'preview'} />
@@ -208,7 +208,7 @@ export const App: React.FC = () => {
           </div>
         )}
       </main>
-      {mobile && <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />}
+      {mobile && activeTab !== 'prepare' && <MobileNavigation activeTab={activeTab} setActiveTab={setActiveTab} />}
 
       <SettingsDialog />
       <FixesDialog />

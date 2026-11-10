@@ -30,6 +30,7 @@ export interface ProgressNotification {
 }
 
 export interface SliceResult {
+  provenance?: { printer: string; nozzle: string; filaments: string[]; config: Record<string, string> };
   /** Source plate for a generated result; absent for G-code opened from disk. */
   plateIndex?: number;
   gcode: Uint8Array;

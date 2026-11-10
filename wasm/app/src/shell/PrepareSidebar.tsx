@@ -18,6 +18,10 @@ import { EditIcon, GearIcon, PlugIcon, SaveIcon, TrashIcon } from './glyphs';
 import { useTranslation } from "../i18n";
 import { Toolbar } from '../components/Toolbar';
 import { useSliceReadiness } from './sliceReadiness';
+import { QuickSettings } from './QuickSettings';
+import { PlateScope } from './PlateScope';
+import { ReadinessAction } from './ReadinessAction';
+import { MobileSelect } from '../mobile/MobileSelect';
 
 const bedTypeIcons: Record<string, string> = {
   'Cool Plate': 'bed_cool',
@@ -81,6 +85,7 @@ const PresetRow: React.FC<{
         {user.length > 0 && <optgroup label={t("User presets")}>{user.map((u) => <option key={u.name} value={`user:${u.name}`}>{u.name}</option>)}</optgroup>}
       </select>)}
       {extra}
+      <details className="workflow-preset-actions"><summary aria-label={t('Manage presets, import and export')} title={t('Manage presets, import and export')}><GearIcon /></summary>
       <Toolbar label={t('Manage presets, import and export')}>
       {kind !== 'process' && (
         <button className="ds-icon-btn icon-btn" data-testid={`edit-${kind}-btn`} title={t(`Edit ${kind} preset`)} aria-label={t(`Edit ${kind} preset`)} disabled={!canEdit || disabled} onClick={() => openDialog(kind)}><EditIcon /></button>
@@ -91,6 +96,7 @@ const PresetRow: React.FC<{
         <button className="ds-icon-btn icon-btn" data-testid={`delete-${kind}-preset-btn`} title={t("Delete this user preset")} aria-label={t(`Delete ${kind} preset`)} disabled={disabled} onClick={() => deleteUserPresetAction(kind, activeUser)}><TrashIcon /></button>
       )}
       </Toolbar>
+      </details>
     </div>
   );
 };
@@ -133,10 +139,12 @@ const QuickToggles: React.FC<{ disabled: boolean; multiFilament: boolean }> = ({
   );
 };
 
-export const PrepareSidebar: React.FC = () => {
+export const PrepareSidebar: React.FC<{ scope?: 'printer' | 'filament' | 'settings' | 'objects' | 'output' }> = ({ scope }) => {
     const { t } = useTranslation();
   const sidebarWidth = usePrefsStore((s) => s.display.sidebarWidth);
   const sidebarRef = useRef<HTMLElement>(null);
+  const [fullSettings, setFullSettings] = useState(false);
+  const settingsViewRef = useRef<HTMLDivElement>(null);
   const [renderedWidth, setRenderedWidth] = useState(sidebarWidth);
   useEffect(() => {
     const sidebar = sidebarRef.current;
@@ -179,10 +187,8 @@ export const PrepareSidebar: React.FC = () => {
   const supportsBedTypes = selectedVendor === 'BBL' || currentConfig.support_multi_bed_types === '1' || currentConfig.support_multi_bed_types === 'true';
   const bedTypeDef = configDefs.curr_bed_type;
   const activeFilaments = selectedFilaments && selectedFilaments.length > 0 ? selectedFilaments : (selectedFilament ? [selectedFilament] : []);
-  // A finished slice with the selected printer connected is sent rather than sliced again.
   const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
   const hasCurrentGcode = !!sliceResult?.gcode && sliceResult.plateIndex === activePlateIndex;
-  const readyToSend = hasCurrentGcode && !isBusy && printerStatus === 'online';
   const sliceDisabledReason = useSliceReadiness();
   const canSlice = !sliceDisabledReason;
 
@@ -253,8 +259,8 @@ export const PrepareSidebar: React.FC = () => {
   );
 
   return (
-    <aside ref={sidebarRef} className="sidebar" aria-label={t("Print settings")} aria-busy={isBusy} style={{ width: sidebarWidth }}>
-      <div className="sidebar-resizer" role="separator" aria-label={t("Resize settings sidebar")} aria-orientation="vertical"
+    <aside ref={sidebarRef} className={scope ? 'prepare-panel-content' : 'sidebar'} aria-label={t("Print settings")} aria-busy={isBusy} style={scope ? undefined : { width: sidebarWidth }}>
+      {!scope && <div className="sidebar-resizer" role="separator" aria-label={t("Resize settings sidebar")} aria-orientation="vertical"
         tabIndex={0} aria-valuenow={Math.round(renderedWidth)}
         onKeyDown={(e) => {
           if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
@@ -271,9 +277,9 @@ export const PrepareSidebar: React.FC = () => {
           setWidth(e.clientX - bounds.left, bounds.width, false);
         }}
         onPointerUp={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}
-        onLostPointerCapture={() => usePrefsStore.getState().setDisplayPref('sidebarWidth', usePrefsStore.getState().display.sidebarWidth)} />
+        onLostPointerCapture={() => usePrefsStore.getState().setDisplayPref('sidebarWidth', usePrefsStore.getState().display.sidebarWidth)} />}
       <div className="sidebar-scroll">
-        <Section id="printer" title={t("Printer")}>
+        {(!scope || scope === 'printer') && <Section id="printer" title={t("Printer")}>
           {devices.length > 0 && (
             <>
               <label className="field-label" htmlFor="device-select">{t("Device")}</label>
@@ -304,12 +310,12 @@ export const PrepareSidebar: React.FC = () => {
               {t("Use current profile for device")}
             </button>
           )}
-        </Section>
+        </Section>}
 
-        <Section id="filament" title={t("Filament")} headerExtra={filamentHeaderActions}>
+        {(!scope || scope === 'filament') && <Section id="filament" title={t("Filament")} headerExtra={filamentHeaderActions}>
           <FilamentSyncButton />
           <div className="filament-slots-list">
-            {activeFilaments.map((filamentName, idx) => {
+            {(activeFilaments.length ? activeFilaments : ['']).map((filamentName, idx) => {
               const slotNumber = idx + 1;
               const selectId = idx === 0 ? 'filament-select' : `filament-select-${slotNumber}`;
               const slotColor = getSlotColor(idx);
@@ -348,14 +354,13 @@ export const PrepareSidebar: React.FC = () => {
                     />
                   </div>
 
-                  <select
+                  <MobileSelect
                     id={selectId}
                     data-testid={selectId}
                     aria-label={t(`filament preset ${slotNumber}`)}
                     value={current('filament', filamentName)}
                     disabled={isBusy || !selectedPrinter || filaments.length === 0}
-                    onChange={(e) => {
-                      const value = e.target.value;
+                    onValueChange={(value) => {
                       void changePreset(() => value.startsWith('user:')
                         ? selectUserPreset('filament', value.substring(5), idx)
                         : chooseFilament(value, idx));
@@ -380,8 +385,9 @@ export const PrepareSidebar: React.FC = () => {
                         ))}
                       </optgroup>
                     )}
-                  </select>
+                  </MobileSelect>
 
+                  <details className="workflow-preset-actions"><summary aria-label={t('Manage filament presets')} title={t('Manage filament presets')}><GearIcon /></summary>
                   <Toolbar label={t('Manage filament presets')}>
                   <button
                     className="ds-icon-btn icon-btn"
@@ -419,42 +425,54 @@ export const PrepareSidebar: React.FC = () => {
                     </button>
                   )}
                   </Toolbar>
+                  </details>
                 </div>
               );
             })}
           </div>
-        </Section>
+        </Section>}
 
-        <Section id="process" title={t("Process")}>
+        {(!scope || scope === 'settings') && <><Section id="process" title={t("Process")}>
           <PresetRow kind="process" disabled={isBusy} selectDisabled={isBusy || !selectedPrinter || processes.length === 0} placeholder={t("Select process...")} system={processes} user={user('process')}
             value={current('process', selectedProcess)} onSystem={(name) => void changePreset(() => chooseProcess(name))} onUser={(name) => void changePreset(() => selectUserPreset('process', name))} canEdit={false} canSave={!!selectedProcess} />
         </Section>
 
-        <QuickToggles disabled={isBusy || !selectedProcess} multiFilament={activeFilaments.length > 1} />
+        <button className="ds-btn workflow-view-toggle" aria-expanded={fullSettings} aria-controls="prepare-settings-view" onClick={() => {
+          setFullSettings(!fullSettings);
+          requestAnimationFrame(() => {
+            settingsViewRef.current?.focus();
+            settingsViewRef.current?.scrollIntoView({ block: 'nearest' });
+          });
+        }}>{t(fullSettings ? 'Quick settings' : 'Full settings')}</button>
+        <div id="prepare-settings-view" ref={settingsViewRef} tabIndex={-1} aria-label={t(fullSettings ? 'Full settings' : 'Quick settings')}>
+          {fullSettings ? <>
+            <QuickToggles disabled={isBusy || !selectedProcess} multiFilament={activeFilaments.length > 1} />
+            <div className="sb-settings"><SettingsPanel /></div>
+          </> : <QuickSettings />}
+        </div></>}
 
-        <Section id="objects" title={t("Objects")} badge={modelObjects?.length ? String(modelObjects.length) : undefined} className="sb-objects">
+        {(!scope || scope === 'objects') && <Section id="objects" title={t("Objects")} badge={modelObjects?.length ? String(modelObjects.length) : undefined} className="sb-objects">
           <div className="objects-wrap"><ObjectListPanel /></div>
-        </Section>
+        </Section>}
 
-        <div className="sb-settings"><SettingsPanel /></div>
       </div>
 
-      <div className="sidebar-footer">
+      {scope === 'objects' && <PlateScope />}
+      {(!scope || scope === 'output') && <div className="sidebar-footer">
+        <PlateScope />
         {isSlicing && <div role="status"><span>{t(sliceStatusText)}</span><div className="ds-progress" role="progressbar" aria-label={t('Slicing...')} aria-valuenow={slicePercent} aria-valuemin={0} aria-valuemax={100}><span style={{ '--value': `${slicePercent}%` } as React.CSSProperties} /></div></div>}
-        {readyToSend ? (
-          <button id="send-to-printer-btn" className="ds-btn ds-btn--primary ds-btn--hero ds-btn--block" onClick={openSendDialog}>{t("Send to printer")}</button>
-        ) : (
-          <button id="slice-btn" className="ds-btn ds-btn--primary ds-btn--hero ds-btn--block" title={t(sliceDisabledReason)} aria-describedby={sliceDisabledReason ? 'slice-disabled-reason' : undefined} aria-busy={isSlicing} disabled={!canSlice && !isSlicing} onClick={() => isSlicing ? cancelSlice() : startSlice()}>{t(isSlicing ? 'Cancel' : 'Slice plate')}</button>
+        {(
+          <button id="slice-btn" className="ds-btn ds-btn--primary ds-btn--hero ds-btn--block" title={t(sliceDisabledReason)} aria-describedby={sliceDisabledReason ? 'slice-disabled-reason' : undefined} aria-busy={isSlicing} disabled={!canSlice && !isSlicing} onClick={() => isSlicing ? cancelSlice() : startSlice()}>{t(isSlicing ? 'Cancel' : 'Slice this plate')}</button>
         )}
-        {!isSlicing && sliceDisabledReason && <p id="slice-disabled-reason" className="slice-disabled-reason">{t(sliceDisabledReason)}</p>}
+        {!isSlicing && sliceDisabledReason && <div role="status"><p id="slice-disabled-reason" className="slice-disabled-reason">{t(sliceDisabledReason)}</p>{!scope && <ReadinessAction reason={sliceDisabledReason} />}</div>}
         <button id="cancel-btn" className="ds-btn ds-btn--danger ds-btn--block" hidden={!isSlicing} disabled={!isSlicing} onClick={() => cancelSlice()}>{t("Cancel")}</button>
         {hasCurrentGcode && !isSlicing && (
           <div className="footer-row">
             <button id="export-gcode-btn" className="ds-btn ds-btn--block" onClick={exportGcode}>{t("Export G-code")}</button>
-            {!readyToSend && <button id="send-to-printer-btn" className="ds-btn ds-btn--block" onClick={openSendDialog}>{t("Send to printer")}</button>}
+            <button id="send-to-printer-btn" className="ds-btn ds-btn--block" onClick={openSendDialog}>{t("Send to printer")}</button>
           </div>
         )}
-      </div>
+      </div>}
     </aside>
   );
 };

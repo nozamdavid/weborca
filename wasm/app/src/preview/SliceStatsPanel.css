@@ -220,3 +220,4 @@
   .slicestats-panel__row-3 { flex: none; margin: 0; padding: var(--space-3); border-top: 1px solid var(--border-subtle); background: var(--surface-1); }
   .slicestats-panel__row-3 > * { min-width: 0; }
 }
+.slicestats-panel__row-3 { flex-wrap: wrap; }

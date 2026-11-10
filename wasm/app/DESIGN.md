@@ -1,5 +1,15 @@
 # Orca Web design system
 
+## Prepare composition — 2026-11-10
+
+Prepare uses the real plate across the available viewport, compact dark toolbar
+islands at the top, and a short lower-left scene rail. Printer/material, Supports,
+Settings, Objects and output open bounded panels on demand. Secondary transform,
+painting, camera and plate actions live in Tools. Preserve real selected-printer
+geometry, manual camera intent and native output provenance. Other routes retain
+their existing composition. Scoped local acceptance and representative limits:
+[panels QA](../reports/canvas-first-prepare-panels-20261110-qa.md#bounded-followup-disposition).
+
 The [background engine publication](../build/tests-background-engine-20261107/report.md)
 is current on CURRENT5070. Engine download/initialization uses an in-flow status
 and actionable retry. Navigation, Preferences and camera controls remain available;

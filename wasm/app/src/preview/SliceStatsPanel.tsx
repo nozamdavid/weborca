@@ -13,6 +13,8 @@ import { usePrinterConnectionStore } from '../printers/connectionStore';
 import { SendToPrinterDialog } from '../printers/SendToPrinterDialog';
 import { exportGcode } from '../shell/exportGcode';
 import { useTranslation } from "../i18n";
+import { OutputReview } from './OutputReview';
+import { hasPlateOutput } from '../plates/resultState';
 
 export function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
@@ -101,11 +103,12 @@ export const SliceStatsPanel: React.FC = () => {
   const sliceResult = useAppStore((s) => s.sliceResult);
   const selectedFilaments = useAppStore((s) => s.selectedFilaments);
   const currentConfig = useAppStore((s) => s.currentConfig);
+  const activePlate = usePlatesStore(s => s.activePlateIndex);
 
   const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
 
   const filamentStats = useMemo(() => {
-    return parseFilamentStats(sliceResult?.gcode, selectedFilaments, currentConfig);
+    return parseFilamentStats(sliceResult?.gcode, sliceResult?.provenance?.filaments ?? [], sliceResult?.provenance?.config ?? {});
   }, [sliceResult?.gcode, selectedFilaments, currentConfig]);
 
   const filamentCost = useMemo(() => parseFilamentCost(sliceResult?.gcode), [sliceResult?.gcode]);
@@ -269,8 +272,9 @@ export const SliceStatsPanel: React.FC = () => {
 
         </div>
           {/* Export stays reachable while the statistics body scrolls. */}
-          {gcodeUrl && (
+          {gcodeUrl && hasPlateOutput(sliceResult, activePlate) && (
             <div className="slicestats-panel__row-3">
+              <OutputReview />
               <a
                 id="download-link"
                 href={gcodeUrl}

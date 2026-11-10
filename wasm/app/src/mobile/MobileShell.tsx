@@ -24,10 +24,10 @@ export function MobileSheet({ title, onClose, children, footer, full = false }: 
   </Dialog>;
 }
 
-export function MobileImport({ disabled, onImported }: { disabled: boolean; onImported?: () => void }) {
+export function MobileImport({ disabled, onImported, inputId }: { disabled: boolean; onImported?: () => void; inputId?: string }) {
   const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
-  return <><input ref={input} type="file" hidden accept=".stl,.obj,.3mf,.amf,.step,.stp,.svg,.gcode" aria-label={t('Import model')}
+  return <><input id={inputId} ref={input} type="file" hidden accept=".stl,.obj,.3mf,.amf,.step,.stp,.svg,.gcode,.zip" aria-label={t('Import model')}
     disabled={disabled} onChange={event => {
       const file = event.target.files?.[0];
       event.target.value = '';
@@ -44,7 +44,7 @@ export function mobileBusy(s: ReturnType<typeof useAppStore.getState>) {
   return !s.isEngineReady || s.isSelectingPreset || s.isModelLoading || s.isSlicing || Object.keys(s.pendingOptions).length > 0;
 }
 
-function MobileMenu({ onClose }: { onClose: () => void }) {
+export function MobileMenu({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const s = useAppStore();
   const history = useHistoryStore();

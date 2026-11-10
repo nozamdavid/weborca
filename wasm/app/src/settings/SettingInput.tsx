@@ -7,8 +7,11 @@ import type { ConfigOptionDef, FieldState } from '../engine/types';
 import { useTranslation } from '../i18n';
 import { getOption } from '../engine/orcaEngine';
 import { resolveSlotValue, extractScalarCell, getOptionStride } from './slotValue';
+import { validNumericValue, commitNumericValue } from './numericValidation';
 
 interface SettingInputProps {
+  strictNumeric?: boolean;
+  idPrefix?: string;
   optionKey: string;
   index?: number;
   def?: ConfigOptionDef;
@@ -19,6 +22,8 @@ interface SettingInputProps {
 }
 
 export const SettingInput: React.FC<SettingInputProps> = ({
+  idPrefix = 'setting-input',
+  strictNumeric = false,
   optionKey,
   index,
   def,
@@ -157,6 +162,8 @@ export const SettingInput: React.FC<SettingInputProps> = ({
   const isEnabled = isEngineReady && !isSelectingPreset && fieldState?.enabled !== false;
 
   const stride = isNumericVector ? getOptionStride(rawVal, totalSlots, extrudersCount) : 1;
+  const invalid = strictNumeric && displayValue.trim() !== '' && !validNumericValue(displayValue, def);
+  const errorId = `${idPrefix}-${optionKey}-error`;
 
   const handleChange = (newVal: string) => {
     if (draft) { draft.onChange(newVal); return; }
@@ -171,6 +178,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
     setLocalInput({ targetKey, value: newVal });
     // Clearing a number is an intermediate editing state, not an engine value.
     if (!newVal.trim() && /^(?:ints?|floats?|percents?|floats?OrPercents?)$/.test(def?.type ?? '')) return;
+    if (strictNumeric) { commitNumericValue(newVal, def, handleChange); return; }
     handleChange(newVal);
   };
 
@@ -190,7 +198,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
         <MobileInput
           type="checkbox"
           aria-label={t(fieldState?.label || def?.label || optionKey)}
-          id={`setting-input-${optionKey}`}
+          id={`${idPrefix}-${optionKey}`}
           data-testid={`setting-input-${optionKey}`}
           name={optionKey}
           checked={isChecked}
@@ -206,7 +214,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
       return (
         <MobileSelect
           aria-label={t(fieldState?.label || def?.label || optionKey)}
-          id={`setting-input-${optionKey}`}
+          id={`${idPrefix}-${optionKey}`}
           data-testid={`setting-input-${optionKey}`}
           name={optionKey}
           value={displayValue}
@@ -217,7 +225,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
         >
           {def.enumValues.map((val, idx) => (
             <option key={val} value={val}>
-              {def.enumLabels && def.enumLabels[idx] ? def.enumLabels[idx] : val}
+              {t(def.enumLabels && def.enumLabels[idx] ? def.enumLabels[idx] : val)}
             </option>
           ))}
         </MobileSelect>
@@ -228,7 +236,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
       return (
         <textarea
           aria-label={t(fieldState?.label || def?.label || optionKey)}
-          id={`setting-input-${optionKey}`}
+          id={`${idPrefix}-${optionKey}`}
           data-testid={`setting-input-${optionKey}`}
           name={optionKey}
           value={displayValue}
@@ -251,10 +259,12 @@ export const SettingInput: React.FC<SettingInputProps> = ({
       return (
         <MobileInput
           type="number"
+          aria-invalid={invalid || undefined}
+          aria-describedby={invalid ? errorId : undefined}
           inputMode={def?.min !== undefined && def.min >= 0 && !def.nullable &&
             (optType === 'int' || optType === 'float' || index !== undefined || isFilament) ? 'decimal' : 'text'}
           aria-label={t(fieldState?.label || def?.label || optionKey)}
-          id={`setting-input-${optionKey}`}
+          id={`${idPrefix}-${optionKey}`}
           data-testid={`setting-input-${optionKey}`}
           name={optionKey}
           value={displayValue}
@@ -285,9 +295,11 @@ export const SettingInput: React.FC<SettingInputProps> = ({
     return (
       <MobileInput
         type="text"
+        aria-invalid={invalid || undefined}
+        aria-describedby={invalid ? errorId : undefined}
         aria-label={t(fieldState?.label || def?.label || optionKey)}
         inputMode="text"
-        id={`setting-input-${optionKey}`}
+        id={`${idPrefix}-${optionKey}`}
         data-testid={`setting-input-${optionKey}`}
         name={optionKey}
         value={displayValue}
@@ -303,6 +315,7 @@ export const SettingInput: React.FC<SettingInputProps> = ({
     <div className={`setting-control-wrapper ${isModified ? 'is-modified' : ''}`}>
       {isModified && <span className="modified-indicator" title={t("Modified from preset")} />}
       {renderControl()}
+      {invalid && <span id={errorId} role="alert" className="setting-inline-error">{t('Enter a valid value within the allowed range.')} {def?.min ?? '−∞'} – {def?.max ?? '∞'}</span>}
       {def?.sidetext && <span className="setting-unit">{def.sidetext}</span>}
       {isModified && (
         <button
