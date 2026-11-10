@@ -8827,5 +8827,6 @@
   "Wait for the current operation to finish.": "Wait for the current operation to finish.",
   "Select a printer to slice.": "Select a printer to slice.",
   "Select a process preset to slice.": "Select a process preset to slice.",
-  "Select a filament to slice.": "Select a filament to slice."
+  "Select a filament to slice.": "Select a filament to slice.",
+  "Inactive": "Inactive"
 }

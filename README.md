@@ -13,6 +13,8 @@ Optimize your prints with ultra-fast slicing, intelligent support generation, an
 
 This checkout also includes a browser-based WebAssembly port in [wasm/app](wasm/app). See [wasm/deploy/README.md](wasm/deploy/README.md) for web deployment instructions.
 
+The local HTML plate-title prototype automatically enables titles and Active/Inactive badges when the drawable canvas APIs are available. Independent native Chrome 157 WebGL acceptance covers light/dark, rename, fallback and full scene disposal; the old query parameter has no control. The [plate verification report](wasm/reports/html-plate-default-20261109.md) records that migration. Object-name labels now use the same capability-based raster approach, with lazy allocation, bounded ellipsis, legacy fallback and synchronized application renames. The [object-label acceptance report](wasm/reports/html-object-labels-20261109.md) records the current immutable candidate at the [private testing preview](https://server-1.barbel-hops.ts.net:5065/). No performance gain is claimed; other browsers and an actual unsupported engine remain unverified. This is a local prototype, not a shipped deployment.
+
 The accumulated WebOrca app, alpha access and startup work is captured on the private
 [`nozamdavid/weborca` main branch](https://github.com/nozamdavid/weborca/tree/main).
 Verification reports and immutable release directories under `wasm/build` are local,

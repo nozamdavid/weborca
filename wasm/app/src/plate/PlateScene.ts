@@ -7,6 +7,9 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { createBedGeometry } from './bedGeometry';
 import { displayBedOutline, loadBedModelOutline } from './bedModelOutline';
 import { plateTitle } from '../plates/plateName';
+import { attachHtmlPlateTitle } from './htmlPlateTitle';
+import { attachHtmlObjectLabel } from './htmlObjectLabel';
+import { translate } from '../i18n';
 import { usePlatesStore } from '../plates/platesStore';
 import type { PlateObject, BedConfig, GizmoMode, MeshBufferData, MeshVolumePartition, ViewerMeshData } from './types';
 import type { SupportPaintingData } from '../painting/types';
@@ -740,7 +743,7 @@ export class PlateScene {
     const labelGap = size * 0.025;
 
     // Flat text lying on the ground plane; `pencil` adds the small edit mark desktop shows after a plate's title.
-    const text = (value: string, font: string, height: number, color: string, align: 'left' | 'right', x: number, y: number, pencil = false) => {
+    const text = (value: string, font: string, height: number, color: string, align: 'left' | 'right', x: number, y: number, pencil = false, active = false) => {
       const px = parseInt(font.match(/(\d+)px/)![1], 10);
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d')!;
@@ -769,10 +772,35 @@ export class PlateScene {
         ctx.restore();
       }
       const planeWidth = height * (canvas.width / canvas.height);
+      let texture = new THREE.CanvasTexture(canvas);
       const mesh = new THREE.Mesh(
         new THREE.PlaneGeometry(planeWidth, height),
-        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false, side: THREE.DoubleSide })
+        new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide })
       );
+      if (pencil) {
+        const dispose = attachHtmlPlateTitle(canvas, value, font, color, textWidth, (image) => {
+          const imageWidth = height * (image.width / image.height);
+          if (mesh.geometry.parameters.width !== imageWidth) {
+            mesh.geometry.dispose();
+            mesh.geometry = new THREE.PlaneGeometry(imageWidth, height);
+          }
+          mesh.position.x = align === 'left' ? x + imageWidth / 2 : x - imageWidth / 2;
+          // Uploaded texture storage cannot change dimensions. The HTML badge
+          // widens the first painted image; fallback can shrink it again.
+          if (texture.image.width !== image.width || texture.image.height !== image.height) {
+            const previous = texture;
+            previous.removeEventListener('dispose', dispose);
+            texture = new THREE.CanvasTexture(image);
+            texture.addEventListener('dispose', dispose);
+            mesh.material.map = texture;
+            previous.dispose();
+          } else {
+            texture.image = image;
+          }
+          texture.needsUpdate = true;
+        }, { active, activeLabel: translate('Active'), inactiveLabel: translate('Inactive') });
+        texture.addEventListener('dispose', dispose);
+      }
       mesh.position.set(align === 'left' ? x + planeWidth / 2 : x - planeWidth / 2, y, 0.05);
       mesh.name = 'plate-label';
       return mesh;
@@ -788,7 +816,7 @@ export class PlateScene {
       this.plateLabelGroup.add(number);
       const title = plateTitle(plate.name, plate.index);
       const shown = title.length > 40 ? `${title.slice(0, 38)}...` : title;
-      const label = text(shown, 'bold 64px sans-serif', size * 0.075, orange(active), 'left', ox + minX, oy + maxY + size * 0.0375 + labelGap, true);
+      const label = text(shown, 'bold 64px sans-serif', size * 0.075, orange(active), 'left', ox + minX, oy + maxY + size * 0.0375 + labelGap, true, active);
       label.name = 'plate-title';
       label.userData.plateIndex = plate.index;
       label.position.z = oz + 0.05;
@@ -979,6 +1007,15 @@ export class PlateScene {
     const material = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
     const sprite = new THREE.Sprite(material);
     sprite.scale.set(30, 8, 1);
+    // Delay DOM allocation until first shown. Static sources request one paint;
+    // position updates never recreate sources or request another rasterization.
+    sprite.userData.startHtmlLabel = () => {
+      sprite.userData.disposeHtmlLabel = attachHtmlObjectLabel(canvas, text, image => {
+        texture.image = image;
+        texture.needsUpdate = true;
+      });
+      delete sprite.userData.startHtmlLabel;
+    };
     return sprite;
   }
 
@@ -989,6 +1026,7 @@ export class PlateScene {
       let sprite = this.labelSprites.get(key);
       const name = mesh.userData?.name || 'Object';
       if (sprite && sprite.userData.name !== name) {
+        sprite.userData.disposeHtmlLabel?.();
         this.labelsGroup.remove(sprite);
         sprite.material.map?.dispose();
         sprite.material.dispose();
@@ -1001,12 +1039,14 @@ export class PlateScene {
         this.labelSprites.set(key, sprite);
       }
       const box = new THREE.Box3().setFromObject(mesh);
+      if (this.showLabels) sprite.userData.startHtmlLabel?.();
       const center = new THREE.Vector3();
       box.getCenter(center);
       sprite.position.set(center.x, center.y, box.max.z + 10);
     }
     for (const [key, sprite] of Array.from(this.labelSprites.entries())) {
       if (!activeKeys.has(key)) {
+        sprite.userData.disposeHtmlLabel?.();
         this.labelsGroup.remove(sprite);
         if (sprite.material.map) sprite.material.map.dispose();
         sprite.material.dispose();
@@ -2842,6 +2882,7 @@ export class PlateScene {
 
   public destroy(): void {
     this.setWipeTowerPreview({ enabled: false });
+    this.disposeChildren(this.plateLabelGroup);
     this.bedAssetRevision++;
     this.bedTexture?.dispose();
     this.isDestroyed = true;
@@ -2889,6 +2930,7 @@ export class PlateScene {
     this.scene.remove(this.layerRangeOverlays);
 
     for (const sprite of this.labelSprites.values()) {
+      sprite.userData.disposeHtmlLabel?.();
       if (sprite.material.map) sprite.material.map.dispose();
       sprite.material.dispose();
     }
