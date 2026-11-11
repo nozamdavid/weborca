@@ -11,6 +11,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$REPO_ROOT/wasm/scripts/env.sh"
 
 cd "$REPO_ROOT"
+export ORCA_BUILD_SOURCE="$(node wasm/scripts/runtime-manifest.mjs fingerprint)"
 
 JOBS="${WASM_JOBS:-4}"
 if [ "$JOBS" -gt 6 ]; then
@@ -18,7 +19,8 @@ if [ "$JOBS" -gt 6 ]; then
 fi
 
 BASE_PREFIX="${BASE_PREFIX:-$REPO_ROOT/wasm/build/prefix-wasm${WASM_ARCH:-64}}"
-OCCT_PREFIX="${OCCT_PREFIX:-$REPO_ROOT/wasm/build/prefix-occt-step}"
+export OCCT_PREFIX="${OCCT_PREFIX:-$REPO_ROOT/wasm/build/prefix-occt-step}"
+WASM_PREFIX="$BASE_PREFIX" node wasm/scripts/runtime-manifest.mjs identity step
 STEP_MODULE_BUILD_DIR="${STEP_MODULE_BUILD_DIR:-$REPO_ROOT/wasm/build/step-module-build}"
 STEP_MODULE_OUT_DIR="${STEP_MODULE_OUT_DIR:-$REPO_ROOT/wasm/build/step-module}"
 
@@ -51,3 +53,4 @@ if [ -d "$OCCT_SRC_DIR" ] && [ -d "$STEP_MODULE_OUT_DIR" ]; then
 fi
 
 echo "STEP tessellation module written to $STEP_MODULE_OUT_DIR"
+WASM_PREFIX="$BASE_PREFIX" OCCT_PREFIX="$OCCT_PREFIX" node wasm/scripts/runtime-manifest.mjs create step "$STEP_MODULE_OUT_DIR"

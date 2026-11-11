@@ -222,7 +222,7 @@ export const useObjectListStore = create<ObjectListState>((set, get) => ({
       } else {
         await engine.call('renameObject', { objectId, name });
       }
-      await usePlateStore.getState().refreshObjects();
+      await usePlateStore.getState().refreshObjects(true);
       await get().refreshTree();
       try {
         await useHistoryStore.getState().commitTransaction('Rename object');

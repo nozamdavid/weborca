@@ -10,6 +10,24 @@ test('additive union retains primary and existing instances without toggling dup
 });
 
 const viewport = { left: 100, top: 70, width: 800, height: 600 };
+
+for (const kind of ['perspective', 'orthographic']) test(`${kind}: dense rectangle miss reads no triangle vertices`, () => {
+  const camera = kind === 'perspective' ? new THREE.PerspectiveCamera(60, 800 / 600, 1, 100) : new THREE.OrthographicCamera(-8,8,6,-6,1,100);
+  camera.position.z = 10;
+  const dense = new THREE.Mesh(new THREE.PlaneGeometry(1,1,200,200));
+  dense.position.x = 3;
+  dense.userData = { objectId:1, instanceId:0 };
+  dense.geometry.computeBoundingSphere();
+  const position = dense.geometry.getAttribute('position');
+  let reads = 0;
+  const getX = position.getX.bind(position);
+  position.getX = index => { reads++; return getX(index); };
+  const started = performance.now();
+  assert.deepEqual(boxSelection([dense],camera,viewport,{left:200,top:350,right:205,bottom:355}),[]);
+  assert.equal(reads,0,'bounded frustum rejects the mesh before its 80,000 triangles');
+  assert.deepEqual(boxSelection([dense],camera,viewport,{left:500,top:350,right:500,bottom:390}),[]);
+  console.log(JSON.stringify({ camera:kind, triangles:80000, vertexReads:reads, elapsedMs:performance.now()-started }));
+});
 const rect = selectionRect({ x: 480, y: 350 }, { x: 520, y: 390 });
 function mesh(id, instance, x = 0, z = 0) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));

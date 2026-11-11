@@ -353,8 +353,12 @@ export const PlateView: React.FC = () => {
           paintState.stopPainting();
         }
       }
-      sceneRef.current.setObjects(objects);
-      setMeshRevision((revision) => revision + 1);
+      const scene = sceneRef.current;
+      let cancelled = false;
+      void scene.setObjects(objects).then((accepted) => {
+        if (accepted && !cancelled && sceneRef.current === scene) setMeshRevision((revision) => revision + 1);
+      }).catch((error) => console.error("[PlateView] Scene update failed:", error));
+      return () => { cancelled = true; };
     }
   }, [objects]);
 

@@ -42,14 +42,15 @@ export function createOrcaCloudClient(gatewayBase: string, request: typeof fetch
       } catch { throw new Error('Orca Cloud requires secure browser storage and Web Locks. Check browser setup.'); }
     })();
   }
-  async function call<T>(path: string, body?: unknown): Promise<T> {
+  async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     const secret = await browserCredential();
+    signal?.throwIfAborted();
     let response: Response;
     try {
       response = await request(new URL(`/_orca-cloud/${path}`, base), {
         method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
         headers: { 'x-orca-cloud': '1', 'x-orca-cloud-session': secret, ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-        body: body === undefined ? undefined : JSON.stringify(body)
+        body: body === undefined ? undefined : JSON.stringify(body), signal
       });
     } catch { throw new Error('Orca gateway unavailable. Local work retained.'); }
     if (!response.ok) {
@@ -59,7 +60,7 @@ export function createOrcaCloudClient(gatewayBase: string, request: typeof fetch
     }
     return response.json() as Promise<T>;
   }
-  const status = () => call<CloudStatus>('status');
+  const status = (signal?: AbortSignal) => call<CloudStatus>('status', undefined, signal);
   const begin = (provider: OAuthProvider) => call<{ url: string; expiresAt: number; callbackConfirmed: boolean }>('begin', { provider });
   const complete = (callbackUrl: string) => call<CloudStatus>('complete', { callbackUrl });
   const logout = () => call<CloudStatus>('logout', {});

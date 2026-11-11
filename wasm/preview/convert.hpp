@@ -9,7 +9,6 @@
 #include <vector>
 
 namespace libvgcode {
-class Viewer;
 
 // Mapping from Slic3r::Vec3f to libvgcode::Vec3
 Vec3 convert(const Slic3r::Vec3f& v);
@@ -47,7 +46,6 @@ Slic3r::PrintEstimatedStatistics::ETimeMode convert(const ETimeMode& mode);
 // Mapping from Slic3r::GCodeProcessorResult to libvgcode::GCodeInputData
 GCodeInputData convert(const Slic3r::GCodeProcessorResult& result,
                        const std::vector<std::string>& str_tool_colors,
-                       const std::vector<std::string>& str_color_print_colors,
-                       const Viewer& viewer);
+                       const std::vector<std::string>& str_color_print_colors);
 
 } // namespace libvgcode

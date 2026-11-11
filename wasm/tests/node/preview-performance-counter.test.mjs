@@ -30,7 +30,8 @@ test('performance observes completed draws, bounds publications and cleans up wi
   };
   try {
     const source = fs.readFileSync(new URL('../../app/src/preview/orcaPreviewModule.ts', import.meta.url), 'utf8')
-      .replace('let previewInstance: any = null;', 'let previewInstance: any = globalThis.__fpsRenderer;')
+      .replace("import { preparePreview, cancelPreviewWorker } from './previewWorkerClient';", "const cancelPreviewWorker = () => {}; const preparePreview = async bytes => ({ packet: bytes.slice(), stats: { layers: 1, moves: 2 } });")
+  .replace('let previewInstance: any = null;', 'let previewInstance: any = globalThis.__fpsRenderer;')
       .replace('let previewModule: any = null;', 'let previewModule: any = globalThis.__fpsModule;');
     const js = ts.transpile(source, { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 });
     const mod = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);

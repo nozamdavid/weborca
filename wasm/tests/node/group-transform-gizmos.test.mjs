@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 const text = readFileSync("wasm/app/src/plate/PlateScene.ts", "utf8");
 const names = [...text.matchAll(/import \{([^}]+)\} from '(\.[^']+)'/g)];
 // Bind the actual arrow handlers without constructing WebGLRenderer in Node.
-const handlers = [...text.matchAll(/private (on(?:Transform)?Pointer\w+) = ([\s\S]*?\n  };)/g)]
+const handlers = [...text.matchAll(/private (on(?:Transform)?Pointer\w+|cancelPlaneKey) = ([\s\S]*?\n  };)/g)]
  .map(([,name,body])=>`this.${name} = ${body}`).join('\n');
 const wiring = text.slice(text.indexOf("    this.transformControls.addEventListener('objectChange'"), text.indexOf('    // 6. Lighting'));
 const { transform } = await import('../../app/node_modules/esbuild/lib/main.js');
@@ -22,7 +22,7 @@ function fixture(mode) {
  a.userData={objectId:1,instanceId:0}; b.userData={objectId:1,instanceId:1};
  a.rotation.order=b.rotation.order='ZYX'; a.rotation.set(.2,.4,.7); a.scale.set(-1,2,3); b.position.x=10; other.position.x=40;
  const s=Object.create(PlateScene.prototype), batches=[];
- Object.assign(s,{scene:new T.Scene(),groupProxy:new T.Object3D(),groupDrag:null,dragStart:null,objectMeshes:new Map([['1_0',a],['1_1',b],['1_2',other]]),extraKeys:new Set(['1_1']),selectedVolumeId:null,gizmoMode:mode,cutPreview:{active:false},getSelectedMesh:()=>a,orbitControls:{enabled:true},callbacks:{canMoveObjects:()=>true,onTransformMany:entries=>batches.push(entries)},measureActive:false,clearMeasure(){},measureSessionId:0,transformControls:{attach(o){this.object=o;},detach(){this.object=null;},dragging:false,axis:'X'}});
+ Object.assign(s,{requestDraw(){},scene:new T.Scene(),groupProxy:new T.Object3D(),groupDrag:null,dragStart:null,objectMeshes:new Map([['1_0',a],['1_1',b],['1_2',other]]),extraKeys:new Set(['1_1']),selectedVolumeId:null,gizmoMode:mode,cutPreview:{active:false},getSelectedMesh:()=>a,orbitControls:{enabled:true},callbacks:{canMoveObjects:()=>true,onTransformMany:entries=>batches.push(entries)},measureActive:false,clearMeasure(){},measureSessionId:0,transformControls:{attach(o){this.object=o;},detach(){this.object=null;},dragging:false,axis:'X'}});
  s.updateTransformControls(); return {s,a,b,other,batches};
 }
 test('group scale and rotate attach, transform all selected instances and commit once',()=>{
@@ -40,6 +40,33 @@ test('group scale and rotate attach, transform all selected instances and commit
 });
 test('cancel and busy commit restore signed scales, orientation, positions and orbit',()=>{
  for(const busy of [false,true]) {const {s,a,b,batches}=fixture('rotate'); const position=b.position.clone(),q=a.quaternion.clone(); s.beginGroupDrag(); s.groupProxy.quaternion.setFromAxisAngle(new T.Vector3(0,1,0),1); s.changeGroupDrag(); if(busy)s.callbacks.canMoveObjects=()=>false; s.finishGroupDrag(busy); assert.ok(b.position.equals(position)); assert.ok(a.quaternion.angleTo(q)<1e-7); assert.equal(a.scale.x,-1); assert.equal(batches.length,0); assert.equal(s.orbitControls.enabled,true); }
+});
+
+test('group and touch rollback request a frame after restoring transforms',()=>{
+ const {s,b}=fixture('rotate'); let draws=0; s.requestDraw=()=>draws++;
+ s.beginGroupDrag(); s.groupProxy.quaternion.setFromAxisAngle(new T.Vector3(0,0,1),1); s.changeGroupDrag();
+ draws=0; s.finishGroupDrag(false); assert.ok(draws>0);
+ s.renderer={domElement:{hasPointerCapture:()=>false}};
+ s.planeDrag={pointerId:1,orbitEnabled:true,transformEnabled:true,origins:new Map([[b,new T.Vector3(10,0,0)]]),moved:true};
+ b.position.set(20,30,0); draws=0; s.finishPlaneDrag(false);
+ assert.deepEqual(b.position.toArray(),[10,0,0]); assert.equal(draws,1);
+});
+
+test('Escape rolls back a body drag and consumes its release without clearing selection',()=>{
+ const {s,a,batches}=fixture('translate'); let draws=0, stopped=0;
+ Object.assign(s,{requestDraw(){draws++;},renderer:{domElement:{hasPointerCapture:()=>false}},consumedTransformReleases:new WeakSet()});
+ s.transformControls.addEventListener=()=>{};
+ bindHandlers.call(s,T);
+ const origin=a.position.clone(); a.position.x+=20;
+ s.planeDrag={pointerId:7,target:a,origins:new Map([[a,origin]]),moved:true,orbitEnabled:true,transformEnabled:true};
+ s.orbitControls.enabled=false; s.transformControls.enabled=false;
+ s.cancelPlaneKey({key:'Escape',preventDefault(){},stopImmediatePropagation(){stopped++;}});
+ assert.ok(a.position.equals(origin)); assert.equal(s.planeDrag,null); assert.equal(stopped,1);
+ assert.equal(s.orbitControls.enabled,true); assert.equal(s.transformControls.enabled,true); assert.ok(draws>0);
+ const up={pointerId:7,pointerType:'mouse'};
+ s.onTransformPointerUp(up); s.onPointerUp(up);
+ assert.equal(s.transformPointerId,null); assert.equal(batches.length,0);
+ assert.equal(s.consumedTransformReleases.has(up),false);
 });
 
 test('TransformControls release before viewer picking preserves selection; next background click clears',()=>{

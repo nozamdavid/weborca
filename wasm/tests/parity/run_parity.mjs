@@ -307,8 +307,8 @@ async function main() {
       exitA = 'error (engine)';
     }
 
-    // 3. Check (b) Engine vs native macOS x86_64 reference
-    const refPath = path.join(refsDir, `${c.id}.gcode`);
+    // 3. Check (b) Engine vs selected native reference
+    const refPath = path.join(c.id === 'cube-voron' ? path.join(__dirname, 'refs-current-native') : refsDir, `${c.id}.gcode`);
     if (fs.existsSync(refPath)) {
       if (!sliceErr) {
         const cmpRes = spawnSync('bash', [compareScript, wasmGcodePath, refPath], {
@@ -319,7 +319,7 @@ async function main() {
           const diffs = getFirst30Diffs(wasmGcodePath, refPath);
           failureDetails.push({
             caseId: c.id,
-            stage: 'check (b) macOS compare',
+            stage: 'check (b) native reference compare',
             status: cmpRes.status,
             output: cmpRes.stdout + (cmpRes.stderr ? `\n${cmpRes.stderr}` : ''),
             diffs
@@ -368,7 +368,7 @@ async function main() {
   }
   console.log(sep);
 
-  console.log('\nCases without macOS x86_64 reference (skipped in check b):');
+  console.log('\nCases without native reference (skipped in check b):');
   for (const sk of skippedRefCases) {
     console.log(`  - ${sk}`);
   }

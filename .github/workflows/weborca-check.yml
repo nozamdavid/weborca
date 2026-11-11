@@ -1,0 +1,38 @@
+name: WebOrca source checks
+on:
+  pull_request:
+    paths: ['wasm/**', 'src/**', 'deps/**', 'deps_src/**', 'version.inc', 'cmake/**', 'CMakeLists.txt', '.github/workflows/**']
+  push:
+    branches: [main]
+    paths: ['wasm/**', 'src/**', 'deps/**', 'deps_src/**', 'version.inc', 'cmake/**', 'CMakeLists.txt', '.github/workflows/**']
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            wasm/app/package-lock.json
+            wasm/tests/package-lock.json
+      - run: npm ci --prefix wasm/app --no-audit --no-fund
+      - run: npm ci --prefix wasm/tests --no-audit --no-fund
+      - name: Install official actionlint v1.7.7
+        run: |
+          curl -fsSL https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz -o /tmp/actionlint.tar.gz
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          sudo install /tmp/actionlint /usr/local/bin/actionlint
+      - run: bash wasm/ci/check.sh --check
+      - run: npm --prefix wasm/app run check:locales
+      - run: wasm/app/node_modules/.bin/tsc -p wasm/app --noEmit
+      - run: node --test wasm/ci/runtime-manifest.test.mjs wasm/ci/test-classification.test.mjs
+      - name: Native preview packet serialization
+        run: |
+          c++ -std=c++17 -Isrc/libvgcode/include -Ideps_src wasm/preview/test_packet.cpp -o /tmp/orca-preview-packet-test
+          /tmp/orca-preview-packet-test
+      - name: Engine independent method tests
+        run: node --experimental-strip-types --test wasm/tests/node/box-selection.test.mjs wasm/tests/node/group-transform-gizmos.test.mjs wasm/tests/node/multi-scale.test.mjs wasm/tests/node/cloud-startup.test.mjs wasm/tests/node/history-selection.test.mjs wasm/tests/node/scene-performance.test.mjs wasm/tests/node/worker-bridge.test.mjs wasm/tests/node/preview-worker-client-lifecycle.test.mjs wasm/tests/node/preview-import-overlap.test.mjs wasm/tests/node/preview-input-ownership.test.mjs wasm/tests/node/preview-initial-viewport.test.mjs wasm/tests/node/preview-render-scheduling.test.mjs wasm/tests/node/preview-performance-counter.test.mjs wasm/tests/node/mobile-preview-lifecycle.test.mjs wasm/tests/node/mobile-preview.test.mjs

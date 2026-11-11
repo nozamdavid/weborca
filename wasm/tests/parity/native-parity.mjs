@@ -453,14 +453,14 @@ async function main() {
     }
 
     // --- (D) Compare WASM vs macOS x86_64 reference if available ---
-    const macosRefPath = path.join(macosRefsDir, `${c.id}.gcode`);
+    const macosRefPath = path.join(c.id === 'cube-voron' ? path.join(__dirname, 'refs-current-native') : macosRefsDir, `${c.id}.gcode`);
     if (fs.existsSync(macosRefPath) && !wasmErr) {
       const macCmpProc = spawnSync('bash', [compareScript, macosRefPath, wasmGcodePath], {
         encoding: 'utf8',
         timeout: 60000
       });
       macosRefExit = macCmpProc.status !== null ? String(macCmpProc.status) : 'error';
-      console.log(`[macOS Golden] compare_gcode WASM vs macOS golden reference: exit ${macosRefExit}`);
+      console.log(`[Native Reference] compare_gcode WASM vs selected native reference: exit ${macosRefExit}`);
     }
 
     // Extract metrics
@@ -526,7 +526,7 @@ async function main() {
   console.log('                     Parity Summary Table                       ');
   console.log('================================================================');
   const pad = (str, len) => String(str).padEnd(len);
-  const header = `| ${pad('Case ID', 14)} | ${pad('Cmp Exit', 8)} | ${pad('macOS Ref', 9)} | ${pad('Diff Lines', 10)} | ${pad('Nat (ms)', 8)} | ${pad('WASM (ms)', 9)} | ${pad('Nat Extr', 10)} | ${pad('WASM Extr', 10)} |`;
+  const header = `| ${pad('Case ID', 14)} | ${pad('Cmp Exit', 8)} | ${pad('Native Ref', 9)} | ${pad('Diff Lines', 10)} | ${pad('Nat (ms)', 8)} | ${pad('WASM (ms)', 9)} | ${pad('Nat Extr', 10)} | ${pad('WASM Extr', 10)} |`;
   const sep = `|-${'-'.repeat(14)}-|-${'-'.repeat(8)}-|-${'-'.repeat(9)}-|-${'-'.repeat(10)}-|-${'-'.repeat(8)}-|-${'-'.repeat(9)}-|-${'-'.repeat(10)}-|-${'-'.repeat(10)}-|`;
   console.log(header);
   console.log(sep);
@@ -577,18 +577,15 @@ async function main() {
       }
 
       if (rep.macosRefExit === '0') {
-        console.log(`    - macOS Reference: WASM output matches pre-recorded macOS x86_64 reference with exit 0 (0 differing lines).`);
-        if (rep.caseId === 'cube-voron') {
-          console.log(`    - Hypothesis: Toolchain differences (GNU libstdc++ on native Linux vs LLVM libc++ in WASM and macOS) are consistent with container hash/iteration reordering on cube-voron, but libstdc++ hashing is not established as the sole cause.`);
-        }
+        console.log(`    - Native Reference: WASM output matches selected native reference with exit 0 (0 differing lines).`);
       } else if (rep.macosRefExit !== 'no ref') {
-        console.log(`    - macOS Reference: compare_gcode WASM vs macOS reference exited with ${rep.macosRefExit}.`);
+        console.log(`    - Native Reference: compare_gcode WASM vs selected native reference exited with ${rep.macosRefExit}.`);
       } else {
-        console.log(`    - macOS Reference: No pre-recorded macOS x86_64 reference available for ${rep.caseId}.`);
+        console.log(`    - Native Reference: No selected native reference available for ${rep.caseId}.`);
       }
 
       if (rep.caseId === 'benchy-voron') {
-        console.log(`    - Limits: The macOS cube match does not prove root cause for benchy-voron; floating-point order, optimization differences, or mesh handling remain unverified.`);
+        console.log(`    - Limits: The cube reference match does not prove root cause for benchy-voron; floating-point order, optimization differences, or mesh handling remain unverified.`);
       } else if (rep.caseId === 'cube-bbl') {
         console.log(`    - Limits: Summed metrics and bounds do not prove geometry equivalence or isolate specific causes (e.g. prime-line/wipe sequences).`);
       }
@@ -596,19 +593,19 @@ async function main() {
       console.log(`  Observations:`);
       console.log(`    - Normalized lines differ within numeric tolerance (0.001 mm) (compare_gcode exit 1).`);
       if (rep.macosRefExit === '0') {
-        console.log(`    - macOS Reference: WASM output matches pre-recorded macOS x86_64 reference with exit 0.`);
+        console.log(`    - Native Reference: WASM output matches selected native reference with exit 0.`);
       } else if (rep.macosRefExit !== 'no ref') {
-        console.log(`    - macOS Reference: compare_gcode WASM vs macOS reference exited with ${rep.macosRefExit}.`);
+        console.log(`    - Native Reference: compare_gcode WASM vs selected native reference exited with ${rep.macosRefExit}.`);
       } else {
-        console.log(`    - macOS Reference: No pre-recorded macOS x86_64 reference available for ${rep.caseId}.`);
+        console.log(`    - Native Reference: No selected native reference available for ${rep.caseId}.`);
       }
     } else if (rep.compareExit === '0') {
       console.log(`  Observations:`);
       console.log(`    - Normalized output matches exactly (exit 0).`);
       if (rep.macosRefExit === '0') {
-        console.log(`    - macOS Reference: WASM output matches pre-recorded macOS x86_64 reference with exit 0.`);
+        console.log(`    - Native Reference: WASM output matches selected native reference with exit 0.`);
       } else if (rep.macosRefExit !== 'no ref') {
-        console.log(`    - macOS Reference: compare_gcode WASM vs macOS reference exited with ${rep.macosRefExit}.`);
+        console.log(`    - Native Reference: compare_gcode WASM vs selected native reference exited with ${rep.macosRefExit}.`);
       }
     }
   }

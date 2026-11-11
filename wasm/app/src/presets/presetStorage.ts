@@ -30,20 +30,29 @@ async function read(): Promise<PresetStorageEnvelope> {
   try { const raw = localStorage.getItem(KEY); if (raw) fallback = envelope(raw, Number(localStorage.getItem('orca_user_presets_ts')) || 0); } catch { /* OPFS */ }
   return fallback && (!opfs || fallback.updatedAt > opfs.updatedAt) ? fallback : opfs ?? fallback ?? { version: 2, updatedAt: 0, presets: [], cloud: { accounts: {} } };
 }
-async function write(state: PresetStorageEnvelope) {
+async function write(state: PresetStorageEnvelope, signal?: AbortSignal) {
   state.updatedAt = Math.max(Date.now(), state.updatedAt + 1);
   const text = JSON.stringify(state);
   let saved = false;
   try {
     const h = await handle(true);
-    if (h) { const stream = await h.createWritable(); await stream.write(text); await stream.close(); saved = true; }
+    signal?.throwIfAborted();
+    if (h) {
+      const stream = await h.createWritable();
+      await stream.write(text);
+      if (signal?.aborted) { await stream.abort(); signal.throwIfAborted(); }
+      await stream.close(); saved = true;
+    }
   } catch { /* use fallback; never publish a checkpoint after both writes fail */ }
+  signal?.throwIfAborted();
   try { localStorage.setItem(KEY, text); saved = true; } catch { /* OPFS may have committed */ }
   if (!saved) throw new Error('Unable to save presets and cloud journal durably.');
 }
-export async function transactPresetStorage<T>(work: (state: PresetStorageEnvelope) => Promise<T> | T): Promise<T> {
+export async function transactPresetStorage<T>(work: (state: PresetStorageEnvelope) => Promise<T> | T, signal?: AbortSignal): Promise<T> {
   return lock(async () => {
     const state = await read();
+    signal?.throwIfAborted();
+    const original = signal ? structuredClone(state) : undefined;
     if (typeof navigator !== 'undefined' && !navigator.locks && (state.cloud.activeAccount || Object.keys(state.cloud.accounts).length)) {
       throw new Error('Cloud sync requires browser Web Locks. Use a supported HTTPS browser.');
     }
@@ -51,7 +60,13 @@ export async function transactPresetStorage<T>(work: (state: PresetStorageEnvelo
     if (typeof navigator !== 'undefined' && !navigator.locks && Object.keys(state.cloud.accounts).length) {
       throw new Error('Cloud sync requires browser Web Locks. Use a supported HTTPS browser.');
     }
-    await write(state);
+    try { await write(state, signal); }
+    catch (error) {
+      // close() may already have committed while cancellation arrived. Restore
+      // under the same lock before another transaction can observe enrollment.
+      if (signal?.aborted && original) await write(original);
+      throw error;
+    }
     return result;
   });
 }

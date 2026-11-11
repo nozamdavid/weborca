@@ -98,7 +98,8 @@ describe('Orca WASM Engine Object List & Modifiers Test Suite', () => {
     const vol = obj.volumes[0];
     assert.ok(vol.id > 0, 'volume must have a valid positive ID');
     assert.equal(vol.type, 'part', 'initial volume type must be part');
-    assert.equal(vol.extruder, 0, 'initial volume extruder should be 0 (default)');
+    // Core object creation assigns extruder 1 to the object; an unset volume inherits it.
+    assert.equal(vol.extruder, 1, 'initial volume extruder inherits the object default (1)');
   });
 
   test('renameObject and renameVolume update hierarchy names', async () => {
@@ -271,7 +272,7 @@ describe('Orca WASM Engine Object List & Modifiers Test Suite', () => {
     const tree2 = await core.call('getObjectTree', {});
     assert.equal(tree2.objects[0].volumes[0].extruder, 2);
 
-    // Reset to 0 (default/inherited)
+    // Reset to 0: clears the volume override so it inherits the object extruder (1)
     await core.call('setVolumeExtruder', {
       objectId: objId,
       volumeId: volId,
@@ -279,7 +280,7 @@ describe('Orca WASM Engine Object List & Modifiers Test Suite', () => {
     });
 
     const tree3 = await core.call('getObjectTree', {});
-    assert.equal(tree3.objects[0].volumes[0].extruder, 0);
+    assert.equal(tree3.objects[0].volumes[0].extruder, 1);
   });
   test('reordering parts preserves IDs, settings and all desktop primitive shapes', async () => {
     const objectId = (await core.call('getObjectTree', {})).objects[0].id;

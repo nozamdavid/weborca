@@ -94,7 +94,7 @@ export interface PlateStoreState {
   isOrientationLocked: (instanceId: number) => boolean;
   // Actions
   initBedConfig: (printableArea?: string, printableHeight?: string) => void;
-  refreshObjects: () => Promise<PlateObject[]>;
+  refreshObjects: (preserveGeometry?: boolean) => Promise<PlateObject[]>;
   selectObject: (objectId: number | null, instanceId?: number | null) => void;
   setGizmoMode: (mode: GizmoMode) => void;
   getMesh: (objectId: number) => Promise<MeshBufferData>;
@@ -227,8 +227,8 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     set({ bedConfig: { points, width, depth, height, center } });
   },
 
-  refreshObjects: async () => {
-    set({ viewerMeshCache: new Map() });
+  refreshObjects: async (preserveGeometry = false) => {
+    if (!preserveGeometry) set({ meshCache: new Map(), viewerMeshCache: new Map() });
     try {
       const engine = await getEngine();
       let objs: PlateObject[];
@@ -376,7 +376,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     for (const { objectId, instanceId, ...transform } of entries) {
       await engine.call('setInstanceTransform', { objectId, instanceId, ...transform });
     }
-    await get().refreshObjects();
+    await get().refreshObjects(true);
     try {
       await useHistoryStore.getState().commitTransaction('Transform objects');
     } catch (_) {}
@@ -420,8 +420,10 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     if (res && res.volumes) {
       parsed.volumes = res.volumes;
     }
-    meshCache.set(objectId, parsed);
-    set({ meshCache: new Map(meshCache) });
+    if (get().meshCache === meshCache) {
+      meshCache.set(objectId, parsed);
+      set({ meshCache: new Map(meshCache) });
+    }
     return parsed;
   },
 
@@ -435,7 +437,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     }
     const bytes = result.buffer instanceof Uint8Array ? result.buffer : await engine.readFile(result.path);
     const parsed = { ...parseMeshBuffer(bytes), volumes: result.volumes } as ViewerMeshData;
-    cache.set(objectId, parsed);
+    if (get().viewerMeshCache === cache) cache.set(objectId, parsed);
     return parsed;
   },
 
@@ -457,7 +459,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     } else {
       await engine.call('setInstanceTransform', { objectId, instanceId, ...transform });
     }
-    await get().refreshObjects();
+    await get().refreshObjects(true);
     try {
       await useHistoryStore.getState().commitTransaction('Transform object');
     } catch (_) {}

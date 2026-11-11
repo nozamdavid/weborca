@@ -7,6 +7,9 @@ import { slicePrerequisites } from '../shell/slicePrerequisites';
 import { showToast } from '../shell/toastStore';
 import { storeRecentFile } from '../shell/recentFiles';
 import { clearExportGcodeCache } from '../shell/gcodeThumbnails';
+// Invalidation of a superseded in-flight G-code import must be synchronous at the
+// new import's initiation, before its file is being read.
+import { cancelPendingPreviewLoad } from '../preview/previewStore';
 /**
  * @file appStore.ts
  * Zustand state store for OrcaSlicer Web.
@@ -308,6 +311,7 @@ async function storeImportedRecentFile(file: File, type: 'project' | 'model'): P
 
 let projectExportId = 0;
 
+let gcodeImportSequence = 0;
 export const useAppStore = create<AppState>((set, get) => ({
   isIsolated: typeof window !== 'undefined' ? !!window.crossOriginIsolated : false,
 
@@ -1137,18 +1141,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   openGcodeFile: async (file: File) => {
     if (!get().isEngineReady) { showToast('Wait for the current operation to finish.', 'error'); return; }
     if (!file) return;
+    const sequence = ++gcodeImportSequence;
     if (get().isSlicing) get().cancelSlice();
+    // A superseded in-flight import must not commit its result to the renderer or
+    // preview stores while this file is being read; any previously valid rendered
+    // G-code is preserved if this import fails.
+    cancelPendingPreviewLoad();
     try {
       const buffer = await file.arrayBuffer();
+      if (sequence !== gcodeImportSequence) return;
       const bytes = new Uint8Array(buffer);
 
       const { usePreviewStore } = await import('../preview/previewStore');
-      let stats: any;
-      try {
-        stats = await usePreviewStore.getState().loadGcodeBytes(bytes, file.name);
-      } catch (_) {}
+      const stats = await usePreviewStore.getState().loadGcodeBytes(bytes, file.name);
+      if (sequence !== gcodeImportSequence) return;
 
       const { usePlatesStore } = await import('../plates/platesStore');
+      if (sequence !== gcodeImportSequence) return;
       const oldUrl = get().gcodeUrl;
       if (oldUrl) URL.revokeObjectURL(oldUrl);
       set({
@@ -1158,10 +1167,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           gcode: bytes,
           gcodePath: file.name,
           gcodeBytes: bytes.byteLength,
-          layers: stats?.layers || 0,
-          printTimeS: stats?.timeS ?? stats?.printTimeS ?? 0,
-          filamentMm: stats?.filamentMm || 0,
-          filamentG: stats?.filamentG || 0,
+          layers: stats.layers,
+          printTimeS: stats.timeS,
+          filamentMm: stats.filamentMm,
+          filamentG: stats.filamentG,
           warnings: []
         },
         sessionRecovery: 'idle',
@@ -1173,6 +1182,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         await storeRecentFile(file.name, bytes, 'gcode');
       } catch (_) {}
     } catch (err: any) {
+      if (sequence !== gcodeImportSequence || err?.name === 'AbortError') return;
       showToast(`Failed to load G-code: ${err.message || String(err)}`, 'error');
     }
   },

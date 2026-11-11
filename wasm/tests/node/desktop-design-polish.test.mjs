@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from '../../app/node_modules/esbuild/lib/main.js';
-import { chromium } from '../../build/web-smoke/node_modules/playwright/index.mjs';
+import { chromium } from 'playwright';
 
 const resolveDir = new URL('../../app/', import.meta.url).pathname;
 const fixture = `import {create} from 'zustand';

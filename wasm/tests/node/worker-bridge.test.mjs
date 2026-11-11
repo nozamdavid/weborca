@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import OrcaEngine from '../../web/orca-engine.js';
 import { createEngineCore } from '../../web/engine-core.js';
+import { prepareEngineAssets } from '../../web/engine-assets.js';
 
 function fakeWorker() {
   return {
@@ -17,8 +18,9 @@ function fakeWorker() {
 function workerDispatcher(core, reply) {
   const source = fs.readFileSync(new URL('../../web/engine-worker.js', import.meta.url), 'utf8')
     .replace("import { createEngineCore } from './engine-core.js';", '')
+    .replace("import { prepareEngineAssets } from './engine-assets.js';", '')
     .replace('let core = null;', 'let core = injectedCore;');
-  const context = { injectedCore: core, self: {}, Uint8Array, AbortController, postMessage: reply };
+  const context = { injectedCore: core, prepareEngineAssets, self: {}, Uint8Array, AbortController, postMessage: reply };
   vm.runInNewContext(source, context);
   return context.self.onmessage;
 }

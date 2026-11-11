@@ -5,6 +5,7 @@ import ts from '../../app/node_modules/typescript/lib/typescript.js';
 
 // Use the real wrapper with a fake native renderer and controllable browser frame queue.
 const source = fs.readFileSync(new URL('../../app/src/preview/orcaPreviewModule.ts', import.meta.url), 'utf8')
+  .replace("import { preparePreview, cancelPreviewWorker } from './previewWorkerClient';", "const cancelPreviewWorker = () => {}; const preparePreview = async bytes => ({ packet: bytes.slice(), stats: { layers: 1, moves: 2 } });")
   .replace('let previewInstance: any = null;', 'let previewInstance: any = globalThis.__schedulingRenderer;');
 const js = ts.transpile(source, { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 });
 

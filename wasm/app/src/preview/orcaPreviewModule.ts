@@ -4,6 +4,7 @@
  */
 
 import type { PreviewStatistics, LegendData } from './types';
+import { preparePreview, cancelPreviewWorker } from './previewWorkerClient';
 
 let previewModulePromise: Promise<any> | null = null;
 let previewModule: any = null;
@@ -93,6 +94,8 @@ function completedDraw(start: number, end: number): void {
 // This is a parse identity marker, not an owner of the potentially large source.
 let loadedGcode: WeakRef<Uint8Array> | null = null;
 let bedPolygon: [number, number][] | null = null;
+let prepared: { source: WeakRef<Uint8Array>; packet: Uint8Array; stats: PreviewStatistics } | null = null;
+let loadGeneration = 0;
 
 export async function getPreviewModule(canvas?: HTMLCanvasElement): Promise<any> {
   if (previewModule) return previewModule;
@@ -102,13 +105,13 @@ export async function getPreviewModule(canvas?: HTMLCanvasElement): Promise<any>
     let createOrcaPreview: any;
 
     try {
-      const url1 = '/preview/orca_preview.js';
-      const mod = await import(/* @vite-ignore */ url1);
+      const runtimeUrl = '/preview/orca_preview.js';
+      const mod = await import(/* @vite-ignore */ runtimeUrl);
       createOrcaPreview = mod.default || mod;
     } catch (_) {
       try {
-        const url2 = '/orca_preview.js';
-        const mod = await import(/* @vite-ignore */ url2);
+        const runtimeUrl = '/orca_preview.js';
+        const mod = await import(/* @vite-ignore */ runtimeUrl);
         createOrcaPreview = mod.default || mod;
       } catch (err) {
         console.error('[OrcaPreview] Failed to import orca_preview.js:', err);
@@ -199,6 +202,8 @@ export async function initPreview(canvas: HTMLCanvasElement): Promise<any> {
 }
 
 export function disposePreview(): void {
+  ++loadGeneration;
+  cancelPreviewWorker();
   ++previewGeneration;
   resetPerformance();
   if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
@@ -214,8 +219,21 @@ export function getPreviewInstance(): any {
   return previewInstance;
 }
 
+/**
+ * Invalidate an in-flight preparation at a new import's initiation. Pending
+ * worker results become stale before any renderer or preview-store mutation,
+ * while the currently rendered G-code and its prepared packet stay intact.
+ */
+export function cancelPendingGcodeLoad(): void {
+  ++loadGeneration;
+  cancelPreviewWorker();
+}
+
 /** Discard a closed project's toolpaths while retaining the initialized viewer and bed. */
 export function clearGcode(): void {
+  ++loadGeneration;
+  cancelPreviewWorker();
+  prepared = null;
   resetPerformance();
   if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
   pendingFrame = null;
@@ -228,11 +246,7 @@ export function clearGcode(): void {
   requestRender();
 }
 
-export function loadGcode(data: Uint8Array | ArrayBuffer | string, _name = 'print.gcode'): PreviewStatistics {
-  if (!previewInstance || !previewModule) {
-    throw new Error('Preview module not initialized');
-  }
-
+export async function loadGcode(data: Uint8Array | ArrayBuffer | string, _name = 'print.gcode'): Promise<PreviewStatistics> {
   let bytes: Uint8Array;
   if (typeof data === 'string') {
     bytes = new TextEncoder().encode(data);
@@ -242,15 +256,24 @@ export function loadGcode(data: Uint8Array | ArrayBuffer | string, _name = 'prin
     bytes = data;
   }
 
+  const generation = ++loadGeneration;
+  let result = prepared?.source.deref() === bytes ? prepared : null;
+  if (!result) {
+    const converted = await preparePreview(bytes);
+    if (generation !== loadGeneration) {
+      const error = new Error('Preview preparation canceled'); error.name = 'AbortError'; throw error;
+    }
+    result = { source: new WeakRef(bytes), ...converted };
+  }
+  if (!previewInstance || !previewModule) { prepared = result; return result.stats; }
   const previousGcode = loadedGcode;
-  const vfsPath = `/preview_${Date.now()}.gcode`;
+  const vfsPath = `/preview_${Date.now()}.packet`;
 
   try {
-    // The preview parser is read-only and unlinks this file below. Borrow the immutable
-    // source bytes instead of allocating another full G-code copy in MEMFS.
-    previewModule.FS.writeFile(vfsPath, bytes, { canOwn: true });
+    // Stage the prepared packet, then release the temporary MEMFS file below.
+    previewModule.FS.writeFile(vfsPath, result.packet);
     loadedGcode = null;
-    const resStr = previewInstance.loadGcode(vfsPath);
+    const resStr = previewInstance.loadParsedGcode(vfsPath);
     const stats: PreviewStatistics = JSON.parse(resStr);
     if (stats.error) {
       // Native JSON errors are reported before replacing the old viewer. A thrown
@@ -270,6 +293,7 @@ export function loadGcode(data: Uint8Array | ArrayBuffer | string, _name = 'prin
     if (bedPolygon) previewInstance.setBedPolygon(bedPolygon);
 
     loadedGcode = new WeakRef(bytes);
+    prepared = result;
 
     // Expose stats globally for tests
     (window as any).previewStats = stats;

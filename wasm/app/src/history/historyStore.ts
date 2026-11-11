@@ -13,7 +13,9 @@ import { usePaintingStore } from '../painting/paintingStore';
 import { useAppStore } from '../store/appStore';
 import { usePlatesStore } from '../plates/platesStore';
 import type { PlateObject } from '../plate/types';
+import type { InstanceRef } from '../plate/plateStore';
 import type {
+  HistoryInstanceSelection,
   HistorySnapshot,
   HistoryStoreState,
   HistorySelection,
@@ -153,55 +155,130 @@ function captureSettingsState(): HistorySettingsState {
   };
 }
 
-function restoreSelectionSafely(snap: HistorySnapshot, objects: PlateObject[]): void {
+function captureInstanceIdentities(objects: PlateObject[]): HistoryInstanceSelection[] {
+  const { selectedObjectId, selectedInstanceId, extraSelection } = usePlateStore.getState();
+  if (selectedObjectId === null || selectedInstanceId === null) return [];
+
+  const seen = new Set<string>();
+  const identities: HistoryInstanceSelection[] = [];
+  for (const ref of [{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection]) {
+    const objectIndex = objects.findIndex((o) => o.id === ref.objectId);
+    if (objectIndex < 0) continue;
+    const obj = objects[objectIndex];
+    const instanceIndex = obj.instances.findIndex((i) => i.id === ref.instanceId);
+    if (instanceIndex < 0) continue;
+    const key = `${objectIndex}:${instanceIndex}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    identities.push({ objectName: obj.name, objectIndex, instanceIndex });
+  }
+  return identities;
+}
+
+export function captureSelection(objects: PlateObject[]): HistorySelection | null {
+  const identities = captureInstanceIdentities(objects);
+  if (identities.length === 0) return null;
+
+  const primary = identities[0];
+  const obj = objects[primary.objectIndex as number];
+  const { selectedVolumeId, objects: tree } = useObjectListStore.getState();
+  const volumes = tree.find(item => item.id === obj.id)?.volumes ?? [];
+  const volumeIndex = selectedVolumeId === null ? -1 : volumes.findIndex(v => v.id === selectedVolumeId);
+
+  return {
+    objectName: primary.objectName,
+    objectIndex: primary.objectIndex,
+    instanceIndex: primary.instanceIndex,
+    volumeId: selectedVolumeId ?? undefined,
+    volumeIndex: volumeIndex >= 0 ? volumeIndex : undefined,
+    instances: identities
+  };
+}
+
+function resolveObjectIdentity(identity: HistoryInstanceSelection, objects: PlateObject[]): PlateObject | undefined {
+  const index = identity.objectIndex;
+  const indexed = typeof index === 'number' && Number.isInteger(index) && index >= 0 ? objects[index] : undefined;
+  if (indexed && (identity.objectName === undefined || indexed.name === identity.objectName)) {
+    return indexed;
+  }
+  return identity.objectName !== undefined
+    ? objects.find((o) => o.name === identity.objectName)
+    : undefined;
+}
+
+function resolveInstanceRefs(selection: HistorySelection, objects: PlateObject[]): InstanceRef[] {
+  const identities = selection.instances?.length
+    ? selection.instances
+    : [{
+        objectName: selection.objectName,
+        objectIndex: selection.objectIndex,
+        instanceIndex: selection.instanceIndex
+      }];
+
+  const seen = new Set<string>();
+  const refs: InstanceRef[] = [];
+  for (const identity of identities) {
+    const obj = resolveObjectIdentity(identity, objects);
+    const instanceIndex = identity.instanceIndex;
+    if (!obj || typeof instanceIndex !== 'number' || !Number.isInteger(instanceIndex)) continue;
+    const instance = obj.instances[instanceIndex];
+    if (!instance) continue;
+    const key = `${obj.id}:${instance.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ objectId: obj.id, instanceId: instance.id });
+  }
+  return refs;
+}
+
+function resolveVolumeId(selection: HistorySelection, objectId: number): number | null {
+  const volumes = useObjectListStore.getState().objects.find(obj => obj.id === objectId)?.volumes ?? [];
+  if (typeof selection.volumeIndex === 'number' && Number.isInteger(selection.volumeIndex)) {
+    const volume = volumes[selection.volumeIndex];
+    if (volume) return volume.id;
+  }
+  return typeof selection.volumeId === 'number'
+    ? volumes.find(v => v.id === selection.volumeId)?.id ?? null
+    : null;
+}
+
+export function capturePaintState(): HistoryPaintState | null {
+  const paint = usePaintingStore.getState();
+  if (!paint.isPaintingActive) return null;
+  const volumes = useObjectListStore.getState().objects.find(obj => obj.id === paint.selectedObjectId)?.volumes ?? [];
+  const index = volumes.findIndex(volume => volume.id === paint.selectedVolumeId);
+  return { isPaintingActive: true, paintTarget: paint.paintTarget, selectedVolumeId: paint.selectedVolumeId,
+    volumeIndex: index >= 0 ? index : undefined };
+}
+
+export function resolvePaintVolumeId(paint: HistoryPaintState, objectId: number): number | null {
+  return resolveVolumeId({ volumeIndex: paint.volumeIndex, volumeId: paint.selectedVolumeId ?? undefined }, objectId);
+}
+
+export interface RestoredHistorySelection {
+  primary: InstanceRef;
+  extras: InstanceRef[];
+  volumeId: number | null;
+}
+
+export function restoreSelectionSafely(snap: HistorySnapshot, objects: PlateObject[]): RestoredHistorySelection | null {
   const plateStore = usePlateStore.getState();
   const objStore = useObjectListStore.getState();
+  const refs = snap.selection ? resolveInstanceRefs(snap.selection, objects) : [];
 
-  if (objects.length === 0) {
+  if (refs.length === 0) {
     plateStore.selectObject(null, null);
     objStore.selectItem(null, null);
-    return;
+    return null;
   }
 
-  if (!snap.selection) {
-    plateStore.selectObject(objects[0].id, objects[0].instances[0]?.id ?? null);
-    objStore.selectItem(objects[0].id, null);
-    return;
-  }
+  const [primary, ...extras] = refs;
+  plateStore.selectObject(primary.objectId, primary.instanceId);
+  for (const extra of extras) plateStore.toggleSelect(extra.objectId, extra.instanceId);
 
-  // 1. Try matching by object name
-  const selObjName = snap.selection.objectName;
-  let matchedObj = selObjName
-    ? objects.find((o) => o.name === selObjName)
-    : undefined;
-
-  // 2. Fallback to index if name match failed
-  if (
-    !matchedObj &&
-    typeof snap.selection.objectIndex === 'number' &&
-    objects[snap.selection.objectIndex]
-  ) {
-    matchedObj = objects[snap.selection.objectIndex];
-  }
-
-  // 3. Fallback to first object
-  if (!matchedObj) {
-    matchedObj = objects[0];
-  }
-
-  const instId =
-    typeof snap.selection.instanceIndex === 'number' &&
-    matchedObj.instances[snap.selection.instanceIndex]
-      ? matchedObj.instances[snap.selection.instanceIndex].id
-      : (matchedObj.instances[0]?.id ?? null);
-
-  plateStore.selectObject(matchedObj.id, instId);
-  // Native 3MF restore allocates new IDs; snapshot order identifies the same part.
-  const volumes = objStore.objects.find(obj => obj.id === matchedObj.id)?.volumes ?? [];
-  const volume = snap.selection.volumeIndex !== undefined
-    ? volumes[snap.selection.volumeIndex]
-    : volumes.find(v => v.id === snap.selection?.volumeId);
-  objStore.selectItem(matchedObj.id, volume?.id ?? null);
+  const volumeId = resolveVolumeId(snap.selection as HistorySelection, primary.objectId);
+  objStore.selectItem(primary.objectId, volumeId);
+  return { primary, extras, volumeId };
 }
 
 export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
@@ -316,37 +393,11 @@ export const useHistoryStore = create<HistoryStoreState>((set, get) => ({
         }
       }
 
-      // Capture selection
-      const selObjId = usePlateStore.getState().selectedObjectId;
-      const selInstId = usePlateStore.getState().selectedInstanceId;
-      const selVolId = useObjectListStore.getState().selectedVolumeId;
-      let selection: HistorySelection | null = null;
-
-      if (selObjId !== null && plateObjects.length > 0) {
-        const objIdx = plateObjects.findIndex((o) => o.id === selObjId);
-        const obj = objIdx >= 0 ? plateObjects[objIdx] : null;
-        if (obj) {
-          const instIdx = selInstId !== null ? obj.instances.findIndex((i) => i.id === selInstId) : 0;
-          selection = {
-            objectName: obj.name,
-            objectIndex: objIdx,
-            instanceIndex: instIdx >= 0 ? instIdx : 0,
-            volumeId: selVolId ?? undefined,
-            volumeIndex: selVolId === null ? undefined : useObjectListStore.getState().objects
-              .find(tree => tree.id === obj.id)?.volumes.findIndex(volume => volume.id === selVolId)
-          };
-        }
-      }
+      // Capture the primary and extra selection by snapshot identity.
+      const selection = captureSelection(plateObjects);
 
       // Capture painting state
-      const paintStateObj = usePaintingStore.getState();
-      const paintState: HistoryPaintState | null = paintStateObj.isPaintingActive
-        ? {
-            isPaintingActive: true,
-            paintTarget: paintStateObj.paintTarget,
-            selectedVolumeId: paintStateObj.selectedVolumeId
-          }
-        : null;
+      const paintState = capturePaintState();
 
       const plateState = capturePlateState();
       const settings = captureSettingsState();
@@ -755,18 +806,15 @@ async function restoreSnapshotInternal(snap: HistorySnapshot): Promise<void> {
   }
 
   // Safe selection restoration
-  restoreSelectionSafely(snap, refreshedObjects);
+  const restoredSelection = restoreSelectionSafely(snap, refreshedObjects);
 
   // Restore painting mode if it was active
-  if (snap.paintState?.isPaintingActive && refreshedObjects.length > 0) {
-    const targetName = snap.selection?.objectName;
-    const targetObj = targetName
-      ? refreshedObjects.find((o) => o.name === targetName)
-      : refreshedObjects[0];
+  if (snap.paintState?.isPaintingActive && restoredSelection) {
+    const targetObj = refreshedObjects.find((o) => o.id === restoredSelection.primary.objectId);
 
     if (targetObj) {
       try {
-        await usePaintingStore.getState().startPainting(targetObj.id, snap.paintState.selectedVolumeId);
+        await usePaintingStore.getState().startPainting(targetObj.id, resolvePaintVolumeId(snap.paintState, targetObj.id));
         if (snap.paintState.paintTarget) {
           await usePaintingStore.getState().setPaintTarget(snap.paintState.paintTarget);
         }

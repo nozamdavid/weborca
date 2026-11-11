@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import ts from '../../app/node_modules/typescript/lib/typescript.js';
 
 const source = fs.readFileSync(new URL('../../app/src/preview/orcaPreviewModule.ts', import.meta.url), 'utf8')
+  .replace("import { preparePreview, cancelPreviewWorker } from './previewWorkerClient';", "const cancelPreviewWorker = () => {}; const preparePreview = async bytes => ({ packet: bytes.slice(), stats: { layers: 1, moves: 2 } });")
   .replace('let previewInstance: any = null;', 'let previewInstance: any = globalThis.__inputRenderer;')
   .replace('let previewModule: any = null;', 'let previewModule: any = globalThis.__inputModule;');
 const js = ts.transpile(source, { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 });
@@ -20,15 +21,15 @@ test('preview borrows read-only source bytes and releases the temporary file on 
   globalThis.window = {};
   globalThis.__inputModule = { FS: {
     writeFile(path, input, options) {
-      assert.equal(options.canOwn, true);
-      assert.equal(input, bytes);
+      assert.equal(input.buffer.byteLength, bytes.byteLength);
+      assert.deepEqual(input, bytes);
       files.set(path, input); writes++;
     },
     unlink(path) { files.delete(path); unlinks++; }
   } };
   globalThis.__inputRenderer = {
-    loadGcode(path) {
-      assert.equal(files.get(path).byteOffset, 4);
+    loadParsedGcode(path) {
+      assert.equal(files.get(path).byteOffset, 0);
       if (fail) throw new Error('Rejected fixture');
       return JSON.stringify({ layers: 1, moves: 2 });
     },
@@ -36,12 +37,12 @@ test('preview borrows read-only source bytes and releases the temporary file on 
   };
   try {
     const mod = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
-    assert.deepEqual(mod.loadGcode(bytes), { layers: 1, moves: 2 });
+    assert.deepEqual(await mod.loadGcode(bytes), { layers: 1, moves: 2 });
     assert.equal(mod.isGcodeLoaded(bytes), true);
     assert.equal(files.size, 0);
     assert.deepEqual(backing, before, 'the complete backing buffer including out-of-view bytes is unchanged');
     fail = true;
-    assert.throws(() => mod.loadGcode(bytes), /Rejected fixture/);
+    await assert.rejects(mod.loadGcode(bytes), /Rejected fixture/);
     assert.equal(mod.isGcodeLoaded(bytes), false, 'failed parsing does not retain a successful-load marker');
     assert.equal(files.size, 0);
     assert.equal(writes, 2); assert.equal(unlinks, 2);
@@ -68,7 +69,7 @@ test('pre-mutation replacement errors preserve the old preview identity while na
     unlink(path) { files.delete(path); }
   } };
   globalThis.__inputRenderer = {
-    loadGcode() {
+    loadParsedGcode() {
       nativeLoads++;
       if (failure === 'parse') return JSON.stringify({ error: 'No moves in G-code' });
       if (failure === 'trap') throw new Error('Native trap');
@@ -78,10 +79,10 @@ test('pre-mutation replacement errors preserve the old preview identity while na
   };
   try {
     const mod = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}#rollback`);
-    mod.loadGcode(oldBytes);
+    await mod.loadGcode(oldBytes);
     for (const kind of ['write', 'parse']) {
       failure = kind;
-      assert.throws(() => mod.loadGcode(replacement));
+      await assert.rejects(mod.loadGcode(replacement));
       assert.equal(mod.isGcodeLoaded(oldBytes), true, `${kind} leaves the native old preview valid`);
       assert.equal(mod.isGcodeLoaded(replacement), false);
       assert.equal(files.size, 0, 'even a partially written temporary file is unlinked');
@@ -90,9 +91,9 @@ test('pre-mutation replacement errors preserve the old preview identity while na
     assert.equal(nativeLoads, 2, 'a failed filesystem write never enters the native loader');
     for (const kind of ['trap', 'json']) {
       failure = '';
-      mod.loadGcode(oldBytes);
+      await mod.loadGcode(oldBytes);
       failure = kind;
-      assert.throws(() => mod.loadGcode(replacement));
+      await assert.rejects(mod.loadGcode(replacement));
       assert.equal(mod.isGcodeLoaded(oldBytes), false, `${kind} may follow native mutation`);
       assert.equal(files.size, 0);
     }
@@ -107,12 +108,12 @@ test('preview parse identity does not own otherwise released source bytes', { sk
   const saved = Object.fromEntries(['window', '__inputModule', '__inputRenderer'].map(key => [key, globalThis[key]]));
   globalThis.window = {};
   globalThis.__inputModule = { FS: { writeFile() {}, unlink() {} } };
-  globalThis.__inputRenderer = { loadGcode: () => JSON.stringify({ layers: 1, moves: 2 }) };
+  globalThis.__inputRenderer = { loadParsedGcode: () => JSON.stringify({ layers: 1, moves: 2 }) };
   try {
     const mod = await import(`data:text/javascript;base64,${Buffer.from(js + '\n// GC ownership instance').toString('base64')}`);
-    const marker = (() => {
+    const marker = await (async () => {
       const bytes = new TextEncoder().encode('G1 X10 E1\n');
-      mod.loadGcode(bytes);
+      await mod.loadGcode(bytes);
       assert.equal(mod.isGcodeLoaded(bytes), true, 'file-open preload identity remains observable while the caller owns bytes');
       return new WeakRef(bytes);
     })();

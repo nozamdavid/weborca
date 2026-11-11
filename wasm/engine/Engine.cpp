@@ -2786,6 +2786,12 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
         std::vector<std::pair<Slic3r::ModelObject*, bool>> saved_obj;
 
         ~SliceCleanupGuard() {
+            {
+                std::lock_guard<std::mutex> progress_lock(impl->m_progress_mutex);
+                impl->m_progress_job_id = 0;
+                impl->m_progress_percent = 0;
+                impl->m_progress_text.clear();
+            }
             std::lock_guard<std::mutex> lock(impl->m_cancel_mutex);
             impl->m_current_print = nullptr;
             impl->m_cancel_requested = false;
@@ -2889,7 +2895,7 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
         throw Slic3r::RuntimeError(msg);
     }
 
-    {
+    try {
         for (auto* mo : m_model.objects) {
             slice_cleanup.saved_obj.emplace_back(mo, mo->printable);
             std::vector<bool> inst_p;
@@ -2911,26 +2917,51 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
         for (const auto& point : config.opt<Slic3r::ConfigOptionPoints>("printable_area")->values)
             bed.points.push_back(Slic3r::Point::new_scale(point.x(), point.y()));
 
+        // Cooperative cancellation while projecting bed containment: between
+        // instances/volumes and inside the slab projection itself.
+        auto throw_on_cancel = [this]() {
+            std::lock_guard<std::mutex> lock(m_cancel_mutex);
+            if (m_cancel_requested)
+                throw Slic3r::CanceledException();
+        };
+
+        {
+            std::lock_guard<std::mutex> lock(m_progress_mutex);
+            m_progress_job_id = jobId;
+            m_progress_percent = 0;
+            m_progress_text = "Checking bed boundaries";
+        }
+
         for (size_t oi = 0; oi < m_model.objects.size(); ++oi) {
             auto* mo = m_model.objects[oi];
             bool any_printable = false;
             for (size_t ii = 0; ii < mo->instances.size(); ++ii) {
+                throw_on_cancel();
                 bool is_on_plate = true;
                 for (const auto* volume : mo->volumes) {
+                    throw_on_cancel();
                     if (!volume->is_model_part()) continue;
                     Slic3r::Transform3d transform = mo->instances[ii]->get_matrix() * volume->get_matrix();
                     transform.translation() -= origin;
-                    const auto footprint = Slic3r::project_mesh(volume->mesh().its, transform, []() {});
+                    const auto footprint = Slic3r::project_mesh(volume->mesh().its, transform, throw_on_cancel);
+                    throw_on_cancel();
                     if (!Slic3r::diff(footprint, Slic3r::Polygons{bed}).empty()) {
                         is_on_plate = false;
                         break;
                     }
+                    throw_on_cancel();
                 }
                 mo->instances[ii]->printable = mo->printable && mo->instances[ii]->printable && is_on_plate;
                 if (mo->instances[ii]->printable) any_printable = true;
             }
             mo->printable = any_printable;
         }
+    } catch (const Slic3r::CanceledException&) {
+        return json{
+            {"ok", false},
+            {"canceled", true},
+            {"error", "canceled"}
+        }.dump();
     }
 
     Slic3r::Print print;

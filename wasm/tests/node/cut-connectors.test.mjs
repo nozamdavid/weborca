@@ -140,10 +140,12 @@ describe('Orca WASM Cut with Connectors Test Suite', () => {
       assert.ok(peg.volume > 0 && socket.volume < 0);
       assert.ok(Math.abs(peg.scalingFactor[0] - 1.5) < 1e-5);
       assert.ok(Math.abs(socket.scalingFactor[0] - 1.55) < 1e-5);
-      assert.ok(Math.abs(socket.scalingFactor[2] - 4.1) < 1e-5);
+      // 4 mm peg + 0.1 mm clearance + 0.05 mm overlap through the cut face.
+      assert.ok(Math.abs(socket.scalingFactor[2] - 4.15) < 1e-5);
       assert.ok(Math.abs(peg.boundingBox.min[2] - 6) < 1e-4);
       assert.ok(Math.abs(peg.boundingBox.max[2] - 10) < 1e-4);
       assert.ok(socket.boundingBox.min[2] < peg.boundingBox.min[2]);
+      assert.ok(Math.abs(socket.boundingBox.max[2] - 10.05) < 1e-4);
     }
 
     // Verify volumes array detail on both objects
@@ -359,8 +361,8 @@ describe('Orca WASM Cut with Connectors Test Suite', () => {
 
     // Probe 1: Wall blocks count evidence
     // In plain_lower, each of the 50 layers has 2 wall blocks (inner + outer perimeter) = 100 blocks.
-    // In socket_lower, the 25 layers containing the socket cavity (Z in [5.0..10.0] mm)
-    // generate extra inner and outer wall contours surrounding the cavity void = 150 blocks total.
+    // The 5 mm socket plus 0.1 mm depth clearance reaches Z=4.9 mm.
+    // Its 26 cavity layers add two wall contours each = 152 blocks total.
     const countWallBlocks = (gcode) => {
       let walls = 0;
       for (const line of gcode.split('\n')) {
@@ -371,7 +373,7 @@ describe('Orca WASM Cut with Connectors Test Suite', () => {
     const plainWalls = countWallBlocks(plainGcode);
     const socketWalls = countWallBlocks(socketGcode);
     assert.equal(plainWalls, 100, 'plain cut must have standard wall blocks');
-    assert.equal(socketWalls, 150, 'socket cut must have additional internal hole wall blocks');
+    assert.equal(socketWalls, 152, 'socket cut must have additional internal hole wall blocks');
     assert.ok(socketWalls > plainWalls, 'socket lower half must generate additional wall contours around cavity');
 
     // Probe 2: Decisive toolpath cavity evidence at Z=8.0 mm (inside the 5mm deep cavity)

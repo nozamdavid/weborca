@@ -34,7 +34,6 @@
 // consumes Slic3r::GCodeProcessorResult rather than the desktop Slic3r::Print pipeline.
 
 namespace libvgcode {
-class Viewer;
 
 Vec3 convert(const Slic3r::Vec3f& v)
 {
@@ -176,7 +175,7 @@ Slic3r::PrintEstimatedStatistics::ETimeMode convert(const ETimeMode& mode)
 }
 
 GCodeInputData convert(const Slic3r::GCodeProcessorResult& result, const std::vector<std::string>& str_tool_colors,
-    const std::vector<std::string>& str_color_print_colors, const Viewer& /*viewer*/)
+    const std::vector<std::string>& str_color_print_colors)
 {
     GCodeInputData ret;
 

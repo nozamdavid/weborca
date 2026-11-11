@@ -14,10 +14,14 @@ export async function start() {
     root.render(<CloudCallback callbackUrl={callbackUrl} />);
     return () => root.unmount();
   }
-  await checkCloudSession().catch(() => {});
   const { default: App } = await import('./App');
   root.render(<React.StrictMode><App /></React.StrictMode>);
+  // The cloud session is optional. Render first, then check in the background
+  // with a bounded, cancellable request so a stalled gateway cannot hold the UI.
+  const cloudStartup = new AbortController();
+  void checkCloudSession({ signal: cloudStartup.signal, timeoutMs: 8000 }).catch(() => {});
   return async () => {
+    cloudStartup.abort();
     const { useAppStore } = await import('./store/appStore');
     const { useHistoryStore } = await import('./history');
     const state = useAppStore.getState();
