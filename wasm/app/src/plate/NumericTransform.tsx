@@ -7,6 +7,8 @@ import { getEngine } from '../engine/orcaEngine';
 import type { ViewerVolume } from './types';
 import './numericTransform.css';
 import { Box3, Euler, Matrix4, Quaternion, Vector3 } from 'three';
+import { localScaleFactors, scaleBounds, selectedScaleInstances } from './multiScale';
+import { useAppStore } from '../store/appStore';
 
 type Vec3 = [number, number, number];
 const AXES = ['X', 'Y', 'Z'] as const;
@@ -19,9 +21,10 @@ const NumberBox: React.FC<{ id: string; label: string; value: number; digits: nu
   const [text, setText] = useState(shown);
   useEffect(() => setText(shown), [shown]);
   const commit = () => {
-    const parsed = parseFloat(text);
+    const parsed = text.trim() ? Number(text) : NaN;
     if (!Number.isFinite(parsed) || round(parsed, digits) === round(value, digits)) return setText(shown);
     onCommit(parsed);
+    setText(shown);
   };
   return (
     <input
@@ -31,6 +34,51 @@ const NumberBox: React.FC<{ id: string; label: string; value: number; digits: nu
       className="numeric-transform-input"
     />
   );
+};
+
+/** Group percentages are incremental world-axis factors, reset to 100 after each operation. */
+export const GroupScale: React.FC<{ disabled?: boolean; idPrefix?: string }> = ({ disabled, idPrefix = 'nt' }) => {
+  const { t } = useTranslation();
+  const plate = usePlateStore();
+  const appBusy = useAppStore(s => s.isSlicing || s.isModelLoading || s.isSelectingPreset);
+  const [lock, setLock] = useState(true);
+  const [bounds, setBounds] = useState<Box3 | null>(null);
+  const [error, setError] = useState('');
+  const refs = plate.selectedObjectId !== null && plate.selectedInstanceId !== null
+    ? [{ objectId: plate.selectedObjectId, instanceId: plate.selectedInstanceId }, ...plate.extraSelection] : [];
+  const selected = selectedScaleInstances(plate.objects, refs);
+  const axisSafe = selected.every(r => localScaleFactors(r.instance, [2, 3, 4]) !== null);
+  const uniform = lock || !axisSafe;
+  useEffect(() => {
+    let active = true;
+    setBounds(null);
+    const selected = selectedScaleInstances(plate.objects, refs);
+    void Promise.all(selected.map(async r => scaleBounds(r.instance, await plate.getMesh(r.objectId))))
+      .then(boxes => { if (active) setBounds(boxes.reduce((a, b) => a.union(b), new Box3())); })
+      .catch(() => { if (active) setBounds(null); });
+    return () => { active = false; };
+  }, [plate.objects, plate.selectedObjectId, plate.selectedInstanceId, plate.extraSelection]);
+  const size = bounds?.getSize(new Vector3()).toArray() ?? [0, 0, 0];
+  const busy = disabled || appBusy || plate.isLoading || !bounds || selected.length < 2;
+  const commit = (axis: number, factor: number) => {
+    if (busy || !Number.isFinite(factor) || factor <= 0) return;
+    setError('');
+    void plate.scaleSelection(AXES.map((_, i) => uniform || i === axis ? factor : 1) as Vec3)
+      .catch(e => setError(String(e)));
+  };
+  return <div id={idPrefix === 'nt' ? 'numeric-transform' : `${idPrefix}-transform`} className={`numeric-transform${idPrefix === 'mobile-nt' ? ' numeric-transform-mobile' : ''}`} onPointerDown={e => e.stopPropagation()}>
+    <p className="numeric-transform-note">{t('Group scale: whole instances, world axes, relative 100%.')}</p>
+    {!axisSafe && <p className="numeric-transform-note">{t('Rotated selection: keep proportions to avoid shear.')}</p>}
+    {['Scale', 'Size'].map(kind => <div className="numeric-transform-row" key={kind}>
+      <span className="numeric-transform-label">{t(kind)}</span>
+      {AXES.map((a, i) => <NumberBox key={a} id={`${idPrefix}-${kind.toLowerCase()}-${a.toLowerCase()}`}
+        label={`${t(kind)} ${a} (${kind === 'Scale' ? '%' : 'mm'})`} value={kind === 'Scale' ? 100 : size[i]} digits={kind === 'Scale' ? 1 : 2}
+        disabled={!!busy || (kind === 'Size' && size[i] <= 0)} onCommit={v => commit(i, kind === 'Scale' ? v / 100 : v / size[i])} />)}
+      <span className="numeric-transform-unit">{kind === 'Scale' ? '%' : 'mm'}</span>
+    </div>)}
+    <label className="numeric-transform-lock"><input type="checkbox" checked={uniform} disabled={!axisSafe || !!busy} onChange={e => setLock(e.target.checked)} /> {t('Keep proportions')}</label>
+    {error && <p role="alert">{error}</p>}
+  </div>;
 };
 
 /** Position, rotation, scale and size of the selected instance as editable numbers, like desktop's object manipulation panel. */

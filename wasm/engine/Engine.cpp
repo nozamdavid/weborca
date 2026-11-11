@@ -18,6 +18,8 @@
 #include "LayerEventOps.hpp"
 #include "MeasureOps.hpp"
 #include "libslic3r/Arrange.hpp"
+#include "libslic3r/TriangleMeshSlicer.hpp"
+#include "libslic3r/ClipperUtils.hpp"
 
 #include "libslic3r/libslic3r.h"
 #include "libslic3r/BoundingBox.hpp"
@@ -2887,7 +2889,7 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
         throw Slic3r::RuntimeError(msg);
     }
 
-    if (plate_index >= 0) {
+    {
         for (auto* mo : m_model.objects) {
             slice_cleanup.saved_obj.emplace_back(mo, mo->printable);
             std::vector<bool> inst_p;
@@ -2898,18 +2900,32 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
             slice_cleanup.saved_inst.emplace_back(mo, inst_p);
         }
 
-        std::set<std::pair<int, int>> plate_pairs;
-        if (static_cast<size_t>(plate_index) < m_plate_data.size()) {
-            for (const auto& pair : m_plate_data[plate_index]->objects_and_instances) {
-                plate_pairs.insert(pair);
-            }
-        }
+        // Assignment is deliberately permissive (overlap/nearest plate). Slice
+        // eligibility instead requires the complete transformed XY footprint.
+        double bed_w, bed_d, bed_h;
+        OrcaEngine::getBedDimensions(config, bed_w, bed_d, bed_h);
+        const Slic3r::Vec3d origin = plate_index >= 0
+            ? OrcaEngine::computePlateOrigin(plate_index, m_plate_data.size(), bed_w, bed_d)
+            : Slic3r::Vec3d(0., 0., 0.);
+        Slic3r::Polygon bed;
+        for (const auto& point : config.opt<Slic3r::ConfigOptionPoints>("printable_area")->values)
+            bed.points.push_back(Slic3r::Point::new_scale(point.x(), point.y()));
 
         for (size_t oi = 0; oi < m_model.objects.size(); ++oi) {
             auto* mo = m_model.objects[oi];
             bool any_printable = false;
             for (size_t ii = 0; ii < mo->instances.size(); ++ii) {
-                bool is_on_plate = plate_pairs.count({static_cast<int>(oi), static_cast<int>(ii)}) > 0;
+                bool is_on_plate = true;
+                for (const auto* volume : mo->volumes) {
+                    if (!volume->is_model_part()) continue;
+                    Slic3r::Transform3d transform = mo->instances[ii]->get_matrix() * volume->get_matrix();
+                    transform.translation() -= origin;
+                    const auto footprint = Slic3r::project_mesh(volume->mesh().its, transform, []() {});
+                    if (!Slic3r::diff(footprint, Slic3r::Polygons{bed}).empty()) {
+                        is_on_plate = false;
+                        break;
+                    }
+                }
                 mo->instances[ii]->printable = mo->printable && mo->instances[ii]->printable && is_on_plate;
                 if (mo->instances[ii]->printable) any_printable = true;
             }
@@ -2936,6 +2952,8 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
     print.is_BBL_printer() = m_bundle->is_bbl_vendor();
     print.set_calib_params(m_calib_params);
     print.apply(m_model, config);
+    if (print.empty())
+        throw Slic3r::SlicingError("The print is empty. The model is not printable with current print settings.");
     if (auto err = print.validate(); !err.string.empty())
         throw Slic3r::RuntimeError("Print validation failed: " + err.string);
 

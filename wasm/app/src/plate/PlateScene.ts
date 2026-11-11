@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { boxSelection, selectionRect } from './boxSelection';
+import './boxSelection.css';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
@@ -27,6 +29,7 @@ import { bindCanvasTouch } from '../components/canvasTouch';
 import { useMeasureStore, getMeasurementFeature, measureFeatures } from '../measure';
 
 export interface PlateSceneCallbacks {
+  onBoxSelect?: (refs: { objectId: number; instanceId: number }[]) => void;
   canMoveObjects?: () => boolean;
   onSelect: (objectId: number | null, instanceId: number | null, additive?: boolean, volumeId?: number) => void;
   /** The whole selection moved together: absolute transforms of the primary and every other selected instance. */
@@ -68,6 +71,58 @@ export class PlateScene {
   private orbitControls: OrbitControls;
   private disposeTouch: () => void;
   private transformControls: TransformControls;
+  private groupProxy = new THREE.Object3D();
+  private groupDrag: { pivot: THREE.Vector3; orbit: boolean; snapshots: { mesh: THREE.Mesh; position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }[] } | null = null;
+  private cancelGroupKey = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape' && this.groupDrag) { this.finishGroupDrag(false); event.stopImmediatePropagation(); }
+  };
+
+  private beginGroupDrag(): void {
+    if (this.callbacks.canMoveObjects?.() === false) { this.transformControls.dragging = false; return; }
+    const selected = this.getSelectedMesh();
+    const meshes = [...this.objectMeshes].filter(([key, mesh]) => mesh === selected || this.extraKeys.has(key)).map(([, mesh]) => mesh);
+    this.groupDrag = { pivot: this.groupProxy.position.clone(), orbit: this.orbitControls.enabled,
+      snapshots: meshes.map(mesh => ({ mesh, position: mesh.position.clone(), quaternion: mesh.quaternion.clone(), scale: mesh.scale.clone() })) };
+    this.orbitControls.enabled = false;
+    window.addEventListener('keydown', this.cancelGroupKey, true);
+  }
+
+  private changeGroupDrag(): void {
+    const drag = this.groupDrag;
+    if (!drag) return;
+    if (this.callbacks.canMoveObjects?.() === false) { this.finishGroupDrag(false); return; }
+    // Any colored scale handle applies uniform group scale. This cannot introduce shear.
+    const axis = this.transformControls.axis ?? 'XYZ';
+    const component = axis.includes('X') ? 'x' : axis.includes('Y') ? 'y' : 'z';
+    const factor = Math.max(0.001, this.groupProxy.scale[component]);
+    for (const { mesh, position, quaternion, scale } of drag.snapshots) {
+      mesh.position.copy(position).sub(drag.pivot);
+      if (this.gizmoMode === 'scale') {
+        mesh.position.multiplyScalar(factor);
+        mesh.scale.copy(scale).multiplyScalar(factor);
+      } else {
+        mesh.position.applyQuaternion(this.groupProxy.quaternion);
+        mesh.quaternion.copy(this.groupProxy.quaternion).multiply(quaternion);
+      }
+      mesh.position.add(drag.pivot);
+    }
+  }
+
+  private finishGroupDrag(commit: boolean): void {
+    const drag = this.groupDrag;
+    if (!drag) return;
+    this.groupDrag = null;
+    window.removeEventListener('keydown', this.cancelGroupKey, true);
+    this.transformControls.dragging = false;
+    this.transformControls.axis = null;
+    this.orbitControls.enabled = drag.orbit;
+    if (!commit || this.callbacks.canMoveObjects?.() === false) {
+      for (const { mesh, position, quaternion, scale } of drag.snapshots) {
+        mesh.position.copy(position); mesh.quaternion.copy(quaternion); mesh.scale.copy(scale);
+      }
+    } else this.commitMeshTransforms(drag.snapshots.map(s => s.mesh));
+    this.updateTransformControls();
+  }
 
   /** Short white bounding-box corners for the current selection, independent of transform tools. */
   // Viewer-only lines: never added to objectMeshes, the engine, or exported model data.
@@ -97,6 +152,25 @@ export class PlateScene {
   public extraBedsGroup = new THREE.Group();
   private plates: { index: number; name: string; origin: [number, number, number] }[] = [{ index: 0, name: '', origin: [0, 0, 0] }];
   private activePlateIndex = 0;
+  private canceledBoxPointer: number | null = null;
+  private boxDrag: { pointerId: number; start: { x: number; y: number }; end: { x: number; y: number }; overlay: HTMLDivElement; orbit: boolean; moved: boolean } | null = null;
+  private cancelBoxKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && this.boxDrag) { this.finishBox(false); e.stopImmediatePropagation(); }
+  };
+
+  private finishBox(commit: boolean): boolean {
+    const drag = this.boxDrag;
+    if (!drag) return false;
+    this.boxDrag = null;
+    if (!commit) this.canceledBoxPointer = drag.pointerId;
+    drag.overlay.remove();
+    window.removeEventListener('keydown', this.cancelBoxKey, true);
+    this.orbitControls.enabled = drag.orbit;
+    const canvas = this.renderer.domElement;
+    if (canvas.hasPointerCapture(drag.pointerId)) canvas.releasePointerCapture(drag.pointerId);
+    if (commit && drag.moved && this.callbacks.canMoveObjects?.() !== false) this.callbacks.onBoxSelect?.(boxSelection(this.viewerTargets(), this.camera, canvas.getBoundingClientRect(), selectionRect(drag.start, drag.end)));
+    return drag.moved;
+  }
   private labelSprites: Map<string, THREE.Sprite> = new Map();
 
   private flattenClusters: Array<{ normal: [number, number, number]; center: [number, number, number]; area: number; outline: Array<[number, number, number]> }> = [];
@@ -126,6 +200,9 @@ export class PlateScene {
   /** `objectId_instanceId` of the other selected instances; they follow the primary while it is dragged. */
   private extraKeys = new Set<string>();
   private dragStart: { primary: THREE.Vector3; extras: Map<THREE.Mesh, THREE.Vector3> } | null = null;
+  private consumedTransformReleases = new WeakSet<PointerEvent>();
+  private pointerDownId: number | null = null;
+  private transformPointerId: number | null = null;
   private planeDrag: {
     pointerId: number; target: THREE.Mesh; plane: THREE.Plane; start: THREE.Vector3;
     origins: Map<THREE.Mesh, THREE.Vector3>; moved: boolean;
@@ -296,8 +373,10 @@ export class PlateScene {
     // 5. TransformControls
     this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
     this.scene.add(this.transformControls.getHelper());
+    this.scene.add(this.groupProxy);
 
     this.transformControls.addEventListener('objectChange', () => {
+      if (this.groupDrag) { this.changeGroupDrag(); return; }
       const target = this.transformControls.object;
       if (!target || !this.dragStart) return;
       const delta = target.position.clone().sub(this.dragStart.primary);
@@ -305,6 +384,11 @@ export class PlateScene {
     });
 
     this.transformControls.addEventListener('dragging-changed', (event) => {
+      if (event.value) this.transformPointerId = this.pointerDownId;
+      if (this.transformControls.object === this.groupProxy) {
+        if (event.value) this.beginGroupDrag(); else this.finishGroupDrag(true);
+        return;
+      }
       this.orbitControls.enabled = !event.value;
       if (event.value) {
         const target = this.transformControls.object;
@@ -483,6 +567,7 @@ export class PlateScene {
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown, true);
     this.renderer.domElement.addEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.addEventListener('pointerup', this.onPointerUp);
+    this.renderer.domElement.addEventListener('pointerup', this.onTransformPointerUp, true);
     this.renderer.domElement.addEventListener('pointerleave', this.onPointerLeave);
     this.renderer.domElement.addEventListener('pointercancel', this.onPointerCancel);
     this.renderer.domElement.addEventListener('lostpointercapture', this.onPointerCancel);
@@ -1123,6 +1208,7 @@ export class PlateScene {
   }
 
   public async setObjects(objects: PlateObject[]): Promise<void> {
+    this.finishGroupDrag(false);
     const activeKeys = new Set<string>();
 
     for (const obj of objects) {
@@ -1313,6 +1399,7 @@ export class PlateScene {
   }
 
   public setSelection(objectId: number | null, instanceId: number | null, extras: { objectId: number; instanceId: number }[] = [], volumeId: number | null = null): void {
+    this.finishGroupDrag(false);
     this.selectedObjectId = objectId;
     this.selectedInstanceId = instanceId;
     this.selectedVolumeId = volumeId;
@@ -1361,11 +1448,19 @@ export class PlateScene {
   }
 
   private updateTransformControls(): void {
+    if (this.groupDrag) this.finishGroupDrag(false);
     const selected = this.getSelectedMesh();
-    // Other selected instances follow translation; rotate and scale apply to a single selection.
+    // Rotate and scale share a group pivot; translation keeps its existing mesh target.
     if (this.gizmoMode !== null && selected && (this.selectedVolumeId === null || selected.userData.volumeId !== undefined) && !this.isPaintingActive && !this.measureActive && !this.explodeActive && !this.cutPreview.active &&
-        (this.extraKeys.size === 0 || this.gizmoMode === 'translate')) {
-      this.transformControls.attach(selected);
+        this.callbacks.canMoveObjects?.() !== false) {
+      if (this.extraKeys.size && this.selectedVolumeId === null && this.gizmoMode !== 'translate') {
+        const bounds = new THREE.Box3();
+        for (const [key, mesh] of this.objectMeshes) if (mesh === selected || this.extraKeys.has(key)) bounds.expandByObject(mesh, true);
+        bounds.getCenter(this.groupProxy.position);
+        this.groupProxy.position.z = bounds.min.z;
+        this.groupProxy.quaternion.identity(); this.groupProxy.scale.setScalar(1);
+        this.transformControls.attach(this.groupProxy);
+      } else this.transformControls.attach(selected);
     } else {
       this.transformControls.detach();
       this.transformControls.axis = null;
@@ -1411,6 +1506,7 @@ export class PlateScene {
   }
 
   public setGizmoMode(mode: GizmoMode): void {
+    this.finishGroupDrag(false);
     this.gizmoMode = mode;
     if (mode !== null) this.transformControls.setMode(mode);
     this.updateTransformControls();
@@ -2110,6 +2206,8 @@ export class PlateScene {
   }
 
   private onPointerDown = (e: PointerEvent, modelTouch = false): void => {
+    if (this.boxDrag) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    this.canceledBoxPointer = null;
     if (e.pointerType === 'touch' && !modelTouch) return;
     if (this.planeDrag) {
       e.preventDefault();
@@ -2117,6 +2215,24 @@ export class PlateScene {
       return;
     }
     this.pointerDownPos = { x: e.clientX, y: e.clientY };
+    this.pointerDownId = e.pointerId;
+    this.transformPointerId = null;
+    if (!modelTouch && e.pointerType !== 'touch' && e.button === 0 && e.shiftKey && this.callbacks.canMoveObjects?.() !== false &&
+        !this.isPaintingActive && !this.measureActive && !this.explodeActive && !this.brimEarsActive &&
+        !this.flattenClusters.length && !this.cutPreview.active && !this.transformControls.dragging && !this.transformControls.axis) {
+      if (this.boxDrag) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'plate-box-selection';
+      overlay.hidden = true;
+      overlay.setAttribute('aria-hidden', 'true');
+      this.renderer.domElement.parentElement!.append(overlay);
+      this.boxDrag = { pointerId: e.pointerId, start: { x: e.clientX, y: e.clientY }, end: { x: e.clientX, y: e.clientY }, overlay, orbit: this.orbitControls.enabled, moved: false };
+      this.orbitControls.enabled = false;
+      this.renderer.domElement.setPointerCapture(e.pointerId);
+      window.addEventListener('keydown', this.cancelBoxKey, true);
+      e.preventDefault(); e.stopImmediatePropagation();
+      return;
+    }
 
     // Body dragging translates in XY independently of the active gizmo mode.
     // Tool handles and tools that operate on the surface retain their own gestures.
@@ -2172,6 +2288,16 @@ export class PlateScene {
   };
 
   private onPointerMove = (e: PointerEvent, modelTouch = false): void => {
+    if (this.boxDrag?.pointerId === e.pointerId) {
+      const drag = this.boxDrag;
+      drag.end = { x: e.clientX, y: e.clientY };
+      drag.moved ||= Math.hypot(e.clientX - drag.start.x, e.clientY - drag.start.y) > 5;
+      const rect = selectionRect(drag.start, drag.end);
+      const parent = drag.overlay.parentElement!.getBoundingClientRect();
+      Object.assign(drag.overlay.style, { left: `${rect.left - parent.left}px`, top: `${rect.top - parent.top}px`, width: `${rect.right - rect.left}px`, height: `${rect.bottom - rect.top}px` });
+      drag.overlay.hidden = !drag.moved;
+      e.preventDefault(); e.stopImmediatePropagation(); return;
+    }
     if (e.pointerType === 'touch' && !modelTouch) return;
     const drag = this.planeDrag;
     if (drag && drag.pointerId === e.pointerId) {
@@ -2216,7 +2342,21 @@ export class PlateScene {
     }
   };
 
+  private onTransformPointerUp = (e: PointerEvent): void => {
+    // Capture runs before Three's pointerup listener ends the drag and clears axis.
+    // Consume this event only, so cancellation/outside release cannot eat a later click.
+    if (this.transformControls.dragging || this.transformPointerId === e.pointerId) this.consumedTransformReleases.add(e);
+    if (this.transformPointerId === e.pointerId) this.transformPointerId = null;
+  };
+
   private onPointerUp = (e: PointerEvent): void => {
+    if (this.consumedTransformReleases.delete(e)) return;
+    if (this.canceledBoxPointer === e.pointerId) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    if (this.boxDrag) {
+      if (this.boxDrag.pointerId !== e.pointerId) return;
+      this.boxDrag.end = { x: e.clientX, y: e.clientY };
+      if (this.finishBox(true)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    }
     if (e.pointerType === 'touch') return;
     if (this.planeDrag && this.planeDrag.pointerId !== e.pointerId) return;
     if (this.planeDrag?.pointerId === e.pointerId) {
@@ -2403,6 +2543,8 @@ export class PlateScene {
   }
 
   private onPointerCancel = (event?: PointerEvent): void => {
+    this.finishGroupDrag(false);
+    if (!event || this.boxDrag?.pointerId === event.pointerId) this.finishBox(false);
     if (event && this.planeDrag && this.planeDrag.pointerId !== event.pointerId) return;
     this.finishPlaneDrag(false);
     this.onPointerLeave();
@@ -2893,6 +3035,8 @@ export class PlateScene {
   }
 
   public destroy(): void {
+    this.finishGroupDrag(false);
+    this.finishBox(false);
     this.setWipeTowerPreview({ enabled: false });
     this.disposeChildren(this.plateLabelGroup);
     this.bedAssetRevision++;
@@ -2916,6 +3060,7 @@ export class PlateScene {
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown, true);
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp);
+    this.renderer.domElement.removeEventListener('pointerup', this.onTransformPointerUp, true);
     this.renderer.domElement.removeEventListener('pointerleave', this.onPointerLeave);
     this.renderer.domElement.removeEventListener('pointercancel', this.onPointerCancel);
     this.renderer.domElement.removeEventListener('lostpointercapture', this.onPointerCancel);

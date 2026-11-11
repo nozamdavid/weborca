@@ -13,6 +13,8 @@ Optimize your prints with ultra-fast slicing, intelligent support generation, an
 
 This checkout also includes a browser-based WebAssembly port in [wasm/app](wasm/app). See [wasm/deploy/README.md](wasm/deploy/README.md) for web deployment instructions.
 
+The [2026-11-11 consolidated WebOrca review](wasm/reports/codebase-review-20261111.md) records subsystem findings and priorities for this development checkout, including integration, CI/provenance, correctness and performance experiments; it does not change the runtime or deployment baseline.
+
 The local HTML plate-title prototype automatically enables titles and Active/Inactive badges when the drawable canvas APIs are available. Independent native Chrome 157 WebGL acceptance covers light/dark, rename, fallback and full scene disposal; the old query parameter has no control. The [plate verification report](wasm/reports/html-plate-default-20261109.md) records that migration. Object-name labels now use the same capability-based raster approach, with lazy allocation, bounded ellipsis, legacy fallback and synchronized application renames. The [object-label acceptance report](wasm/reports/html-object-labels-20261109.md) records the current immutable candidate at the [private testing preview](https://server-1.barbel-hops.ts.net:5065/). No performance gain is claimed; other browsers and an actual unsupported engine remain unverified. This is a local prototype, not a shipped deployment.
 
 The [2026-11-07 installed Flatpak / shipped browser sample comparison](docs/benchmarks/sample-parity-20261107.md)
@@ -66,6 +68,11 @@ non-UI files and the native compatibility pair are retained. One public warm
 reload transferred no engine WASM; runtime-ready was 400ms and sampled app-ready
 804ms. Cached bytes still require runtime and app/preset setup; no speedup or
 instant startup is claimed.
+The private prototype also supports additive Shift rectangle selection of whole instances on the active plate. Busy operations suppress rectangle start and commit; Escape and capture cancellation clean up navigation. Geometric triangle intersection includes occluded geometry and differs from native depth picking. The [bounded box-selection report](wasm/reports/box-selection-20261110.md) records the guarded candidate, captured-pointer QA and remaining physical-input/browser limits.
+
+Multiple selected instances expose numeric Scale and colored Scale/Rotate handles, with one native undo transaction. Group handle scaling stays uniform to avoid shear and preserves rotations and mirrors; rotation moves positions and orientations together. Native instances drop independently to the bed. The [group gizmo report](wasm/reports/group-transform-gizmos-20261111.md) records pointer/native acceptance, corrected busy-to-idle smoke and private preview receipt; X/Y rotation and physical-device coverage remain unverified. Earlier [numeric Scale acceptance](wasm/reports/multi-scale-20261110.md) is retained.
+
+Clearing the final selected instance now also clears Move/Rotate/Scale. Valid selection changes retain the tool. The [selection tool report](wasm/reports/empty-selection-tool-20261111.md) records store regressions. Transform releases now preserve selection and the active tool; the [release regression report](wasm/reports/transform-release-selection-20261111.md) records the current private5065 candidate, which retains the accepted bed-boundary engine.
 
 The accumulated WebOrca app, alpha access and startup work is captured on the private
 [`nozamdavid/weborca` main branch](https://github.com/nozamdavid/weborca/tree/main).
@@ -406,3 +413,5 @@ The OrcaSlicer logo was designed by community member [Justin Levine](https://git
 - The **GNU Affero General Public License**, version 3 ensures that if you use any part of this software in any way (even behind a web server), your software must be released under the same license.
 - OrcaSlicer includes a **pressure advance calibration pattern test** adapted from Andrew Ellis' generator, which is licensed under GNU General Public License, version 3. Ellis' generator is itself adapted from a generator developed by Sineos for Marlin, which is licensed under GNU General Public License, version 3.
 - The **Bambu networking plugin** is based on non-free libraries from BambuLab. It is optional to the OrcaSlicer and provides extended functionalities for Bambulab printer users.
+
+Private prototype acceptance (2026-11-11): [bed boundary filtering](wasm/reports/bed-boundary-slicing-20261111.md) and [centered Preview export](wasm/reports/export-button-alignment-20261111.md) passed together in immutable `wasm/build/ui-bed-boundary-slicing-20261111`, now at [private HTTPS5065](https://server-1.barbel-hops.ts.net:5065/). Packaged engine14-case regression and actual native app slice passed. Vite PID1649811; service details and limits are in the reports.
