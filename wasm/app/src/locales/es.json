@@ -8826,5 +8826,6 @@
   "Wait for the current operation to finish.": "Espera a que termine la operación actual.",
   "Select a printer to slice.": "Selecciona una impresora para laminar.",
   "Select a process preset to slice.": "Selecciona un perfil de proceso para laminar.",
-  "Select a filament to slice.": "Selecciona un filamento para laminar."
+  "Select a filament to slice.": "Selecciona un filamento para laminar.",
+  "Inactive": "Inactivo"
 }
