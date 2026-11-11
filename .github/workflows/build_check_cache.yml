@@ -19,7 +19,8 @@ on:
       force-build:
         required: false
         type: boolean
-  
+
+
 # Read by scripts/ci_deps_cache.sh.
 env:
   REPO: ${{ github.repository }}
@@ -51,7 +52,8 @@ jobs:
             /deps/
             /scripts/ci_deps_cache.sh
           sparse-checkout-cone-mode: false
-        
+
+
       - name: set outputs
         id: set_outputs
         env:
@@ -67,7 +69,8 @@ jobs:
           echo cache-key=${{ env.cache-os }}-cache-orcaslicer_deps-build-${{ hashFiles('deps/**') }} >> ${{ env.output-cmd }}
           # Relative to the workspace, which differs from the build's when this job runs on Linux.
           echo cache-path=deps/build${{ env.dep-folder-name }} >> ${{ env.output-cmd }}
-            
+
+
       # actions/cache matches the path too, so a Linux lookup for macOS uses the
       # workspace of a hosted macOS job.
       - name: macOS cache path
@@ -82,7 +85,8 @@ jobs:
           path: ${{ steps.macos_path.outputs.path || format('{0}/{1}', github.workspace, steps.set_outputs.outputs.cache-path) }}
           key: ${{ steps.set_outputs.outputs.cache-key }}
           lookup-only: true
-        
+
+
       # A pull request that misses the cache can wait for a base branch build of the same deps.
       - name: check for a base branch build to wait for
         id: wait_check

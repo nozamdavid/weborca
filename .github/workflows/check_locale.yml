@@ -1,11 +1,14 @@
 name: Check locale
 
-on: 
+on:
+
     # approve_pr_checks.yml approves these runs for first-time contributors and finds this
     # workflow by its file name.
     pull_request:
-      branches: 
-       - main 
+      branches:
+
+       - main
+
       paths:
        - 'localization/**'
        - ".github/workflows/check_locale.yml"
@@ -17,11 +20,13 @@ jobs:
     # approve_pr_checks.yml starts first-time contributors' runs without a maintainer looking
     # at the pull request first. A run takes under a minute; this bounds one that msgfmt stalls on.
     timeout-minutes: 10
-    steps:  
+    steps:
+
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install gettext 
+      - name: Install gettext
+
         run: |
           sudo apt-get update
           sudo apt-get install -y gettext
@@ -35,7 +40,8 @@ jobs:
           do
               dir=${dir%*/}      # remove the trailing "/"
               lang=${dir##*/}    # extract the language identifier
-          
+
+
               if [ -f "$dir/OrcaSlicer_${lang}.po" ]; then
                   mkdir -p ./resources/i18n/${lang}/
                   msgfmt --check-format --check-header -o ./resources/i18n/${lang}/OrcaSlicer.mo $dir/OrcaSlicer_${lang}.po
@@ -46,4 +52,3 @@ jobs:
                   fi
               fi
           done
-        

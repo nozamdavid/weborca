@@ -69,13 +69,12 @@ on:
         default: false
 
 concurrency:
-  # cancel_closed_pr_builds.yml joins this group by name, so update that file
-  # with any change here.
   group: build-all-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   # Pushes don't cancel a running build, because only a finished branch build
   # saves caches every pull request can restore.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-  
+
+
 
 jobs:
   # build_win.bat ships a test suite. Run it before the Windows builds.
@@ -130,12 +129,6 @@ jobs:
           && '[{"arch":"x64","os":"orca-win-server","compiler":"clang"}]'
           || '[{"arch":"x64","os":"windows-latest","compiler":"clang"},{"arch":"arm64","os":"windows-11-vs2026-arm","compiler":"clang"}]') }}
     needs: check_build_script
-    # id-token lets release builds sign through Google Cloud Workload Identity Federation (see
-    # "Configure code signing" in build_orca.yml); the rest is what the build already used.
-    permissions:
-      actions: write
-      contents: write
-      id-token: write
     # Don't run scheduled builds on forks:
     if: ${{ !cancelled() && needs.check_build_script.result == 'success' && (github.event_name != 'schedule' || github.repository == 'OrcaSlicer/OrcaSlicer') }}
     uses: ./.github/workflows/build_check_cache.yml
@@ -241,30 +234,6 @@ jobs:
         run: |
           chmod +x validator-bin/OrcaSlicer_profile_validator
           ./validator-bin/OrcaSlicer_profile_validator -p "${{ github.workspace }}/resources/profiles" -s -l 2
-  publish_test_results:
-    name: Publish Test Results
-    needs: [unit_tests_linux_x86_64, unit_tests_linux_aarch64, unit_tests_windows_x64, unit_tests_windows_arm64, unit_tests_macos_arm64, unit_tests_flatpak_x86_64, unit_tests_flatpak_aarch64]
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Test Results
-        uses: actions/download-artifact@v8
-        with:
-          pattern: test-results-*
-          path: test-results
-      # Best-effort: a read-only token (e.g. fork PRs) can't write the check, so
-      # don't let a publish failure fail the run. The test jobs gate correctness.
-      - name: Publish Test Results
-        continue-on-error: true
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          files: "test-results/**/*.xml"
-      - name: Delete Test Results
-        if: success()
-        uses: geekyeggo/delete-artifact@v6
-        with:
-          name: test-results-*
-          failOnError: false
   flatpak:
     name: "Flatpak"
     container:
@@ -465,14 +434,6 @@ jobs:
       with:
         name: OrcaSlicer-Linux-flatpak_${{ env.ver }}_${{ matrix.variant.arch }}.flatpak
         path: '/__w/OrcaSlicer/OrcaSlicer/OrcaSlicer-Linux-flatpak_${{ env.ver }}_${{ matrix.variant.arch }}.flatpak'
-    - name: Deploy Flatpak to nightly release
-      if: github.repository == 'OrcaSlicer/OrcaSlicer' && github.ref == 'refs/heads/main'
-      uses: ./.github/actions/deploy-nightly
-      with:
-        asset_path: /__w/OrcaSlicer/OrcaSlicer/OrcaSlicer-Linux-flatpak_${{ env.ver }}_${{ matrix.variant.arch }}.flatpak
-        asset_name: OrcaSlicer-Linux-flatpak_nightly_${{ matrix.variant.arch }}.flatpak
-    # The asset is /app (the exes link it at runtime) plus the build tree
-    # slimmed to what ctest needs.
     - name: Package flatpak test asset
       shell: bash
       run: |
