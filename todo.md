@@ -15,3 +15,4 @@ Source: [consolidated audit](wasm/reports/codebase-review-20261111.md). These it
 - [ ] Qualify native/WASM output parity and slicing speed with matched inputs and repeatable measurements.
 - [ ] Qualify physical-printer and provider lifecycle behavior with actual devices/accounts.
 - [ ] Complete Firefox, Safari and physical-device coverage; record supported behavior and remaining limitations.
+- [ ] Qualify hosted CI, Docker delivery and cold dependency reproducibility; local runtime qualification does not establish these results.

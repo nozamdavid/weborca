@@ -1,0 +1,713 @@
+STATE {
+  isolated: true,
+  plate: {
+    lockedOrientations: [],
+    toggleOrientationLock: undefined,
+    isOrientationLocked: undefined,
+    objects: [ [Object] ],
+    selectedObjectId: null,
+    selectedInstanceId: null,
+    extraSelection: [],
+    clipboard: [],
+    clipboardOrigin: [ 0, 0, 0 ],
+    arrangeSettings: { spacing: null, allowRotations: false },
+    arrangeDialogOpen: false,
+    setArrangeDialogOpen: undefined,
+    setArrangeSettings: undefined,
+    gizmoMode: null,
+    measureActive: false,
+    measurePoints: [],
+    explodeActive: false,
+    explodeFactor: 0,
+    bedConfig: {
+      points: [Array],
+      width: 300,
+      depth: 300,
+      height: 275,
+      center: [Array]
+    },
+    isLoading: false,
+    meshCache: {},
+    viewerMeshCache: {},
+    initBedConfig: undefined,
+    refreshObjects: undefined,
+    selectObject: undefined,
+    toggleSelect: undefined,
+    selectAll: undefined,
+    copySelected: undefined,
+    cutSelected: undefined,
+    pasteClipboard: undefined,
+    mirrorSelected: undefined,
+    deleteAll: undefined,
+    setInstanceTransforms: undefined,
+    setMeasureActive: undefined,
+    setMeasurePoints: undefined,
+    setExplodeActive: undefined,
+    setExplodeFactor: undefined,
+    setGizmoMode: undefined,
+    getMesh: undefined,
+    getViewerMesh: undefined,
+    setVolumeTransform: undefined,
+    setInstanceTransform: undefined,
+    moveSelection: undefined,
+    rotateSelection: undefined,
+    scaleSelection: undefined,
+    deleteSelected: undefined,
+    deleteObject: undefined,
+    mergeSelected: undefined,
+    convertVolumeType: undefined,
+    duplicateSelected: undefined,
+    duplicateRefs: undefined,
+    deleteObjects: undefined,
+    arrange: undefined,
+    importFile: undefined
+  },
+  sceneKeys: [
+    'container',
+    'scene',
+    'perspectiveCamera',
+    'orthographicCamera',
+    'camera',
+    'renderer',
+    'orbitControls',
+    'disposeTouch',
+    'transformControls',
+    'groupProxy',
+    'groupDrag',
+    'cancelGroupKey',
+    'selectionOutline',
+    'selectionBounds',
+    'outlineBounds',
+    'meshBounds',
+    'outlineSize',
+    'bedGroup',
+    'towerPreview',
+    'bedAssetRevision',
+    'bedTexture',
+    'bedModelPoints',
+    'objectsGroup',
+    'bedGridHelper',
+    'axesHelper',
+    'buildVolumeHelper',
+    'labelsGroup',
+    'plateLabelGroup',
+    'extraBedsGroup',
+    'plates',
+    'activePlateIndex',
+    'canceledBoxPointer',
+    'boxDrag',
+    'cancelBoxKey',
+    'labelSprites',
+    'flattenClusters',
+    'flattenGroup',
+    'brimEarsGroup',
+    'layerRangeOverlays',
+    'brimEarsActive',
+    'measureActive',
+    'measureSessionId',
+    'measurePoints',
+    'measureGroup',
+    'unsubscribeMeasure',
+    'explodeActive',
+    'explodeFactor',
+    'objectMeshes',
+    'volumeMeshes',
+    'selectedVolumeId',
+    'hiddenMaterial',
+    'overlayMeshes',
+    'geometries',
+    'meshVolumes',
+    'volumeColors',
+    'selectedObjectId',
+    'extraKeys',
+    'dragStart',
+    'consumedTransformReleases',
+    'pointerDownId',
+    'transformPointerId',
+    'planeDrag',
+    'cancelPlaneKey',
+    'selectedInstanceId',
+    'gizmoMode',
+    'bedConfig',
+    'callbacks',
+    'bedFloorMaterial',
+    'brimEarPoints',
+    'isPaintingActive',
+    'paintingVolumeId',
+    'isPaintingStroke',
+    'advancedPainting',
+    'paintCursor',
+    'cursorRadius',
+    'cursorTool',
+    'pointerDownPos',
+    'isDestroyed',
+    'animationFrameId',
+    'defaultMaterial',
+    'selectedMaterial',
+    'overhangHighlight',
+    'showGrid',
+    'showAxes',
+    'showLabels',
+    'showBuildVolume',
+    'showWireframe',
+    'cameraType',
+    'perspectiveOnOrbit',
+    'invertMouseWheelZoom',
+    'invertOrbitHorizontal',
+    'invertOrbitVertical',
+    'rotateSensitivity',
+    'zoomSpeed',
+    'unsubscribePrefs',
+    'unsubscribeCut',
+    'cutPreview',
+    'resizeObserver',
+    'intersectionObserver',
+    'hasVisibleSize',
+    ... 15 more items
+  ],
+  globals: [
+    '__prefsStore',       '__t',
+    '__printerStore',     '__previewStore',
+    '__appStore',         '__THREE__',
+    '__objectListStore',  '__paintingStore',
+    '__historyStore',     '__plateStore',
+    '__platesStore',      '__paintToolsStore',
+    '__cutStore',         '__editOpsStore',
+    '__textStore',        '__repairStore',
+    '__autosave',         '__measureStore',
+    '__calibrationStore', '__inputShapingStore',
+    '__layerEventsStore', '__plateScene',
+    '__orcaEngine'
+  ]
+}
+BODY File
+Edit
+View
+Calibration
+Help
+Prepare
+Preview
+Device
+Auto saving...
+▼
+Printer
+Voron 2.4 300 0.4 nozzle
+Add printer...
+▼
+Filament
++
+−
+1
+Select filament...
+Generic ABS @System
+Generic ASA @System
+Generic BVOH @System
+Generic CoPE @System
+Generic EVA @System
+Generic HIPS @System
+Generic PA @System
+Generic PA-CF @System
+Generic PC @System
+Generic PCTG @System
+Generic PE @System
+Generic PE-CF @System
+Generic PETG @System
+Generic PETG HF @System
+Generic PETG-CF @System
+Generic PHA @System
+Generic PLA @System
+Generic PLA High Speed @System
+Generic PLA Matte @System
+Generic PLA Silk @System
+Generic PLA-CF @System
+Generic PP @System
+Generic PP-CF @System
+Generic PP-GF @System
+Generic PPA-CF @System
+Generic PPA-GF @System
+Generic PVA @System
+Generic SBS @System
+Generic TPU @System
+AliZ PA-CF @System
+AliZ PETG @System
+AliZ PETG-CF @System
+AliZ PETG-Metal @System
+AliZ PLA @System
+Bambu ABS @System
+Bambu ABS-GF @System
+Bambu ASA @System
+Bambu ASA-Aero @System
+Bambu ASA-CF @System
+Bambu PA-CF @System
+Bambu PA6-CF @System
+Bambu PA6-GF @System
+Bambu PAHT-CF @System
+Bambu PC @System
+Bambu PC FR @System
+Bambu PET-CF @System
+Bambu PETG Basic @System
+Bambu PETG HF @System
+Bambu PETG Matte @System
+Bambu PETG Translucent @System
+Bambu PETG-CF @System
+Bambu PLA Aero @System
+Bambu PLA Basic @System
+Bambu PLA Dynamic @System
+Bambu PLA Galaxy @System
+Bambu PLA Glow @System
+Bambu PLA Impact @System
+Bambu PLA Lite @System
+Bambu PLA Marble @System
+Bambu PLA Matte @System
+Bambu PLA Metal @System
+Bambu PLA Pure @System
+Bambu PLA Silk @System
+Bambu PLA Silk+ @System
+Bambu PLA Sparkle @System
+Bambu PLA Tough @System
+Bambu PLA Tough+ @System
+Bambu PLA Translucent @System
+Bambu PLA Wood @System
+Bambu PLA-CF @System
+Bambu PPA-CF @System
+Bambu PVA @System
+Bambu Support For PA/PET @System
+Bambu Support For PLA @System
+Bambu Support For PLA/PETG @System
+Bambu Support G @System
+Bambu Support W @System
+Bambu Support for ABS @System
+Bambu TPU 85A @System
+Bambu TPU 90A @System
+Bambu TPU 95A @System
+Bambu TPU 95A HF @System
+Bambu TPU for AMS @System
+COEX ABS @System
+COEX ABS PRIME @System
+COEX ASA PRIME @System
+COEX NYLEX PA6-CF @System
+COEX PCTG PRIME @System
+COEX PETG @System
+COEX PLA @System
+COEX PLA PRIME @System
+COEX PLA+Silk @System
+COEX TPE 30D @System
+COEX TPE 40D @System
+COEX TPE 60D @System
+COEX TPU 60A @System
+DREMC ABS @System
+DREMC ABS+ @System
+DREMC ABS-GF @System
+DREMC ASA @System
+DREMC ASA CF @System
+DREMC ASA GF @System
+DREMC PA12-CF @System
+DREMC PA6-CF @System
+DREMC PET-CF @System
+DREMC PETG @System
+DREMC PLA+ @System
+DREMC PLA+ HS @System
+DREMC PPA-CF @System
+DREMC TPU 95A @System
+Elas ASA @System
+Elas PETG Basic @System
+Elas PLA Basic @System
+Elas PLA Pro @System
+Elegoo ABS @System
+Elegoo ASA @System
+Elegoo ASA-CF @System
+Elegoo PAHT-CF @System
+Elegoo PC @System
+Elegoo PC-FR @System
+Elegoo PET-CF @System
+Elegoo PETG @System
+Elegoo PETG HF @System
+Elegoo PETG PRO @System
+Elegoo PETG Translucent @System
+Elegoo PETG-CF @System
+Elegoo PETG-GF @System
+Elegoo PLA @System
+Elegoo PLA Basic @System
+Elegoo PLA Galaxy @System
+Elegoo PLA Glow @System
+Elegoo PLA Marble @System
+Elegoo PLA Matte @System
+Elegoo PLA PRO @System
+Elegoo PLA Silk @System
+Elegoo PLA Sparkle @System
+Elegoo PLA Translucent2 @System
+Elegoo PLA Wood @System
+Elegoo PLA+ @System
+Elegoo PLA-CF @System
+Elegoo Rapid PETG @System
+Elegoo Rapid PLA+ @System
+Elegoo Rapid TPU 95A @System
+Elegoo TPU 95A @System
+Eolas Prints ABS @System
+Eolas Prints ASA @System
+Eolas Prints PETG @System
+Eolas Prints PETG Transition @System
+Eolas Prints PETG UV Resistant @System
+Eolas Prints PLA Antibacterial @System
+Eolas Prints PLA High Speed @System
+Eolas Prints PLA INGEO 850 @System
+Eolas Prints PLA INGEO 870 @System
+Eolas Prints PLA Matte @System
+Eolas Prints PLA Neon @System
+Eolas Prints PLA Premium @System
+Eolas Prints PLA Silk @System
+Eolas Prints PLA Transition @System
+Eolas Prints TPU D60 UV Resistant @System
+Eolas Prints TPU Flex 93A @System
+Eolas Prints TPU Flex D53 @System
+Eolas Prints TPU Transition @System
+FDplast ABS @System
+FDplast HIPS @System
+FDplast PETG @System
+FDplast PLA @System
+FDplast SBS @System
+FDplast TPU @System
+FILL3D PA @System
+FILL3D PETG @System
+FILL3D PETG CF @System
+FILL3D PLA Basic @System
+FILL3D PLA Turbo @System
+FILL3D PP @System
+FILL3D PPCF @System
+Fiberon PA12-CF @System
+Fiberon PA6-CF @System
+Fiberon PA6-GF @System
+Fiberon PA612-CF @System
+Fiberon PET-CF @System
+Fiberon PETG-ESD @System
+Fiberon PETG-rCF @System
+FilAr PETG Amarillo Lima
+FilAr PETG Amarillo Radiante
+FilAr PETG Azul Boreal
+FilAr PETG Azul Francia
+FilAr PETG Azul Imperial
+FilAr PETG Blanco Antartida
+FilAr PETG Cian
+FilAr PETG Coral
+FilAr PETG Cristal
+FilAr PETG Gris Ceniza
+FilAr PETG Gris Plata
+FilAr PETG Magenta
+FilAr PETG Negro Azabache
+FilAr PETG Rojo Carmesi
+FilAr PLA Amarillo Lirio
+FilAr PLA Azul Francia
+FilAr PLA Blanco Antartida
+FilAr PLA Blanco Calido
+FilAr PLA Bronce
+FilAr PLA Cafe con Leche
+FilAr PLA Carpincho
+FilAr PLA Celeste Cielo
+FilAr PLA Cobre
+FilAr PLA Dorado
+FilAr PLA Gris Ceniza
+FilAr PLA Gris Pizarra
+FilAr PLA Gris Plata
+FilAr PLA Manteca
+FilAr PLA Marron Oxido
+FilAr PLA Naranja Tigre
+FilAr PLA Negro Azabache
+FilAr PLA Oro
+FilAr PLA Piel
+FilAr PLA Rojo de Carreras
+FilAr PLA Rosa Amaranto
+FilAr PLA Rosa Flamenco
+FilAr PLA Tabaco
+FilAr PLA Titanio
+FilAr PLA Verde FilAr
+FilAr PLA Verde Manzana
+FilAr PLA Verde Oliva
+FilAr PLA Verde Pixel
+FilAr PLA Violeta Jacaranda
+FilAr PLA-mate Amarillo
+FilAr PLA-mate Azul
+FilAr PLA-mate Beige
+FilAr PLA-mate Blanco
+FilAr PLA-mate Bordo
+FilAr PLA-mate Celeste Cielo
+FilAr PLA-mate Chocolate
+FilAr PLA-mate Gris
+FilAr PLA-mate Marron
+FilAr PLA-mate Naranja
+FilAr PLA-mate Negro
+FilAr PLA-mate Piel
+FilAr PLA-mate Rojo
+FilAr PLA-mate Rosa
+FilAr PLA-mate Uva
+FilAr PLA-mate Verde
+FilAr PLA-mate Violeta
+FusRock ABS-GF @System
+GreenGate3D PETG @System
+JAYO PETG @System
+JAYO PLA @System
+JAYO PLA Classic @System
+NIT ABS @System
+NIT PETG @System
+NIT PLA @System
+Numakers PLA+ @System
+Overture ABS Basic @System
+Overture ASA @System
+Overture Air PLA @System
+Overture Easy PLA @System
+Overture Matte PLA @System
+Overture PLA @System
+Overture PLA Pro @System
+Overture Rock PLA @System
+Overture Silk PLA @System
+Overture Super PLA+ @System
+Overture TPU @System
+Panchroma CoPE @System
+Panchroma PLA @System
+Panchroma PLA Celestial @System
+Panchroma PLA Galaxy @System
+Panchroma PLA Glow @System
+Panchroma PLA Luminous @System
+Panchroma PLA Marble @System
+Panchroma PLA Matte @System
+Panchroma PLA Metallic @System
+Panchroma PLA Neon @System
+Panchroma PLA Satin @System
+Panchroma PLA Silk @System
+Panchroma PLA Starlight @System
+Panchroma PLA Temp Shift @System
+Panchroma PLA Translucent @System
+Panchroma PLA UV Shift @System
+PlastAR PLA @System
+PolyLite ABS @System
+PolyLite ASA @System
+PolyLite Dual PLA @System
+PolyLite PETG @System
+PolyLite PLA @System
+PolyLite PLA Pro @System
+PolyTerra Dual PLA @System
+PolyTerra PLA @System
+Polymaker HT-PLA @System
+Polymaker HT-PLA-GF @System
+Polymaker PLA Pro @System
+Printalot ABS @System
+SUNLU PETG @System
+SUNLU PLA Marble @System
+SUNLU PLA Matte @System
+SUNLU PLA+ 2.0 @System
+SUNLU PLA+ @System
+SUNLU Silk PLA+ @System
+SUNLU Wood PLA @System
+Valment PLA @System
+Valment PLA Galaxy @System
+Valment PLA Silk @System
+Valment PLA-CF @System
+eSUN PETG @System
+eSUN PLA+ @System
+eSUN PLA-Basic @System
+eSUN PLA-Marble @System
+eSUN PLA-Matte @System
+eSUN ePLA-LW @System
+▼
+Process
+Select process...
+0.08mm Extra Fine @Voron
+0.12mm Fine @Voron
+0.15mm Optimal @Voron
+0.20mm Standard @Voron
+0.24mm Draft @Voron
+0.28mm Extra Draft @Voron
+Support
+Brim
+Prime tower
+Ironing
+▼
+Objects
+1
+Objects
+1
+Plate 1
+1
+20mm_cube.obj
+E1
+1
+20mm_cube.obj
+E1
+OBJECT OVERRIDES
+20mm_cube.obj
++ Add Setting
+Reset All
+Extruder
+0: Default (Inherit)
+1: Generic PLA @System
+Process Settings
+Save
+Simple
+Advanced
+Expert
+
+Save process preset for reuse. Save project keeps models and settings together.
+
+Quality
+Strength
+Speed
+Support
+Multimaterial
+Others
+LAYER HEIGHT
+Layer height?
+mm
+First layer height?
+mm
+Mixed color sublayer
+LINE WIDTH
+Default?
+mm or %
+First layer?
+mm or %
+Outer wall?
+mm or %
+Inner wall?
+mm or %
+Top surface?
+mm or %
+Sparse infill?
+mm or %
+Internal solid infill?
+mm or %
+Support?
+mm or %
+Bridge?
+mm or %
+SEAM
+Seam position?
+Nearest
+Aligned
+Aligned back
+Back
+Random
+Staggered inner seams?
+Seam gap?
+mm or %
+Scarf joint seam (beta)?
+None
+Contour
+Contour and hole
+Role based wipe speed?
+Wipe speed?
+mm/s or %
+Wipe on loops?
+Wipe before external loop?
+PRECISION
+Slice gap closing radius?
+mm
+Resolution?
+mm
+Arc fitting?
+Disabled
+Enabled
+Sparse infill only
+X-Y hole compensation?
+mm
+X-Y contour compensation?
+mm
+Elephant foot compensation?
+mm
+Precise wall?
+Precise Z height?
+Convert holes to polyholes?
+IRONING
+Ironing type?
+No ironing
+All top surfaces
+Topmost surface only
+All solid layers
+WALL GENERATOR
+Wall generator?
+Classic
+Arachne
+Wall transitioning threshold angle?
+°
+Wall transitioning filter margin?
+%
+Wall transition length?
+%
+Wall distribution count?
+First layer minimum wall width?
+%
+Minimum wall width?
+%
+Minimum feature size?
+%
+Minimum wall length?
+WALLS AND SURFACES
+Walls printing order?
+Inner/Outer
+Outer/Inner
+Inner/Outer/Inner
+Print infill first?
+Wall loop direction?
+Counter clockwise
+Clockwise
+Flow ratio?
+Top surface flow ratio?
+Bottom surface flow ratio?
+Set other flow ratios?
+Only one wall on first layer?
+Only one wall on top surfaces?
+Avoid crossing walls?
+Small area flow compensation (beta)?
+BRIDGING
+Bridge flow ratio?
+Internal bridge flow ratio?
+External bridge density?
+%
+Internal bridge density?
+%
+Thick external bridges?
+Thick internal bridges?
+Extra bridge layers (beta)?
+Disabled
+External bridge only
+Internal bridge only
+Apply to all
+Filter out small internal bridges?
+Filter
+Limited filtering
+No filtering
+Bridge counterbore holes?
+None
+Partially bridged
+Sacrificial layer
+OVERHANGS
+Detect overhang walls?
+Print unsupported walls last?
+Make overhangs printable?
+Extra perimeters on overhangs?
+Reverse on even?
+X
+Y
+Z
+Top
+Bottom
+Front
+Rear
+Left
+Right
+Iso
+Top
+Bottom
+Front
+Rear
+Left
+Right
+Fit
+1
+Plate 1
++ Add Plate
+Plate settings
+Slice Plate 1
+▼
+✓
+Imported 20mm_cube.obj
+TEARDOWN { destroyed: true, frame: null, labels: 0, meshes: 0 }
+REMOUNT PASS

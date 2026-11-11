@@ -1,0 +1,54 @@
+(node:1771078) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///home/david/.t3/worktrees/OrcaSlicer/prototype-html-in-canva-dace8cac6451aa94/wasm/web/engine-core.js is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /home/david/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+▶ Orca WASM Engine Node Test Suite
+  ✔ loadVendors lists OrcaFilamentLibrary and Voron (216.229849ms)
+st=1, 
+Summary for /home/david/.t3/worktrees/OrcaSlicer/prototype-html-in-canva-dace8cac6451aa94/wasm/tests/parity/refs-current-native/cube-voron.gcode:
+  Layers: 100
+  G1 moves: 8802
+  Total extrusion: 1306.8087
+  X range: min 140.200, max 159.800
+  Y range: min 140.200, max 159.800
+  Z range: min 0.200, max 20.400
+
+Summary for /home/david/.t3/worktrees/OrcaSlicer/prototype-html-in-canva-dace8cac6451aa94/wasm/build/tests-node/scratch/p6_cube_test.gcode:
+  Layers: 100
+  G1 moves: 8802
+  Total extrusion: 1306.8087
+  X range: min 140.200, max 159.800
+  Y range: min 140.200, max 159.800
+  Z range: min 0.200, max 20.400
+
+Differing normalized lines: 0
+  ✔ Slice the cube: compare with cube-voron.gcode via compare_gcode.sh (261.816106ms)
+st=1, 
+st=1, 
+Summary for /home/david/.t3/worktrees/OrcaSlicer/prototype-html-in-canva-dace8cac6451aa94/wasm/tests/parity/refs-current-native/cube-voron.gcode:
+  Layers: 100
+  G1 moves: 8802
+  Total extrusion: 1306.8087
+  X range: min 140.200, max 159.800
+  Y range: min 140.200, max 159.800
+  Z range: min 0.200, max 20.400
+
+Summary for /home/david/.t3/worktrees/OrcaSlicer/prototype-html-in-canva-dace8cac6451aa94/wasm/build/tests-node/scratch/cube_after_cancel.gcode:
+  Layers: 100
+  G1 moves: 8802
+  Total extrusion: 1306.8087
+  X range: min 140.200, max 159.800
+  Y range: min 140.200, max 159.800
+  Z range: min 0.200, max 20.400
+
+Differing normalized lines: 0
+  ✔ Cancel through an AbortSignal 300 ms into a Benchy slice, then slice cube again (788.81711ms)
+✔ Orca WASM Engine Node Test Suite (1485.719598ms)
+ℹ tests 3
+ℹ suites 1
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1580.699833

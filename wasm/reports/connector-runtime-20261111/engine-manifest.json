@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "kind": "engine",
+  "source": "6b861c25f9246e7abdb92b5079527816a5423c7888c9da17cd4a7ef065535635",
+  "dependencies": "c032787d77ece75d53aa136646938283f7c3817278901ac281b1efbbc50016d4",
+  "build": {
+    "architecture": "64",
+    "cFlags": "-sMEMORY64=1 -pthread -fwasm-exceptions -O2",
+    "toolchain": "6.0.11",
+    "recipe": "dd5e954dec636be5b773771cbbb74e5170b4489340bd98b0de9633708800331a"
+  },
+  "artifacts": {
+    "orca_engine.mjs": "70a73013596f54046e2e490d1e01fbade6edff920eeb911ed649a05b820d18d7",
+    "orca_engine.wasm": "ad970ff002e908008cf77a0cc8b8bc31819c61c6e367a8a3e37930e0f9ef4dab"
+  }
+}

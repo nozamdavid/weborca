@@ -1,0 +1,33 @@
+{"camera":"perspective","triangles":80000,"vertexReads":0,"elapsedMs":0.7814620000000048}
+{"camera":"orthographic","triangles":80000,"vertexReads":0,"elapsedMs":0.12063899999999705}
+✔ additive union retains primary and existing instances without toggling duplicates (0.796073ms)
+✔ perspective: dense rectangle miss reads no triangle vertices (21.002991ms)
+✔ orthographic: dense rectangle miss reads no triangle vertices (7.647027ms)
+✔ reverse drags normalize in client CSS coordinates independently of DPR (0.849501ms)
+✔ perspective: triangle crossing box, near/far/behind/outside exclusion and instance dedupe (0.543275ms)
+✔ orthographic: triangle crossing box, near/far/behind/outside exclusion and instance dedupe (0.317647ms)
+✔ group scale and rotate attach, transform all selected instances and commit once (2.238758ms)
+✔ cancel and busy commit restore signed scales, orientation, positions and orbit (0.431816ms)
+✔ group and touch rollback request a frame after restoring transforms (0.374257ms)
+✔ Escape rolls back a body drag and consumes its release without clearing selection (0.494826ms)
+✔ TransformControls release before viewer picking preserves selection; next background click clears (29.497061ms)
+✔ empty-canvas history selects recursive system roots and restores snapshot values (6.29635ms)
+✔ painting volume identity survives new IDs independently of object-list volume selection (83.726666ms)
+✔ history selection capture and restore preserve ordered instance identity across recreated IDs (40.02885ms)
+✔ history selection skips removed members without selecting unrelated objects (44.044472ms)
+✔ history selection keeps old snapshots compatible and restores a valid volume (38.863612ms)
+✔ history selection capture records the primary volume and ignores duplicate refs (41.355878ms)
+✔ idle stops; changes coalesce and damping continues (0.538635ms)
+✔ stale and destroyed retrievals never enter scene commit (0.351897ms)
+{"workload":"20 transforms + geometry refresh","calls":4,"bytes":256,"ms":1.026219999999995}
+✔ store transforms reuse both binary caches; geometry refresh invalidates both (11.961097ms)
+✔ accepted refresh keeps scene geometry identity for cached mesh data (15.593832ms)
+﹣ fixed idle scheduler workload before and after (0.070379ms) # SKIP
+ℹ tests 22
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 292.660884

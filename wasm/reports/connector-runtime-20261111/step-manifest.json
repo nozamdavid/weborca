@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "kind": "step",
+  "source": "6b861c25f9246e7abdb92b5079527816a5423c7888c9da17cd4a7ef065535635",
+  "dependencies": "d4955e5501fd9c390597f8278f1890027a956a420558bc7f8458e71e147da7f4",
+  "build": {
+    "architecture": "64",
+    "cFlags": "-sMEMORY64=1 -pthread -fwasm-exceptions -O2",
+    "toolchain": "6.0.11",
+    "recipe": "dd5e954dec636be5b773771cbbb74e5170b4489340bd98b0de9633708800331a"
+  },
+  "artifacts": {
+    "LICENSE_LGPL_21.txt": "e237fa56668030e928551ddd60f05df5fe957f75eab874bbd017e085ed722e7c",
+    "OCCT_LGPL_EXCEPTION.txt": "04580a884ea6cea294402649ff7b5cbb167d47462d1340a4ed33e550db10a81b",
+    "step_tessellate.mjs": "ae275fd99181db06e7c3d6d6d8c78fc012b10781009f5cff76e9c4fd0b876423",
+    "step_tessellate.wasm": "a97f5444cf5cee49c1e2cfa8a58bc0b7c2dc53eb27b25350daa6a7eada1117aa"
+  }
+}
