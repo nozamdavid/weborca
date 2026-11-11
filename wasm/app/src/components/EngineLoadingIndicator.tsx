@@ -10,8 +10,9 @@ export const EngineLoadingIndicator: React.FC = () => {
   const progress = useAppStore(s => s.engineLoad);
   const init = useAppStore(s => s.initApp);
   const label = error ? t('Engine unavailable. Check your connection and retry.') : progress.phase === 'downloading'
-    ? `${t('Downloading engine...')}${progress.loaded ? ` ${Math.round(progress.loaded / 1048576)} MB${progress.total ? ` / ${Math.round(progress.total / 1048576)} MB` : ''}` : ''}`
-    : t('Initializing engine...');
+    ? `${t('Downloading engine...')}${progress.total && progress.loaded !== undefined ? ` ${Math.min(100, Math.floor(progress.loaded / progress.total * 100))}%` : ''}${progress.loaded ? ` ${Math.round(progress.loaded / 1048576)} MB${progress.total ? ` / ${Math.round(progress.total / 1048576)} MB` : ''}` : ''}`
+    : progress.phase === 'checking' ? t('Checking engine cache...')
+      : progress.phase === 'cached' ? t('Loading cached engine...') : t('Initializing engine...');
   if (!visible) return null;
   return (
     <div className="engine-loading" role="status" aria-live="polite" id="engine-loading">

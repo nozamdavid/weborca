@@ -1,5 +1,12 @@
 # Orca Web design system
 
+The [local v2.5 integration](../../docs/v2.5.0-integration/README.md) preserves
+the existing desktop/mobile workflows on one frozen Chromium candidate, including
+startup/retry, legacy preset reset, filament transactions, project recovery and
+Preview controls. CURRENT5070 remains the background-engine release below.
+Belt/IMEX/mixing browser UI, transparency, Firefox and physical/hardware
+acceptance remain open; merged desktop capabilities do not qualify browser UX.
+
 The [background engine publication](../build/tests-background-engine-20261107/report.md)
 is current on CURRENT5070. Engine download/initialization uses an in-flow status
 and actionable retry. Navigation, Preferences and camera controls remain available;
@@ -69,7 +76,7 @@ next action. Focus rings, errors, disabled controls and reduced motion are scope
 to the bootstrap. The [design report](../build/tests-alpha-design-20261107/report.md)
 records desktop/mobile captures, functional checks and the current rollback.
 
-The optional gate is published on CURRENT5070 as immutable `wasm/build/ui-alpha-design-release-20261107`. The [alpha design publication](../build/tests-alpha-design-20261107/report.md) records its single incremental build, native input reuse and rollback to the previous gated release. The companion `tests-alpha-access-20261106/candidate-static` starts without login or alpha/backend requests. Build/runtime configuration is documented in [deployment guidance](../deploy/README.md#optional-alpha-access).
+The optional gate is retained on CURRENT5070 in immutable `wasm/build/ui-background-engine-release-20261107`. The [alpha design publication](../build/tests-alpha-design-20261107/report.md) records its single incremental build, native input reuse and rollback to the previous gated release. The companion `tests-alpha-access-20261106/candidate-static` starts without login or alpha/backend requests. Build/runtime configuration is documented in [deployment guidance](../deploy/README.md#optional-alpha-access).
 
 The public login accepts an invite code and offers **Login as admin**. Admin password login opens invite management: optional internal email/username/note labels, **Create code**, a once-visible code with Copy/Dismiss, editable labels, unused/used status, first/last use and use count, and Revoke/Restore. Labels stay behind admin authorization. Dismissing the code erases it from the view and returns focus to Create code; it cannot be retrieved later. The primary **Open slicer** button explicitly issues a separate app credential without an invite, validates it and restores the local app destination. It disables while opening and offers an inline error with retry on failure. The credential ends with its authorizing admin session, admin logout or server restart; app logout leaves admin management signed in. Tester/app credentials do not grant invite management. Existing recovery transitions apply to this app session too.
 

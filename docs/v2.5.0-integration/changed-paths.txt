@@ -1,0 +1,2508 @@
+.clang-tidy
+.claude/skills/orca-profiles/SKILL.md
+.claude/skills/orca-profiles/references/review-checklist.md
+.claude/skills/orca-profiles/references/validation.md
+.claude/skills/orca-profiles/references/vendor-bundle.md
+.claude/skills/orca-translations/SKILL.md
+.claude/skills/orca-translations/references/source-audit.md
+.claude/skills/orca-translations/references/translation-rules.md
+.claude/skills/orca-translations/scripts/find_untranslated.py
+.claude/skills/orca-translations/scripts/po_tool.py
+.claude/skills/orca-wxwidgets/references/mouse-keyboard-focus.md
+.claude/skills/orca-wxwidgets/references/orca-settings-ui.md
+.claude/skills/orca-wxwidgets/references/platforms.md
+.claude/skills/orca-wxwidgets/references/popups-menus.md
+.claude/skills/orca-wxwidgets/references/webview-gl-aui-media.md
+.github/actions/deploy-nightly/action.yml
+.github/actions/deploy-nightly/deploy.sh
+.github/workflows/approve_pr_checks.yml
+.github/workflows/build_all.yml
+.github/workflows/build_check_cache.yml
+.github/workflows/build_deps.yml
+.github/workflows/build_orca.yml
+.github/workflows/cancel_closed_pr_builds.yml
+.github/workflows/check_locale.yml
+.github/workflows/check_profiles.yml
+.github/workflows/check_profiles_comment.yml
+.github/workflows/clang_tidy.yml
+.github/workflows/parity_nightly.yml
+.github/workflows/pr-label-bot.yml
+CMakeLists.txt
+CONTRIBUTING.md
+README.md
+build_linux.sh
+build_release_macos.sh
+build_win.bat
+cmake/modules/ClangClShowIncludes.cmake
+cmake/modules/FindAlienWx.cmake
+cmake/modules/FindGLEW.cmake
+cmake/modules/FindPerlEmbed.cmake
+cmake/modules/LibFindMacros.cmake
+cmake/modules/bin2h.cmake
+deps/CGAL/CGAL.cmake
+deps/CMakeLists.txt
+deps/EXPAT/EXPAT.cmake
+deps/FREETYPE/FREETYPE.cmake
+deps/GLEW/GLEW.cmake
+deps/GLEW/glew/CMakeLists.txt
+deps/GLEW/glew/LICENSE.txt
+deps/GLEW/glew/README.md
+deps/GLEW/glew/VERSION
+deps/GLEW/glew/include/GL/eglew.h
+deps/GLEW/glew/include/GL/glew.h
+deps/GLEW/glew/include/GL/glxew.h
+deps/GLEW/glew/include/GL/wglew.h
+deps/GLEW/glew/src/glew.c
+deps/GMP/GMP.cmake
+deps/JPEG/JPEG.cmake
+deps/OCCT/0001-BRepMesh-seam-pcurve-at-edge-parameter.patch
+deps/OCCT/OCCT.cmake
+deps/OpenCSG/CMakeLists.txt.in
+deps/OpenCSG/OpenCSG.cmake
+deps/OpenCV/0001-vs.patch
+deps/OpenCV/0002-clang19-macos.patch
+deps/OpenCV/OpenCV.cmake
+deps/OpenSSL/OpenSSL.cmake
+deps/PNG/0002-clang19-macos.patch
+deps/PNG/PNG.cmake
+deps/PNG/PNG.patch
+deps/PNG/macos-arm64.patch
+deps/python3/01-windows-nuget.patch
+deps/python3/python3.cmake
+deps/wxWidgets/0001-macos-use-srgb-colour-components.patch
+deps/wxWidgets/wxWidgets.cmake
+deps_src/imguizmo/ImGuizmo.cpp
+deps_src/libigl/igl/copyleft/cgal/CGAL_includes.hpp
+deps_src/libigl/igl/copyleft/cgal/closest_facet.cpp
+deps_src/libigl/igl/copyleft/cgal/closest_facet.h
+deps_src/libigl/igl/copyleft/cgal/component_inside_component.cpp
+deps_src/libigl/igl/copyleft/cgal/extract_cells.cpp
+deps_src/libigl/igl/copyleft/cgal/hausdorff.cpp
+deps_src/libigl/igl/copyleft/cgal/hausdorff.h
+deps_src/libigl/igl/copyleft/cgal/outer_hull.cpp
+deps_src/libigl/igl/copyleft/cgal/outer_hull_legacy.cpp
+deps_src/libigl/igl/copyleft/cgal/point_mesh_squared_distance.cpp
+deps_src/libigl/igl/copyleft/cgal/point_mesh_squared_distance.h
+deps_src/libigl/igl/copyleft/cgal/points_inside_component.cpp
+deps_src/libigl/igl/copyleft/cgal/signed_distance_isosurface.cpp
+deps_src/libigl/igl/copyleft/cgal/submesh_aabb_tree.cpp
+deps_src/libigl/igl/copyleft/cgal/submesh_aabb_tree.h
+deps_src/libnest2d/include/libnest2d/nester.hpp
+deps_src/libnest2d/include/libnest2d/placers/nfpplacer.hpp
+deps_src/mcut/include/mcut/internal/tpool.h
+deps_src/semver/semver.c
+docs/HLSD/adaptive-infill.md
+docs/HLSD/center-of-mass.md
+docs/HLSD/color-picker.md
+docs/HLSD/deferred-page-construction.md
+docs/HLSD/design-tab.md
+docs/HLSD/exclusion-volumes.md
+docs/HLSD/filament_id.md
+docs/HLSD/focus-mode.md
+docs/HLSD/infill-corner-smoothing.md
+docs/HLSD/keyboard-shortcuts.md
+docs/HLSD/mesh-repair.md
+docs/HLSD/multiline-infill.md
+docs/HLSD/plugin-permissions.md
+docs/HLSD/polygon-clipping.md
+docs/HLSD/precise-seam.md
+docs/HLSD/preset-cache.md
+docs/HLSD/preset-plugin-api.md
+docs/HLSD/python-plugin-async-bridge.md
+docs/HLSD/seam-alignment.md
+docs/HLSD/section-view.md
+docs/HLSD/separated-infills.md
+docs/HLSD/tooltip-illustrations.md
+docs/HLSD/translucent-filaments.md
+docs/HLSD/travel-optimization.md
+docs/HLSD/wipe-inward.md
+docs/v2.5.0-integration/changed-paths.txt
+docs/v2.5.0-integration/core-configure.log
+docs/v2.5.0-integration/focused-checks.log
+docs/v2.5.0-integration/merge-foundation.md
+docs/v2.5.0-integration/preview-es-compile.log
+docs/v2.5.0-integration/renderer-final.log
+docs/v2.5.0-integration/step-compile.log
+localization/i18n/OrcaSlicer.pot
+localization/i18n/ca/OrcaSlicer_ca.po
+localization/i18n/cs/OrcaSlicer_cs.po
+localization/i18n/de/OrcaSlicer_de.po
+localization/i18n/en/OrcaSlicer_en.po
+localization/i18n/es/OrcaSlicer_es.po
+localization/i18n/eu/OrcaSlicer_eu.po
+localization/i18n/fr/OrcaSlicer_fr.po
+localization/i18n/hu/OrcaSlicer_hu.po
+localization/i18n/it/OrcaSlicer_it.po
+localization/i18n/ja/OrcaSlicer_ja.po
+localization/i18n/ko/OrcaSlicer_ko.po
+localization/i18n/list.txt
+localization/i18n/lt/OrcaSlicer_lt.po
+localization/i18n/nl/OrcaSlicer_nl.po
+localization/i18n/pl/OrcaSlicer_pl.po
+localization/i18n/pt_BR/OrcaSlicer_pt_BR.po
+localization/i18n/ru/OrcaSlicer_ru.po
+localization/i18n/sv/OrcaSlicer_sv.po
+localization/i18n/th/OrcaSlicer_th.po
+localization/i18n/tr/OrcaSlicer_tr.po
+localization/i18n/uk/OrcaSlicer_uk.po
+localization/i18n/vi/OrcaSlicer_vi.po
+localization/i18n/zh_CN/OrcaSlicer_zh_CN.po
+localization/i18n/zh_TW/OrcaSlicer_zh_TW.po
+resources/calib/temperature_tower/belt_temp_provino_unit.stl
+resources/calib/temperature_tower/belt_temp_tower_230_190.stl
+resources/calib/temperature_tower/belt_temp_tower_240_210.stl
+resources/calib/temperature_tower/belt_temp_tower_250_230.stl
+resources/calib/temperature_tower/belt_temp_tower_270_230.stl
+resources/calib/temperature_tower/belt_temp_tower_280_240.stl
+resources/calib/temperature_tower/belt_temp_tower_320_280.stl
+resources/calib/temperature_tower/gen_belt_temp_tower.py
+resources/fonts/NotoSansKR-Bold.ttf
+resources/fonts/NotoSansKR-Regular.ttf
+resources/images/align_x_center.svg
+resources/images/align_x_center_dark.svg
+resources/images/align_x_max.svg
+resources/images/align_x_max_dark.svg
+resources/images/align_x_min.svg
+resources/images/align_x_min_dark.svg
+resources/images/align_y_center.svg
+resources/images/align_y_center_dark.svg
+resources/images/align_y_max.svg
+resources/images/align_y_max_dark.svg
+resources/images/align_y_min.svg
+resources/images/align_y_min_dark.svg
+resources/images/align_z_center.svg
+resources/images/align_z_center_dark.svg
+resources/images/align_z_max.svg
+resources/images/align_z_max_dark.svg
+resources/images/align_z_min.svg
+resources/images/align_z_min_dark.svg
+resources/images/delete_all_filaments.svg
+resources/images/distribute_x.svg
+resources/images/distribute_x_dark.svg
+resources/images/distribute_y.svg
+resources/images/distribute_y_dark.svg
+resources/images/distribute_z.svg
+resources/images/distribute_z_dark.svg
+resources/images/extruder_sync.svg
+resources/images/multi_extruder.svg
+resources/images/param_spiralinset.svg
+resources/images/plate_imex_copy_mode.svg
+resources/images/plate_imex_copy_mode_dark.svg
+resources/images/plate_imex_copy_mode_hover.svg
+resources/images/plate_imex_copy_mode_hover_dark.svg
+resources/images/plate_imex_custom_mode.svg
+resources/images/plate_imex_custom_mode_dark.svg
+resources/images/plate_imex_custom_mode_hover.svg
+resources/images/plate_imex_custom_mode_hover_dark.svg
+resources/images/plate_imex_mirror_mode.svg
+resources/images/plate_imex_mirror_mode_dark.svg
+resources/images/plate_imex_mirror_mode_hover.svg
+resources/images/plate_imex_mirror_mode_hover_dark.svg
+resources/images/plate_imex_normal_mode.svg
+resources/images/plate_imex_normal_mode_dark.svg
+resources/images/plate_imex_normal_mode_hover.svg
+resources/images/plate_imex_normal_mode_hover_dark.svg
+resources/images/score_star_outline.svg
+resources/images/texture_displacement/adaptive_off.png
+resources/images/texture_displacement/adaptive_on.png
+resources/images/texture_displacement/blend_add.png
+resources/images/texture_displacement/blend_multiply.png
+resources/images/texture_displacement/collapse_slivers_off.png
+resources/images/texture_displacement/collapse_slivers_on.png
+resources/images/texture_displacement/cursor_size.gif
+resources/images/texture_displacement/denoise_off.png
+resources/images/texture_displacement/denoise_on.png
+resources/images/texture_displacement/depth.gif
+resources/images/texture_displacement/edge_fade_off.png
+resources/images/texture_displacement/edge_fade_on.png
+resources/images/texture_displacement/erase.gif
+resources/images/texture_displacement/erase_all.png
+resources/images/texture_displacement/geometry_smoothing.gif
+resources/images/texture_displacement/invert_off.png
+resources/images/texture_displacement/invert_on.png
+resources/images/texture_displacement/map_cube.png
+resources/images/texture_displacement/map_cylinder.png
+resources/images/texture_displacement/map_sphere.png
+resources/images/texture_displacement/map_unwrap.png
+resources/images/texture_displacement/map_view.png
+resources/images/texture_displacement/midlevel.gif
+resources/images/texture_displacement/mix_off.png
+resources/images/texture_displacement/mix_on.png
+resources/images/texture_displacement/mixed_colors_few.png
+resources/images/texture_displacement/mixed_colors_many.png
+resources/images/texture_displacement/paint.gif
+resources/images/texture_displacement/painted_only_off.png
+resources/images/texture_displacement/painted_only_on.png
+resources/images/texture_displacement/preserve_edges_off.png
+resources/images/texture_displacement/preserve_edges_on.png
+resources/images/texture_displacement/remesh_after.png
+resources/images/texture_displacement/remesh_before.png
+resources/images/texture_displacement/rotation.gif
+resources/images/texture_displacement/select_all.png
+resources/images/texture_displacement/smart_fill_angle_high.png
+resources/images/texture_displacement/smart_fill_angle_low.png
+resources/images/texture_displacement/smoothing_off.png
+resources/images/texture_displacement/smoothing_on.png
+resources/images/texture_displacement/subdivide.gif
+resources/images/texture_displacement/tile_mirror.png
+resources/images/texture_displacement/tile_off.png
+resources/images/texture_displacement/tile_on.png
+resources/images/texture_displacement/tile_repeat.png
+resources/images/texture_displacement/tile_size_large.png
+resources/images/texture_displacement/tile_size_small.png
+resources/images/texture_displacement/tool_face.gif
+resources/images/texture_displacement/tool_smart_fill.gif
+resources/images/texture_displacement/view_checker.png
+resources/images/texture_displacement/view_distortion.png
+resources/images/texture_displacement/view_fast.png
+resources/images/texture_displacement/view_wireframe.png
+resources/images/texture_displacement_map_model_uv.svg
+resources/images/toolbar_tooltip.svg
+resources/images/toolbar_tooltip_hover.svg
+resources/images/toolbar_video_guide.svg
+resources/images/toolbar_wiki.svg
+resources/info/legacy_compatible_printers.json
+resources/profiles/Anker.json
+resources/profiles/Anker/filament/AnkerMake PLA+ Basic @Anker base.json
+resources/profiles/Anker/filament/AnkerMake PLA+ Basic @Anker.json
+resources/profiles/Anker/filament/AnkerMake PLA+ Glitter @Anker base.json
+resources/profiles/Anker/filament/AnkerMake PLA+ Glitter @Anker.json
+resources/profiles/Anker/filament/AnkerMake PLA+ Matte @Anker base.json
+resources/profiles/Anker/filament/AnkerMake PLA+ Matte @Anker.json
+resources/profiles/Anker/filament/AnkerMake PLA+ Metallic @Anker base.json
+resources/profiles/Anker/filament/AnkerMake PLA+ Metallic @Anker.json
+resources/profiles/Anker/filament/AnkerMake PLA+ Silk @Anker base.json
+resources/profiles/Anker/filament/AnkerMake PLA+ Silk @Anker.json
+resources/profiles/Anker/machine/fdm_marlin_common.json
+resources/profiles/Anycubic.json
+resources/profiles/Anycubic/Anycubic Kobra 3 V2_buildplate_model.stl
+resources/profiles/Anycubic/Anycubic Kobra 3 V2_cover.png
+resources/profiles/Anycubic/machine/Anycubic Kobra 2 0.4 nozzle.json
+resources/profiles/Anycubic/machine/Anycubic Vyper 0.4 nozzle.json
+resources/profiles/BBL.json
+resources/profiles/BBL/Bambu Lab A2L_cover.png
+resources/profiles/BBL/Bambu Lab H2C_cover.png
+resources/profiles/BBL/Bambu Lab H2D Pro_cover.png
+resources/profiles/BBL/Bambu Lab H2S_cover.png
+resources/profiles/BBL/Bambu Lab P2S_cover.png
+resources/profiles/BBL/Bambu Lab X2D_cover.png
+resources/profiles/BBL/bbl-3dp-A1M.stl
+resources/profiles/BBL/bbl-3dp-H2C.stl
+resources/profiles/BBL/bbl-3dp-H2D.stl
+resources/profiles/BBL/bbl-3dp-O1S.stl
+resources/profiles/BBL/bbl-3dp-X1.stl
+resources/profiles/BBL/bbl-3dp-hotend.stl
+resources/profiles/BBL/filament/Bambu ABS @BBL P2S 0.6 nozzle.json
+resources/profiles/BBL/machine/Bambu Lab H2C 0.4 nozzle template machine_start_gcode.json
+resources/profiles/BBL/machine/Bambu Lab H2D 0.4 nozzle.json
+resources/profiles/BBL/machine/Bambu Lab H2D Pro 0.4 nozzle.json
+resources/profiles/BBL/machine/Bambu Lab H2S 0.4 nozzle.json
+resources/profiles/BBL/machine/Bambu Lab P1S 0.4 nozzle.json
+resources/profiles/BBL/machine/Bambu Lab P2S 0.4 nozzle template machine_start_gcode.json
+resources/profiles/BBL/machine/Bambu Lab P2S 0.4 nozzle.json
+resources/profiles/BBL/machine/Bambu Lab X1 0.4 nozzle.json
+resources/profiles/BBL/machine/Bambu Lab X1 Carbon 0.4 nozzle.json
+resources/profiles/BBL/machine/Bambu Lab X2D 0.4 nozzle.json
+resources/profiles/BBL/machine/fdm_bbl_3dp_001_common.json
+resources/profiles/BBL/machine/fdm_bbl_3dp_002_common.json
+resources/profiles/BBL/process/0.08mm High Quality @BBL P2S 0.2 nozzle.json
+resources/profiles/BBL/process/0.08mm High Quality @BBL P2S.json
+resources/profiles/BBL/process/0.10mm Standard @BBL P2S 0.2 nozzle.json
+resources/profiles/BBL/process/0.12mm Balanced Quality @BBL P2S 0.2 nozzle.json
+resources/profiles/BBL/process/0.12mm High Quality @BBL P2S.json
+resources/profiles/BBL/process/0.16mm High Quality @BBL P2S.json
+resources/profiles/BBL/process/0.16mm Standard @BBL P2S.json
+resources/profiles/BBL/process/0.18mm Balanced Quality @BBL P2S 0.6 nozzle.json
+resources/profiles/BBL/process/0.20mm High Quality @BBL P2S.json
+resources/profiles/BBL/process/0.20mm Standard @BBL P2S.json
+resources/profiles/BBL/process/0.24mm Balanced Quality @BBL P2S 0.6 nozzle.json
+resources/profiles/BBL/process/0.24mm Balanced Quality @BBL P2S 0.8 nozzle.json
+resources/profiles/BBL/process/0.24mm Standard @BBL P2S.json
+resources/profiles/BBL/process/0.30mm Standard @BBL P2S 0.6 nozzle.json
+resources/profiles/BBL/process/0.32mm Balanced Quality @BBL P2S 0.8 nozzle.json
+resources/profiles/BBL/process/0.40mm Standard @BBL P2S 0.8 nozzle.json
+resources/profiles/BBL/process/fdm_process_common.json
+resources/profiles/BenFab.json
+resources/profiles/BenFab/BenFab 450_cover.png
+resources/profiles/BenFab/benfab_450_buildplate_model.stl
+resources/profiles/BenFab/benfab_450_buildplate_texture.svg
+resources/profiles/BenFab/machine/BenFab 450 0.4 nozzle.json
+resources/profiles/BenFab/machine/BenFab 450 0.6 nozzle.json
+resources/profiles/BenFab/machine/BenFab 450 0.8 nozzle.json
+resources/profiles/BenFab/machine/BenFab 450 1.0 nozzle.json
+resources/profiles/BenFab/machine/BenFab 450.json
+resources/profiles/BenFab/machine/fdm_klipper_common.json
+resources/profiles/BenFab/machine/fdm_machine_common.json
+resources/profiles/BenFab/process/0.12mm Fine @BenFab 450 0.4 nozzle.json
+resources/profiles/BenFab/process/0.16mm Optimal @BenFab 450 0.4 nozzle.json
+resources/profiles/BenFab/process/0.20mm Standard @BenFab 450 0.4 nozzle.json
+resources/profiles/BenFab/process/0.20mm Strength @BenFab 450 0.4 nozzle.json
+resources/profiles/BenFab/process/0.24mm Draft @BenFab 450 0.4 nozzle.json
+resources/profiles/BenFab/process/0.24mm Fine @BenFab 450 0.8 nozzle.json
+resources/profiles/BenFab/process/0.24mm Optimal @BenFab 450 0.6 nozzle.json
+resources/profiles/BenFab/process/0.28mm Extra Draft @BenFab 450 0.4 nozzle.json
+resources/profiles/BenFab/process/0.30mm Fine @BenFab 450 1.0 nozzle.json
+resources/profiles/BenFab/process/0.30mm Standard @BenFab 450 0.6 nozzle.json
+resources/profiles/BenFab/process/0.32mm Optimal @BenFab 450 0.8 nozzle.json
+resources/profiles/BenFab/process/0.36mm Draft @BenFab 450 0.6 nozzle.json
+resources/profiles/BenFab/process/0.40mm Optimal @BenFab 450 1.0 nozzle.json
+resources/profiles/BenFab/process/0.40mm Standard @BenFab 450 0.8 nozzle.json
+resources/profiles/BenFab/process/0.42mm Extra Draft @BenFab 450 0.6 nozzle.json
+resources/profiles/BenFab/process/0.48mm Draft @BenFab 450 0.8 nozzle.json
+resources/profiles/BenFab/process/0.50mm Standard @BenFab 450 1.0 nozzle.json
+resources/profiles/BenFab/process/0.60mm Draft @BenFab 450 1.0 nozzle.json
+resources/profiles/BenFab/process/fdm_process_benfab_04020.json
+resources/profiles/BenFab/process/fdm_process_benfab_06030.json
+resources/profiles/BenFab/process/fdm_process_benfab_08040.json
+resources/profiles/BenFab/process/fdm_process_benfab_10050.json
+resources/profiles/BenFab/process/fdm_process_benfab_common.json
+resources/profiles/BenFab/process/fdm_process_common.json
+resources/profiles/Blocks.json
+resources/profiles/Blocks/machine/BLOCKS RF50 0.6 nozzle.json
+resources/profiles/Creality.json
+resources/profiles/Creality/Creality CR-10 Smart Pro_cover.png
+resources/profiles/Creality/Creality CR-10 Smart_cover.png
+resources/profiles/Creality/Creality CR-10S Pro V2_cover.png
+resources/profiles/Creality/Creality CR-10_cover.png
+resources/profiles/Creality/Creality CR-20 Pro_cover.png
+resources/profiles/Creality/Creality CR-M4 SE_cover.png
+resources/profiles/Creality/Creality Ender-2 Pro_cover.png
+resources/profiles/Creality/Creality Ender-3 Max Neo_cover.png
+resources/profiles/Creality/Creality Ender-3 Max_cover.png
+resources/profiles/Creality/Creality Ender-3 Neo_cover.png
+resources/profiles/Creality/Creality Ender-3 S1 Sonic_cover.png
+resources/profiles/Creality/Creality Ender-5 S1 Sonic_cover.png
+resources/profiles/Creality/Creality Sermoon D3 Pro_cover.png
+resources/profiles/Creality/Creality Sermoon D3_cover.png
+resources/profiles/Creality/Creality Sermoon M300_cover.png
+resources/profiles/Creality/Creality Sermoon V1 Pro_cover.png
+resources/profiles/Creality/Creality Sermoon V1_cover.png
+resources/profiles/Creality/creality_ender2pro_buildplate_model.stl
+resources/profiles/Creality/creality_ender2pro_buildplate_texture.svg
+resources/profiles/Creality/creality_sermoond3_buildplate_model.stl
+resources/profiles/Creality/creality_sermoond3_buildplate_texture.svg
+resources/profiles/Creality/machine/Creality Ender-2 Pro.json
+resources/profiles/Creality/machine/Creality K1 Max (0.4 nozzle).json
+resources/profiles/Creality/machine/Creality K1 Max (0.6 nozzle).json
+resources/profiles/Creality/machine/Creality K1 Max (0.8 nozzle).json
+resources/profiles/Creality/machine/Creality K1 Max_CFS-C 0.4 nozzle.json
+resources/profiles/Creality/machine/Creality K1 SE_CFS-C 0.4 nozzle.json
+resources/profiles/Creality/machine/Creality K1C_CFS-C 0.4 nozzle.json
+resources/profiles/Creality/machine/Creality K2 SE 0.4 nozzle.json
+resources/profiles/Creality/machine/Creality Sermoon D3 Pro.json
+resources/profiles/Creality/machine/Creality Sermoon D3.json
+resources/profiles/Creality/machine/Creality Sermoon V1 Pro.json
+resources/profiles/Custom.json
+resources/profiles/Custom/Generic Belt Printer_cover.png
+resources/profiles/Custom/machine/MyBeltPrinter 0.2 nozzle.json
+resources/profiles/Custom/machine/MyBeltPrinter 0.4 nozzle.json
+resources/profiles/Custom/machine/MyBeltPrinter 0.6 nozzle.json
+resources/profiles/Custom/machine/MyBeltPrinter 0.8 nozzle.json
+resources/profiles/Custom/machine/MyBeltPrinter.json
+resources/profiles/Custom/machine/fdm_belt_common.json
+resources/profiles/Custom/process/0.12mm Fine @MyBeltPrinter.json
+resources/profiles/Custom/process/0.20mm Standard @MyBeltPrinter.json
+resources/profiles/Elegoo.json
+resources/profiles/Elegoo/filament/BASE/Elegoo PLA @base.json
+resources/profiles/FELIX Printers.json
+resources/profiles/FELIX Printers/FELIX Build plate image.svg
+resources/profiles/FELIX Printers/FELIX Food Double_cover.png
+resources/profiles/FELIX Printers/FELIX Food Extruder.stl
+resources/profiles/FELIX Printers/FELIX Food Series build plate texture.svg
+resources/profiles/FELIX Printers/FELIX Food Single_cover.png
+resources/profiles/FELIX Printers/FELIX Food Switch_cover.png
+resources/profiles/FELIX Printers/FELIX Pro 3_cover.png
+resources/profiles/FELIX Printers/FELIX Pro L 3.0_cover.png
+resources/profiles/FELIX Printers/FELIX Pro L Series build plate texture.svg
+resources/profiles/FELIX Printers/FELIX Pro Series build plate texture.svg
+resources/profiles/FELIX Printers/FELIX Pro XL 3.0_cover.png
+resources/profiles/FELIX Printers/FELIX Pro XL Series build plate.svg
+resources/profiles/FELIX Printers/FELIX Tec 4 Series build plate.svg
+resources/profiles/FELIX Printers/FELIX Tec 4_cover.png
+resources/profiles/FELIX Printers/FELIX_Food_Series_Buildplate.stl
+resources/profiles/FELIX Printers/FELIX_Pro_2.stl
+resources/profiles/FELIX Printers/FELIX_Pro_L_Series_Buildplate.stl
+resources/profiles/FELIX Printers/FELIX_Pro_Series_Buildplate.stl
+resources/profiles/FELIX Printers/FELIX_Pro_XL_Series_Buildplate.stl
+resources/profiles/FELIX Printers/FELIX_Tec_Series_Buildplate.stl
+resources/profiles/FELIX Printers/FelixTec4_platform.3mf
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Medium Plastic Syringe @0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Medium Plastic Syringe @1.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Medium Plastic Syringe @2.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Medium Plastic Syringe @3.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Medium Plastic Syringe @4.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Medium Stainless Steel Syringe @0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Medium Stainless Steel Syringe @1.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Medium Stainless Steel Syringe @2.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Medium Stainless Steel Syringe @3.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Medium Stainless Steel Syringe @4.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thick Stainless Steel Syringe @0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thick Stainless Steel Syringe @1.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thick Stainless Steel Syringe @2.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thick Stainless Steel Syringe @3.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thick Stainless Steel Syringe @4.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thin Plastic Syringe @0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thin Plastic Syringe @1.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thin Plastic Syringe @2.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thin Plastic Syringe @3.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thin Plastic Syringe @4.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thin Stainless Steel Syringe @0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thin Stainless Steel Syringe @1.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thin Stainless Steel Syringe @2.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thin Stainless Steel Syringe @3.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Thin Stainless Steel Syringe @4.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thick Stainless Steel Syringe @1.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thick Stainless Steel Syringe @2.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thick Stainless Steel Syringe @3.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thick Stainless Steel Syringe @4.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thin Plastic Syringe @0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thin Plastic Syringe @1.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thin Plastic Syringe @2.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thin Plastic Syringe @3.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thin Plastic Syringe @4.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thin Stainless Steel  Syringe  @1.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thin Stainless Steel  Syringe  @2.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thin Stainless Steel  Syringe  @3.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thin Stainless Steel  Syringe  @4.00mm.json
+resources/profiles/FELIX Printers/filament/FELIXFood/Food Very Thin Stainless Steel Syringe @0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX FLEX  Brass @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX FLEX  Brass @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX FLEX Hardened Steel @ 0.25mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX FLEX Hardened Steel @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX FLEX Hardened Steel @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX FLEX Hardened Steel @ 0.70mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX PETG Brass @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX PETG Brass @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX PETG Hardened Steel @ 0.25mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX PETG Hardened Steel @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX PETG Hardened Steel @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX PETG Hardened Steel @ 0.70mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Premium PLA Brass @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Premium PLA Brass @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Premium PLA Hardened Steel @ 0.25mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Premium PLA Hardened Steel @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Premium PLA Hardened Steel @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Premium PLA Hardened Steel @ 0.70mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Wood  Brass @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Wood Brass @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Wood Hardened Steel @ 0.25mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Wood Hardened Steel @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Wood Hardened Steel @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FELIX Wood Hardened Steel @ 0.70mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA AppoloX ASA Brass @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA AppoloX ASA Brass @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA AppoloX ASA Hardened Steel @ 0.25mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA AppoloX ASA Hardened Steel @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA AppoloX ASA Hardened Steel @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA AppoloX ASA Hardened Steel @ 0.70mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA Aquasolve PVA Brass @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA Aquasolve PVA Brass @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA Aquasolve PVA Hardened Steel @ 0.25mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA Aquasolve PVA Hardened Steel @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA Aquasolve PVA Hardened Steel @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA Aquasolve PVA Hardened Steel @ 0.70mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA TitanX ABS Brass @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA TitanX ABS Brass @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA TitanX ABS Hardened Steel @ 0.25mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA TitanX ABS Hardened Steel @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA TitanX ABS Hardened Steel @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA TitanX ABS Hardened Steel @ 0.70mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA ePLA Brass @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA ePLA Brass @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA ePLA Hardened Steel @ 0.25mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA ePLA Hardened Steel @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA ePLA Hardened Steel @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/FORMFUTURA ePLA Hardened Steel @ 0.70mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/Ultrafuse ABS Fusion+ Brass @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/Ultrafuse ABS Fusion+ Brass @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/Ultrafuse ABS Fusion+ Hardened Steel @ 0.25mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/Ultrafuse ABS Fusion+ Hardened Steel @ 0.35mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/Ultrafuse ABS Fusion+ Hardened Steel @ 0.50mm.json
+resources/profiles/FELIX Printers/filament/FELIXPlastic/Ultrafuse ABS Fusion+ Hardened Steel @ 0.70mm.json
+resources/profiles/FELIX Printers/filament/fdm_filament_abs.json
+resources/profiles/FELIX Printers/filament/fdm_filament_asa.json
+resources/profiles/FELIX Printers/filament/fdm_filament_common.json
+resources/profiles/FELIX Printers/filament/fdm_filament_flex.json
+resources/profiles/FELIX Printers/filament/fdm_filament_food.json
+resources/profiles/FELIX Printers/filament/fdm_filament_pa.json
+resources/profiles/FELIX Printers/filament/fdm_filament_pa11cf.json
+resources/profiles/FELIX Printers/filament/fdm_filament_pc.json
+resources/profiles/FELIX Printers/filament/fdm_filament_pccf.json
+resources/profiles/FELIX Printers/filament/fdm_filament_pet.json
+resources/profiles/FELIX Printers/filament/fdm_filament_pla.json
+resources/profiles/FELIX Printers/filament/fdm_filament_pva.json
+resources/profiles/FELIX Printers/filament/fdm_filament_pvb.json
+resources/profiles/FELIX Printers/filament/fdm_filament_tpu.json
+resources/profiles/FELIX Printers/hotend.stl
+resources/profiles/FELIX Printers/machine/FELIX Food Double 0.50mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Double 1.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Double 2.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Double 3.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Double 4.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Double.json
+resources/profiles/FELIX Printers/machine/FELIX Food Single 0.50mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Single 1.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Single 2.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Single 3.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Single 4.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Single.json
+resources/profiles/FELIX Printers/machine/FELIX Food Switch 0.50mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Switch 1.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Switch 2.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Switch 3.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Switch 4.00mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Food Switch.json
+resources/profiles/FELIX Printers/machine/FELIX Pro 3 0.25mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro 3 0.35mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro 3 0.50mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro 3 0.70mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro 3.json
+resources/profiles/FELIX Printers/machine/FELIX Pro L 3.0 0.25mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro L 3.0 0.35mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro L 3.0 0.50mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro L 3.0 0.70mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro L 3.0.json
+resources/profiles/FELIX Printers/machine/FELIX Pro XL 3.0 0.25mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro XL 3.0 0.35mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro XL 3.0 0.50mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro XL 3.0 0.70mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Pro XL 3.0.json
+resources/profiles/FELIX Printers/machine/FELIX Tec 4 0.25mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Tec 4 0.35mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Tec 4 0.50mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Tec 4 0.70mm nozzle.json
+resources/profiles/FELIX Printers/machine/FELIX Tec 4.json
+resources/profiles/FELIX Printers/machine/fdm_all_machines_common.json
+resources/profiles/FELIX Printers/machine/fdm_felix_food_common.json
+resources/profiles/FELIX Printers/machine/fdm_felix_food_double_common.json
+resources/profiles/FELIX Printers/machine/fdm_felix_food_switch_common.json
+resources/profiles/FELIX Printers/machine/fdm_felix_plastic_common.json
+resources/profiles/FELIX Printers/machine/fdm_felix_pro_3_common.json
+resources/profiles/FELIX Printers/machine/fdm_felix_pro_l_3.json
+resources/profiles/FELIX Printers/machine/fdm_felix_pro_xl_3_common.json
+resources/profiles/FELIX Printers/machine/fdm_felix_tec_common.json
+resources/profiles/FELIX Printers/process/FELIX Food Coarse @ 0.50mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Coarse @ 1.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Coarse @ 2.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Coarse @ 3.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Coarse @ 4.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Fine @ 0.50mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Fine @ 1.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Fine @ 2.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Fine @ 3.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Fine @ 4.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Normal @ 0.50mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Normal @ 1.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Normal @ 2.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Normal @ 3.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Food Normal @ 4.00mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Coarse @ 0.35mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Coarse @ 0.50mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Coarse @ 0.70mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Fine @ 0.25mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Fine @ 0.35mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Fine @ 0.50mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Fine @ 0.70mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Normal @ 0.25mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Normal @ 0.35mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Normal @ 0.50mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Normal @ 0.70mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Slightly Coarse @ 0.35mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Slightly Coarse @ 0.50mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Slightly Coarse @ 0.70mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Super Coarse @ 0.70mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Super Fine @ 0.25mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Super Fine @ 0.35mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Very Coarse @ 0.50mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Very Coarse @ 0.70mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Very Fine @ 0.25mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Very Fine @ 0.35mm.json
+resources/profiles/FELIX Printers/process/FELIX Plastic Very Fine @ 0.50mm.json
+resources/profiles/FELIX Printers/process/fdm_process_common.json
+resources/profiles/FELIX Printers/process/fdm_process_felix_food_common.json
+resources/profiles/FELIX Printers/process/fdm_process_felix_plastic_common.json
+resources/profiles/Flashforge.json
+resources/profiles/Flashforge/machine/FlashForge AD5X 0.25 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge AD5X 0.4 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge AD5X 0.6 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge AD5X 0.8 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Adventurer 3 Series 0.6 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Creator 5 0.4 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Creator 5 0.6 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Creator 5 0.8 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Creator 5 Pro 0.25 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Creator 5 Pro 0.4 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Creator 5 Pro 0.6 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Creator 5 Pro 0.8 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 0.25 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 0.4 HF nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 0.4 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 0.6 HF nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 0.6 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 0.8 HF nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 Pro 0.25 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 Pro 0.4 HF nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 Pro 0.4 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 Pro 0.6 HF nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 Pro 0.6 nozzle.json
+resources/profiles/Flashforge/machine/Flashforge Guider4 Pro 0.8 HF nozzle.json
+resources/profiles/Flashforge/process/0.20mm Standard @Flashforge AD5M 0.4 Nozzle.json
+resources/profiles/Flashforge/process/0.20mm Standard @Flashforge AD5M Pro 0.4 Nozzle.json
+resources/profiles/Flashforge/process/0.30mm Standard @Flashforge AD5M 0.6 Nozzle.json
+resources/profiles/Flashforge/process/0.30mm Standard @Flashforge AD5M Pro 0.6 Nozzle.json
+resources/profiles/Flashforge/process/0.32mm Standard @FF C5 0.8 nozzle.json
+resources/profiles/Goofoo.json
+resources/profiles/Goofoo/Goofoo GP1_cover.png
+resources/profiles/Goofoo/Goofoo TurboM_cover.png
+resources/profiles/Goofoo/Goofoo Velo+_cover.png
+resources/profiles/Goofoo/Goofoo-GP1-texture.svg
+resources/profiles/Goofoo/Goofoo-GP1.stl
+resources/profiles/Goofoo/Goofoo-TurboM-texture.svg
+resources/profiles/Goofoo/Goofoo-TurboM.stl
+resources/profiles/Goofoo/Goofoo-Velo+-texture.svg
+resources/profiles/Goofoo/Goofoo-Velo+.stl
+resources/profiles/Goofoo/machine/Goofoo GP1 0.4 nozzle.json
+resources/profiles/Goofoo/machine/Goofoo GP1.json
+resources/profiles/Goofoo/machine/Goofoo TurboM 0.4 nozzle.json
+resources/profiles/Goofoo/machine/Goofoo TurboM.json
+resources/profiles/Goofoo/machine/Goofoo Velo+ 0.2 nozzle.json
+resources/profiles/Goofoo/machine/Goofoo Velo+ 0.4 nozzle.json
+resources/profiles/Goofoo/machine/Goofoo Velo+ 0.6 nozzle.json
+resources/profiles/Goofoo/machine/Goofoo Velo+ Tool 0.4.json
+resources/profiles/Goofoo/machine/Goofoo Velo+ Tool.json
+resources/profiles/Goofoo/machine/Goofoo Velo+.json
+resources/profiles/Goofoo/machine/fdm_klipper_common.json
+resources/profiles/Goofoo/machine/fdm_machine_common.json
+resources/profiles/Goofoo/process/0.10mm Standard @Goofoo Velo+.json
+resources/profiles/Goofoo/process/0.20mm Standard @Goofoo GP1.json
+resources/profiles/Goofoo/process/0.20mm Standard @Goofoo TurboM.json
+resources/profiles/Goofoo/process/0.20mm Standard @Goofoo Velo+.json
+resources/profiles/Goofoo/process/0.30mm Standard @Goofoo Velo+.json
+resources/profiles/Goofoo/process/fdm_process_common.json
+resources/profiles/Goofoo/process/fdm_process_klipper_common.json
+resources/profiles/IdeaFormer.json
+resources/profiles/IdeaFormer/IdeaFormer IR3 V2_cover.png
+resources/profiles/IdeaFormer/filament/Generic PETG @IdeaFormer IR3 V2.json
+resources/profiles/IdeaFormer/filament/Generic PLA @IdeaFormer IR3 V2.json
+resources/profiles/IdeaFormer/filament/eSUN PLA @IdeaFormer IR3 V2.json
+resources/profiles/IdeaFormer/machine/IdeaFormer IR3 V2 0.4 nozzle.json
+resources/profiles/IdeaFormer/machine/IdeaFormer IR3 V2.json
+resources/profiles/IdeaFormer/machine/fdm_belt_common.json
+resources/profiles/IdeaFormer/machine/fdm_klipper_common.json
+resources/profiles/IdeaFormer/machine/fdm_machine_common.json
+resources/profiles/IdeaFormer/process/0.20mm Standard @IdeaFormer IR3 V2.json
+resources/profiles/IdeaFormer/process/fdm_process_common.json
+resources/profiles/Kingroon.json
+resources/profiles/Kingroon/Kingroon KP3S 3.0_cover.png
+resources/profiles/Kingroon/Kingroon KP3S PRO S1_cover.png
+resources/profiles/Kingroon/Kingroon KP3S PRO V2_cover.png
+resources/profiles/Kingroon/Kingroon KP3S V1_cover.png
+resources/profiles/Kingroon/Kingroon_buildplate.png
+resources/profiles/Kingroon/Kingroon_buildplate.svg
+resources/profiles/Kingroon/klp1_bed.stl
+resources/profiles/Kingroon/machine/Kingroon KLP1.json
+resources/profiles/Kingroon/machine/Kingroon KP3S 3.0.json
+resources/profiles/Kingroon/machine/Kingroon KP3S PRO S1.json
+resources/profiles/Kingroon/machine/Kingroon KP3S PRO V2.json
+resources/profiles/Kingroon/machine/Kingroon KP3S V1.json
+resources/profiles/Kingroon/mini_bed.stl
+resources/profiles/M3D.json
+resources/profiles/M3D/M3D Enabler D7500_cover.png
+resources/profiles/M3D/M3D Enabler D8500_cover.png
+resources/profiles/M3D/m3d_enabler_D7500_bed_texture.svg
+resources/profiles/M3D/m3d_enabler_D8500_bed_model.stl
+resources/profiles/M3D/m3d_enabler_D8500_bed_texture.svg
+resources/profiles/M3D/machine/M3D Enabler D7500.json
+resources/profiles/M3D/machine/M3D Enabler D8500.json
+resources/profiles/M3D/model/M3D_bed_model.stl
+resources/profiles/M3D/model/M3D_bed_texture.png
+resources/profiles/Meltingplot.json
+resources/profiles/Meltingplot/Meltingplot CHX 350_cover.png
+resources/profiles/Meltingplot/Meltingplot MBL 133_cover.png
+resources/profiles/Meltingplot/Meltingplot MBL 136_cover.png
+resources/profiles/Meltingplot/Meltingplot MBL 308_cover.png
+resources/profiles/Meltingplot/Meltingplot MBL 480_cover.png
+resources/profiles/Meltingplot/chx350-printbed.stl
+resources/profiles/Meltingplot/chx350-texture.svg
+resources/profiles/Meltingplot/mbl-133-texture.svg
+resources/profiles/Meltingplot/mbl-136-texture.svg
+resources/profiles/Meltingplot/mbl-308-texture.svg
+resources/profiles/Meltingplot/mbl-480-texture.svg
+resources/profiles/Meltingplot/mbl133-printbed.stl
+resources/profiles/Meltingplot/mbl136-printbed.stl
+resources/profiles/Meltingplot/mbl308-printbed.stl
+resources/profiles/Meltingplot/mbl480-printbed.stl
+resources/profiles/OpenEYE.json
+resources/profiles/OpenEYE/machine/fdm_machine_common.json
+resources/profiles/OpenEYE/machine/fdm_openeye_common.json
+resources/profiles/OpenEYE/process/fdm_process_common.json
+resources/profiles/OpenEYE/process/fdm_process_openeye_common.json
+resources/profiles/OrcaArena.json
+resources/profiles/OrcaFilamentLibrary.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel PET CF @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel PET CF @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG ESD @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG ESD @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG Matte @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG Matte @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG Refuel @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG Refuel @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG-CF @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG-CF @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG-GF @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PCTG-GF @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PETG @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PETG @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PETG Refuel @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Pro PETG Refuel @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Standard PLA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Standard PLA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Standard PLA Refuel @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Standard PLA Refuel @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Tough Pro PLA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Tough Pro PLA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Tough Pro Refuel @System.json
+resources/profiles/OrcaFilamentLibrary/filament/3D-Fuel/3D-Fuel Tough Pro Refuel @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Elegoo/Elegoo PLA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/EverLoop/EverLoop rPETG Premium @System.json
+resources/profiles/OrcaFilamentLibrary/filament/EverLoop/EverLoop rPETG Premium @base.json
+resources/profiles/OrcaFilamentLibrary/filament/EverLoop/EverLoop rPLA Premium @System.json
+resources/profiles/OrcaFilamentLibrary/filament/EverLoop/EverLoop rPLA Premium @base.json
+resources/profiles/OrcaFilamentLibrary/filament/EverLoop/EverLoop rPLA Premium Matte @System.json
+resources/profiles/OrcaFilamentLibrary/filament/EverLoop/EverLoop rPLA Premium Matte @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo 90A TPU @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo 90A TPU @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo 95A TPU @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo 95A TPU @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo ABS @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo ABS @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo ASA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo ASA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PA-CF @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PA-CF @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PA-GF10 @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PA-GF10 @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PE @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PE @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PE-CF @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PE-CF @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PETG @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PETG @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PETG HF @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PETG HF @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PETG-CF @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PETG-CF @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PHA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PHA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PLA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PLA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PLA Silk @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PLA Silk @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PLA-CF @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PLA-CF @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PP @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PP @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PP-CF @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PP-CF @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PP-GF @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PP-GF @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PVA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Goofoo/Goofoo PVA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL A1 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL A1.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL A1M 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL A1M.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL A2L 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL A2L.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL H2C 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL H2C 0.4 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL H2C.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL H2D 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL H2D.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL H2DP 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL H2DP.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL H2S 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL H2S.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL P1P 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL P1P.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL P2S 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL P2S.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL X1C 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL X1C.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL X2D 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL X2D 0.4 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PETG @BBL X2D.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL A1 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL A1.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL A1M 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL A1M.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL A2L 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL A2L.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL H2C 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL H2C 0.4 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL H2C.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL H2D 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL H2D.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL H2DP 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL H2DP.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL H2S 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL H2S.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL P1P 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL P1P.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL P2S 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL P2S.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL X1C 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL X1C.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL X2D 0.2 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL X2D 0.4 nozzle.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/BBL/PrintaLot PLA @BBL X2D.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/PrintaLot ABS @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/PrintaLot ABS @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/PrintaLot PETG @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/PrintaLot PLA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Printalot/Printalot ABS @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Recycling Fabrik/Recycling Fabrik rABS @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Recycling Fabrik/Recycling Fabrik rABS @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Recycling Fabrik/Recycling Fabrik rPETG @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Recycling Fabrik/Recycling Fabrik rPETG @base.json
+resources/profiles/OrcaFilamentLibrary/filament/Recycling Fabrik/Recycling Fabrik rPLA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/Recycling Fabrik/Recycling Fabrik rPLA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools Marble PLA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools Marble PLA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools Matte PETG @System.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools Matte PETG @base.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools Matte PLA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools Matte PLA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools PETG @System.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools PETG @base.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools PLA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools PLA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools Silk PLA @System.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools Silk PLA @base.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools TPU 95A @System.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools TPU 95A @base.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools Transparent PETG @System.json
+resources/profiles/OrcaFilamentLibrary/filament/SchoolHouseSpools/School House Spools Transparent PETG @base.json
+resources/profiles/Pragostroj.json
+resources/profiles/Pragostroj/KINARB 1HB_cover.png
+resources/profiles/Pragostroj/KINARB 2HB_cover.png
+resources/profiles/Pragostroj/Pragostroj_cover.png
+resources/profiles/Printcepts.json
+resources/profiles/Printcepts/BabyBelt Pro_bed_texture.svg
+resources/profiles/Printcepts/BabyBelt Pro_cover.png
+resources/profiles/Printcepts/filament/Generic PETG @BabyBelt Pro.json
+resources/profiles/Printcepts/filament/Generic PLA @BabyBelt Pro.json
+resources/profiles/Printcepts/filament/eSUN PLA @BabyBelt Pro.json
+resources/profiles/Printcepts/machine/BabyBelt Pro 0.4 nozzle.json
+resources/profiles/Printcepts/machine/BabyBelt Pro.json
+resources/profiles/Printcepts/machine/fdm_belt_common.json
+resources/profiles/Printcepts/machine/fdm_klipper_common.json
+resources/profiles/Printcepts/machine/fdm_machine_common.json
+resources/profiles/Printcepts/process/0.20mm Standard @BabyBelt Pro.json
+resources/profiles/Printcepts/process/fdm_process_common.json
+resources/profiles/Prusa.json
+resources/profiles/Prusa/Prusa CORE One INDX 4T_cover.png
+resources/profiles/Prusa/Prusa CORE One INDX 8T_cover.png
+resources/profiles/Prusa/Prusa CORE One MMU3_cover.png
+resources/profiles/Prusa/Prusa MK4 MMU3 HF_cover.png
+resources/profiles/Prusa/Prusa MK4 MMU3_cover.png
+resources/profiles/Prusa/coreone_indx.stl
+resources/profiles/Prusa/coreone_indx.svg
+resources/profiles/Prusa/filament/Generic ABS @Prusa CORE One.json
+resources/profiles/Prusa/filament/Generic ASA @Prusa CORE One.json
+resources/profiles/Prusa/filament/Generic PETG @Prusa CORE One.json
+resources/profiles/Prusa/filament/Generic PLA @Prusa CORE One.json
+resources/profiles/Prusa/filament/Generic PLA Silk @Prusa CORE One.json
+resources/profiles/Prusa/filament/Prusament ASA @CORE One.json
+resources/profiles/Prusa/filament/Prusament PA11 Carbon Fiber @CORE One.json
+resources/profiles/Prusa/filament/Prusament PC Blend @CORE One.json
+resources/profiles/Prusa/filament/Prusament PC Blend Carbon Fiber @CORE One.json
+resources/profiles/Prusa/filament/Prusament PETG @CORE One.json
+resources/profiles/Prusa/filament/Prusament PLA @CORE One.json
+resources/profiles/Prusa/filament/Prusament PVB @CORE One.json
+resources/profiles/Prusa/filament/Prusament rPLA @CORE One.json
+resources/profiles/Prusa/machine/Prusa XL 0.25 nozzle.json
+resources/profiles/Prusa/machine/Prusa XL 0.3 nozzle.json
+resources/profiles/Prusa/machine/Prusa XL 0.8 nozzle.json
+resources/profiles/Prusa/machine/fdm_machine_common_xl.json
+resources/profiles/Prusa/process/0.05mm Detail @Prusa XL 0.25.json
+resources/profiles/Prusa/process/0.05mm Detail @Prusa XL 5T 0.25.json
+resources/profiles/Prusa/process/0.07mm Detail @Prusa XL 0.25.json
+resources/profiles/Prusa/process/0.07mm Detail @Prusa XL 5T 0.25.json
+resources/profiles/Prusa/process/0.10mm FastDetail @Prusa XL 0.4.json
+resources/profiles/Prusa/process/0.10mm FastDetail @Prusa XL 5T 0.4.json
+resources/profiles/Prusa/process/0.10mm Structural @Prusa XL 0.5.json
+resources/profiles/Prusa/process/0.10mm Structural @Prusa XL 5T 0.5.json
+resources/profiles/Prusa/process/0.12mm Speed @Prusa XL 0.25.json
+resources/profiles/Prusa/process/0.12mm Speed @Prusa XL 5T 0.25.json
+resources/profiles/Prusa/process/0.12mm Structural @Prusa XL 0.25.json
+resources/profiles/Prusa/process/0.12mm Structural @Prusa XL 0.3.json
+resources/profiles/Prusa/process/0.12mm Structural @Prusa XL 5T 0.25.json
+resources/profiles/Prusa/process/0.12mm Structural @Prusa XL 5T 0.3.json
+resources/profiles/Prusa/process/0.15mm Speed @Prusa XL 0.25.json
+resources/profiles/Prusa/process/0.15mm Speed @Prusa XL 0.4.json
+resources/profiles/Prusa/process/0.15mm Speed @Prusa XL 5T 0.25.json
+resources/profiles/Prusa/process/0.15mm Speed @Prusa XL 5T 0.4.json
+resources/profiles/Prusa/process/0.15mm Structural @Prusa XL 0.25.json
+resources/profiles/Prusa/process/0.15mm Structural @Prusa XL 0.4.json
+resources/profiles/Prusa/process/0.15mm Structural @Prusa XL 0.5.json
+resources/profiles/Prusa/process/0.15mm Structural @Prusa XL 0.6.json
+resources/profiles/Prusa/process/0.15mm Structural @Prusa XL 5T 0.25.json
+resources/profiles/Prusa/process/0.15mm Structural @Prusa XL 5T 0.4.json
+resources/profiles/Prusa/process/0.15mm Structural @Prusa XL 5T 0.5.json
+resources/profiles/Prusa/process/0.15mm Structural @Prusa XL 5T 0.6.json
+resources/profiles/Prusa/process/0.16mm Speed @Prusa XL 0.3.json
+resources/profiles/Prusa/process/0.16mm Speed @Prusa XL 5T 0.3.json
+resources/profiles/Prusa/process/0.16mm Structural @Prusa XL 0.3.json
+resources/profiles/Prusa/process/0.16mm Structural @Prusa XL 5T 0.3.json
+resources/profiles/Prusa/process/0.20mm Speed @Prusa XL 0.3.json
+resources/profiles/Prusa/process/0.20mm Speed @Prusa XL 0.4.json
+resources/profiles/Prusa/process/0.20mm Speed @Prusa XL 0.5.json
+resources/profiles/Prusa/process/0.20mm Speed @Prusa XL 0.6.json
+resources/profiles/Prusa/process/0.20mm Speed @Prusa XL 5T 0.3.json
+resources/profiles/Prusa/process/0.20mm Speed @Prusa XL 5T 0.4.json
+resources/profiles/Prusa/process/0.20mm Speed @Prusa XL 5T 0.5.json
+resources/profiles/Prusa/process/0.20mm Speed @Prusa XL 5T 0.6.json
+resources/profiles/Prusa/process/0.20mm Structural @Prusa XL 0.4.json
+resources/profiles/Prusa/process/0.20mm Structural @Prusa XL 0.5.json
+resources/profiles/Prusa/process/0.20mm Structural @Prusa XL 0.6.json
+resources/profiles/Prusa/process/0.20mm Structural @Prusa XL 5T 0.4.json
+resources/profiles/Prusa/process/0.20mm Structural @Prusa XL 5T 0.5.json
+resources/profiles/Prusa/process/0.20mm Structural @Prusa XL 5T 0.6.json
+resources/profiles/Prusa/process/0.25mm Speed @Prusa XL 0.5.json
+resources/profiles/Prusa/process/0.25mm Speed @Prusa XL 0.6.json
+resources/profiles/Prusa/process/0.25mm Speed @Prusa XL 5T 0.5.json
+resources/profiles/Prusa/process/0.25mm Speed @Prusa XL 5T 0.6.json
+resources/profiles/Prusa/process/0.25mm Structural @Prusa XL 0.4.json
+resources/profiles/Prusa/process/0.25mm Structural @Prusa XL 0.5.json
+resources/profiles/Prusa/process/0.25mm Structural @Prusa XL 0.6.json
+resources/profiles/Prusa/process/0.25mm Structural @Prusa XL 5T 0.4.json
+resources/profiles/Prusa/process/0.25mm Structural @Prusa XL 5T 0.5.json
+resources/profiles/Prusa/process/0.25mm Structural @Prusa XL 5T 0.6.json
+resources/profiles/Prusa/process/0.30mm Detail @Prusa XL 0.8.json
+resources/profiles/Prusa/process/0.30mm Detail @Prusa XL 5T 0.8.json
+resources/profiles/Prusa/process/0.32mm Speed @Prusa XL 0.6.json
+resources/profiles/Prusa/process/0.32mm Speed @Prusa XL 5T 0.6.json
+resources/profiles/Prusa/process/0.32mm Structural @Prusa XL 0.6.json
+resources/profiles/Prusa/process/0.32mm Structural @Prusa XL 5T 0.6.json
+resources/profiles/Prusa/process/0.40mm Quality @Prusa XL 0.8.json
+resources/profiles/Prusa/process/0.40mm Quality @Prusa XL 5T 0.8.json
+resources/profiles/Prusa/process/0.55mm Draft @Prusa XL 0.8.json
+resources/profiles/Prusa/process/0.55mm Draft @Prusa XL 5T 0.8.json
+resources/profiles/Prusa/process/process_common_mk3.json
+resources/profiles/Prusa/process/process_common_mk4s.json
+resources/profiles/Prusa/process/process_common_xl.json
+resources/profiles/Qidi.json
+resources/profiles/Qidi/Qidi X-Smart 5_cover.png
+resources/profiles/Qidi/filament/X5/Bambu ABS @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu ABS @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu ABS @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu ABS @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu ABS @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Bambu PETG @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu PETG @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu PETG @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu PETG @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu PETG @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Bambu PLA @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu PLA @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu PLA @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu PLA @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Bambu PLA @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Generic ABS @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic ABS @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic ABS @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic ABS @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic ABS @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Generic PC @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PC @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PC @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PC @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PC @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Generic PETG @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PETG @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PETG @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PETG @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PETG @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Generic PLA @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PLA @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PLA @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PLA @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PLA @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Generic PLA Silk @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PLA Silk @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PLA Silk @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Generic PLA+ @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PLA+ @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PLA+ @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PLA+ @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic PLA+ @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Generic TPU 95A @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic TPU 95A @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic TPU 95A @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Generic TPU 95A @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/HATCHBOX ABS @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX ABS @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX ABS @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX ABS @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX ABS @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/HATCHBOX PETG @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX PETG @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX PETG @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX PETG @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX PETG @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/HATCHBOX PLA @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX PLA @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX PLA @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX PLA @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/HATCHBOX PLA @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Overture ABS @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Overture ABS @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Overture ABS @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Overture ABS @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Overture ABS @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Overture PLA @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Overture PLA @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Overture PLA @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Overture PLA @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Overture PLA @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/PolyLite ABS @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/PolyLite ABS @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/PolyLite ABS @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/PolyLite ABS @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/PolyLite ABS @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/PolyLite PLA @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/PolyLite PLA @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/PolyLite PLA @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/PolyLite PLA @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/PolyLite PLA @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/Polymaker PLA-HT @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/Polymaker PLA-HT @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/Polymaker PLA-HT @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/Polymaker PLA-HT @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/Polymaker PLA-HT @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Odorless @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Odorless @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Odorless @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Odorless @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Odorless @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Rapido @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Rapido @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Rapido @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Rapido @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Rapido @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Rapido Metal @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Rapido Metal @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Rapido Metal @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Rapido Metal @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS Rapido Metal @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI ABS-GF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS-GF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS-GF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ABS-GF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI ASA @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ASA @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ASA @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ASA @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ASA @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI ASA-Aero @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ASA-Aero @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI ASA-CF20 Core @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ASA-CF20 Core @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ASA-CF20 Core @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI ASA-CF20 Core @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PA12-CF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PA12-CF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PA12-CF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PA12-CF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PA6-CF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PA6-CF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PA6-CF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PA6-CF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PAHT-CF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PAHT-CF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PAHT-CF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PAHT-CF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PAHT-GF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PAHT-GF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PAHT-GF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PAHT-GF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PC-ABS-FR @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PC-ABS-FR @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PC-ABS-FR @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PC-ABS-FR @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PEBA 95A @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PEBA 95A @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PEBA 95A @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PET-CF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PET-CF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PET-CF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PET-CF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PET-GF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PET-GF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PET-GF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PET-GF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Basic @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Basic @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Basic @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Basic @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Basic @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Rapido @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Rapido @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Rapido @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Rapido @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Rapido @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Tough @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Tough @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Tough @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Tough @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Tough @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Translucent @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Translucent @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Translucent @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Translucent @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG Translucent @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PETG-CF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG-CF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG-CF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG-CF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PETG-GF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG-GF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG-GF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PETG-GF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Basic @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Basic @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Basic @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Basic @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Basic @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Matte Basic @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Matte Basic @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Matte Basic @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Matte Basic @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Matte Basic @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Matte @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Matte @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Matte @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Matte @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Matte @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Metal @Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Metal @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Metal @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Metal @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Metal @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Silk @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Silk @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA Rapido Silk @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PLA-CF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA-CF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA-CF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PLA-CF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PPS-CF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PPS-CF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PPS-CF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PPS-CF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI PPS-GF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PPS-GF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PPS-GF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI PPS-GF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI Support For PAHT @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI Support For PAHT @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI Support For PAHT @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI Support For PAHT @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI Support For PET-PA @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI Support For PET-PA @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI Support For PET-PA @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI Support For PET-PA @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI TPU 95A-HF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI TPU 95A-HF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI TPU 95A-HF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI TPU 95A-HF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI TPU-Aero @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI TPU-Aero @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI TPU-Aero @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI TPU-GF @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI TPU-GF @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI TPU-GF @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI TPU-GF @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI UltraPA @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI UltraPA @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI UltraPA @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI UltraPA @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI UltraPA-CF25 @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI UltraPA-CF25 @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI UltraPA-CF25 @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI UltraPA-CF25 @X-Smart 5.json
+resources/profiles/Qidi/filament/X5/QIDI WOOD Rapido @Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI WOOD Rapido @Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI WOOD Rapido @Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/filament/X5/QIDI WOOD Rapido @X-Smart 5.json
+resources/profiles/Qidi/machine/Qidi Q1 Pro 0.4 nozzle.json
+resources/profiles/Qidi/machine/Qidi Q2 0.4 nozzle.json
+resources/profiles/Qidi/machine/Qidi Q2C 0.4 nozzle.json
+resources/profiles/Qidi/machine/Qidi X-CF Pro 0.4 nozzle.json
+resources/profiles/Qidi/machine/Qidi X-Max 4 0.4 nozzle.json
+resources/profiles/Qidi/machine/Qidi X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/machine/Qidi X-Smart 5 0.4 nozzle.json
+resources/profiles/Qidi/machine/Qidi X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/machine/Qidi X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/machine/Qidi X-Smart 5.json
+resources/profiles/Qidi/machine/fdm_qidi_x3_common.json
+resources/profiles/Qidi/process/0.08mm High Quality @X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/process/0.08mm High Quality @X-Smart 5.json
+resources/profiles/Qidi/process/0.10mm Standard @X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/process/0.12mm Balanced Quality @X-Smart 5 0.2 nozzle.json
+resources/profiles/Qidi/process/0.12mm High Quality @X-Plus 5.json
+resources/profiles/Qidi/process/0.12mm High Quality @X-Smart 5.json
+resources/profiles/Qidi/process/0.16mm High Quality @X-Smart 5.json
+resources/profiles/Qidi/process/0.16mm Standard @X-Smart 5.json
+resources/profiles/Qidi/process/0.18mm Balanced Quality @X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/process/0.20mm High Quality @X-Smart 5.json
+resources/profiles/Qidi/process/0.20mm Standard @X-Smart 5.json
+resources/profiles/Qidi/process/0.20mm Steady @X-Smart 5.json
+resources/profiles/Qidi/process/0.24mm Balanced Quality @X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/process/0.24mm Balanced Strength @X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/process/0.24mm Standard @X-Smart 5.json
+resources/profiles/Qidi/process/0.30mm Standard @X-Smart 5 0.6 nozzle.json
+resources/profiles/Qidi/process/0.32mm Balanced Quality @X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/process/0.40mm Standard @X-Smart 5 0.8 nozzle.json
+resources/profiles/Qidi/process/fdm_process_n_common.json
+resources/profiles/Qidi/process/fdm_process_qidi_x3_common.json
+resources/profiles/Qidi/qidi_xsmart5_buildplate_model.stl
+resources/profiles/Qidi/qidi_xsmart5_buildplate_texture.svg
+resources/profiles/RH3D.json
+resources/profiles/RH3D/E3NG v1.2S_cover.png
+resources/profiles/RH3D/E3NG-bed-texture.svg
+resources/profiles/RH3D/VIRTU E3_cover.png
+resources/profiles/RH3D/VIRTU-bed-texture.svg
+resources/profiles/RH3D/VIRTU-bed.stl
+resources/profiles/Ratrig.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 300 0.4 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 300 0.5 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 300 0.6 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 300 0.8 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 400 0.4 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 400 0.5 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 400 0.6 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 400 0.8 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 500 0.4 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 500 0.5 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 500 0.6 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 500 0.8 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 300 0.4 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 300 0.5 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 300 0.6 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 300 0.8 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 400 0.4 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 400 0.5 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 400 0.6 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 400 0.8 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 500 0.4 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 500 0.5 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 500 0.6 nozzle.json
+resources/profiles/Ratrig/machine/RatRig V-Core 4 HYBRID 500 0.8 nozzle.json
+resources/profiles/Ratrig/machine/fdm_klipper_common.json
+resources/profiles/Snapmaker.json
+resources/profiles/Snapmaker/filament/Snapmaker ABS @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker ASA @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker PETG @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker PETG Translucent @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker PETG-CF @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker PLA @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker PLA Eco @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker PLA Glow @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker PLA Metal @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker PVA @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker TPE @U1.json
+resources/profiles/Snapmaker/filament/Snapmaker TPU 95A @U1 base.json
+resources/profiles/Snapmaker/filament/Snapmaker TPU 95A @U1.json
+resources/profiles/Snapmaker/filament/Snapmaker TPU @U1.json
+resources/profiles/Snapmaker/filament/Snapmaker TPU High-Flow @U1.json
+resources/profiles/Snapmaker/machine/Snapmaker U1 (0.2 nozzle).json
+resources/profiles/Snapmaker/machine/Snapmaker U1 (0.4 nozzle).json
+resources/profiles/Snapmaker/machine/Snapmaker U1 (0.6 nozzle).json
+resources/profiles/Snapmaker/machine/Snapmaker U1 (0.8 nozzle).json
+resources/profiles/Snapmaker/machine/fdm_U1.json
+resources/profiles/Snapmaker/process/0.06 High Quality @Snapmaker U1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.06 Standard @Snapmaker (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.06 Standard @Snapmaker Artisan (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.06 Standard @Snapmaker J1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.06 Standard @Snapmaker U1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.08 Extra Fine @Snapmaker (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.08 Extra Fine @Snapmaker Artisan (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.08 Extra Fine @Snapmaker J1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.08 Extra Fine @Snapmaker U1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.08 High Quality @Snapmaker U1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.08 High Quality @Snapmaker U1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.08 Standard @Snapmaker U1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.10 High Quality @Snapmaker U1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.10 Standard @Snapmaker (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.10 Standard @Snapmaker Artisan (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.10 Standard @Snapmaker J1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.10 Standard @Snapmaker U1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.12 Fine @Snapmaker (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.12 Fine @Snapmaker Artisan (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.12 Fine @Snapmaker J1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.12 Fine @Snapmaker U1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.12 High Quality @Snapmaker U1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.12 Standard @Snapmaker U1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.14 Standard @Snapmaker (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.14 Standard @Snapmaker Artisan (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.14 Standard @Snapmaker J1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.14 Standard @Snapmaker U1 (0.2 nozzle).json
+resources/profiles/Snapmaker/process/0.16 High Quality @Snapmaker U1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.16 Optimal @Snapmaker (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.16 Optimal @Snapmaker Artisan (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.16 Optimal @Snapmaker J1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.16 Optimal @Snapmaker U1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.18 Standard @Snapmaker (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.18 Standard @Snapmaker Artisan (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.18 Standard @Snapmaker J1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.18 Standard @Snapmaker U1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.20 Standard @Snapmaker (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.20 Standard @Snapmaker Artisan (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.20 Standard @Snapmaker J1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.20 Strength @Snapmaker (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.20 Strength @Snapmaker Artisan (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.20 Strength @Snapmaker J1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Draft @Snapmaker (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Draft @Snapmaker Artisan (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Draft @Snapmaker J1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Standard @Snapmaker (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Standard @Snapmaker (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Standard @Snapmaker Artisan (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Standard @Snapmaker Artisan (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Standard @Snapmaker J1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Standard @Snapmaker J1 (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Standard @Snapmaker U1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.24 Standard @Snapmaker U1 (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.25 Benchy @Snapmaker Artisan (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.25 Benchy @Snapmaker J1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.25 Benchy @Snapmaker U1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.28 Extra Draft @Snapmaker (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.28 Extra Draft @Snapmaker Artisan (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.28 Extra Draft @Snapmaker J1 (0.4 nozzle).json
+resources/profiles/Snapmaker/process/0.30 Standard @Snapmaker (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.30 Standard @Snapmaker Artisan (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.30 Standard @Snapmaker J1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.30 Standard @Snapmaker U1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.30 Strength @Snapmaker (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.30 Strength @Snapmaker Artisan (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.30 Strength @Snapmaker J1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.30 Strength @Snapmaker U1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.32 Standard @Snapmaker (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.32 Standard @Snapmaker Artisan (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.32 Standard @Snapmaker J1 (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.32 Standard @Snapmaker U1 (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.34 Standard @Snapmaker (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.34 Standard @Snapmaker Artisan (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.34 Standard @Snapmaker J1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.36 Standard @Snapmaker (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.36 Standard @Snapmaker Artisan (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.36 Standard @Snapmaker J1 (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.36 Standard @Snapmaker U1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.38 Standard @Snapmaker (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.38 Standard @Snapmaker Artisan (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.38 Standard @Snapmaker J1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.40 Standard @Snapmaker (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.40 Standard @Snapmaker Artisan (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.40 Standard @Snapmaker J1 (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.42 Draft @Snapmaker (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.42 Draft @Snapmaker Artisan (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.42 Draft @Snapmaker J1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.42 Standard @Snapmaker U1 (0.6 nozzle).json
+resources/profiles/Snapmaker/process/0.48 Draft @Snapmaker (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.48 Draft @Snapmaker Artisan (0.8 nozzle).json
+resources/profiles/Snapmaker/process/0.48 Draft @Snapmaker J1 (0.8 nozzle).json
+resources/profiles/Snapmaker/process/fdm_process_U1.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.06_nozzle_0.2.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.08.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.08_nozzle_0.2.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.10_nozzle_0.2.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.12.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.12_nozzle_0.2.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.14_nozzle_0.2.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.16.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.18_nozzle_0.6.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.20.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.24.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.24_nozzle_0.6.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.24_nozzle_0.8.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.28.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.30_nozzle_0.6.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.32_nozzle_0.8.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.36_nozzle_0.6.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.40_nozzle_0.8.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.42_nozzle_0.6.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.48_nozzle_0.8.json
+resources/profiles/Snapmaker/process/fdm_process_U1_0.56_nozzle_0.8.json
+resources/profiles/Snapmaker/process/fdm_process_U1_common.json
+resources/profiles/Snapmaker/process/fdm_process_a400.json
+resources/profiles/Snapmaker/process/fdm_process_common.json
+resources/profiles/Snapmaker/process/fdm_process_idex.json
+resources/profiles/Sovol.json
+resources/profiles/Sovol/filament/Generic ABS @Sovol SV08 MAX.json
+resources/profiles/Sovol/filament/Generic PC @Sovol SV08 MAX.json
+resources/profiles/Sovol/filament/Generic PETG @Sovol SV08 MAX.json
+resources/profiles/Sovol/filament/Generic PLA @Sovol SV08 MAX.json
+resources/profiles/Sovol/filament/Generic PLA Silk @Sovol SV08 MAX.json
+resources/profiles/Sovol/filament/Generic TPU @Sovol SV08 MAX.json
+resources/profiles/Sovol/filament/Polymaker PETG @Sovol SV08 MAX.json
+resources/profiles/Sovol/filament/SUNLU PETG @Sovol SV08 MAX.json
+resources/profiles/Sovol/machine/Sovol SV08 0.4 nozzle.json
+resources/profiles/Sovol/machine/Sovol SV08 0.8 nozzle.json
+resources/profiles/Sovol/machine/Sovol SV08 MAX 0.2 nozzle.json
+resources/profiles/Sovol/machine/Sovol SV08 MAX 1.0 nozzle.json
+resources/profiles/Sovol/machine/Sovol SV08 MAX.json
+resources/profiles/Sovol/process/0.08mm High Quality @Sovol SV06 ACE 0.4 nozzle.json
+resources/profiles/Sovol/process/0.10mm Standard @Sovol SV08 MAX 0.2 nozzle.json
+resources/profiles/Sovol/process/0.12mm Quality @Sovol SV06 ACE 0.4 nozzle.json
+resources/profiles/Sovol/process/0.12mm Standard @Sovol SV06 ACE 0.2 nozzle.json
+resources/profiles/Sovol/process/0.20mm Standard @Sovol SV06 ACE.json
+resources/profiles/Sovol/process/0.20mm Standard @Sovol SV06 Plus ACE.json
+resources/profiles/Sovol/process/0.20mm Standard @Sovol SV08 MAX 0.4 nozzle.json
+resources/profiles/Sovol/process/0.28mm Fast @Sovol SV06 ACE 0.4 nozzle.json
+resources/profiles/Sovol/process/0.30mm Standard @Sovol SV06 ACE 0.6 nozzle.json
+resources/profiles/Sovol/process/0.30mm Standard @Sovol SV08 MAX 0.6 nozzle.json
+resources/profiles/Sovol/process/0.40mm Standard @Sovol SV06 ACE 0.8 nozzle.json
+resources/profiles/Sovol/process/0.40mm Standard @Sovol SV08 MAX 0.8 nozzle.json
+resources/profiles/Sovol/process/0.50mm Standard @Sovol SV08 MAX 1.0 nozzle.json
+resources/profiles/UltiMaker.json
+resources/profiles/UltiMaker/UltiMaker 2 extended+_cover.png
+resources/profiles/UltiMaker/UltiMaker 2+_cover.png
+resources/profiles/UltiMaker/UltiMaker 2_cover.png
+resources/profiles/UltiMaker/UltiMaker S5_cover.png
+resources/profiles/UltiMaker/machine/UltiMaker 2 extended+.json
+resources/profiles/UltiMaker/machine/UltiMaker 2+.json
+resources/profiles/UltiMaker/machine/UltiMaker 2.json
+resources/profiles/UltiMaker/machine/UltiMaker S5.json
+resources/profiles/UltiMaker/ultimaker_2_buildplate_texture.png
+resources/profiles/UltiMaker/ultimaker_2_buildplate_texture.svg
+resources/profiles/UltiMaker/ultimaker_s5_buildplate_model.stl
+resources/profiles/UltiMaker/ultimaker_s5_buildplate_texture.svg
+resources/profiles/Vivedino.json
+resources/profiles/Vivedino/Xplorer Dual Gantry_cover.png
+resources/profiles/Vivedino/Xplorer IDEX_cover.png
+resources/profiles/Vivedino/Xplorer IQEX_cover.png
+resources/profiles/Vivedino/Xplorer Single_cover.png
+resources/profiles/Vivedino/Xplorer_bed_texture_dualgantry.svg
+resources/profiles/Vivedino/Xplorer_bed_texture_idex.svg
+resources/profiles/Vivedino/Xplorer_bed_texture_iqex.svg
+resources/profiles/Vivedino/Xplorer_buildplate_model.stl
+resources/profiles/Vivedino/machine/Xplorer Dual Gantry 0.4 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer Dual Gantry 0.6 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer Dual Gantry 0.8 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer IDEX 0.4 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer IDEX 0.6 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer IDEX 0.8 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer IQEX 0.4 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer IQEX 0.6 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer IQEX 0.8 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer Single 0.4 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer Single 0.6 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer Single 0.8 nozzle.json
+resources/profiles/Vivedino/machine/Xplorer common.json
+resources/profiles/Vivedino/machine/XplorerDualGantry.json
+resources/profiles/Vivedino/machine/XplorerIDEX.json
+resources/profiles/Vivedino/machine/XplorerIQEX.json
+resources/profiles/Vivedino/machine/XplorerSingle.json
+resources/profiles/Vivedino/process/0.04mm Ultra Fine @Xplorer 0.4.json
+resources/profiles/Vivedino/process/0.08mm Extra Fine @Xplorer 0.4.json
+resources/profiles/Vivedino/process/0.12mm Fine @Xplorer 0.4.json
+resources/profiles/Vivedino/process/0.16mm Optimal @Xplorer 0.4.json
+resources/profiles/Vivedino/process/0.18mm Fine @Xplorer 0.6.json
+resources/profiles/Vivedino/process/0.20mm Standard @Xplorer 0.4.json
+resources/profiles/Vivedino/process/0.24mm Fine @Xplorer 0.8.json
+resources/profiles/Vivedino/process/0.24mm Optimal @Xplorer 0.6.json
+resources/profiles/Vivedino/process/0.28mm Draft @Xplorer 0.4.json
+resources/profiles/Vivedino/process/0.30mm Standard @Xplorer 0.6.json
+resources/profiles/Vivedino/process/0.32mm Extra Draft @Xplorer 0.4.json
+resources/profiles/Vivedino/process/0.32mm Optimal @Xplorer 0.8.json
+resources/profiles/Vivedino/process/0.36mm Draft @Xplorer 0.6.json
+resources/profiles/Vivedino/process/0.40mm Standard @Xplorer 0.8.json
+resources/profiles/Vivedino/process/0.42mm Extra Draft @Xplorer 0.6.json
+resources/profiles/Vivedino/process/0.48mm Draft @Xplorer 0.8.json
+resources/profiles/Vivedino/process/0.56mm Extra Draft @Xplorer 0.8.json
+resources/profiles/Vivedino/process/fdm_process_xplorer_common.json
+resources/profiles/Vivedino/process/fdm_process_xplorer_common_0_6.json
+resources/profiles/Vivedino/process/fdm_process_xplorer_common_0_8.json
+resources/profiles/Wanhao France.json
+resources/profiles/WonderMaker.json
+resources/profiles/WonderMaker/WonderMaker ZR Ultra S_cover.png
+resources/profiles/WonderMaker/WonderMaker ZR Ultra_cover.png
+resources/profiles/WonderMaker/WonderMaker ZR_cover.png
+resources/profiles/re3D.json
+resources/profiles/re3D/process/fgf_process_re3D_common.json
+resources/shaders/110/gouraud.fs
+resources/shaders/110/gouraud.vs
+resources/shaders/110/mm_gouraud.fs
+resources/shaders/110/mm_gouraud.vs
+resources/shaders/110/phong.fs
+resources/shaders/110/phong.vs
+resources/shaders/110/texture_displacement_shaded.fs
+resources/shaders/110/texture_displacement_uvcheck.fs
+resources/shaders/140/gouraud.fs
+resources/shaders/140/gouraud.vs
+resources/shaders/140/mm_gouraud.fs
+resources/shaders/140/mm_gouraud.vs
+resources/shaders/140/phong.fs
+resources/shaders/140/phong.vs
+resources/shaders/140/texture_displacement_shaded.fs
+resources/shaders/140/texture_displacement_uvcheck.fs
+resources/web/data/text.js
+resources/web/dialog/ColorPickerDialog/colorpicker-model.js
+resources/web/dialog/ColorPickerDialog/colorpicker.browser.test.js
+resources/web/dialog/ColorPickerDialog/colorpicker.js
+resources/web/dialog/ColorPickerDialog/colorpicker.test.js
+resources/web/dialog/ColorPickerDialog/index.html
+resources/web/dialog/ColorPickerDialog/palettes.js
+resources/web/dialog/ColorPickerDialog/style.css
+resources/web/dialog/ExportPresetDialog/index.html
+resources/web/dialog/ExportPresetDialog/index.js
+resources/web/dialog/PluginsConfigDialog/index.html
+resources/web/dialog/PluginsConfigDialog/index.js
+resources/web/dialog/PluginsDialog/index.html
+resources/web/dialog/PluginsDialog/index.js
+resources/web/dialog/PluginsDialog/styles.css
+resources/web/dialog/PresetBundleDialog/index.html
+resources/web/dialog/PresetBundleDialog/index.js
+resources/web/dialog/SpeedDial/speeddial.js
+resources/web/dialog/SpeedDial/speeddial.test.js
+resources/web/dialog/SpeedDial/style.css
+resources/web/dialog/TerminalDialog/index.html
+resources/web/dialog/TerminalDialog/index.js
+resources/web/dialog/css/theme.css
+resources/web/flush/WipingDialog.html
+resources/web/guide/0/index.html
+resources/web/guide/0/load.js
+resources/web/guide/1/index.html
+resources/web/guide/11/index.html
+resources/web/guide/21/common.js
+resources/web/guide/21/index.html
+resources/web/guide/22/index.html
+resources/web/guide/23/index.html
+resources/web/guide/24/index.html
+resources/web/guide/3/3.css
+resources/web/guide/3/3.js
+resources/web/guide/3/index.html
+resources/web/guide/31/31.css
+resources/web/guide/31/31.js
+resources/web/guide/31/index.html
+resources/web/guide/4orca/index.html
+resources/web/guide/5/index.html
+resources/web/guide/6/6.css
+resources/web/guide/6/6.js
+resources/web/guide/6/index.html
+resources/web/guide/6/restart.png
+resources/web/homepage/css/dark.css
+resources/web/homepage/css/home.css
+resources/web/homepage/index.html
+resources/web/homepage/js/home.js
+resources/web/include/global.css
+resources/web/include/i18n.js
+resources/web/model/index.html
+resources/web/model/model.js
+resources/web/orca/missing_connection.html
+sandboxes/CMakeLists.txt
+sandboxes/opencsg/CMakeLists.txt
+sandboxes/opencsg/Engine.cpp
+sandboxes/opencsg/Engine.hpp
+sandboxes/opencsg/ShaderCSGDisplay.cpp
+sandboxes/opencsg/ShaderCSGDisplay.hpp
+sandboxes/opencsg/main.cpp
+sandboxes/orca_preset_transaction_demo.py
+sandboxes/orca_preset_update_demo.py
+sandboxes/orca_reload_local_bundle_demo.py
+scripts/CAD/gen_offer_table.py
+scripts/CAD/run-kernel-tests.sh
+scripts/DockerRun.sh
+scripts/Dockerfile
+scripts/Dockerfile.deps
+scripts/Dockerfile.deps-assimp
+scripts/build_preset_cache.bat
+scripts/build_preset_cache.sh
+scripts/check_exception_throw_info.ps1
+scripts/check_profile.ps1
+scripts/check_profile.sh
+scripts/ci_deps_cache.sh
+scripts/ci_macos_admission.py
+scripts/create_dmg.sh
+scripts/flatpak/com.orcaslicer.OrcaSlicer.metainfo.xml
+scripts/flatpak/com.orcaslicer.OrcaSlicer.yml
+scripts/flatpak/entrypoint
+scripts/gen_texture_displacement_tips.py
+scripts/linux.d/arch
+scripts/linux.d/cachyos
+scripts/linux.d/clear-linux-os
+scripts/linux.d/debian
+scripts/linux.d/fedora
+scripts/linux.d/gentoo
+scripts/linux.d/suse
+scripts/orca_profile_tool.py
+scripts/prune_cached_presets.ps1
+scripts/run_gettext.bat
+scripts/run_gettext.sh
+scripts/sign_windows.ps1
+scripts/test_build_win.ps1
+scripts/test_check_exception_throw_info.ps1
+scripts/test_prune_cached_presets.ps1
+scripts/tests/test_ci_macos_admission.py
+scripts/tests/test_profile_tool.py
+src/CMakeLists.txt
+src/OrcaSlicer.cpp
+src/dev-utils/CMakeLists.txt
+src/dev-utils/OrcaSlicer_profile_validator.cpp
+src/dev-utils/platform/unix/build_appimage.sh.in
+src/dev-utils/platform/unix/build_linux_image.sh.in
+src/dev-utils/platform/unix/com.orcaslicer.OrcaSlicer.desktop
+src/dev-utils/texture_unwrap_dump.cpp
+src/libslic3r/AppConfig.cpp
+src/libslic3r/AppConfig.hpp
+src/libslic3r/Arachne/WallToolPaths.cpp
+src/libslic3r/Arrange.cpp
+src/libslic3r/Arrange.hpp
+src/libslic3r/BeltBrim.cpp
+src/libslic3r/BeltBrim.hpp
+src/libslic3r/BeltGCode.cpp
+src/libslic3r/BeltGCode.hpp
+src/libslic3r/BeltPurge.cpp
+src/libslic3r/BeltSliceStrategy.cpp
+src/libslic3r/BeltSliceStrategy.hpp
+src/libslic3r/BeltTransform.cpp
+src/libslic3r/BeltTransform.hpp
+src/libslic3r/Brim.cpp
+src/libslic3r/BuildVolume.hpp
+src/libslic3r/CAD/CadDocument.cpp
+src/libslic3r/CAD/GeometryEngine.cpp
+src/libslic3r/CAD/SketchEngine.cpp
+src/libslic3r/CMakeLists.txt
+src/libslic3r/CSGMesh/CSGMesh.hpp
+src/libslic3r/ClipperUtils.cpp
+src/libslic3r/ClipperUtils.hpp
+src/libslic3r/Config.cpp
+src/libslic3r/Config.hpp
+src/libslic3r/ConnectedBodies.cpp
+src/libslic3r/ConnectedBodies.hpp
+src/libslic3r/CustomGCode.cpp
+src/libslic3r/CustomGCode.hpp
+src/libslic3r/CutSurface.cpp
+src/libslic3r/CutUtils.cpp
+src/libslic3r/CutUtils.hpp
+src/libslic3r/EdgeGrid.cpp
+src/libslic3r/Emboss.cpp
+src/libslic3r/ExPolygon.hpp
+src/libslic3r/ExclusionVolumeGeometry.cpp
+src/libslic3r/ExclusionVolumeGeometry.hpp
+src/libslic3r/Extruder.cpp
+src/libslic3r/Extruder.hpp
+src/libslic3r/ExtrusionEntity.cpp
+src/libslic3r/ExtrusionEntity.hpp
+src/libslic3r/FilamentGroup.cpp
+src/libslic3r/FilamentGroup.hpp
+src/libslic3r/FilamentGroupUtils.cpp
+src/libslic3r/FilamentGroupUtils.hpp
+src/libslic3r/FilamentMixer.cpp
+src/libslic3r/FilamentMixer.hpp
+src/libslic3r/Fill/AdaptiveInfillField.cpp
+src/libslic3r/Fill/AdaptiveInfillField.hpp
+src/libslic3r/Fill/Fill.cpp
+src/libslic3r/Fill/Fill3DHoneycomb.cpp
+src/libslic3r/Fill/Fill3DHoneycomb.hpp
+src/libslic3r/Fill/FillAdaptive.cpp
+src/libslic3r/Fill/FillAdaptive.hpp
+src/libslic3r/Fill/FillBase.cpp
+src/libslic3r/Fill/FillBase.hpp
+src/libslic3r/Fill/FillConcentric.cpp
+src/libslic3r/Fill/FillCornerSmoothing.cpp
+src/libslic3r/Fill/FillCornerSmoothing.hpp
+src/libslic3r/Fill/FillCrossHatch.cpp
+src/libslic3r/Fill/FillCrossHatch.hpp
+src/libslic3r/Fill/FillGyroid.cpp
+src/libslic3r/Fill/FillGyroid.hpp
+src/libslic3r/Fill/FillHoneycomb.cpp
+src/libslic3r/Fill/FillHoneycomb.hpp
+src/libslic3r/Fill/FillLightning.cpp
+src/libslic3r/Fill/FillPlanePath.cpp
+src/libslic3r/Fill/FillRectilinear.cpp
+src/libslic3r/Fill/FillRectilinear.hpp
+src/libslic3r/Fill/FillSpiralInset.cpp
+src/libslic3r/Fill/FillTpmsD.cpp
+src/libslic3r/Fill/FillTpmsD.hpp
+src/libslic3r/Fill/FillTpmsFK.cpp
+src/libslic3r/Fill/FillTpmsFK.hpp
+src/libslic3r/Fill/Lightning/DistanceField.cpp
+src/libslic3r/Fill/Lightning/DistanceField.hpp
+src/libslic3r/Flow.cpp
+src/libslic3r/Format/AMF.cpp
+src/libslic3r/Format/ModelIO.hpp
+src/libslic3r/Format/ProjectStrategy.hpp
+src/libslic3r/Format/STEPTessellate.cpp
+src/libslic3r/Format/bbs_3mf.cpp
+src/libslic3r/Format/bbs_3mf.hpp
+src/libslic3r/Format/svg.cpp
+src/libslic3r/GCode.cpp
+src/libslic3r/GCode.hpp
+src/libslic3r/GCode/AdaptivePAProcessor.cpp
+src/libslic3r/GCode/AdaptivePAProcessor.hpp
+src/libslic3r/GCode/BeltBackTransform.cpp
+src/libslic3r/GCode/BeltBackTransform.hpp
+src/libslic3r/GCode/BeltKinematics.cpp
+src/libslic3r/GCode/BeltKinematics.hpp
+src/libslic3r/GCode/ConflictChecker.hpp
+src/libslic3r/GCode/CoolingBuffer.cpp
+src/libslic3r/GCode/CoolingBuffer.hpp
+src/libslic3r/GCode/ExclusionVolumePathCheck.cpp
+src/libslic3r/GCode/ExclusionVolumePathCheck.hpp
+src/libslic3r/GCode/ExclusionVolumeTravelAvoidance.cpp
+src/libslic3r/GCode/ExclusionVolumeTravelAvoidance.hpp
+src/libslic3r/GCode/FanMover.cpp
+src/libslic3r/GCode/FanMover.hpp
+src/libslic3r/GCode/GCodeProcessor.cpp
+src/libslic3r/GCode/GCodeProcessor.hpp
+src/libslic3r/GCode/GCodeStatistics.cpp
+src/libslic3r/GCode/GCodeStatistics.hpp
+src/libslic3r/GCode/MachineFrameTransform.cpp
+src/libslic3r/GCode/MachineFrameTransform.hpp
+src/libslic3r/GCode/MachineKinematics.cpp
+src/libslic3r/GCode/MachineKinematics.hpp
+src/libslic3r/GCode/OrderingStrategies.cpp
+src/libslic3r/GCode/OrderingStrategies.hpp
+src/libslic3r/GCode/PreciseSeam.cpp
+src/libslic3r/GCode/PreciseSeam.hpp
+src/libslic3r/GCode/PressureEqualizer.cpp
+src/libslic3r/GCode/PressureEqualizer.hpp
+src/libslic3r/GCode/SeamContour.cpp
+src/libslic3r/GCode/SeamContour.hpp
+src/libslic3r/GCode/SeamPlacer.cpp
+src/libslic3r/GCode/SeamPlacer.hpp
+src/libslic3r/GCode/SmallAreaInfillFlowCompensator.cpp
+src/libslic3r/GCode/SpiralVase.cpp
+src/libslic3r/GCode/ThumbnailData.cpp
+src/libslic3r/GCode/ThumbnailData.hpp
+src/libslic3r/GCode/Thumbnails.cpp
+src/libslic3r/GCode/Thumbnails.hpp
+src/libslic3r/GCode/TimelapsePosPicker.cpp
+src/libslic3r/GCode/ToolOrdering.cpp
+src/libslic3r/GCode/ToolOrdering.hpp
+src/libslic3r/GCode/WipePathHelpers.cpp
+src/libslic3r/GCode/WipePathHelpers.hpp
+src/libslic3r/GCode/WipeTower.cpp
+src/libslic3r/GCode/WipeTower2.cpp
+src/libslic3r/GCode/WipeTowerEstimate.cpp
+src/libslic3r/GCode/WipeTowerEstimate.hpp
+src/libslic3r/GCodeReader.cpp
+src/libslic3r/GCodeReader.hpp
+src/libslic3r/GCodeSender.cpp
+src/libslic3r/GCodeSender.hpp
+src/libslic3r/GCodeWriter.cpp
+src/libslic3r/GCodeWriter.hpp
+src/libslic3r/Geometry.cpp
+src/libslic3r/Geometry/Circle.hpp
+src/libslic3r/Geometry/MedialAxis.cpp
+src/libslic3r/IMEXArrange.cpp
+src/libslic3r/IMEXArrange.hpp
+src/libslic3r/IMEXHelpers.cpp
+src/libslic3r/IMEXHelpers.hpp
+src/libslic3r/IMEXZones.cpp
+src/libslic3r/IMEXZones.hpp
+src/libslic3r/JumpPointSearch.cpp
+src/libslic3r/JumpPointSearch.hpp
+src/libslic3r/KDTreeIndirect.hpp
+src/libslic3r/LayOnFace.cpp
+src/libslic3r/LayOnFace.hpp
+src/libslic3r/Layer.cpp
+src/libslic3r/Layer.hpp
+src/libslic3r/LayerRegion.cpp
+src/libslic3r/MarchingSquares.hpp
+src/libslic3r/MeshBoolean.cpp
+src/libslic3r/MeshBoolean.hpp
+src/libslic3r/MeshRepair.cpp
+src/libslic3r/MeshRepair.hpp
+src/libslic3r/Model.cpp
+src/libslic3r/Model.hpp
+src/libslic3r/ModelArrange.cpp
+src/libslic3r/MultiMaterialSegmentation.cpp
+src/libslic3r/MultiPoint.hpp
+src/libslic3r/PNGReadWrite.cpp
+src/libslic3r/PNGReadWrite.hpp
+src/libslic3r/PerimeterGenerator.cpp
+src/libslic3r/PerimeterGenerator.hpp
+src/libslic3r/PlaceholderParser.cpp
+src/libslic3r/PlaceholderParser.hpp
+src/libslic3r/Polygon.hpp
+src/libslic3r/Polyline.hpp
+src/libslic3r/Preset.cpp
+src/libslic3r/Preset.hpp
+src/libslic3r/PresetBundle.cpp
+src/libslic3r/PresetBundle.hpp
+src/libslic3r/PresetCacheFormat.cpp
+src/libslic3r/PresetCacheFormat.hpp
+src/libslic3r/Print.cpp
+src/libslic3r/Print.hpp
+src/libslic3r/PrintApply.cpp
+src/libslic3r/PrintBase.hpp
+src/libslic3r/PrintConfig.cpp
+src/libslic3r/PrintConfig.hpp
+src/libslic3r/PrintObject.cpp
+src/libslic3r/PrintObjectSlice.cpp
+src/libslic3r/PrintRegion.cpp
+src/libslic3r/PrinterBedAssets.hpp
+src/libslic3r/ProjectTask.hpp
+src/libslic3r/PublishSettings.cpp
+src/libslic3r/PublishSettings.hpp
+src/libslic3r/QuadricEdgeCollapse.hpp
+src/libslic3r/SLA/AGGRaster.hpp
+src/libslic3r/SLAPrint.cpp
+src/libslic3r/Shape/TextShape.cpp
+src/libslic3r/Shape/TextShape.hpp
+src/libslic3r/ShortestPath.cpp
+src/libslic3r/ShortestPath.hpp
+src/libslic3r/Slicing.cpp
+src/libslic3r/Slicing.hpp
+src/libslic3r/Support/BeltFloorContext.cpp
+src/libslic3r/Support/BeltFloorContext.hpp
+src/libslic3r/Support/SupportCommon.cpp
+src/libslic3r/Support/SupportCommon.hpp
+src/libslic3r/Support/SupportMaterial.cpp
+src/libslic3r/Support/SupportSpotsGenerator.cpp
+src/libslic3r/Support/TreeModelVolumes.cpp
+src/libslic3r/Support/TreeModelVolumes.hpp
+src/libslic3r/Support/TreeSupport.cpp
+src/libslic3r/Support/TreeSupport.hpp
+src/libslic3r/Support/TreeSupport3D.cpp
+src/libslic3r/Support/TreeSupportCommon.hpp
+src/libslic3r/Surface.hpp
+src/libslic3r/TextureBake/TextureBakeDecimate.cpp
+src/libslic3r/TextureBake/TextureBakeDecimate.hpp
+src/libslic3r/TextureBake/TextureBakeMesh.cpp
+src/libslic3r/TextureBake/TextureBakeMesh.hpp
+src/libslic3r/TextureBake/TextureBakePipeline.cpp
+src/libslic3r/TextureBake/TextureBakePipeline.hpp
+src/libslic3r/TextureBake/TextureBakeRepair.cpp
+src/libslic3r/TextureBake/TextureBakeRepair.hpp
+src/libslic3r/TextureDisplacement.cpp
+src/libslic3r/TextureDisplacement.hpp
+src/libslic3r/TexturePainting.cpp
+src/libslic3r/TextureToColor/ColorUtils.cpp
+src/libslic3r/TextureToColor/ColorUtils.hpp
+src/libslic3r/TextureToColor/Repair.hpp
+src/libslic3r/TextureToColor/TextureToColor.cpp
+src/libslic3r/TriangleMesh.cpp
+src/libslic3r/TriangleMesh.hpp
+src/libslic3r/TriangleMeshDeal.hpp
+src/libslic3r/TriangleSelector.cpp
+src/libslic3r/TriangleSelector.hpp
+src/libslic3r/Utils.hpp
+src/libslic3r/calib.cpp
+src/libslic3r/calib.hpp
+src/libslic3r/libslic3r.h
+src/libslic3r/miniz_extension.cpp
+src/libslic3r/miniz_extension.hpp
+src/libslic3r/pchheader.hpp
+src/libslic3r/utils.cpp
+src/libvgcode/include/GCodeInputData.hpp
+src/libvgcode/include/Types.hpp
+src/libvgcode/include/Viewer.hpp
+src/libvgcode/src/Layers.cpp
+src/libvgcode/src/SegmentTemplate.cpp
+src/libvgcode/src/Settings.hpp
+src/libvgcode/src/Shaders.hpp
+src/libvgcode/src/Viewer.cpp
+src/libvgcode/src/ViewerImpl.cpp
+src/libvgcode/src/ViewerImpl.hpp
+src/slic3r/CMakeLists.txt
+src/slic3r/GUI/3DBed.cpp
+src/slic3r/GUI/3DBed.hpp
+src/slic3r/GUI/3DScene.cpp
+src/slic3r/GUI/3DScene.hpp
+src/slic3r/GUI/AMSDryControl.cpp
+src/slic3r/GUI/AMSMaterialsSetting.cpp
+src/slic3r/GUI/AMSMaterialsSetting.hpp
+src/slic3r/GUI/AMSSetting.hpp
+src/slic3r/GUI/AboutDialog.cpp
+src/slic3r/GUI/ActionRegistry.cpp
+src/slic3r/GUI/ActionRegistry.hpp
+src/slic3r/GUI/AmsMappingPopup.hpp
+src/slic3r/GUI/AmsWidgets.hpp
+src/slic3r/GUI/AnimatedTexture.cpp
+src/slic3r/GUI/AnimatedTexture.hpp
+src/slic3r/GUI/Auxiliary.cpp
+src/slic3r/GUI/Auxiliary.hpp
+src/slic3r/GUI/BBLStatusBar.hpp
+src/slic3r/GUI/BBLStatusBarBind.hpp
+src/slic3r/GUI/BBLStatusBarPrint.hpp
+src/slic3r/GUI/BBLStatusBarSend.hpp
+src/slic3r/GUI/BackgroundSlicingProcess.cpp
+src/slic3r/GUI/BackgroundSlicingProcess.hpp
+src/slic3r/GUI/BaseTransparentDPIFrame.cpp
+src/slic3r/GUI/BeltPurgeTower.cpp
+src/slic3r/GUI/BeltPurgeTower.hpp
+src/slic3r/GUI/BindDialog.cpp
+src/slic3r/GUI/BonjourDialog.cpp
+src/slic3r/GUI/CAD/DesignOffer.hpp
+src/slic3r/GUI/CAD/DesignPanel.cpp
+src/slic3r/GUI/CAD/DesignPanel.hpp
+src/slic3r/GUI/CAD/DesignSketchTool.cpp
+src/slic3r/GUI/CAD/SketchInlineEditor.hpp
+src/slic3r/GUI/CaliHistoryDialog.cpp
+src/slic3r/GUI/Calibration.hpp
+src/slic3r/GUI/CalibrationPanel.cpp
+src/slic3r/GUI/CalibrationWizard.cpp
+src/slic3r/GUI/CalibrationWizardCaliPage.cpp
+src/slic3r/GUI/CalibrationWizardPage.cpp
+src/slic3r/GUI/CalibrationWizardPage.hpp
+src/slic3r/GUI/CalibrationWizardPresetPage.cpp
+src/slic3r/GUI/CalibrationWizardPresetPage.hpp
+src/slic3r/GUI/CalibrationWizardSavePage.cpp
+src/slic3r/GUI/CameraPopup.cpp
+src/slic3r/GUI/CameraPopup.hpp
+src/slic3r/GUI/CloneDialog.hpp
+src/slic3r/GUI/ColorDecomposeDialog.cpp
+src/slic3r/GUI/ColorDecomposeSupport.cpp
+src/slic3r/GUI/ColorPickerDialog.cpp
+src/slic3r/GUI/ColorPickerDialog.hpp
+src/slic3r/GUI/ConfigExceptions.hpp
+src/slic3r/GUI/ConfigManipulation.cpp
+src/slic3r/GUI/ConfigManipulation.hpp
+src/slic3r/GUI/ConfigValueFormatter.cpp
+src/slic3r/GUI/ConfigWizard.cpp
+src/slic3r/GUI/ConfigWizard.hpp
+src/slic3r/GUI/ConfigWizardTypes.hpp
+src/slic3r/GUI/ConfigWizard_private.hpp
+src/slic3r/GUI/ConnectPrinter.cpp
+src/slic3r/GUI/CrealityDiscoveryDialog.cpp
+src/slic3r/GUI/CreatePresetsDialog.cpp
+src/slic3r/GUI/CreatePresetsDialog.hpp
+src/slic3r/GUI/DailyTips.cpp
+src/slic3r/GUI/DesktopIntegrationDialog.cpp
+src/slic3r/GUI/DeviceCore/DevDefs.h
+src/slic3r/GUI/DeviceCore/DevFilaAmsSetting.cpp
+src/slic3r/GUI/DeviceCore/DevFilaAmsSetting.h
+src/slic3r/GUI/DeviceCore/DevFilaSwitch.cpp
+src/slic3r/GUI/DeviceCore/DevFilaSystem.cpp
+src/slic3r/GUI/DeviceCore/DevFilaSystem.h
+src/slic3r/GUI/DeviceCore/DevManager.cpp
+src/slic3r/GUI/DeviceCore/DevManager.h
+src/slic3r/GUI/DeviceCore/DevMappingNozzle.cpp
+src/slic3r/GUI/DeviceCore/DevNozzleRack.cpp
+src/slic3r/GUI/DeviceCore/DevStatus.cpp
+src/slic3r/GUI/DeviceCore/DevStorage.h
+src/slic3r/GUI/DeviceCore/DevUtil.cpp
+src/slic3r/GUI/DeviceErrorDialog.cpp
+src/slic3r/GUI/DeviceManager.cpp
+src/slic3r/GUI/DeviceManager.hpp
+src/slic3r/GUI/DeviceTab/wgtDeviceNozzleRack.cpp
+src/slic3r/GUI/DockPanel.cpp
+src/slic3r/GUI/EditGCodeDialog.cpp
+src/slic3r/GUI/EncodedFilament.cpp
+src/slic3r/GUI/EncodedFilament.hpp
+src/slic3r/GUI/ExportPresetBundleDialog.cpp
+src/slic3r/GUI/ExportPresetBundleDialog.hpp
+src/slic3r/GUI/Field.cpp
+src/slic3r/GUI/Field.hpp
+src/slic3r/GUI/FilamentBitmapUtils.cpp
+src/slic3r/GUI/FilamentBitmapUtils.hpp
+src/slic3r/GUI/FilamentGroupPopup.cpp
+src/slic3r/GUI/FilamentGroupPopup.hpp
+src/slic3r/GUI/FilamentMapDialog.cpp
+src/slic3r/GUI/FilamentMapPanel.cpp
+src/slic3r/GUI/FilamentPickerDialog.cpp
+src/slic3r/GUI/FilamentPickerDialog.hpp
+src/slic3r/GUI/GCodeViewer.cpp
+src/slic3r/GUI/GCodeViewer.hpp
+src/slic3r/GUI/GLCanvas3D.cpp
+src/slic3r/GUI/GLCanvas3D.hpp
+src/slic3r/GUI/GLModel.cpp
+src/slic3r/GUI/GLTexture.cpp
+src/slic3r/GUI/GUI.cpp
+src/slic3r/GUI/GUI_App.cpp
+src/slic3r/GUI/GUI_App.hpp
+src/slic3r/GUI/GUI_Factories.cpp
+src/slic3r/GUI/GUI_Factories.hpp
+src/slic3r/GUI/GUI_ObjectList.cpp
+src/slic3r/GUI/GUI_ObjectList.hpp
+src/slic3r/GUI/GUI_ObjectSettings.cpp
+src/slic3r/GUI/GUI_ObjectTable.cpp
+src/slic3r/GUI/GUI_ObjectTableSettings.cpp
+src/slic3r/GUI/GUI_ObjectTableSettings.hpp
+src/slic3r/GUI/GUI_Preview.cpp
+src/slic3r/GUI/GUI_Preview.hpp
+src/slic3r/GUI/GUI_Utils.hpp
+src/slic3r/GUI/GUI_UtilsMac.mm
+src/slic3r/GUI/Gizmos/GLGizmoAlignment.cpp
+src/slic3r/GUI/Gizmos/GLGizmoAlignment.hpp
+src/slic3r/GUI/Gizmos/GLGizmoAssembly.cpp
+src/slic3r/GUI/Gizmos/GLGizmoBrimEars.cpp
+src/slic3r/GUI/Gizmos/GLGizmoCut.cpp
+src/slic3r/GUI/Gizmos/GLGizmoEmboss.cpp
+src/slic3r/GUI/Gizmos/GLGizmoFdmSupports.cpp
+src/slic3r/GUI/Gizmos/GLGizmoFuzzySkin.cpp
+src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+src/slic3r/GUI/Gizmos/GLGizmoMeshBoolean.cpp
+src/slic3r/GUI/Gizmos/GLGizmoMmuSegmentation.cpp
+src/slic3r/GUI/Gizmos/GLGizmoMove.cpp
+src/slic3r/GUI/Gizmos/GLGizmoMove.hpp
+src/slic3r/GUI/Gizmos/GLGizmoPainterBase.cpp
+src/slic3r/GUI/Gizmos/GLGizmoPainterBase.hpp
+src/slic3r/GUI/Gizmos/GLGizmoSVG.cpp
+src/slic3r/GUI/Gizmos/GLGizmoScale.cpp
+src/slic3r/GUI/Gizmos/GLGizmoScale.hpp
+src/slic3r/GUI/Gizmos/GLGizmoSeam.cpp
+src/slic3r/GUI/Gizmos/GLGizmoSimplify.cpp
+src/slic3r/GUI/Gizmos/GLGizmoTextureDisplacement.cpp
+src/slic3r/GUI/Gizmos/GLGizmoTextureDisplacement.hpp
+src/slic3r/GUI/Gizmos/GLGizmoUtils.cpp
+src/slic3r/GUI/Gizmos/GLGizmoUtils.hpp
+src/slic3r/GUI/Gizmos/GLGizmosCommon.cpp
+src/slic3r/GUI/Gizmos/GLGizmosManager.cpp
+src/slic3r/GUI/Gizmos/GLGizmosManager.hpp
+src/slic3r/GUI/Gizmos/GizmoObjectManipulation.cpp
+src/slic3r/GUI/Gizmos/GizmoObjectManipulation.hpp
+src/slic3r/GUI/HMS.cpp
+src/slic3r/GUI/HintNotification.cpp
+src/slic3r/GUI/HttpServer.hpp
+src/slic3r/GUI/IMEXFilamentPickerPopover.cpp
+src/slic3r/GUI/IMEXFilamentPickerPopover.hpp
+src/slic3r/GUI/IMEXModesCtrl.cpp
+src/slic3r/GUI/IMEXModesCtrl.hpp
+src/slic3r/GUI/IMSlider.cpp
+src/slic3r/GUI/IMToolbar.cpp
+src/slic3r/GUI/IMToolbar.hpp
+src/slic3r/GUI/IdleScheduler.cpp
+src/slic3r/GUI/ImGuiWrapper.cpp
+src/slic3r/GUI/ImGuiWrapper.hpp
+src/slic3r/GUI/InstanceCheckMac.h
+src/slic3r/GUI/Jobs/ArrangeJob.cpp
+src/slic3r/GUI/Jobs/ArrangeJob.hpp
+src/slic3r/GUI/Jobs/FillBedJob.cpp
+src/slic3r/GUI/Jobs/OrientJob.cpp
+src/slic3r/GUI/Jobs/PlaterWorker.hpp
+src/slic3r/GUI/Jobs/PrintJob.cpp
+src/slic3r/GUI/Jobs/SLAImportDialog.hpp
+src/slic3r/GUI/Jobs/SLAImportJob.cpp
+src/slic3r/GUI/Jobs/SendJob.cpp
+src/slic3r/GUI/Jobs/TextureDisplacementBakeJob.cpp
+src/slic3r/GUI/Jobs/TextureDisplacementBakeJob.hpp
+src/slic3r/GUI/Jobs/TextureDisplacementDebugJob.cpp
+src/slic3r/GUI/Jobs/TextureDisplacementDebugJob.hpp
+src/slic3r/GUI/Jobs/TextureDisplacementPrepareJob.cpp
+src/slic3r/GUI/Jobs/TextureDisplacementPrepareJob.hpp
+src/slic3r/GUI/Jobs/TextureDisplacementPreviewJob.cpp
+src/slic3r/GUI/Jobs/TextureDisplacementPreviewJob.hpp
+src/slic3r/GUI/KBShortcutsDialog.cpp
+src/slic3r/GUI/KeyChord.cpp
+src/slic3r/GUI/KeyChord.hpp
+src/slic3r/GUI/LibVGCode/LibVGCodeWrapper.cpp
+src/slic3r/GUI/LibVGCode/LibVGCodeWrapper.hpp
+src/slic3r/GUI/MacIME.hpp
+src/slic3r/GUI/MacIME.mm
+src/slic3r/GUI/MainFrame.cpp
+src/slic3r/GUI/MainFrame.hpp
+src/slic3r/GUI/MarkdownTip.cpp
+src/slic3r/GUI/MarkdownTip.hpp
+src/slic3r/GUI/MediaFilePanel.cpp
+src/slic3r/GUI/MediaFilePanel.h
+src/slic3r/GUI/MediaPlayCtrl.cpp
+src/slic3r/GUI/MediaPlayCtrl.h
+src/slic3r/GUI/ModelMall.cpp
+src/slic3r/GUI/Monitor.cpp
+src/slic3r/GUI/Monitor.hpp
+src/slic3r/GUI/Mouse3DController.cpp
+src/slic3r/GUI/Mouse3DController.hpp
+src/slic3r/GUI/MsgDialog.cpp
+src/slic3r/GUI/MultiMachine.cpp
+src/slic3r/GUI/MultiMachineManagerPage.cpp
+src/slic3r/GUI/MultiMachinePage.cpp
+src/slic3r/GUI/MultiTaskManagerPage.cpp
+src/slic3r/GUI/MultiTaskModel.cpp
+src/slic3r/GUI/MultiTaskModel.hpp
+src/slic3r/GUI/NativeCommands.cpp
+src/slic3r/GUI/NativeCommands.hpp
+src/slic3r/GUI/NetworkTestDialog.cpp
+src/slic3r/GUI/Notebook.hpp
+src/slic3r/GUI/NotificationManager.cpp
+src/slic3r/GUI/NotificationManager.hpp
+src/slic3r/GUI/OG_CustomCtrl.cpp
+src/slic3r/GUI/OG_CustomCtrl.hpp
+src/slic3r/GUI/ObjectDataViewModel.cpp
+src/slic3r/GUI/OpenGLManager.cpp
+src/slic3r/GUI/OpenGLManager.hpp
+src/slic3r/GUI/OptionStateRegistry.cpp
+src/slic3r/GUI/OptionStateRegistry.hpp
+src/slic3r/GUI/OptionsGroup.cpp
+src/slic3r/GUI/OptionsGroup.hpp
+src/slic3r/GUI/ParamsDialog.cpp
+src/slic3r/GUI/ParamsPanel.cpp
+src/slic3r/GUI/PartPlate.cpp
+src/slic3r/GUI/PartPlate.hpp
+src/slic3r/GUI/PartSkipDialog.cpp
+src/slic3r/GUI/PartSkipDialog.hpp
+src/slic3r/GUI/PhysicalPrinterDialog.cpp
+src/slic3r/GUI/Plater.cpp
+src/slic3r/GUI/Plater.hpp
+src/slic3r/GUI/PluginPermissionValidation.cpp
+src/slic3r/GUI/PluginPermissionValidation.hpp
+src/slic3r/GUI/PluginsConfigDialog.cpp
+src/slic3r/GUI/PluginsConfigDialog.hpp
+src/slic3r/GUI/PluginsDialog.cpp
+src/slic3r/GUI/PluginsDialog.hpp
+src/slic3r/GUI/PostProcessor.cpp
+src/slic3r/GUI/PostProcessor.hpp
+src/slic3r/GUI/PrePrintChecker.cpp
+src/slic3r/GUI/Preferences.cpp
+src/slic3r/GUI/PresetBundleDialog.cpp
+src/slic3r/GUI/PresetBundleDialog.hpp
+src/slic3r/GUI/PresetComboBoxes.cpp
+src/slic3r/GUI/PresetComboBoxes.hpp
+src/slic3r/GUI/PrimitiveSizeDialog.cpp
+src/slic3r/GUI/PrimitiveSizeDialog.hpp
+src/slic3r/GUI/PrintHostDialogs.cpp
+src/slic3r/GUI/PrintHostDialogs.hpp
+src/slic3r/GUI/PrintOptionsDialog.cpp
+src/slic3r/GUI/PrintOptionsDialog.hpp
+src/slic3r/GUI/Printer/PrinterFileSystem.cpp
+src/slic3r/GUI/PrinterWebView.cpp
+src/slic3r/GUI/PrinterWebView.hpp
+src/slic3r/GUI/ProcessRunner.cpp
+src/slic3r/GUI/ProcessRunner.hpp
+src/slic3r/GUI/ProgressStatusBar.hpp
+src/slic3r/GUI/Project.cpp
+src/slic3r/GUI/PublishSettingsDialog.cpp
+src/slic3r/GUI/PublishSettingsDialog.hpp
+src/slic3r/GUI/PurgeModeDialog.cpp
+src/slic3r/GUI/RecenterDialog.cpp
+src/slic3r/GUI/ReleaseNote.cpp
+src/slic3r/GUI/ReleaseNote.hpp
+src/slic3r/GUI/RemovableDriveManager.cpp
+src/slic3r/GUI/RemovableDriveManagerMM.h
+src/slic3r/GUI/SavePresetDialog.cpp
+src/slic3r/GUI/SavePresetDialog.hpp
+src/slic3r/GUI/Search.cpp
+src/slic3r/GUI/Search.hpp
+src/slic3r/GUI/SelectMachine.cpp
+src/slic3r/GUI/SelectMachine.hpp
+src/slic3r/GUI/SelectMachinePop.cpp
+src/slic3r/GUI/SelectMachinePop.hpp
+src/slic3r/GUI/Selection.cpp
+src/slic3r/GUI/Selection.hpp
+src/slic3r/GUI/SendToPrinter.cpp
+src/slic3r/GUI/SendToPrinter.hpp
+src/slic3r/GUI/SequentialPrintClearance.hpp
+src/slic3r/GUI/SettingsIndex.cpp
+src/slic3r/GUI/SettingsIndex.hpp
+src/slic3r/GUI/Shortcuts.cpp
+src/slic3r/GUI/Shortcuts.hpp
+src/slic3r/GUI/SpeedDialDialog.cpp
+src/slic3r/GUI/SpeedDialDialog.hpp
+src/slic3r/GUI/StatusPanel.cpp
+src/slic3r/GUI/StatusPanel.hpp
+src/slic3r/GUI/StepMeshDialog.cpp
+src/slic3r/GUI/SyncAmsInfoDialog.cpp
+src/slic3r/GUI/SysInfoDialog.cpp
+src/slic3r/GUI/SysInfoDialog.hpp
+src/slic3r/GUI/Tab.cpp
+src/slic3r/GUI/Tab.hpp
+src/slic3r/GUI/TaskManager.cpp
+src/slic3r/GUI/TaskManager.hpp
+src/slic3r/GUI/TerminalDialog.cpp
+src/slic3r/GUI/TerminalDialog.hpp
+src/slic3r/GUI/TextureImportDialog.cpp
+src/slic3r/GUI/TextureLibrary.cpp
+src/slic3r/GUI/TextureLibrary.hpp
+src/slic3r/GUI/TroubleshootDialog.cpp
+src/slic3r/GUI/TroubleshootDialog.hpp
+src/slic3r/GUI/UVEditorCanvas.cpp
+src/slic3r/GUI/UVEditorCanvas.hpp
+src/slic3r/GUI/UnsavedChangesDialog.cpp
+src/slic3r/GUI/UpgradePanel.cpp
+src/slic3r/GUI/UpgradePanel.hpp
+src/slic3r/GUI/WebDialog.cpp
+src/slic3r/GUI/WebDialog.hpp
+src/slic3r/GUI/WebDownPluginDlg.cpp
+src/slic3r/GUI/WebDownPluginDlg.hpp
+src/slic3r/GUI/WebGuideDialog.cpp
+src/slic3r/GUI/WebGuideDialog.hpp
+src/slic3r/GUI/WebPanel.cpp
+src/slic3r/GUI/WebUpdatePlugin.cpp
+src/slic3r/GUI/WebUpdatePlugin.hpp
+src/slic3r/GUI/WebUserLoginDialog.cpp
+src/slic3r/GUI/WebViewDialog.cpp
+src/slic3r/GUI/WebViewDialog.hpp
+src/slic3r/GUI/Widgets/AMSItem.cpp
+src/slic3r/GUI/Widgets/AMSItem.hpp
+src/slic3r/GUI/Widgets/Button.cpp
+src/slic3r/GUI/Widgets/Button.hpp
+src/slic3r/GUI/Widgets/ComboBox.cpp
+src/slic3r/GUI/Widgets/ComboBox.hpp
+src/slic3r/GUI/Widgets/DropDown.cpp
+src/slic3r/GUI/Widgets/DropDown.hpp
+src/slic3r/GUI/Widgets/FanControl.cpp
+src/slic3r/GUI/Widgets/FilamentLoad.cpp
+src/slic3r/GUI/Widgets/Label.cpp
+src/slic3r/GUI/Widgets/MultiNozzleSync.cpp
+src/slic3r/GUI/Widgets/PopupWindow.cpp
+src/slic3r/GUI/Widgets/PopupWindow.hpp
+src/slic3r/GUI/Widgets/ProgressDialog.cpp
+src/slic3r/GUI/Widgets/SideButton.cpp
+src/slic3r/GUI/Widgets/SideButton.hpp
+src/slic3r/GUI/Widgets/SwitchButton.cpp
+src/slic3r/GUI/Widgets/SwitchButton.hpp
+src/slic3r/GUI/Widgets/TabCtrl.cpp
+src/slic3r/GUI/Widgets/TextCtrl.h
+src/slic3r/GUI/Widgets/WebView.cpp
+src/slic3r/GUI/Widgets/WebView.hpp
+src/slic3r/GUI/Widgets/WebViewHostDialog.cpp
+src/slic3r/GUI/Widgets/WebViewHostDialog.hpp
+src/slic3r/GUI/WipeTowerDialog.cpp
+src/slic3r/GUI/calib_dlg.cpp
+src/slic3r/GUI/calib_dlg.hpp
+src/slic3r/GUI/wxExtensions.cpp
+src/slic3r/GUI/wxExtensions.hpp
+src/slic3r/GUI/wxinit.h
+src/slic3r/Utils/3DPrinterOS.cpp
+src/slic3r/Utils/AsioUtils.hpp
+src/slic3r/Utils/BBLNetworkPlugin.cpp
+src/slic3r/Utils/BBLNetworkPlugin.hpp
+src/slic3r/Utils/BBLPrinterAgent.cpp
+src/slic3r/Utils/BBLPrinterAgent.hpp
+src/slic3r/Utils/Bonjour.cpp
+src/slic3r/Utils/Bonjour.hpp
+src/slic3r/Utils/BoostProcessCompat.hpp
+src/slic3r/Utils/CalibUtils.cpp
+src/slic3r/Utils/CalibUtils.hpp
+src/slic3r/Utils/CloudDeleteQueue.cpp
+src/slic3r/Utils/CloudDeleteQueue.hpp
+src/slic3r/Utils/CrealityCfs.cpp
+src/slic3r/Utils/CrealityCfs.hpp
+src/slic3r/Utils/CrealityHostDiscovery.hpp
+src/slic3r/Utils/CrealityPrint.cpp
+src/slic3r/Utils/CrealityPrint.hpp
+src/slic3r/Utils/CrealityPrintAgent.cpp
+src/slic3r/Utils/EmbossStyleManager.cpp
+src/slic3r/Utils/FileTransferUtils.hpp
+src/slic3r/Utils/FixModelByCgal.cpp
+src/slic3r/Utils/FixModelByCgal.hpp
+src/slic3r/Utils/Flashforge.cpp
+src/slic3r/Utils/FontConfigHelp.cpp
+src/slic3r/Utils/Http.cpp
+src/slic3r/Utils/ICloudServiceAgent.hpp
+src/slic3r/Utils/Moonraker.cpp
+src/slic3r/Utils/Moonraker.hpp
+src/slic3r/Utils/MoonrakerPrinterAgent.cpp
+src/slic3r/Utils/MoonrakerPrinterAgent.hpp
+src/slic3r/Utils/NetworkAgent.cpp
+src/slic3r/Utils/NetworkAgent.hpp
+src/slic3r/Utils/NetworkAgentFactory.cpp
+src/slic3r/Utils/NetworkAgentFactory.hpp
+src/slic3r/Utils/OrcaCloudServiceAgent.cpp
+src/slic3r/Utils/OrcaCloudServiceAgent.hpp
+src/slic3r/Utils/PresetUpdater.cpp
+src/slic3r/Utils/PrintHost.cpp
+src/slic3r/Utils/PrintHost.hpp
+src/slic3r/Utils/Profile.hpp
+src/slic3r/Utils/QidiPrinterAgent.cpp
+src/slic3r/Utils/QidiPrinterAgent.hpp
+src/slic3r/Utils/Serial.cpp
+src/slic3r/Utils/Serial.hpp
+src/slic3r/Utils/SimplyPrint.cpp
+src/slic3r/Utils/TCPConsole.hpp
+src/slic3r/Utils/UltiMaker.cpp
+src/slic3r/Utils/WebSocketClient.hpp
+src/slic3r/pchheader.hpp
+src/slic3r/plugin/CloudPluginService.cpp
+src/slic3r/plugin/PluginAuditManager.cpp
+src/slic3r/plugin/PluginAuditManager.hpp
+src/slic3r/plugin/PluginConfig.cpp
+src/slic3r/plugin/PluginConfig.hpp
+src/slic3r/plugin/PluginFsUtils.cpp
+src/slic3r/plugin/PluginFsUtils.hpp
+src/slic3r/plugin/PluginHooks.cpp
+src/slic3r/plugin/PluginJsonPy.hpp
+src/slic3r/plugin/PluginLoader.cpp
+src/slic3r/plugin/PluginLoader.hpp
+src/slic3r/plugin/PluginManager.cpp
+src/slic3r/plugin/PluginManager.hpp
+src/slic3r/plugin/PluginResolver.cpp
+src/slic3r/plugin/PyPluginTrampoline.hpp
+src/slic3r/plugin/PythonInterpreter.cpp
+src/slic3r/plugin/PythonInterpreter.hpp
+src/slic3r/plugin/PythonPluginBridge.cpp
+src/slic3r/plugin/PythonPluginBridge.hpp
+src/slic3r/plugin/PythonPluginInterface.hpp
+src/slic3r/plugin/host/PluginHostApp.cpp
+src/slic3r/plugin/host/PluginHostPresets.cpp
+src/slic3r/plugin/host/PluginHostUi.cpp
+src/slic3r/plugin/host/PluginHostUi.hpp
+src/slic3r/plugin/host/PluginPages.cpp
+src/slic3r/plugin/host/PluginPages.hpp
+src/slic3r/plugin/host/PluginResourceTextures.cpp
+src/slic3r/plugin/host/PluginResourceTextures.hpp
+src/slic3r/plugin/pluginTypes/pages/PagesPluginCapability.cpp
+src/slic3r/plugin/pluginTypes/pages/PagesPluginCapability.hpp
+src/slic3r/plugin/pluginTypes/pages/PagesPluginCapabilityTrampoline.hpp
+src/slic3r/plugin/pluginTypes/printerAgent/PrinterAgentPluginCapabilityTrampoline.hpp
+src/slic3r/plugin/pluginTypes/resourceTexture/ResourceTexturePluginCapability.cpp
+src/slic3r/plugin/pluginTypes/resourceTexture/ResourceTexturePluginCapability.hpp
+src/slic3r/plugin/pluginTypes/resourceTexture/ResourceTexturePluginCapabilityTrampoline.hpp
+tests/cli/CMakeLists.txt
+tests/cli/test_cli_arrange_rotations.sh
+tests/cli/test_cli_empty_project_config.sh
+tests/cli/test_cli_filament_colour_count.sh
+tests/cli/test_cli_no_suitable_objects.sh
+tests/cli/test_cli_project_missing_keys.sh
+tests/cli/test_cli_strict.sh
+tests/data/cone_tilted_seam_pcurve.step
+tests/data/seam_contour_benchy_split.txt
+tests/data/surface_model_geometric_set.step
+tests/data/texture_import/README.md
+tests/data/texture_import/two_color_jpeg.glb
+tests/data/texture_import/two_color_png.glb
+tests/data/texture_import/two_color_sphere/test_two_color_sphere.mtl
+tests/data/texture_import/two_color_sphere/test_two_color_sphere.obj
+tests/data/texture_import/two_color_sphere/test_two_color_sphere_textured.mtl
+tests/data/texture_import/two_color_sphere/test_two_color_sphere_textured.obj
+tests/data/texture_import/two_color_sphere/textures/two_color.jpg
+tests/data/wipe_tower_temperature_trace_main.txt
+tests/fff_print/CMakeLists.txt
+tests/fff_print/test_adaptive_pressure_advance.cpp
+tests/fff_print/test_calib.cpp
+tests/fff_print/test_cooling.cpp
+tests/fff_print/test_exclusion_volumes.cpp
+tests/fff_print/test_extrusion_entity.cpp
+tests/fff_print/test_extrusion_processor.cpp
+tests/fff_print/test_fan_mover.cpp
+tests/fff_print/test_fill.cpp
+tests/fff_print/test_gcode.cpp
+tests/fff_print/test_gcode_processor.cpp
+tests/fff_print/test_gcode_statistics.cpp
+tests/fff_print/test_gcode_timing.cpp
+tests/fff_print/test_gcodeprocessor.cpp
+tests/fff_print/test_gcodewriter.cpp
+tests/fff_print/test_helpers.cpp
+tests/fff_print/test_helpers.hpp
+tests/fff_print/test_imex_mode_gcode.cpp
+tests/fff_print/test_imex_slice_offset.cpp
+tests/fff_print/test_mixed_filament.cpp
+tests/fff_print/test_multifilament.cpp
+tests/fff_print/test_multimaterial_segmentation.cpp
+tests/fff_print/test_perimeters.cpp
+tests/fff_print/test_precise_seam.cpp
+tests/fff_print/test_print.cpp
+tests/fff_print/test_printobject.cpp
+tests/fff_print/test_seam_placer.cpp
+tests/fff_print/test_skirt_brim.cpp
+tests/fff_print/test_slicing_pipeline_hook.cpp
+tests/fff_print/test_spiral_vase.cpp
+tests/fff_print/test_wipe.cpp
+tests/fff_print/test_wipe_tower.cpp
+tests/filament_group/fg_test_serialization.hpp
+tests/filament_group/filament_group_regression_main.cpp
+tests/libslic3r/CMakeLists.txt
+tests/libslic3r/test_3mf.cpp
+tests/libslic3r/test_adaptive_infill_field.cpp
+tests/libslic3r/test_amf.cpp
+tests/libslic3r/test_appconfig.cpp
+tests/libslic3r/test_arrange.cpp
+tests/libslic3r/test_belt_brim.cpp
+tests/libslic3r/test_clipper_utils.cpp
+tests/libslic3r/test_config.cpp
+tests/libslic3r/test_config_variant_expansion.cpp
+tests/libslic3r/test_connected_bodies.cpp
+tests/libslic3r/test_cut_connectors.cpp
+tests/libslic3r/test_edge_grid.cpp
+tests/libslic3r/test_exclusion_volumes.cpp
+tests/libslic3r/test_filament_mixer.cpp
+tests/libslic3r/test_fill_corner_smoothing.cpp
+tests/libslic3r/test_fill_plane_path.cpp
+tests/libslic3r/test_geometry.cpp
+tests/libslic3r/test_imex_arrange.cpp
+tests/libslic3r/test_imex_helpers.cpp
+tests/libslic3r/test_imex_zones.cpp
+tests/libslic3r/test_indexed_triangle_set.cpp
+tests/libslic3r/test_kdtree.cpp
+tests/libslic3r/test_lay_on_face.cpp
+tests/libslic3r/test_lightning.cpp
+tests/libslic3r/test_locales_utils.cpp
+tests/libslic3r/test_mesh_repair.cpp
+tests/libslic3r/test_meshboolean.cpp
+tests/libslic3r/test_miniz_extension.cpp
+tests/libslic3r/test_model.cpp
+tests/libslic3r/test_ordering_strategies.cpp
+tests/libslic3r/test_placeholder_parser.cpp
+tests/libslic3r/test_png_read_write.cpp
+tests/libslic3r/test_preset_bundle_loading.cpp
+tests/libslic3r/test_preset_diff.cpp
+tests/libslic3r/test_publish_settings.cpp
+tests/libslic3r/test_seam_contour.cpp
+tests/libslic3r/test_semver.cpp
+tests/libslic3r/test_shortest_path.cpp
+tests/libslic3r/test_step.cpp
+tests/libslic3r/test_texture_displacement.cpp
+tests/libslic3r/test_texture_import.cpp
+tests/libslic3r/test_timeutils.cpp
+tests/libslic3r/test_toolordering_nozzle_group.cpp
+tests/libslic3r/test_utils.cpp
+tests/libslic3r/test_vendor_cache.cpp
+tests/libslic3r/test_wipe_path.cpp
+tests/libslic3r/test_wipe_tower_estimate.cpp
+tests/libslic3r/texture_import_cgal.cpp
+tests/libslic3r/texture_import_cgal.hpp
+tests/sla_print/CMakeLists.txt
+tests/sla_print/sla_print_tests.cpp
+tests/sla_print/sla_test_utils.cpp
+tests/sla_print/sla_test_utils.hpp
+tests/slic3rutils/CMakeLists.txt
+tests/slic3rutils/python_test_support.hpp
+tests/slic3rutils/slic3rutils_tests_main.cpp
+tests/slic3rutils/test_action_source.cpp
+tests/slic3rutils/test_ams_materials_setting.cpp
+tests/slic3rutils/test_bambu_filament_ids.cpp
+tests/slic3rutils/test_bed_exclusion_fields.cpp
+tests/slic3rutils/test_cloud_delete_queue.cpp
+tests/slic3rutils/test_colour_picker_field.cpp
+tests/slic3rutils/test_config_value_formatter.cpp
+tests/slic3rutils/test_creality_cfs_match.cpp
+tests/slic3rutils/test_creality_print.cpp
+tests/slic3rutils/test_dev_mapping.cpp
+tests/slic3rutils/test_device_access.cpp
+tests/slic3rutils/test_device_manager_integration.cpp
+tests/slic3rutils/test_filament_bitmap_utils.cpp
+tests/slic3rutils/test_filament_color_picker.cpp
+tests/slic3rutils/test_gcode_preview_colors.cpp
+tests/slic3rutils/test_imgui_wrapper.cpp
+tests/slic3rutils/test_moonraker_printer_agent.cpp
+tests/slic3rutils/test_network_discovery.cpp
+tests/slic3rutils/test_object_list.cpp
+tests/slic3rutils/test_option_state_registry.cpp
+tests/slic3rutils/test_orca_cloud_agent.cpp
+tests/slic3rutils/test_plugin_audit.cpp
+tests/slic3rutils/test_plugin_capability_config.cpp
+tests/slic3rutils/test_plugin_cloud_metadata.cpp
+tests/slic3rutils/test_plugin_host_api.cpp
+tests/slic3rutils/test_plugin_install.cpp
+tests/slic3rutils/test_plugin_json_depth.cpp
+tests/slic3rutils/test_plugin_lifecycle.cpp
+tests/slic3rutils/test_plugin_permission_validation.cpp
+tests/slic3rutils/test_plugin_printer_agent.cpp
+tests/slic3rutils/test_plugin_resource_texture.cpp
+tests/slic3rutils/test_post_processor.cpp
+tests/slic3rutils/test_qidi_printer_agent.cpp
+tests/slic3rutils/test_sequential_clearance.cpp
+tests/slic3rutils/test_shortcuts.cpp
+tests/slic3rutils/test_slicing_pipeline_config.cpp
+tests/slic3rutils/test_speed_dial_dismiss.cpp
+tests/slic3rutils/test_speed_dial_position.cpp
+tests/slic3rutils/test_texture_color_palette.cpp
+tests/slic3rutils/test_texture_island_view.cpp
+tests/slic3rutils/test_timelapse_codecs.cpp
+tests/test_utils.hpp
+version.inc
+wasm/PATCHES.md

@@ -67,6 +67,20 @@ describe('Orca WASM Engine evaluateRules Test Suite', () => {
     }
   });
 
+  test('smoothing emits a canonical disabled arc fix for both active arc modes', async () => {
+    for (const mode of ['enabled', 'sparse_infill']) {
+      await core.call('setOptions', { options: { enable_arc_fitting: mode, max_volumetric_extrusion_rate_slope: '1' } });
+      const rules = await core.call('evaluateRules', { kind: 'print' });
+      const fix = rules.fixes.find(fix => fix.key === 'enable_arc_fitting');
+      assert.equal(fix?.value, 'disabled');
+      assert.deepEqual((await core.call('setOptions', { options: { [fix.key]: fix.value } })).errors, []);
+      assert.equal((await core.call('getConfig', {})).enable_arc_fitting, 'disabled');
+    }
+    await core.call('setOptions', { options: { enable_arc_fitting: 'enabled', max_volumetric_extrusion_rate_slope: '0' } });
+    assert.ok(!(await core.call('evaluateRules', { kind: 'print' })).fixes.some(fix => fix.key === 'enable_arc_fitting'));
+    await core.call('resetOptions', {});
+  });
+
   test('(a) Support rule: ConfigManipulation.cpp:1024-1026 small_support_perimeter options toggled by enable_support', async () => {
     // Both ways: enable_support off (0) -> disabled; enable_support on (1) -> enabled
     await core.call('setOptions', {

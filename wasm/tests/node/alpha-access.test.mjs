@@ -487,6 +487,33 @@ test('disabled server needs no alpha bundle/configuration and preserves static/o
   assert.equal((await f.call('/')).headers['cross-origin-embedder-policy'], 'require-corp');
 });
 
+test('engine pair is version bound and revalidates only after alpha authorization', async t => {
+  const f = await production(t), admin = await login(f);
+  const token = (await f.call('/_alpha/admin/open-slicer', { method: 'POST', body: {}, token: admin })).json().token;
+  fs.mkdirSync(path.join(f.root, 'engine'));
+  fs.writeFileSync(path.join(f.root, 'engine/orca_engine.mjs'), 'export default 1');
+  fs.writeFileSync(path.join(f.root, 'engine/orca_engine.wasm'), 'synthetic-engine');
+  const module = await f.call('/engine/orca_engine.mjs', { token, method: 'HEAD' });
+  const version = module.headers['x-orca-engine-version'];
+  assert.match(version || '', /^[a-f0-9]{64}$/);
+  const route = `/engine/orca_engine.wasm?v=${version}`;
+  const cold = await f.call(route, { token });
+  assert.equal(cold.headers['cache-control'], 'private, no-cache');
+  assert.equal(cold.headers['x-orca-decoded-length'], '16');
+  const headers = { 'if-none-match': cold.headers.etag };
+  assert.equal((await f.call(route, { token, headers })).status, 304);
+  assert.equal((await f.call(route, { headers })).status, 401);
+  assert.equal((await f.call('/index.html', { token })).headers['cache-control'], 'no-store');
+  assert.equal((await f.call('/_alpha/session', { token })).headers['cache-control'], 'no-store');
+  // A loader-only release also invalidates the WASM cache key.
+  fs.writeFileSync(path.join(f.root, 'engine/orca_engine.mjs'), 'export default 222');
+  const next = await f.call('/engine/orca_engine.mjs', { token, method: 'HEAD' });
+  assert.notEqual(next.headers['x-orca-engine-version'], version);
+  assert.equal((await f.call(route, { token })).status, 409);
+  await f.call('/_alpha/logout', { method: 'POST', body: {}, token });
+  assert.equal((await f.call('/engine/orca_engine.mjs', { token, method: 'HEAD' })).status, 401);
+});
+
 test('Vite middleware runs before app/assets/providers and blocks upgrade dispatch before later listeners', async t => {
   const f = files(); t.after(f.clean);
   const loaded = await loadConfigFromFile({ command: 'serve', mode: 'development' },

@@ -12,6 +12,8 @@
 #include <vector>
 #include <cinttypes>
 #include <cstddef>
+#include <unordered_map>
+#include <boost/container/small_vector.hpp>
 
 #include "SparsePointGrid.hpp"
 #include "PolygonsPointIndex.hpp"
@@ -63,7 +65,31 @@ public:
         if (lines.empty())
             return;
 
-        SparsePointGrid<PathsPointIndex<Paths>, PathsPointIndexLocator<Paths>> grid(max_stitch_distance, lines.size() * 2);
+        // Match the original native Orca oracle: equal-cell endpoints are visited
+        // newest insertion first. Keep SquareGrid's neighbor-cell order intact.
+        struct StitchGrid : SquareGrid {
+            using Index = PathsPointIndex<Paths>;
+            std::unordered_map<GridPoint, boost::container::small_vector<Index, 2>, PointHash> cells;
+
+            StitchGrid(coord_t size, size_t reserve) : SquareGrid(size) { cells.reserve(reserve); }
+
+            void insert(const Index &index) { cells[toGridPoint(index.p())].push_back(index); }
+
+            bool processNearby(const Point &point, coord_t radius, const std::function<bool(const Index &)> &visit) const
+            {
+                return SquareGrid::processNearby(point, radius, [&](const GridPoint &cell) {
+                    const auto found = cells.find(cell);
+                    if (found != cells.end()) {
+                        for (auto it = found->second.rbegin(); it != found->second.rend(); ++it) {
+                            if (!visit(*it))
+                                return false;
+                        }
+                    }
+                    return true;
+                });
+            }
+        };
+        StitchGrid grid(max_stitch_distance, lines.size() * 2);
 
         // populate grid
         for (size_t line_idx = 0; line_idx < lines.size(); line_idx++)

@@ -85,6 +85,15 @@ set(lisbslic3r_sources
     BoundingBox.hpp
     BridgeDetector.cpp
     BridgeDetector.hpp
+    BeltBrim.cpp
+    BeltBrim.hpp
+    BeltGCode.cpp
+    BeltGCode.hpp
+    BeltPurge.cpp
+    BeltSliceStrategy.cpp
+    BeltSliceStrategy.hpp
+    BeltTransform.cpp
+    BeltTransform.hpp
     Brim.cpp
     BrimEarsPoint.hpp
     Brim.hpp
@@ -103,6 +112,8 @@ set(lisbslic3r_sources
     CommonDefs.hpp
     Config.cpp
     Config.hpp
+    ConnectedBodies.cpp
+    ConnectedBodies.hpp
     ContourZ.cpp
     CustomGCode.cpp
     CustomGCode.hpp
@@ -116,6 +127,8 @@ set(lisbslic3r_sources
     Emboss.hpp
     EmbossShape.hpp
     enum_bitmask.hpp
+    ExclusionVolumeGeometry.cpp
+    ExclusionVolumeGeometry.hpp
     Execution/Execution.hpp
     Execution/ExecutionSeq.hpp
     Execution/ExecutionTBB.hpp
@@ -171,6 +184,8 @@ set(lisbslic3r_sources
     Fill/FillPlanePath.hpp
     Fill/FillRectilinear.cpp
     Fill/FillRectilinear.hpp
+    Fill/AdaptiveInfillField.cpp
+    Fill/AdaptiveInfillField.hpp
     Fill/FillTpmsD.cpp
     Fill/FillTpmsD.hpp
     Fill/FillTpmsFK.cpp
@@ -204,6 +219,7 @@ set(lisbslic3r_sources
     Format/DRC.hpp
     Format/bbs_3mf.cpp
     Format/bbs_3mf.hpp
+    Format/ProjectStrategy.hpp
     format.hpp
     Format/OBJ.cpp
     Format/OBJ.hpp
@@ -230,10 +246,22 @@ set(lisbslic3r_sources
     GCode/AdaptivePAProcessor.hpp
     GCode/AvoidCrossingPerimeters.cpp
     GCode/AvoidCrossingPerimeters.hpp
+    GCode/BeltBackTransform.cpp
+    GCode/BeltBackTransform.hpp
+    GCode/MachineFrameTransform.cpp
+    GCode/MachineFrameTransform.hpp
+    GCode/BeltKinematics.cpp
+    GCode/BeltKinematics.hpp
+    GCode/MachineKinematics.cpp
+    GCode/MachineKinematics.hpp
     GCode/ConflictChecker.cpp
     GCode/ConflictChecker.hpp
     GCode/CoolingBuffer.cpp
     GCode/CoolingBuffer.hpp
+    GCode/ExclusionVolumePathCheck.cpp
+    GCode/ExclusionVolumePathCheck.hpp
+    GCode/ExclusionVolumeTravelAvoidance.cpp
+    GCode/ExclusionVolumeTravelAvoidance.hpp
     GCode/TimelapsePosPicker.cpp
     GCode/TimelapsePosPicker.hpp
     GCode.cpp
@@ -242,6 +270,8 @@ set(lisbslic3r_sources
     GCode/FanMover.hpp
     GCode/GCodeProcessor.cpp
     GCode/GCodeProcessor.hpp
+    GCode/GCodeStatistics.cpp
+    GCode/GCodeStatistics.hpp
     GCode/ElegooGCodeProcessorHelper.cpp
     GCode.hpp
     GCode/PchipInterpolatorHelper.cpp
@@ -256,11 +286,11 @@ set(lisbslic3r_sources
     GCode/RetractWhenCrossingPerimeters.hpp
     GCode/SeamPlacer.cpp
     GCode/SeamPlacer.hpp
+    GCode/SeamContour.cpp
+    GCode/SeamContour.hpp
     GCode/PreciseSeam.cpp
     GCode/PreciseSeam.hpp
     GCode/PreciseSeamInternal.hpp
-    #GCodeSender.cpp
-    #GCodeSender.hpp
     GCode/SmallAreaInfillFlowCompensator.cpp
     GCode/SmallAreaInfillFlowCompensator.hpp
     GCode/SpiralVase.cpp
@@ -304,6 +334,12 @@ set(lisbslic3r_sources
     Geometry/VoronoiUtils.cpp
     Geometry/VoronoiUtils.hpp
     Geometry/VoronoiVisualUtils.hpp
+    IMEXArrange.cpp
+    IMEXArrange.hpp
+    IMEXHelpers.cpp
+    IMEXHelpers.hpp
+    IMEXZones.cpp
+    IMEXZones.hpp
     InstanceLock.cpp
     InstanceLock.hpp
     Int128.hpp
@@ -378,6 +414,7 @@ set(lisbslic3r_sources
     Polyline.hpp
     PresetBundle.cpp
     PresetBundle.hpp
+    PrinterBedAssets.hpp
     PresetCacheFormat.cpp
     PresetCacheFormat.hpp
     Preset.cpp
@@ -405,8 +442,6 @@ set(lisbslic3r_sources
     QuadricEdgeCollapse.hpp
     Random.hpp
     Semver.cpp
-    Shape/TextShape.cpp
-    Shape/TextShape.hpp
     ShortEdgeCollapse.cpp
     ShortEdgeCollapse.hpp
     ShortestPath.cpp
@@ -447,7 +482,6 @@ set(lisbslic3r_sources
     SLA/SupportTreeBuildsteps.hpp
     SLA/SupportTree.cpp
     SLA/SupportTree.hpp
-    #SLA/SupportTreeIGL.cpp
     SLA/SupportTreeMesher.cpp
     SLA/SupportTreeMesher.hpp
     SlicesToTriangleMesh.cpp
@@ -456,6 +490,8 @@ set(lisbslic3r_sources
     SlicingAdaptive.hpp
     Slicing.cpp
     Slicing.hpp
+    Support/BeltFloorContext.cpp
+    Support/BeltFloorContext.hpp
     Support/SupportCommon.cpp
     Support/SupportCommon.hpp
     Support/SupportLayer.hpp
@@ -594,10 +630,10 @@ set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON CACHE BOOL "" FORCE)
 
 cmake_policy(PUSH)
 cmake_policy(SET CMP0011 NEW)
-# CGAL's config resets policies (cmake_minimum_required ...3.23), so a plain SET
+# CGAL's config resets policies (cmake_minimum_required ...3.31), so a plain SET
 # can't reach it; the default opts its Boost lookup into BoostConfig (CMP0167).
 set(CMAKE_POLICY_DEFAULT_CMP0167 NEW)
-find_package(CGAL REQUIRED)
+find_package(CGAL 6.2 REQUIRED)
 if (SLIC3R_WITH_OPENCV)
 find_package(OpenCV REQUIRED core)
 endif ()
@@ -610,7 +646,8 @@ cmake_policy(POP)
 add_library(libslic3r_cgal STATIC
     CutSurface.hpp CutSurface.cpp
     IntersectionPoints.hpp IntersectionPoints.cpp
-    MeshBoolean.hpp MeshBoolean.cpp
+    MeshBoolean.hpp MeshBoolean.cpp MeshBooleanIGL.cpp
+    MeshRepair.hpp MeshRepair.cpp
     TryCatchSignal.hpp TryCatchSignal.cpp
     Triangulation.hpp Triangulation.cpp
 )
@@ -638,7 +675,9 @@ if (IS_CLANG_CL)
     target_compile_options(libslic3r_cgal PRIVATE -Wno-overriding-option)
 endif ()
 
-target_link_libraries(libslic3r_cgal PRIVATE ${_cgal_tgt} admesh libigl mcut boost_libs)
+# Lets CGAL algorithms given CGAL::Parallel_if_available_tag run on TBB.
+target_compile_definitions(libslic3r_cgal PRIVATE CGAL_LINKED_WITH_TBB)
+target_link_libraries(libslic3r_cgal PRIVATE ${_cgal_tgt} admesh libigl mcut boost_libs TBB::tbb)
 
 if (MSVC AND "${CMAKE_SIZEOF_VOID_P}" STREQUAL "4") # 32 bit MSVC workaround
     target_compile_definitions(libslic3r_cgal PRIVATE CGAL_DO_NOT_USE_MPZF)
@@ -689,6 +728,7 @@ if (ORCA_WASM_SIZE_TIERS AND EMSCRIPTEN)
             MaterialType.cpp
             Measure.cpp
             MeshBoolean.cpp
+            MeshBooleanIGL.cpp
             Orient.cpp
             PresetBundle.cpp
             PresetCacheFormat.cpp
@@ -867,6 +907,14 @@ if (ORCA_WASM_SIZE_TIERS AND EMSCRIPTEN)
     endforeach ()
 endif ()
 
+# Keep the heavy CGAL unit buildable with an explicit, reproducible memory limit workaround.
+set(ORCA_WASM_MESH_BOOLEAN_OPTIMIZATION "" CACHE STRING
+    "Override MeshBoolean.cpp optimization for memory-constrained WASM builds (e.g. -O1)")
+if (EMSCRIPTEN AND ORCA_WASM_MESH_BOOLEAN_OPTIMIZATION)
+    set_property(SOURCE MeshBoolean.cpp APPEND PROPERTY COMPILE_OPTIONS
+        "${ORCA_WASM_MESH_BOOLEAN_OPTIMIZATION}")
+endif ()
+
 # The wasm engine filters Boost.Log at >= warning; trace/debug/info statements are dead code there.
 if (ORCA_WASM_NOLOG AND EMSCRIPTEN)
     target_compile_options(libslic3r PRIVATE
@@ -898,6 +946,9 @@ if (NOT SLIC3R_WITH_OPENVDB)
 endif ()
 target_compile_definitions(libslic3r PUBLIC ${_slic3r_no_defs})
 target_compile_definitions(libslic3r_cgal PRIVATE ${_slic3r_no_defs})
+# CGAL changes Kd_tree's member layout when TBB is enabled. Match libslic3r_cgal
+# in every consumer so inline constructors/destructors cannot mix the two layouts.
+target_compile_definitions(libslic3r PUBLIC CGAL_LINKED_WITH_TBB)
 if (USE_SLIC3R_CONSOLE_LOG)
     target_compile_definitions(libslic3r PRIVATE $<$<CONFIG:RelWithDebInfo>:SLIC3R_CONSOLE_LOG>)
 endif()
@@ -1042,20 +1093,6 @@ target_link_libraries(libslic3r
         ZLIB::ZLIB
         ${_openssl_libs}
     )
-
-if(SLIC3R_WITH_FREETYPE AND NOT WIN32)
-    # OCCT's static targets name FreeType as a bare "freetype", which the macOS linker cannot
-    # find; this target maps that name to FREETYPE_LIBRARIES.
-    if (NOT TARGET freetype)
-        add_library(freetype INTERFACE IMPORTED GLOBAL)
-        target_link_libraries(freetype INTERFACE ${FREETYPE_LIBRARIES})
-    endif ()
-    # Link freetype for OCCT dependency (CAD operations need font rendering)
-    target_link_libraries(libslic3r PRIVATE ${FREETYPE_LIBRARIES})
-    if (NOT APPLE AND NOT EMSCRIPTEN)
-        target_link_libraries(libslic3r PRIVATE fontconfig)
-    endif()
-endif()
 
 if (APPLE AND NOT EMSCRIPTEN)
     find_library(FOUNDATION Foundation REQUIRED)

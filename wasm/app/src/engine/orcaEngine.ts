@@ -43,7 +43,7 @@ let initPromise: Promise<OrcaEngine> | null = null;
 let initController: AbortController | null = null;
 let generation = 0;
 let suspended = false;
-export type EngineLoadProgress = { phase: 'downloading' | 'initializing'; loaded?: number; total?: number };
+export type EngineLoadProgress = { phase: 'checking' | 'cached' | 'downloading' | 'initializing'; loaded?: number; total?: number };
 let progressListener: ((progress: EngineLoadProgress) => void) | undefined;
 export function onEngineLoadProgress(listener?: (progress: EngineLoadProgress) => void): void {
   progressListener = listener;
@@ -58,6 +58,15 @@ export async function getEngine(): Promise<OrcaEngine> {
   const current = generation;
   const controller = new AbortController();
   initController = controller;
+  // User Timing separates cache access/transfer from worker/WASM runtime startup.
+  // A cached binary still needs compilation, memory and native initialization.
+  const mark = (stage: string) => {
+    const name = `orca-engine:${stage}`;
+    performance.clearMarks(name);
+    performance.mark(name);
+  };
+  mark('start');
+  let lastPhase = '';
   initPromise = (async () => {
     try {
       const threads = resolveSlicingThreads(usePrefsStore.getState().general.slicingThreads);
@@ -70,10 +79,15 @@ export async function getEngine(): Promise<OrcaEngine> {
         profilesUrl: '/profiles/',
         threads,
         signal: controller.signal,
-        onProgress: progress => { if (current === generation) progressListener?.(progress); }
+        onProgress: progress => {
+          if (current !== generation) return;
+          if (progress.phase !== lastPhase) { mark(progress.phase); lastPhase = progress.phase; }
+          progressListener?.(progress);
+        }
       });
       if (current !== generation) { engine.dispose(); throw new Error('Engine startup canceled'); }
       engineInstance = engine;
+      mark('runtime-ready');
       if (typeof window !== 'undefined') {
         (window as any).__orcaEngine = engine;
       }
@@ -124,9 +138,9 @@ export async function selectPresets(selection: {
   printer: string;
   process: string;
   filaments: string[];
-}): Promise<void> {
+}): Promise<{ printer: string; process: string; filaments: string[] }> {
   const engine = await getEngine();
-  await engine.selectPresets(selection);
+  return await engine.selectPresets(selection);
 }
 
 export async function getConfig(): Promise<Record<string, string>> {

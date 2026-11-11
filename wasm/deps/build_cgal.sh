@@ -8,8 +8,9 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$REPO_ROOT/wasm/scripts/env.sh"
 
 DEP_NAME="cgal"
-VERSION="5.6.3"
-ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v5.6.3/CGAL-5.6.3.zip"
+VERSION="6.2.1"
+ARCHIVE_URL="https://github.com/CGAL/cgal/releases/download/v${VERSION}/CGAL-${VERSION}.zip"
+ARCHIVE_SHA256="eebd737d9b7f0199647ba5c1f9f6c7a3d0651aacef9c2fd4dedc52da6c25edbe"
 SRC_ARCHIVE="$REPO_ROOT/wasm/build/src/CGAL-${VERSION}.zip"
 SRC_DIR="$REPO_ROOT/wasm/build/src/CGAL-${VERSION}"
 _PREFIX_BASE="$(basename "$WASM_PREFIX")"
@@ -25,6 +26,8 @@ if [ ! -f "$SRC_ARCHIVE" ]; then
     echo "Downloading $DEP_NAME $VERSION..."
     curl -fsSL "$ARCHIVE_URL" -o "$SRC_ARCHIVE"
 fi
+
+echo "$ARCHIVE_SHA256  $SRC_ARCHIVE" | sha256sum --check
 
 if [ ! -d "$SRC_DIR" ]; then
     echo "Extracting $DEP_NAME $VERSION..."

@@ -1,0 +1,10 @@
+#view-cube { position: absolute; top: 76px; right: 52px; width: 80px; height: 80px; perspective: 220px; z-index: 18; touch-action: none; user-select: none; }
+.view-cube-faces { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; }
+.view-cube-face { position: absolute; left: -30px; top: -30px; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text-primary); font-size: 0.6875rem; font-weight: 600; cursor: grab; backface-visibility: hidden; }
+.view-cube-face:focus-visible { outline: 2px solid var(--focus-ring); }
+.view-cube-axes { position: absolute; width: 160px; height: 160px; left: -40px; top: -40px; pointer-events: none; overflow: visible; z-index: 1; }
+.view-cube-axes line { stroke: currentColor; stroke-width: 2; }
+.view-cube-axes text { fill: currentColor; font-size: 11px; font-weight: 600; text-anchor: middle; dominant-baseline: middle; paint-order: stroke; stroke: var(--surface-1); stroke-width: 3px; }
+.view-cube-axes [data-axis=X] { color: var(--vp-axis-x); }
+.view-cube-axes [data-axis=Y] { color: var(--vp-axis-y); }
+.view-cube-axes [data-axis=Z] { color: var(--vp-axis-z); }

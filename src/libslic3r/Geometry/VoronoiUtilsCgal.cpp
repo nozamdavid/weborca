@@ -10,7 +10,8 @@
 #include <boost/next_prior.hpp>
 #include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Arr_segment_traits_2.h>
-#include <CGAL/Surface_sweep_2_algorithms.h>
+#include <CGAL/Surface_sweep_2.h>
+#include <CGAL/Surface_sweep_2/Intersection_points_visitor.h>
 #include <boost/variant/get.hpp>
 #include <iterator>
 #include <vector>
@@ -190,7 +191,14 @@ bool VoronoiUtilsCgal::is_voronoi_diagram_planar_intersection(const VD &voronoi_
         edge.color(0);
 
     std::vector<CGAL_E_Point> intersections_pt;
-    CGAL::compute_intersection_points(segments.begin(), segments.end(), std::back_inserter(intersections_pt));
+    // Use the segment sweep directly: CGAL 6's generic algorithms header also
+    // loads rational-curve traits requiring hardware rounding unavailable in WASM.
+    using Traits = CGAL::Arr_segment_traits_2<CGAL::Exact_predicates_exact_constructions_kernel>;
+    using Visitor = CGAL::Surface_sweep_2::Intersection_points_visitor<Traits, std::back_insert_iterator<std::vector<CGAL_E_Point>>>;
+    Traits traits;
+    Visitor visitor(std::back_inserter(intersections_pt), false);
+    CGAL::Surface_sweep_2::Surface_sweep_2<Visitor> sweep(&traits, &visitor);
+    sweep.sweep(segments.begin(), segments.end());
     return intersections_pt.empty();
 }
 

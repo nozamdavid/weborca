@@ -59,18 +59,20 @@ Slic3r::ColorRGBA convert(const Color& c)
     return { c[0] * inv_255, c[1] * inv_255, c[2] * inv_255, 1.0f };
 }
 
-Color convert(const Slic3r::ColorRGBA& c)
+ColorWithAlpha convert(const Slic3r::ColorRGBA& c)
 {
     // Preserve the filament's RGB channels, including black and saturated colors.
     return { static_cast<uint8_t>(std::lround(c.r() * 255.0f)),
              static_cast<uint8_t>(std::lround(c.g() * 255.0f)),
-             static_cast<uint8_t>(std::lround(c.b() * 255.0f)) };
+             static_cast<uint8_t>(std::lround(c.b() * 255.0f)),
+             static_cast<uint8_t>(std::lround(c.a() * 255.0f)) };
 }
 
-Color convert(const std::string& color_str)
+ColorWithAlpha convert(const std::string& color_str)
 {
     Slic3r::ColorRGBA color_rgba;
-    return Slic3r::decode_color(color_str, color_rgba) ? convert(color_rgba) : DUMMY_COLOR;
+    return Slic3r::decode_color(color_str, color_rgba) ? convert(color_rgba) :
+        ColorWithAlpha{ DUMMY_COLOR[0], DUMMY_COLOR[1], DUMMY_COLOR[2], 255 };
 }
 
 Slic3r::ExtrusionRole convert(EGCodeExtrusionRole role)

@@ -143,14 +143,18 @@ describe('Orca WASM Mesh Health & Repair Test Suite', () => {
       objectId: obj.id, volumeId: obj.volumes[0].id,
       facets: [{ facetId: 0, state: 'enforcer' }]
     });
+    const originalPaint = await core.call('getPaintData', { objectId: obj.id, volumeId: obj.volumes[0].id, layer: 'support' });
     const result = await core.call('repairObject', {
       objectId: obj.id, volumeId: obj.volumes[0].id, keepPainting: true
     });
     assert.equal(result.success, true);
+    assert.equal(result.wasRepaired, false, 'native repair leaves a valid closed cube geometrically unchanged');
     const newId = result.volumes[0].volumeId;
     assert.notEqual(newId, obj.volumes[0].id);
     const paint = await core.call('getSupportPainting', { objectId: obj.id, volumeId: newId });
-    assert.ok(paint.enforcers.length > 0, 'paint must survive topology remapping');
+    assert.ok(paint.enforcers.length > 0, 'paint must survive unchanged geometry');
+    const retainedPaint = await core.call('getPaintData', { objectId: obj.id, volumeId: newId, layer: 'support' });
+    assert.equal(retainedPaint.data, originalPaint.data, 'unchanged vertex/index ordering retains exact original annotations');
     const cleared = await core.call('repairObject', { objectId: obj.id, volumeId: newId, keepPainting: false });
     assert.equal(cleared.success, true);
     const after = await core.call('getSupportPainting', {
@@ -199,6 +203,25 @@ describe('Orca WASM Mesh Health & Repair Test Suite', () => {
     const mesh = await core.call('getMesh', { objectId });
     const bytes = Uint8Array.from(core.readFile(mesh.path));
     await assert.rejects(core.call('repairObject', { objectId, splitParts: true }), /splitParts/);
+    assert.deepEqual(await core.call('getObjectTree', {}), before);
+    const after = await core.call('getMesh', { objectId });
+    assert.deepEqual(Uint8Array.from(core.readFile(after.path)), bytes);
+  });
+
+  test('native no-solid repair failure reports an error and leaves model and mesh unchanged', async () => {
+    core.writeFile('/models/flat.obj', new TextEncoder().encode('v 0 0 0\nv 10 0 0\nv 0 10 0\nf 1 2 3\n'));
+    await core.call('loadModel', { path: '/models/flat.obj' });
+    const before = await core.call('getObjectTree', {});
+    const objectId = before.objects.at(-1).id;
+    const mesh = await core.call('getMesh', { objectId });
+    const bytes = Uint8Array.from(core.readFile(mesh.path));
+    const health = await core.call('getMeshHealth', { objectId });
+    const result = await core.call('repairObject', { objectId });
+    assert.equal(result.success, false);
+    assert.equal(result.wasRepaired, false);
+    assert.ok(typeof result.error === 'string' && result.error.length > 0);
+    assert.equal(result.openEdgesBefore, health.openEdges);
+    assert.equal(result.openEdgesAfter, health.openEdges);
     assert.deepEqual(await core.call('getObjectTree', {}), before);
     const after = await core.call('getMesh', { objectId });
     assert.deepEqual(Uint8Array.from(core.readFile(after.path)), bytes);

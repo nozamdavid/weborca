@@ -18,22 +18,31 @@ negative-volume subtraction. It is not printable boolean volume. Per-volume
 bounds are mesh-local; top-level bounds cover the whole object including its
 instances even when a volume is selected.
 
-Repair calls the actual `MeshBoolean::cgal::repair`, with soup cleanup and one
-retry on failure. The upstream implementation continues when self-union fails
-and only checks closure afterward; success must not be advertised as proof
-that all self-intersections have been removed. Its repair counters are mostly
-zero. Empty repair output is rejected.
+Repair calls the upstream `Slic3r::repair_mesh` pipeline, with soup cleanup and
+one retry on failure. The pipeline preserves inward cavity shells and outward
+solid shells, closes holes and removes local defects. It intentionally retains
+heavy shell overlaps that slice correctly; success is not proof that all
+self-intersections have been removed. Empty repair output is rejected.
+
+`facetsRemoved` counts the native `MeshRepairStats::removed_triangles` plus
+degenerate triangles removed by retry pre-cleaning. `degenerateFacetsFixed` uses
+measured before/after degeneracy and actual retry pre-cleaning. `edgesFixed`
+remains zero: the new pipeline counts welded vertices, which are not repaired
+edges. `wasRepaired` includes native `modified` and actual geometry/health changes.
+The web operation remains synchronous, without a progress/cancellation callback;
+native exceptions propagate while the live model stays untouched.
 
 All geometry, hulls, annotation remapping and result construction happen on a
 model copy before replacing the live model on success. Object/instance IDs,
 configurations and transforms persist; repaired volumes get new IDs, returned
 in `volumes`. Engine caches must not retain model pointers across this call.
 
-`keepPainting` defaults to true. Upstream `save_painting` / `restore_painting`
-remap support, seam, color and fuzzy annotations spatially. This is not exact
-facet-index preservation. Texture displacement annotations have no upstream
+`keepPainting` defaults to true. Identical ordered vertex and triangle-index
+arrays retain the original annotations exactly. Otherwise upstream
+`save_painting` / `restore_painting` remap support, seam, color and fuzzy
+annotations spatially. Texture displacement annotations have no upstream
 remapping support: painted targets are rejected with `keepPainting:true`.
-`keepPainting:false` clears every facet annotation after topology replacement.
+`keepPainting:false` clears every facet annotation, including on unchanged geometry.
 `splitParts:true` is explicitly rejected: upstream `ModelVolume::split` can
 remove degenerate volumes elsewhere in the object, outside the selected target.
 

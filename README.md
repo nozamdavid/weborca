@@ -15,18 +15,102 @@ This checkout also includes a browser-based WebAssembly port in [wasm/app](wasm/
 
 The local HTML plate-title prototype automatically enables titles and Active/Inactive badges when the drawable canvas APIs are available. Independent native Chrome 157 WebGL acceptance covers light/dark, rename, fallback and full scene disposal; the old query parameter has no control. The [plate verification report](wasm/reports/html-plate-default-20261109.md) records that migration. Object-name labels now use the same capability-based raster approach, with lazy allocation, bounded ellipsis, legacy fallback and synchronized application renames. The [object-label acceptance report](wasm/reports/html-object-labels-20261109.md) records the current immutable candidate at the [private testing preview](https://server-1.barbel-hops.ts.net:5065/). No performance gain is claimed; other browsers and an actual unsupported engine remain unverified. This is a local prototype, not a shipped deployment.
 
+The [2026-11-07 installed Flatpak / shipped browser sample comparison](docs/benchmarks/sample-parity-20261107.md)
+corrects the earlier worker-only runs, which are excluded from app results.
+Actual Helium app trials cover all three STLs, with separate benchmark-only
+process timings validated against shipped outputs. Both 3MFs import through the
+project workflow and then fail validation. Strict native/web parity remains open.
+
+For engine/desktop parity findings, benchmark methodology and retained technical
+decisions, start with [KNOWLEDGE.md](KNOWLEDGE.md).
+
+As of 2026-11-08, matching original native Orca executable G-code and slicing
+speed takes priority over custom determinism. Earlier unconditional retention
+recommendations are provisional. The [actual desktop GUI tree baseline](docs/benchmarks/desktop-tree-parity-20261108.md)
+matches web ordered saved geometry; the historical CLI gap does not justify extra
+import normalization. The [tree residual controls](docs/benchmarks/tree-residual-cause-20261108.md)
+leave three solid commands and two wall traversal groups unresolved; isolated
+sort/random/endpoint restorations change no tree commands. Acceptance requires
+matched project state and full headed Helium Slice/Export; strict parity remains open.
+The [internal Arachne trace](docs/benchmarks/arachne-internal-cause-20261108.md)
+localizes two raw tree endpoints to first-within-snap stitch selection under differing
+container visitation order. All 34 stage fixtures and full-app output gates were checked;
+the [explicit native visitation candidate](docs/benchmarks/native-stitch-compatibility-20261108.md)
+now matches all 34 fixtures and fixes the three tree solid commands, with bracket
+commands unchanged. Tree executable differences improve 80 to 79 (15 to 12 when
+diagnostically filtering M73). Warm timing medians rise slightly within overlapping
+ranges in that initial copied-source batch. The [production qualification](docs/benchmarks/native-stitch-qualification-20261108.md)
+retains a minimal stitch-local small_vector patch and native/WASM regression target
+for review: 34/34 fixtures per platform pass, and clean full-app tree/bracket commands
+including M73/configuration match the qualified candidate. Two 21-warm-sample batches
+show no consistent perimeter slowdown; a small whole-process cost remains unresolved.
+The [combined native compatibility publication](docs/benchmarks/native-compatibility-publication-20261108.md)
+supersedes this intermediate release status: tree now matches all 1,373,125 original
+GUI executable commands including M73 locally and publicly. Bracket baseline commands
+remain unchanged. Lily improves in 485 changed directed XYZ/E deposition groups,
+with 11 equal-distance groups and none worse; exact Lily parity remains open.
+Six native GUI state differences, original 3MF validation blocks and native-speed
+parity remain open. This fidelity release does not claim a speed improvement;
+a small whole-process cost remains possible.
+
+The [indexed-chain storage check](docs/benchmarks/stitch-grid-cost-20261108.md) preserves
+all fixture/full-output gates but shows no clear speed benefit, so production retains
+small_vector. Stage reanalysis places the largest historical pooled difference in
+infill; the whole-process cost remains unresolved.
+
+Desktop UI polish was published on 2026-11-08: centered tabs, separate desktop
+menus and Calibration dialogs, camera-aligned XYZ cube axes, filament-header
+flushing controls, and one blue active plate. The [acceptance report](docs/v2.5.0-integration/desktop-ui-polish-20261108.md)
+records headed Helium tests, immutable r2 release and guarded rollback. All 1125
+non-UI files and the native compatibility pair are retained. One public warm
+reload transferred no engine WASM; runtime-ready was 400ms and sampled app-ready
+804ms. Cached bytes still require runtime and app/preset setup; no speedup or
+instant startup is claimed.
+
 The accumulated WebOrca app, alpha access and startup work is captured on the private
 [`nozamdavid/weborca` main branch](https://github.com/nozamdavid/weborca/tree/main).
 Verification reports and immutable release directories under `wasm/build` are local,
 ignored evidence; they are not included in the source snapshot. Git publication
 does not change the running CURRENT5070 deployment.
 
+The local [v2.5 integration checkpoint](docs/v2.5.0-integration/README.md) now
+qualifies the existing browser workflows on the frozen candidate
+`wasm/build/v250-browser-integration/candidate-gated`, on branch
+`t3/merge-upstream-v250-foundation`. Evidence includes 98 native cases / 2,053
+assertions, 43 configuration checks, 10 STEP checks and Chromium acceptance.
+CURRENT5070 serves `wasm/build/native-compatibility-publication-20261108/candidate`
+from the integration worktree, WASM SHA256
+`df6c8b6aae6fd8ba1558bcff09c79240de45bd6d3728ddfbfc135096021d7d4a`.
+All nonengine assets and the frozen server are retained. Public exact tree output,
+authorization, exact asset bytes and old-cache upgrade followed by zero-transfer
+warm binary reuse pass. Its guarded rollback restores the Export alignment root.
+The [paint-exit publication](docs/v2.5.0-integration/paint-exit-publication.md)
+is retained beneath the [Export alignment release](docs/v2.5.0-integration/export-alignment-publication.md):
+the Preview Export G-code label is centered, with loaded desktop checks and real
+downloads passing. Its guarded rollback restores the paint-exit candidate. The paint fix
+retains painted filament colors in Prepare; public framebuffer and slicing checks
+pass with shipped native artifacts preserved. Its guarded rollback restores the
+empty-recovery release. The [empty-session recovery fix](docs/v2.5.0-integration/empty-session-recovery.md)
+prevents untouched startup/auth cleanup from creating restore prompts while retaining
+actual unsaved geometry/settings, blocked backup retry and unanswered recovery.
+Public desktop/mobile acceptance passed; its rollback is the exact previous
+startup/cache/early Prepare release. The combined startup production
+build reuses the exact frozen v2.5 native/data inputs. The updated frozen server
+provides authorized engine pair validation and decoded download totals; warm
+startup reuses the binary after a fresh authorization check. Prepare bed/grid and
+camera controls work before native readiness. See the [combined publication report](docs/v2.5.0-integration/startup-publication.md)
+for acceptance, exact files/hashes and rollback to the retained previous v2.5 release.
+Main promotion, same-source native/WASM toolpath parity, native OCCT
+parity, Firefox and hardware acceptance remain open. New belt, IMEX and
+mixing/Hybrid browser workflows are not qualified by this milestone.
+
 CURRENT5070 now keeps navigation and Preferences usable during engine download.
 Native model tools, process edits and Slice wait for completed initialization.
 Printer discovery loads in Add printer/configuration; saved printer startup uses
 its current vendor dependencies. The [startup publication report](wasm/build/tests-background-engine-20261107/report.md)
 records measured ordering, catalog reuse, desktop/mobile native checks and the
-current guarded rollback to the alpha design release.
+historical rollback to the alpha design release; use the combined report above for
+the current rollback.
 
 The alpha access and admin UI now uses WebOrca's dark/teal palette, focused sign-in
 forms and a compact invite workspace with responsive status and usage details.
@@ -34,7 +118,7 @@ The [design report](wasm/build/tests-alpha-design-20261107/report.md) includes b
 captures, 39 passing alpha tests, production desktop/mobile recovery checks and
 its historical guarded rollback.
 
-Alpha access and the sampled bug/engine repairs are published on CURRENT5070; the current immutable release is `wasm/build/ui-background-engine-release-20261107`. Signed-in admins can choose **Open slicer** without creating an invite. The [alpha design publication](wasm/build/tests-alpha-design-20261107/report.md) records the verified change and rollback to the previous gated release. Visit [WebOrca](https://server-1.barbel-hops.ts.net:5070) for the invite-code gate and **Login as admin**. The [alpha publication report](wasm/build/tests-alpha-access-20261106/publication/report.md) records the compatible frozen server, private environment loading, durable state, public HTTPS checks and explicit rollback. The companion `wasm/build/tests-alpha-access-20261106/candidate-static` remains locally verified. The [integrated report](wasm/build/tests-alpha-access-20261106/integrated.md) records 113 selected passes (34 alpha, 65 application regressions, 9 filament/project, 5 native), production builds, full-app durable recovery after revocation/write failure/retry, and file-only import/slice/Preview with zero alpha requests. Admin invite creation, internal email/username labels, usage and revocation are covered; tester and admin authorization are separate. See [configuration and environment loading](wasm/deploy/README.md#optional-alpha-access) and [UI/recovery behavior](wasm/app/DESIGN.md#optional-alpha-access--local-verification-2026-11-06).
+Alpha access and the sampled bug/engine repairs are published on CURRENT5070; the current immutable release is `wasm/build/v250-export-align/candidate`. Signed-in admins can choose **Open slicer** without creating an invite. The [alpha design publication](wasm/build/tests-alpha-design-20261107/report.md) records the verified change and rollback to the previous gated release. Visit [WebOrca](https://server-1.barbel-hops.ts.net:5070) for the invite-code gate and **Login as admin**. The [alpha publication report](wasm/build/tests-alpha-access-20261106/publication/report.md) records the compatible frozen server, private environment loading, durable state, public HTTPS checks and explicit rollback. The companion `wasm/build/tests-alpha-access-20261106/candidate-static` remains locally verified. The [integrated report](wasm/build/tests-alpha-access-20261106/integrated.md) records 113 selected passes (34 alpha, 65 application regressions, 9 filament/project, 5 native), production builds, full-app durable recovery after revocation/write failure/retry, and file-only import/slice/Preview with zero alpha requests. Admin invite creation, internal email/username labels, usage and revocation are covered; tester and admin authorization are separate. See [configuration and environment loading](wasm/deploy/README.md#optional-alpha-access) and [UI/recovery behavior](wasm/app/DESIGN.md#optional-alpha-access--local-verification-2026-11-06).
 
 This is sampled audit/acceptance. The known legacy macOS cube oracle still differs by 804 normalized lines on both pre/post native artifacts, which match each other after normalization. Native parity is limited to the recorded inputs and retained dependency archives; no complete-codebase, all-suites-green or performance claim is established. Public Tailscale HTTPS gate, native bytes, desktop/mobile slice/Preview and revocation checks pass; real provider/OAuth/printer lifecycle and hardware/browser acceptance remain open. The [tracking receipt](wasm/build/tests-alpha-access-20261106/tracking.md) records documentation and Taproot updates.
 
@@ -50,7 +134,7 @@ The [U1 cube print-time diagnosis](wasm/build/tests-print-time-estimate/uploaded
 
 Hosted Prusa Connect, Creality Cloud and the repaired Bambu Cloud route are live on 5070. Prusa defaults to automatic email/password → optional OTP: WebOrca's server forwards credentials to Prusa Account and captures the registered callback without DevTools. Manual callback completion remains available; social/passkey authentication is unsupported. The existing Connect client retains `https://connect.prusa3d.com/login/auth-callback`. See the [setup flow](wasm/app/PRINTERS.md#authentication--setup-flow).
 
-CURRENT5070 serves `wasm/build/ui-alpha-design-release-20261107` with the alpha override, compatible frozen server and durable gate enabled. It retains the settings/routing batch described here; the [alpha design publication](wasm/build/tests-alpha-design-20261107/report.md) binds the current root and rollback. Printer connections use the app server only; legacy local gateway addresses migrate away, and static hosts require a compatible backend. User presets retain parent inheritance when overwritten, including normalized numeric values, with current-name prefill and explicit overwrite. Settings tabs stay in one row and reveal the selected tab; native descriptions/wiki help, mobile controls, modified tables and modal spacing are improved. Device preserves saved readings/time through inactivity and errors; returning to Device/focus waits until the last successful snapshot is at least 15 seconds old before refreshing. Manual Retry remains immediate and healthy monitoring stays connected. See the [publication and preservation report](wasm/build/tests-settings-routing-batch/publication/report.md) and [sealed synthetic acceptance](wasm/build/tests-settings-routing-batch/qa-corrected/report.md). Acceptance is **CHROMIUM_SYNTHETIC_ONLY**, including actual browser focus checks; the remote Snapmaker root cause remains unproven. Historical physical telemetry is separate, and physical Mac/Safari/Firefox/hardware acceptance remains open. Four extruder cards, the desktop divider, collapsible selected-object panel and text Copy are retained; the alpha publication binds the verified native repairs. Restart clears OrcaCloud RAM sign-in; browser presets remain.
+CURRENT5070 serves `wasm/build/v250-export-align/candidate` with the alpha override, compatible frozen server and durable gate enabled. It retains the settings/routing batch described here; the [alpha design publication](wasm/build/tests-alpha-design-20261107/report.md) records the preceding alpha design root and rollback. Printer connections use the app server only; legacy local gateway addresses migrate away, and static hosts require a compatible backend. User presets retain parent inheritance when overwritten, including normalized numeric values, with current-name prefill and explicit overwrite. Settings tabs stay in one row and reveal the selected tab; native descriptions/wiki help, mobile controls, modified tables and modal spacing are improved. Device preserves saved readings/time through inactivity and errors; returning to Device/focus waits until the last successful snapshot is at least 15 seconds old before refreshing. Manual Retry remains immediate and healthy monitoring stays connected. See the [publication and preservation report](wasm/build/tests-settings-routing-batch/publication/report.md) and [sealed synthetic acceptance](wasm/build/tests-settings-routing-batch/qa-corrected/report.md). Acceptance is **CHROMIUM_SYNTHETIC_ONLY**, including actual browser focus checks; the remote Snapmaker root cause remains unproven. Historical physical telemetry is separate, and physical Mac/Safari/Firefox/hardware acceptance remains open. Four extruder cards, the desktop divider, collapsible selected-object panel and text Copy are retained; the alpha publication binds the verified native repairs. Restart clears OrcaCloud RAM sign-in; browser presets remain.
 
 Selected webpage text retains priority for Copy even while a model object is selected; without text selection, object Copy still works. Inputs, textareas and contenteditable fields keep native shortcuts. The [prior Copy publication](wasm/build/tests-text-copy-priority/publication/report.md) and [sealed Copy QA](wasm/build/tests-text-copy-priority/qa/report.md) retain its implementation evidence; [Device publication](wasm/build/tests-device-refresh-resize/publication/report.md) and the current sealed QA retain selected-text Copy and object Copy/Paste/Undo checks.
 
@@ -139,6 +223,10 @@ If you come across any of these in search results, please <b>report them</b> as 
   Regular updates fueled by continuous community contributions.
 - **Wide Printer Compatibility**  
   Supports a broad range of printers: Bambu Lab, Prusa, Creality, Voron, and more.
+- **[Belt Printer Support](https://www.orcaslicer.com/wiki/belt_printing)**  
+  Slice for belt / conveyor (infinite-Z) printers, with belt-aware supports and a tilted-bed preview. Contributed by [Joseph Robertson (@HarrierPigeon)](https://github.com/HarrierPigeon).
+- **[IDEX/IQEX Parallel Printing Support](https://www.orcaslicer.com/wiki/idex_iqex_parallel_printing)**  
+  Print copies or mirror images of a part on every carriage of an IDEX or IQEX printer at once, with the mode chosen per plate and nozzle clearance zones shown on the bed. Contributed by [Clifford (@cgarwood82)](https://github.com/cgarwood82).
 - Additional features can be found in the [change notes](https://github.com/OrcaSlicer/OrcaSlicer/releases/).
 
 # Wiki
@@ -153,23 +241,13 @@ The [wiki](https://www.orcaslicer.com/wiki) aims to provide a detailed explanati
 ## Stable Release
 
 📥 **[Download the Latest Stable Release](https://github.com/OrcaSlicer/OrcaSlicer/releases/latest)**  
-Visit our GitHub Releases page for the latest stable version of OrcaSlicer, recommended for most users.
+Visit our GitHub Releases page for the latest stable version of OrcaSlicer, recommended for most users.  
+Windows and macOS release and nightly builds are code signed.
 
 ## Nightly Builds
 
 🌙 **[Download the Latest Nightly Build](https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/nightly-builds)**  
 Explore the latest developments in OrcaSlicer with our nightly builds. Feedback on these versions is highly appreciated.
-
-### Belt Printer Builds
-
-The [nightly release](https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/nightly-builds) ships **two parallel builds**: the standard build and a belt-printer build. Both are attached to the same release — tell them apart by the filename suffix:
-
-- **Standard** — no suffix (e.g. `OrcaSlicer_Windows_Installer_x64_nightly.exe`)
-- **Belt** — `_belt` suffix (e.g. `OrcaSlicer_Windows_Installer_x64_nightly_belt.exe`)
-
-The `_belt` builds add **experimental support for belt / conveyor (infinite-Z) printers**, where the model is sliced against a tilted belt surface instead of a flat horizontal bed. They include ready-to-use belt printer profiles, the full belt slicing pipeline (mesh rotation and G-code transforms), belt-aware support generation, and a tilted-bed preview.
-
-> ⚠️ Belt printer support is under active development and is **not yet merged into `main`** — it currently ships only in these parallel `_belt` builds, produced from the [`belt-printer`](https://github.com/OrcaSlicer/OrcaSlicer/tree/belt-printer) branch. See tracking PR [#14394](https://github.com/OrcaSlicer/OrcaSlicer/pull/14394) and the original documentation in [#12998](https://github.com/OrcaSlicer/OrcaSlicer/pull/12998).
 
 # How to install
 

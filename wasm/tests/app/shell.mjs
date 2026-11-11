@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Browser test of the desktop-style shell, Chromium then Firefox: top bar and tabs, no layout overflow at common
- * window sizes, collapsible sidebar sections, the Calibration page tiles, and the camera view buttons and keys.
+ * window sizes, collapsible sidebar sections, Calibration menu dialogs, and the camera view buttons and keys.
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -47,9 +47,11 @@ async function runSuite(browserType, name) {
 
     log('toolbar labels and tooltips follow the selected language');
     await page.evaluate(() => window.__prefsStore.getState().setGeneralPref('language', 'es'));
+    await page.getByRole('button', { name: 'Mover', exact: true }).waitFor();
     assert.equal(await page.locator('#tool-move-btn').getAttribute('aria-label'), 'Mover');
     assert.equal(await page.locator('#tool-move-btn').getAttribute('data-tip'), 'Mover (M)');
     await page.evaluate(() => window.__prefsStore.getState().setGeneralPref('language', 'en'));
+    await page.getByRole('button', { name: 'Move', exact: true }).waitFor();
     assert.equal(await page.locator('#tool-move-btn').getAttribute('aria-label'), 'Move');
 
     log('horizontal/vertical toolbar pref defaults vertical');
@@ -69,9 +71,9 @@ async function runSuite(browserType, name) {
     await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('sidebarWidth', 360));
     await page.locator('.sidebar-resizer').press('ArrowLeft');
     assert.equal(Math.round((await page.locator('aside.sidebar').boundingBox()).width), 290);
-    await page.setViewportSize({ width: 700, height: 800 });
+    await page.setViewportSize({ width: 820, height: 800 });
     await page.locator('.sidebar-resizer').press('ArrowLeft');
-    assert.equal(Math.round((await page.locator('aside.sidebar').boundingBox()).width), 200,
+    assert.equal(Math.round((await page.locator('aside.sidebar').boundingBox()).width), 236,
       'narrow sidebar must remain resizable below the 30% cap');
     await page.setViewportSize({ width: 1280, height: 800 });
 
@@ -118,7 +120,7 @@ async function runSuite(browserType, name) {
     await page.evaluate(() => window.__prefsStore.getState().setDisplayPref('sidebarWidth', 220));
 
     log('the tabs switch screens');
-    for (const tab of ['preview', 'device', 'calibration', 'prepare']) {
+    for (const tab of ['preview', 'device', 'prepare']) {
       await page.click(`#tab-${tab}`);
       assert.ok(await page.locator(`#tab-${tab}`).evaluate((el) => el.classList.contains('active')), `${tab} tab is active`);
     }
@@ -136,9 +138,11 @@ async function runSuite(browserType, name) {
     }, Array.from(CUBE));
     await page.waitForFunction(() => window.__plateStore.getState().objects.length === 1);
 
-    log('the Calibration page tiles open their dialogs');
-    await page.click('#tab-calibration');
-    await page.click('#calibration-btn');
+    log('the Calibration menu opens its dialogs');
+    const more = page.locator('.topbar-menus > summary');
+    if (await more.isVisible()) await more.click();
+    await page.getByRole('button', { name: 'Calibration', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Flow rate...', exact: true }).click();
     await page.waitForSelector('#calibration-dialog');
     await page.click('[aria-label="Close Calibration dialog"]');
     await page.waitForSelector('#calibration-dialog', { state: 'detached' });
