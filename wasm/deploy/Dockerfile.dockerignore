@@ -67,8 +67,8 @@ wasm/app/dist/
 **/*.o
 **/*.log
 **/.DS_Store
-**/build_*/
-**/install_*/
+**/build_*/**
+**/install_*/**
 deps/build/
 wasm/preview/demo/orca_preview.js
 wasm/preview/demo/orca_preview.wasm

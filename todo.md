@@ -2,7 +2,7 @@
 
 Source: [consolidated audit](wasm/reports/codebase-review-20261111.md). These items await separate implementation and qualification.
 
-- [ ] Skip unnecessary containment projections for already-disabled instances; investigate conservative bounds and per-slice reuse. Verify equivalent eligibility and cancellation behavior; the cancellation fix remains immediate work.
+- [ ] Skip unnecessary containment projections for already-disabled instances; investigate conservative bounds and per-slice reuse. Verify equivalent eligibility and cancellation behavior; containment cancellation is already implemented.
 - [ ] Investigate retained Print and incremental reslicing. Establish invalidation rules, output equivalence and memory checks.
 - [ ] Show each plate as current, needing reslicing or having no output; verify transitions after edits and slicing.
 - [ ] Explain which out-of-bed objects were skipped, with identifiable objects and a corrective action.
@@ -15,4 +15,4 @@ Source: [consolidated audit](wasm/reports/codebase-review-20261111.md). These it
 - [ ] Qualify native/WASM output parity and slicing speed with matched inputs and repeatable measurements.
 - [ ] Qualify physical-printer and provider lifecycle behavior with actual devices/accounts.
 - [ ] Complete Firefox, Safari and physical-device coverage; record supported behavior and remaining limitations.
-- [ ] Qualify hosted CI, Docker delivery and cold dependency reproducibility; local runtime qualification does not establish these results.
+- [ ] Qualify hosted CI and cold dependency reproducibility; Docker delivery is verified in the [publication and rollback receipt](wasm/reports/docker-arcane-publication-20261111.md).

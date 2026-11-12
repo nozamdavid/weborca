@@ -1,3 +1,5 @@
+Arcane release (2026-11-11): [weborca.noz.am](https://weborca.noz.am/) on port8932 now runs accepted review source `dc7c38f183`, pinned to `dmarcosm/orcaweb@sha256:928ee0646931aee1251b3271a80686cc72bc5356f7dfb3de38747fffafe50bb7`. Docker Hub immutable tag `review-dc7c38f183-20261111` and `latest` match. Gate remains disabled. [Publication and rollback evidence](wasm/reports/docker-arcane-publication-20261111.md) records Docker packaging, browser worker/native slice/STEP smoke and exact public runtime hashes. Public5070 retains its existing gated release; private5065 retains its accepted preview. Physical printer/provider acceptance remains unverified.
+
 <div align="center">
 
 <picture>
