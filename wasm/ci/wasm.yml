@@ -117,9 +117,9 @@ jobs:
             wasm/deps/build_libnoise.sh \
             wasm/deps/build_gmp.sh \
             wasm/deps/build_mpfr.sh \
+            wasm/deps/build_boost.sh \
             wasm/deps/build_cgal.sh \
-            wasm/deps/build_tbb.sh \
-            wasm/deps/build_boost.sh; do
+            wasm/deps/build_tbb.sh; do
             wasm/scripts/memcap.sh bash "$dep"
           done
 
@@ -130,6 +130,8 @@ jobs:
       - name: Build WebAssembly Preview Engine
         run: |
           source wasm/scripts/env.sh
+          export ORCA_BUILD_SOURCE="$(node wasm/scripts/runtime-manifest.mjs fingerprint)"
+          node wasm/scripts/runtime-manifest.mjs identity preview
           emcmake cmake -S . -B wasm/build/orca-wasm64-preview -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DORCA_WASM_PREVIEW=ON \
@@ -148,11 +150,34 @@ jobs:
             -DCMAKE_C_FLAGS="$WASM_CFLAGS" \
             -DCMAKE_CXX_FLAGS="$WASM_CFLAGS"
           wasm/scripts/memcap.sh cmake --build wasm/build/orca-wasm64-preview --target orca_preview -j "${WASM_JOBS:-6}"
+          node wasm/scripts/runtime-manifest.mjs create preview wasm/build/orca-wasm64-preview/wasm/preview
 
       - name: Generate Settings Layout
         run: |
           mkdir -p wasm/build/settings
           wasm/scripts/memcap.sh node wasm/settings/extract_tab_layout.mjs . wasm/build/settings/layout.json
+
+      - name: Build STEP runtime and stamp preview provenance
+        run: |
+          source wasm/scripts/env.sh
+          WASM_PREFIX="$PWD/wasm/build/prefix-occt-step" wasm/scripts/memcap.sh bash wasm/deps/build_occt.sh
+          wasm/scripts/memcap.sh bash wasm/scripts/build_step_module.sh
+          wasm/scripts/memcap.sh bash wasm/scripts/build_step_engine.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: runtime-identities
+          path: wasm/build/runtime-identities/
+          if-no-files-found: error
+
+      - name: Upload STEP runtimes
+        uses: actions/upload-artifact@v4
+        with:
+          name: orca-step-runtimes
+          path: |
+            wasm/build/step-module/
+            wasm/build/orca-step-runtime/wasm/engine/
+          if-no-files-found: error
 
       - name: Pack vendor profiles
         run: |
@@ -171,6 +196,7 @@ jobs:
           path: |
             wasm/build/orca-wasm64/wasm/engine/orca_engine.mjs
             wasm/build/orca-wasm64/wasm/engine/orca_engine.wasm
+            wasm/build/orca-wasm64/wasm/engine/runtime-manifest.json
             wasm/build/orca-wasm64/wasm/spike/orca_slice_driver.js
             wasm/build/orca-wasm64/wasm/spike/orca_slice_driver.wasm
           retention-days: 7
@@ -183,6 +209,7 @@ jobs:
           path: |
             wasm/build/orca-wasm64-preview/wasm/preview/orca_preview.js
             wasm/build/orca-wasm64-preview/wasm/preview/orca_preview.wasm
+            wasm/build/orca-wasm64-preview/wasm/preview/runtime-manifest.json
           retention-days: 7
           if-no-files-found: error
 
@@ -220,6 +247,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Download STEP runtimes
+        uses: actions/download-artifact@v4
+        with:
+          name: orca-step-runtimes
+          path: wasm/build
+
       - name: Provision scoped memory boundary (systemd-run)
         run: |
           # Provision systemd user manager session for runner user to enforce 10GB scope boundary
@@ -255,6 +288,11 @@ jobs:
           name: orca-wasm-profiles
           path: wasm/build
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-identities
+          path: wasm/build/runtime-identities
+
       - name: Verify downloaded artifacts
         run: |
           for f in \
@@ -270,13 +308,22 @@ jobs:
             fi
           done
 
+      - name: Verify runtime provenance
+        run: |
+          node wasm/scripts/runtime-manifest.mjs verify engine wasm/build/orca-wasm64/wasm/engine
+          node wasm/scripts/runtime-manifest.mjs verify step wasm/build/step-module
+
       - name: Setup test models
         run: |
           bash wasm/tests/data/fetch_models.sh
 
       - name: Run Node test suite
         run: |
-          wasm/scripts/memcap.sh node --test --test-concurrency=1 wasm/tests/node/*.test.mjs
+          wasm/scripts/memcap.sh npm --prefix wasm/app ci
+          wasm/scripts/memcap.sh npm --prefix wasm/tests ci
+          ORCA_ENGINE_MODULE="$PWD/wasm/build/orca-wasm64/wasm/engine/orca_engine.mjs" \
+          ORCA_ENGINE_WASM="$PWD/wasm/build/orca-wasm64/wasm/engine/orca_engine.wasm" \
+          wasm/scripts/memcap.sh node wasm/ci/run-node-tests.mjs
 
       - name: Run engine memory recovery suite
         run: |
@@ -387,6 +434,11 @@ jobs:
           name: orca-wasm-app-dist
           path: wasm/app/dist
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: runtime-identities
+          path: wasm/build/runtime-identities
+
       - name: Verify downloaded artifacts
         run: |
           for f in \
@@ -405,6 +457,9 @@ jobs:
             fi
           done
 
+      - name: Verify runtime provenance
+        run: node wasm/scripts/runtime-manifest.mjs verify engine wasm/build/orca-wasm64/wasm/engine
+
       - name: Setup test models
         run: |
           bash wasm/tests/data/fetch_models.sh
@@ -414,6 +469,16 @@ jobs:
           wasm/scripts/memcap.sh npm --prefix wasm/tests ci
           wasm/scripts/memcap.sh npm --prefix wasm/app ci
           wasm/scripts/memcap.sh npx --prefix wasm/tests playwright install --with-deps chromium firefox
+
+      - name: Run browser feature harnesses
+        env:
+          PRESET_SOURCE_ROOT: ${{ github.workspace }}
+          PREVIEW_MODULE_DIR: wasm/build/orca-wasm64-preview/wasm/preview
+        run: |
+          node wasm/scripts/runtime-manifest.mjs verify preview wasm/build/orca-wasm64-preview/wasm/preview
+          cp wasm/build/orca-wasm64-preview/wasm/preview/orca_preview.{js,wasm} wasm/preview/demo/
+          wasm/scripts/memcap.sh node wasm/ci/run-node-tests.mjs --browser
+          wasm/scripts/memcap.sh node wasm/preview/test_worker_packet.mjs
 
       - name: Run browser test suite
         run: |

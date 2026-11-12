@@ -23,7 +23,7 @@ async function fixture(env = {}, bundle = true, bambu = false, snapmaker = false
   writeFileSync(path.join(root, 'index.html'), '<title>static spa</title>');
   if (bundle && process.env.APP_TEST_PRINTER_CLOUD_BUNDLE) {
     copyFileSync(process.env.APP_TEST_PRINTER_CLOUD_BUNDLE, path.join(root, 'printer-cloud-bridge.mjs'));
-  } else if (bundle) buildSync({ entryPoints: [path.join(app, 'gateway/hostedPrinterCloud.ts')], outfile: path.join(root, 'printer-cloud-bridge.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node20' });
+  } else if (bundle) buildSync({ entryPoints: [path.join(app, 'gateway/hostedPrinterCloud.ts')], outfile: path.join(root, 'printer-cloud-bridge.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node20', banner: { js: "import {createRequire} from 'node:module'; const require = createRequire(import.meta.url);" } });
   for (const file of ['printer-cloud-bridge.mjs.br', 'printer-cloud-bridge.mjs.gz', 'orca-cloud-bridge.mjs', 'orca-cloud-bridge.mjs.br', 'orca-cloud-bridge.mjs.gz', 'orca-gateway.mjs', 'orca-gateway.mjs.br', 'orca-gateway.mjs.gz']) writeFileSync(path.join(root, file), 'private backend fixture');
   let upstreamCalls = 0;
   const upstream = http.createServer(async (req, res) => {
@@ -100,7 +100,7 @@ async function fixture(env = {}, bundle = true, bambu = false, snapmaker = false
 test('real hosted server routes both cloud login POSTs with Orca Cloud independently disabled', async () => {
   const f = await fixture({ ORCA_PRINTER_CLOUD: 'prusa-connect,creality-cloud' });
   try {
-    assert.equal(f.listening, true);
+    assert.equal(f.listening, true, f.stderr());
     const response = await f.call(start, { method: 'POST' });
     assert.equal(response.status, 200, 'Prusa auth/start must bypass the static 405 guard');
     const result = response.json();

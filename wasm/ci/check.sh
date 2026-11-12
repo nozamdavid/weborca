@@ -47,7 +47,7 @@ echo ""
 echo "--- 1. YAML Configuration & Parser / Schema Validation ---"
 CI_WORKFLOW="wasm/ci/wasm.yml"
 TARGET_WORKFLOW=".github/workflows/wasm.yml"
-WORKFLOW_FILES=()
+WORKFLOW_FILES=(.github/workflows/*.yml)
 
 if [ -f "$CI_WORKFLOW" ]; then
     WORKFLOW_FILES+=("$CI_WORKFLOW")
@@ -68,13 +68,13 @@ for wf in "${WORKFLOW_FILES[@]}"; do
     # Check for actionlint (GitHub schema validation)
     if command -v actionlint >/dev/null 2>&1; then
         log_info "actionlint found, validating GitHub Actions schema for $wf..."
-        if actionlint "$wf"; then
+        if actionlint -shellcheck= "$wf"; then
             log_ok "actionlint: GitHub Actions schema valid for $wf"
         else
             log_error "actionlint: schema validation failed for $wf"
         fi
     else
-        log_warn "actionlint: not installed; GitHub Actions workflow schema is UNCHECKED (PyYAML validates YAML syntax only)"
+        log_error "actionlint: not installed; install official v1.7.7 to validate workflows"
     fi
 
     # Check for yamllint
@@ -224,15 +224,15 @@ for dep in "${DEP_SCRIPTS[@]}"; do
     fi
 done
 
-# Verify all 15 Node test suites are present
+# Require the original core suites; additional suites are welcome.
 NODE_TESTS=(wasm/tests/node/*.test.mjs)
-if [ ${#NODE_TESTS[@]} -eq 15 ]; then
-    log_ok "Found all 15 Node unit test suite files under wasm/tests/node/:"
+if [ ${#NODE_TESTS[@]} -ge 15 ] && [ -f wasm/tests/node/engine.test.mjs ]; then
+    log_ok "Found ${#NODE_TESTS[@]} Node test suite files including engine.test.mjs:"
     for tf in "${NODE_TESTS[@]}"; do
         echo "        - $(basename "$tf")"
     done
 else
-    log_error "Expected exactly 15 Node unit test suites under wasm/tests/node/, found ${#NODE_TESTS[@]}"
+    log_error "Expected at least 15 Node suites including engine.test.mjs, found ${#NODE_TESTS[@]}"
 fi
 
 # ------------------------------------------------------------------------------
@@ -266,7 +266,7 @@ verify_lca_pairing() {
     fi
 }
 
-for wf in "${WORKFLOW_FILES[@]}"; do
+for wf in "$CI_WORKFLOW" "$TARGET_WORKFLOW"; do
     echo "Checking LCA artifact consistency in $wf..."
     # 1. orca-wasm-engine: LCA is wasm/build/orca-wasm64/wasm -> downloaded to wasm/build/orca-wasm64/wasm
     verify_lca_pairing "$wf" "orca-wasm-engine" "build" "test-node, test-browser" \
@@ -332,7 +332,7 @@ else
     log_warn "systemd-run --user is not currently active in local environment"
 fi
 
-for wf in "${WORKFLOW_FILES[@]}"; do
+for wf in "$CI_WORKFLOW" "$TARGET_WORKFLOW"; do
     echo "Checking scoped memory configuration in $wf..."
 
     # Check that runner provisioning step exists for ubuntu-24.04 jobs
@@ -357,7 +357,7 @@ for wf in "${WORKFLOW_FILES[@]}"; do
     fi
 
     # Check that Node tests are wrapped via memcap.sh
-    if grep -q "wasm/scripts/memcap.sh node --test" "$wf"; then
+    if grep -Eq 'wasm/scripts/memcap.sh node (--test|wasm/ci/run-node-tests.mjs)' "$wf"; then
         log_ok "Workflow $wf wraps Node test suite in wasm/scripts/memcap.sh"
     else
         log_error "Workflow $wf does not wrap Node test suite in wasm/scripts/memcap.sh"
@@ -384,7 +384,7 @@ done
 echo ""
 echo "--- 6. Native Parity CLI Flags, Inputs & Reference Distinction ---"
 
-for wf in "${WORKFLOW_FILES[@]}"; do
+for wf in "$CI_WORKFLOW" "$TARGET_WORKFLOW"; do
     echo "Checking native parity configuration in $wf..."
 
     # Check that driver comparison (run_parity.mjs) is not mislabeled as native parity

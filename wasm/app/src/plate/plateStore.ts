@@ -6,6 +6,7 @@ import { useAppStore } from '../store/appStore';
 import { useHistoryStore } from '../history';
 import type { PlateObject, MeshBufferData, ViewerMeshData, BedConfig, GizmoMode } from './types';
 import type { StepImportOptions } from '../engine/types';
+import { groupScaleEntries } from './multiScale';
 
 export function parseMeshBuffer(bytes: Uint8Array): MeshBufferData {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -93,7 +94,7 @@ export interface PlateStoreState {
   isOrientationLocked: (instanceId: number) => boolean;
   // Actions
   initBedConfig: (printableArea?: string, printableHeight?: string) => void;
-  refreshObjects: () => Promise<PlateObject[]>;
+  refreshObjects: (preserveGeometry?: boolean) => Promise<PlateObject[]>;
   selectObject: (objectId: number | null, instanceId?: number | null) => void;
   setGizmoMode: (mode: GizmoMode) => void;
   getMesh: (objectId: number) => Promise<MeshBufferData>;
@@ -226,8 +227,8 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     set({ bedConfig: { points, width, depth, height, center } });
   },
 
-  refreshObjects: async () => {
-    set({ viewerMeshCache: new Map() });
+  refreshObjects: async (preserveGeometry = false) => {
+    if (!preserveGeometry) set({ meshCache: new Map(), viewerMeshCache: new Map() });
     try {
       const engine = await getEngine();
       let objs: PlateObject[];
@@ -241,13 +242,14 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
       await usePlatesStore.getState().fetchPlates();
       set({ objects: objs });
 
-      // Update selection if previously selected object was removed
-      const { selectedObjectId } = get();
-      if (selectedObjectId !== null && !objs.some((o) => o.id === selectedObjectId)) {
-        set({ selectedObjectId: null, selectedInstanceId: null });
-      }
+      // Keep surviving selected instances, promoting an extra if the primary was removed.
       const exists = (r: InstanceRef) => objs.some((o) => o.id === r.objectId && o.instances.some((i) => i.id === r.instanceId));
-      set((st) => ({ extraSelection: st.extraSelection.filter(exists) }));
+      const { selectedObjectId, selectedInstanceId, extraSelection } = get();
+      if (selectedObjectId !== null && selectedInstanceId !== null) {
+        const [first, ...rest] = [{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection].filter(exists);
+        set({ selectedObjectId: first?.objectId ?? null, selectedInstanceId: first?.instanceId ?? null,
+          extraSelection: rest, ...(!first ? { gizmoMode: null } : {}) });
+      }
 
       // Sync with appStore
       useAppStore.setState({
@@ -269,18 +271,22 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
 
   selectObject: (objectId: number | null, instanceId?: number | null) => {
     if (objectId === null) {
-      set({ selectedObjectId: null, selectedInstanceId: null, extraSelection: [] });
+      set({ selectedObjectId: null, selectedInstanceId: null, extraSelection: [], gizmoMode: null });
       return;
     }
 
     const { objects } = get();
     const obj = objects.find((o) => o.id === objectId);
     if (!obj) {
-      set({ selectedObjectId: null, selectedInstanceId: null, extraSelection: [] });
+      set({ selectedObjectId: null, selectedInstanceId: null, extraSelection: [], gizmoMode: null });
       return;
     }
 
     const instId = instanceId ?? obj.instances[0]?.id ?? null;
+    if (instId === null || !obj.instances.some((i) => i.id === instId)) {
+      get().selectObject(null);
+      return;
+    }
     set({ selectedObjectId: objectId, selectedInstanceId: instId, extraSelection: [] });
   },
 
@@ -292,7 +298,8 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     } else if (selectedObjectId === objectId && selectedInstanceId === instanceId) {
       // Unselecting the primary hands the role to the next one.
       const [next, ...rest] = extraSelection;
-      set({ selectedObjectId: next?.objectId ?? null, selectedInstanceId: next?.instanceId ?? null, extraSelection: rest });
+      set({ selectedObjectId: next?.objectId ?? null, selectedInstanceId: next?.instanceId ?? null, extraSelection: rest,
+        ...(!next ? { gizmoMode: null } : {}) });
     } else if (extraSelection.some(same)) {
       set({ extraSelection: extraSelection.filter((r) => !same(r)) });
     } else {
@@ -307,7 +314,8 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
       .filter((i) => members === null || members.some((m) => m.objectId === o.id && m.instanceId === i.id))
       .map((i) => ({ objectId: o.id, instanceId: i.id })));
     const [first, ...rest] = refs;
-    set({ selectedObjectId: first?.objectId ?? null, selectedInstanceId: first?.instanceId ?? null, extraSelection: rest });
+    set({ selectedObjectId: first?.objectId ?? null, selectedInstanceId: first?.instanceId ?? null, extraSelection: rest,
+      ...(!first ? { gizmoMode: null } : {}) });
   },
 
   copySelected: async (cut = false) => {
@@ -368,7 +376,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     for (const { objectId, instanceId, ...transform } of entries) {
       await engine.call('setInstanceTransform', { objectId, instanceId, ...transform });
     }
-    await get().refreshObjects();
+    await get().refreshObjects(true);
     try {
       await useHistoryStore.getState().commitTransaction('Transform objects');
     } catch (_) {}
@@ -412,8 +420,10 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     if (res && res.volumes) {
       parsed.volumes = res.volumes;
     }
-    meshCache.set(objectId, parsed);
-    set({ meshCache: new Map(meshCache) });
+    if (get().meshCache === meshCache) {
+      meshCache.set(objectId, parsed);
+      set({ meshCache: new Map(meshCache) });
+    }
     return parsed;
   },
 
@@ -427,7 +437,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     }
     const bytes = result.buffer instanceof Uint8Array ? result.buffer : await engine.readFile(result.path);
     const parsed = { ...parseMeshBuffer(bytes), volumes: result.volumes } as ViewerMeshData;
-    cache.set(objectId, parsed);
+    if (get().viewerMeshCache === cache) cache.set(objectId, parsed);
     return parsed;
   },
 
@@ -449,7 +459,7 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
     } else {
       await engine.call('setInstanceTransform', { objectId, instanceId, ...transform });
     }
-    await get().refreshObjects();
+    await get().refreshObjects(true);
     try {
       await useHistoryStore.getState().commitTransaction('Transform object');
     } catch (_) {}
@@ -473,8 +483,24 @@ export const usePlateStore = create<PlateStoreState>((set, get) => ({
   },
 
   scaleSelection: async (scale: [number, number, number]) => {
-    const { selectedObjectId, selectedInstanceId } = get();
+    const { selectedObjectId, selectedInstanceId, extraSelection, objects, isLoading } = get();
+    if (isLoading || useHistoryStore.getState().isRestoring || useAppStore.getState().isSelectingPreset ||
+        useAppStore.getState().isSlicing || useAppStore.getState().isModelLoading ||
+        scale.some(v => !Number.isFinite(v) || v <= 0)) return;
     if (selectedObjectId === null || selectedInstanceId === null) return;
+    if (extraSelection.length) {
+      set({ isLoading: true });
+      try {
+        const entries = await groupScaleEntries(objects,
+          [{ objectId: selectedObjectId, instanceId: selectedInstanceId }, ...extraSelection], scale, get().getMesh);
+        // Reject a changed selection/removal while meshes were being loaded.
+        if (get().objects !== objects || get().selectedObjectId !== selectedObjectId ||
+            get().selectedInstanceId !== selectedInstanceId || get().extraSelection !== extraSelection) return;
+        await get().setInstanceTransforms(entries);
+        if (entries.length) useAppStore.getState().invalidateSlicePreview();
+      } finally { set({ isLoading: false }); }
+      return;
+    }
     await get().setInstanceTransform(selectedObjectId, selectedInstanceId, { scale });
   },
 

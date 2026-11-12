@@ -437,26 +437,16 @@ test('useSurface wraps text around cylindrical model', async () => {
     const tree2 = await core.call('getObjectTree', {});
     const objectId2 = tree2.objects.find(o => o.name === 'cyl2.obj').id;
 
-    const missed = await core.call('addText', {
+    // Since 413cb95cb6 a surface text that misses the target is rejected instead of silently
+    // falling back to flat text, and it must leave no text volume behind.
+    const volumesBefore = (await core.call('getObjectTree', {})).objects.find(o => o.id === objectId2).volumes.length;
+    await assert.rejects(core.call('addText', {
         objectId: objectId2, volumeType: 'part', text: 'C',
         fontPath: '/fonts/DejaVuSans.ttf', fontName: 'DejaVu Sans',
         size: 12, depth: 2, useSurface: true, position: [20, R2, H / 2], normal: [0, 1, 0]
-    });
-    
-    const mesh2 = await core.call('getMesh', { objectId: objectId2 });
-    const bytes2 = core.readFile(mesh2.path);
-    const pos2 = new Float32Array(bytes2.buffer, bytes2.byteOffset + 16, mesh2.vertexCount * 3);
-    const idx2 = new Uint32Array(bytes2.buffer, bytes2.byteOffset + 16 + mesh2.vertexCount * 12, mesh2.triangleCount * 3);
-    const vol2 = mesh2.volumes.find((x) => x.volumeId === missed.volumeId);
-    let maxR2 = -1e9;
-    for (let f = vol2.firstFacet; f < vol2.firstFacet + vol2.facetCount; f++) {
-      for (let k = 0; k < 3; k++) {
-        const i = idx2[f * 3 + k];
-        maxR2 = Math.max(maxR2, Math.hypot(pos2[i * 3], pos2[i * 3 + 1]));
-      }
-    }
-    
-    assert.ok(maxR2 > R2 + 1, `Missed max ${maxR2} should fall back to flat and stick out beyond ${R2+1}`);
+    }), /text does not intersect target model geometry/);
+    const volumesAfter = (await core.call('getObjectTree', {})).objects.find(o => o.id === objectId2).volumes.length;
+    assert.equal(volumesAfter, volumesBefore, 'a rejected surface text adds no volume');
 
 
   } finally {

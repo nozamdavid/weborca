@@ -1,0 +1,38 @@
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import {chromium} from '../../tests/node_modules/playwright/index.mjs';
+import {detailedGcode} from '../../tests/lib/preview-performance-fixtures.mjs';
+const root=path.resolve('wasm/build/ui-review-followups-20261111');
+const server=http.createServer((req,res)=>{const p=path.join(root,new URL(req.url,'http://localhost').pathname);res.setHeader('Cross-Origin-Opener-Policy','same-origin');res.setHeader('Cross-Origin-Embedder-Policy','require-corp');const f=fs.existsSync(p)&&fs.statSync(p).isFile()?p:path.join(root,'index.html');res.setHeader('Content-Type',f.endsWith('.wasm')?'application/wasm':/\.m?js$/.test(f)?'text/javascript':f.endsWith('.json')?'application/json':f.endsWith('.css')?'text/css':'text/html');fs.createReadStream(f).pipe(res);});
+await new Promise((r,j)=>{server.once('error',j);server.listen(5067,'127.0.0.1',r)});
+let browser;
+try {
+ browser=await chromium.launch({headless:true,args:['--enable-unsafe-swiftshader']});
+ const context=await browser.newContext();const page=await context.newPage();page.setDefaultTimeout(15000);
+ await page.addInitScript(()=>{window.observed=[];const W=window.Worker;window.Worker=class extends W{constructor(...args){super(...args);if(String(args[0]).includes('previewWorker')){const started=performance.now();this.addEventListener('message',e=>window.observed.push({ms:performance.now()-started,stats:e.data.stats,error:e.data.error,packetBytes:e.data.packet?.byteLength}));}}}});
+ page.on('console',m=>console.log('CONSOLE',m.type(),m.text()));page.on('pageerror',e=>console.log('PAGEERROR',e.message));page.on('requestfailed',r=>console.log('FAILED',r.url(),r.failure()));page.on('response',r=>{if(/preview|engine|status/.test(r.url()))console.log('HTTP',r.status(),r.url())});
+ await page.goto('http://127.0.0.1:5067');
+ await page.waitForTimeout(18000);
+ console.log('STARTUP',await page.evaluate(()=>({text:document.body.innerText.slice(0,5500),store:window.__appStore?{ready:window.__appStore.getState().isEngineReady,error:window.__appStore.getState().engineError}:null})));
+ await page.screenshot({path:'wasm/reports/integrated-preview-acceptance-20261111/startup.png'});
+ if(!await page.evaluate(()=>window.__appStore?.getState().isEngineReady))throw Error('Product blocker: engine not ready on ordinary startup');
+ const fixture=fs.readFileSync('wasm/tests/parity/refs-macos-x86_64/cube-voron.gcode','utf8');
+ console.log('IMPORT',await page.evaluate(async text=>{let ticks=0,max=0,last=performance.now();const timer=setInterval(()=>{const t=performance.now();max=Math.max(max,t-last);last=t;ticks++},5);const start=performance.now();await window.__appStore.getState().openGcodeFile(new File([text],'cube-voron.gcode'));clearInterval(timer);const s=window.__appStore.getState();return {ms:performance.now()-start,ticks,max,slice:s.sliceResult?{...s.sliceResult,gcode:undefined}:null,text:document.body.innerText.slice(-1500)}},fixture));
+ console.log('BUTTONS',await page.getByRole('button').allTextContents());
+ console.log('WORKER',await page.evaluate(()=>window.observed));
+ await page.getByRole('tab',{name:'Preview',exact:true}).click();await page.waitForTimeout(3000);
+ console.log('PREVIEW',await page.evaluate(()=>({text:document.body.innerText.slice(-4000),canvas:[...document.querySelectorAll('canvas')].map(c=>({w:c.width,h:c.height}))})));
+ await page.screenshot({path:'wasm/reports/integrated-preview-acceptance-20261111/preview.png'});
+ const config=Object.fromEntries(fixture.split('; CONFIG_BLOCK_START')[1].split('; CONFIG_BLOCK_END')[0].split('\n').map(l=>/^; ([^=]+) = (.*)$/.exec(l)).filter(Boolean).map(([,k,v])=>[k.trim(),v]));
+ await page.getByRole('tab',{name:'Prepare',exact:true}).click();
+ console.log('LARGE',await page.evaluate(async text=>{const start=performance.now();await window.__appStore.getState().openGcodeFile(new File([text],'large.gcode'));const s=window.__appStore.getState();return {ms:performance.now()-start,result:{...s.sliceResult,gcode:undefined},workers:window.observed}},detailedGcode({layers:120,segments:1024,config})));
+ await page.getByRole('tab',{name:'Preview',exact:true}).click();await page.waitForTimeout(2000);
+ await page.screenshot({path:'wasm/reports/integrated-preview-acceptance-20261111/large.png'});
+ console.log('REUSE',await page.evaluate(()=>window.observed));
+ const stalled=await context.newPage();let intercepted=0;
+ await stalled.route('**/_orca-cloud/status',async route=>{intercepted++;await new Promise(r=>setTimeout(r,11000));await route.abort().catch(()=>{})});
+ await stalled.goto('http://127.0.0.1:5067');await stalled.waitForTimeout(2500);
+ console.log('STALLED_EARLY',await stalled.evaluate(()=>({app:!!window.__appStore,ready:window.__appStore?.getState().isEngineReady,checking:!!document.querySelector('.cloud-session-check')})));
+ await stalled.waitForTimeout(8000);console.log('STALLED_FINAL',intercepted,await stalled.evaluate(()=>({ready:window.__appStore?.getState().isEngineReady,checking:!!document.querySelector('.cloud-session-check'),text:document.body.innerText.slice(-1500)})));
+} catch(e){console.error('RESULT',e.stack);process.exitCode=1}finally{await browser?.close();await new Promise(r=>server.close(r));console.log('CLEANUP browser and owned server closed')}

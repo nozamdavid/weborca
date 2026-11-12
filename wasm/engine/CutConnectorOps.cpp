@@ -93,18 +93,16 @@ void apply_connector_tolerance(Slic3r::ModelVolume* vol, double direction = 1.0)
     sf[Slic3r::X] += direction * double(cut_info.radius_tolerance);
     sf[Slic3r::Y] += direction * double(cut_info.radius_tolerance);
     sf[Slic3r::Z] += direction * double(cut_info.height_tolerance);
-    vol->set_scaling_factor(sf);
-
-    Slic3r::Vec3d rot_norm = Slic3r::Geometry::rotation_transform(vol->get_rotation()) * Slic3r::Vec3d::UnitZ();
-    if (rot_norm.norm() != 0.0)
-        rot_norm.normalize();
-
-    double z_offset = 0.5 * static_cast<double>(cut_info.height_tolerance);
+    // Match CutUtils tolerance geometry, including its inverse for nominal pegs.
+    // Dowels stay centered; plug/snap holes grow through the cut face.
     if (cut_info.connector_type == Slic3r::CutConnectorType::Plug ||
-        cut_info.connector_type == Slic3r::CutConnectorType::Snap)
-        z_offset -= 0.05;
-
-    vol->set_offset(vol->get_offset() + rot_norm * (direction * z_offset));
+        cut_info.connector_type == Slic3r::CutConnectorType::Snap) {
+        sf[Slic3r::Z] += direction * Slic3r::CONNECTOR_HOLE_OVERLAP;
+        const double z_offset = 0.5 * (static_cast<double>(cut_info.height_tolerance) - Slic3r::CONNECTOR_HOLE_OVERLAP);
+        vol->set_offset(vol->get_offset() + Slic3r::Geometry::rotation_transform(vol->get_rotation()) *
+            (direction * z_offset * Slic3r::Vec3d::UnitZ()));
+    }
+    vol->set_scaling_factor(sf);
 }
 
 } // namespace

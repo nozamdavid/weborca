@@ -122,6 +122,8 @@ describe('Orca WASM engine: mirror, clone and arrange', () => {
   test('a mirror survives a later scale change and slices to the same volume', async () => {
     const obj = await only();
     const ids = { objectId: obj.id, instanceId: obj.instances[0].id };
+    // Keep the instance inside the 300 mm Voron bed for slicing.
+    await core.call('setInstanceTransform', { ...ids, offset: [150, 150, obj.instances[0].offset[2]] });
     await core.call('slice', { outPath: '/out/plain.gcode', threads: 4 });
     const plain = usedFilament(core.readFile('/out/plain.gcode'));
     assert.ok(plain > 0);

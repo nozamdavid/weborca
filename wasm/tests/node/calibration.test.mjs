@@ -98,12 +98,24 @@ const assertRamp = (values, start, end, tolerance, what) => {
 describe('Calibration Engine Operations', () => {
   let core;
 
+  // Calibration models are created at the bed origin; place each single-instance
+  // model at the interior of the 300 x 300 Voron bed (the loaded cube mesh is not centred on its origin) so it stays inside the bed.
+  const sliceOnBed = async (outPath) => {
+    const objects = await core.call('listObjects', {});
+    if (objects.length === 1 && objects[0].instances.length === 1) {
+      const [obj] = objects;
+      const [inst] = obj.instances;
+      await core.call('setInstanceTransform', { objectId: obj.id, instanceId: inst.id, offset: [100, 100, inst.offset[2]] });
+    }
+    return core.call('slice', { plateIndex: 0, outPath });
+  };
+
   before(async () => {
     fs.mkdirSync(scratchDir, { recursive: true });
     const resJsonPath = path.join(bundleDir, 'resources.json');
-    if (!fs.existsSync(resJsonPath)) {
+    if (!['resources.json', 'profiles/Voron.json', 'profiles/OrcaFilamentLibrary.json', 'profiles/BBL.json'].every(file => fs.existsSync(path.join(bundleDir, file)))) {
       const packScript = path.join(repoRoot, 'wasm', 'web', 'tools', 'pack_profiles.mjs');
-      execFileSync(process.execPath, [packScript, repoRoot, bundleDir, 'Voron', 'OrcaFilamentLibrary'], {
+      execFileSync(process.execPath, [packScript, repoRoot, bundleDir, 'Voron', 'OrcaFilamentLibrary', 'BBL'], {
         stdio: 'inherit'
       });
     }
@@ -170,7 +182,7 @@ describe('Calibration Engine Operations', () => {
            "tower_with_seam.drc": "/MEMFS/pa_tower.stl"
         }
     });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out.gcode' });
+    const res = await sliceOnBed('/MEMFS/out.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out.gcode'));
     
     // Assert M900 or SET_PRESSURE_ADVANCE steps
@@ -190,7 +202,7 @@ describe('Calibration Engine Operations', () => {
            "pressure_advance_test.drc": "/MEMFS/pa_line.stl"
         }
     });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_line.gcode' });
+    const res = await sliceOnBed('/MEMFS/out_line.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_line.gcode'));
     
     assert.deepEqual(paValues(gcode), range(0, 0.1, 0.002));
@@ -209,7 +221,7 @@ describe('Calibration Engine Operations', () => {
         speeds: [100],
         meshes: {}
     });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_pattern.gcode' });
+    const res = await sliceOnBed('/MEMFS/out_pattern.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_pattern.gcode'));
     
     assert.deepEqual(paValues(gcode), range(0, 0.08, 0.005));
@@ -228,7 +240,7 @@ describe('Calibration Engine Operations', () => {
            "temperature_tower.drc": "/MEMFS/temp.stl"
         }
     });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_temp.gcode' });
+    const res = await sliceOnBed('/MEMFS/out_temp.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_temp.gcode'));
     
     const temps = [...new Set([...gcode.matchAll(/M104 S([0-9]+)/g)].map((m) => +m[1]))];
@@ -251,7 +263,7 @@ describe('Calibration Engine Operations', () => {
            "retraction_tower.drc": "/MEMFS/ret.stl"
         }
     });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_ret.gcode' });
+    const res = await sliceOnBed('/MEMFS/out_ret.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_ret.gcode'));
     const lengths = new Set([...gcode.matchAll(/^G1 E-([0-9.]+)/gm)].map((m) => +m[1]));
     for (const len of range(0, 2, 0.1).slice(1)) assert.ok(lengths.has(len), `retraction ${len} missing`);
@@ -269,7 +281,7 @@ describe('Calibration Engine Operations', () => {
            "SpeedTestStructure.drc": "/MEMFS/max_vol.stl"
         }
     });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_max_vol.gcode' });
+    const res = await sliceOnBed('/MEMFS/out_max_vol.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_max_vol.gcode'));
     // One feed rate per volumetric step: 5..20 mm³/s in 0.5 steps maps to F1620..F3180 in steps of 60 for this structure.
     const f = feedrates(gcode);
@@ -291,7 +303,7 @@ describe('Calibration Engine Operations', () => {
            "vfa.drc": "/MEMFS/vfa.stl"
         }
     });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_vfa.gcode' });
+    const res = await sliceOnBed('/MEMFS/out_vfa.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_vfa.gcode'));
     const f = feedrates(gcode);
     for (const speed of range(40, 200, 10)) assert.ok(f.has(speed * 60), `VFA speed ${speed} mm/s missing`);
@@ -312,7 +324,7 @@ describe('Calibration Engine Operations', () => {
            "ringing_tower.drc": "/MEMFS/ringing_tower.stl"
         }
     });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_isfreq.gcode' });
+    const res = await sliceOnBed('/MEMFS/out_isfreq.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_isfreq.gcode'));
     
     // The frequency ramps from freqStart to freqEnd along the tower; X and Y move together here.
@@ -334,7 +346,7 @@ describe('Calibration Engine Operations', () => {
            "ringing_tower.drc": "/MEMFS/ringing_tower.stl"
         }
     });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_isdamp.gcode' });
+    const res = await sliceOnBed('/MEMFS/out_isdamp.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_isdamp.gcode'));
     
     assert.ok(gcode.includes('SET_INPUT_SHAPER SHAPER_TYPE=MZV SHAPER_FREQ_X=30.00'), 'sets the shaper type and X frequency');
@@ -353,7 +365,7 @@ describe('Calibration Engine Operations', () => {
            "SCV-V2.drc": "/MEMFS/scvv2.stl"
         }
     });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_corner.gcode' });
+    const res = await sliceOnBed('/MEMFS/out_corner.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_corner.gcode'));
     
     // Klipper's square corner velocity ramps from the start value to the end value.
@@ -365,7 +377,7 @@ describe('Calibration Engine Operations', () => {
     // calib mode is cleared on loadModel
     await core.writeFile('/MEMFS/cube.stl', await decodeDraco(path.join(repoRoot, 'resources/calib/pressure_advance/pressure_advance_test.drc')));
     await core.call('loadModel', { path: '/MEMFS/cube.stl' });
-    const res = await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_normal.gcode' });
+    const res = await sliceOnBed('/MEMFS/out_normal.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_normal.gcode'));
     
     // The PA ramp is gone; like desktop, the calibration's preset edits (PA enabled at 0) remain.
@@ -384,7 +396,7 @@ describe('Calibration Engine Operations', () => {
       meshes: { 'tower_with_seam.drc': '/MEMFS/pa_tower.stl' }
     });
     await core.call('openProject', { path: '/MEMFS/plain.3mf' });
-    await core.call('slice', { plateIndex: 0, outPath: '/MEMFS/out_reopened.gcode' });
+    await sliceOnBed('/MEMFS/out_reopened.gcode');
     const gcode = new TextDecoder().decode(await core.readFile('/MEMFS/out_reopened.gcode'));
     assert.ok(paValues(gcode).length <= 1, `PA ramp still present: ${paValues(gcode)}`);
   });

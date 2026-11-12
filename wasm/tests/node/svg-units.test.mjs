@@ -65,6 +65,8 @@ test('SVG shapes keep physical dimensions and extrusion depth when edited and re
     const metadata = await core.call('getSvg', { objectId: object.id, volumeId: object.volumes[0].id });
     assert.equal(metadata.svgText, millimeters);
     assert.equal(metadata.depth, 2);
+    // Keep the reopened object inside the 300 mm Voron bed before slicing.
+    await core.call('setInstanceTransform', { objectId: object.id, instanceId: (await core.call('listObjects', {})).find(item => item.id === object.id).instances[0].id, offset: [150, 150, 0] });
     const sliced = await core.call('slice', { outPath: '/out/physical-svg.gcode', threads: 2 });
     assert.ok(sliced.layers > 0 && sliced.layers < 20, 'a 2 mm extrusion produces a small, finite print');
     assert.ok(sliced.gcodeBytes > 0 && sliced.gcodeBytes < 1024 * 1024);

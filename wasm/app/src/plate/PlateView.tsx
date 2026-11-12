@@ -10,6 +10,7 @@ import { Dialog } from '../components/Dialog';
 import { PlateRenameDialog } from './PlateRenameDialog';
 import { isDefaultPlateName } from '../plates/plateName';
 import { usePlatesStore } from '../plates/platesStore';
+import { addBoxSelection } from './boxSelection';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
 import { usePaintToolsStore, PaintToolsPanel, StrokeCollector } from '../paint-tools';
 import { useLayersStore, LayerHeightPanel } from '../layers';
@@ -19,7 +20,7 @@ import { getEngine } from '../engine/orcaEngine';
 import { useHistoryStore } from '../history';
 import { TextPanel, useTextStore } from '../text';
 import { CutPanel, useCutStore } from '../cut';
-import { NumericTransform } from './NumericTransform';
+import { NumericTransform, GroupScale } from './NumericTransform';
 import { ArrangeDialog } from './ArrangeDialog';
 import { MeasurePanel } from '../measure';
 import { ExplodePanel } from './ExplodePanel';
@@ -152,6 +153,21 @@ export const PlateView: React.FC = () => {
     if (!containerRef.current) return;
 
     const scene = new PlateScene(containerRef.current, bedConfig, {
+      onBoxSelect: (refs) => {
+        const plates = usePlatesStore.getState();
+        const members = plates.plates.find(p => p.index === plates.activePlateIndex)?.instances ?? [];
+        const initial = usePlateStore.getState();
+        const current = initial.selectedObjectId !== null && initial.selectedInstanceId !== null
+          ? [{ objectId: initial.selectedObjectId, instanceId: initial.selectedInstanceId }, ...initial.extraSelection] : [];
+        for (const ref of addBoxSelection(current, refs)) {
+          if (!members.some(m => m.objectId === ref.objectId && m.instanceId === ref.instanceId)) continue;
+          const state = usePlateStore.getState();
+          if (state.selectedObjectId === ref.objectId && state.selectedInstanceId === ref.instanceId ||
+              state.extraSelection.some(r => r.objectId === ref.objectId && r.instanceId === ref.instanceId)) continue;
+          state.toggleSelect(ref.objectId, ref.instanceId);
+        }
+        useObjectListStore.getState().selectItem(usePlateStore.getState().selectedObjectId, null);
+      },
       canMoveObjects: () => {
         const app = useAppStore.getState();
         return app.isEngineReady && !app.isSlicing && !app.isModelLoading && !app.isSelectingPreset && !useHistoryStore.getState().isRestoring;
@@ -337,8 +353,12 @@ export const PlateView: React.FC = () => {
           paintState.stopPainting();
         }
       }
-      sceneRef.current.setObjects(objects);
-      setMeshRevision((revision) => revision + 1);
+      const scene = sceneRef.current;
+      let cancelled = false;
+      void scene.setObjects(objects).then((accepted) => {
+        if (accepted && !cancelled && sceneRef.current === scene) setMeshRevision((revision) => revision + 1);
+      }).catch((error) => console.error("[PlateView] Scene update failed:", error));
+      return () => { cancelled = true; };
     }
   }, [objects]);
 
@@ -392,12 +412,12 @@ export const PlateView: React.FC = () => {
     }
   }, [isSlicing]);
 
-  // Update gizmo mode in scene
+  // Refresh attachment when movement becomes available again after a busy operation.
   useEffect(() => {
     if (sceneRef.current) {
       sceneRef.current.setGizmoMode(gizmoMode);
     }
-  }, [gizmoMode]);
+  }, [gizmoMode, bedConfigLoading, isSlicing, isRestoring]);
 
   // Sync painting active mode and selected volume to scene
   useEffect(() => {
@@ -1209,6 +1229,8 @@ export const PlateView: React.FC = () => {
                 <NumericTransform object={selectedObject} instance={selectedInstance} />
               </>
             )}
+            {selectedInstance && extraSelection.length > 0 && gizmoMode === 'scale' &&
+              <GroupScale disabled={busy || isLoading || isCutting || isRepairing || isOperatingEdit || isPaintingActive || isTextActive || isLayersActive} />}
 
             {/* Mesh Health and Repair Badge */}
             <div className="selection-panel-health">

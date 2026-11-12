@@ -25,7 +25,7 @@ const modulePath = process.env.ORCA_ENGINE_MODULE
 const bundleDir = path.join(repoRoot, 'wasm', 'build', 'tests-node');
 const scratchDir = path.join(bundleDir, 'scratch');
 const compareScript = path.join(repoRoot, 'wasm', 'spike', 'compare_gcode.sh');
-const refCubeGcode = path.join(repoRoot, 'wasm', 'tests', 'parity', 'refs-macos-x86_64', 'cube-voron.gcode');
+const refCubeGcode = path.join(repoRoot, 'wasm', 'tests', 'parity', 'refs-current-native', 'cube-voron.gcode');
 
 describe('Orca WASM Engine Node Test Suite', () => {
   let core;

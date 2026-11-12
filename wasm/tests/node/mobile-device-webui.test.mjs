@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { build } from '../../app/node_modules/esbuild/lib/main.js';
-import { chromium } from '../../build/web-smoke/node_modules/playwright/index.mjs';
+import { chromium } from 'playwright';
 
 const appDir = new URL('../../app/', import.meta.url).pathname;
 const fixture = `

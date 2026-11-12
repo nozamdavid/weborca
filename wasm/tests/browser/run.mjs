@@ -19,7 +19,7 @@ const PORT = 5057;
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 const DEMO_URL = `${BASE_URL}/wasm/web/demo/index.html`;
 
-const P6_CUBE_GCODE = path.resolve(repoRoot, 'wasm/tests/parity/refs-macos-x86_64/cube-voron.gcode');
+const P6_CUBE_GCODE = path.resolve(repoRoot, 'wasm/tests/parity/refs-current-native/cube-voron.gcode');
 const COMPARE_SCRIPT = path.resolve(repoRoot, 'wasm/spike/compare_gcode.sh');
 const TEST_OUT_DIR = path.resolve(repoRoot, 'wasm/build/tests-browser');
 

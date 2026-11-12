@@ -3,18 +3,27 @@
  * Types for OrcaSlicer Web History / Undo-Redo system.
  */
 
+export interface HistoryInstanceSelection {
+  objectName?: string;
+  objectIndex?: number;
+  instanceIndex?: number;
+}
+
 export interface HistorySelection {
   objectName?: string;
   objectIndex?: number;
   instanceIndex?: number;
   volumeId?: number;
   volumeIndex?: number;
+  /** Ordered selected instances: the primary selection first, then extras. */
+  instances?: HistoryInstanceSelection[];
 }
 
 export interface HistoryPaintState {
   isPaintingActive: boolean;
   paintTarget: 'support' | 'seam';
   selectedVolumeId: number | null;
+  volumeIndex?: number;
 }
 
 export interface HistoryPlateInfo {

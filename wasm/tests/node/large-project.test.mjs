@@ -90,25 +90,24 @@ describe('Large Project Coverage', () => {
     const instanceCount = objAfter[0].instances.length;
     assert.equal(instanceCount, 56); // 1 original + 55 copies
     
-    console.log(`[LargeProject] Arranging ${instanceCount} instances...`);
-    await core.call('arrange', { autoRotate: true });
-
-    const plates = await core.call('listPlates', {});
-    console.log(`[LargeProject] Instances arranged into ${plates.length} plates.`);
-    
-    // Create extra plates explicitly if arrange didn't make "several"
-    if (plates.length < 2) {
-      console.log(`[LargeProject] Manually adding extra plate to ensure multi-plate test...`);
-      await core.call('addPlate', { name: 'Extra Plate' });
-      const instToMove = objAfter[0].instances[instanceCount - 1].id;
-      // move the last instance to plate 1
+    console.log(`[LargeProject] Placing ${instanceCount} instances on 3 plates inside their beds...`);
+    await core.call('addPlate', { name: 'Plate 2' });
+    await core.call('addPlate', { name: 'Plate 3' });
+    // Voron 300 bed: plate stride is 360 mm; 3 plates use 2 columns (plate 2 is below plate 0).
+    const plateOrigins = [[0, 0], [360, 0], [0, -360]];
+    const perPlate = 25; // 5 x 5 grid at 55 mm pitch for the ~52 x 50 mm mesh
+    for (let i = 0; i < instanceCount; i++) {
+      const plate = Math.floor(i / perPlate);
+      const cell = i % perPlate;
       await core.call('setInstanceTransform', {
         objectId: objId,
-        instanceId: instToMove,
-        offset: [500.0, 150.0, 0.0] // plate 1 is offset by 360 in X, wait: Voron 300 might be 310 offset. 500 should land on it.
+        instanceId: objAfter[0].instances[i].id,
+        offset: [plateOrigins[plate][0] + 40 + 55 * (cell % 5), plateOrigins[plate][1] + 40 + 55 * Math.floor(cell / 5), objAfter[0].instances[i].offset[2]]
       });
     }
 
+    const plates = await core.call('listPlates', {});
+    assert.equal(plates.length, 3);
     const preSavePlates = await core.call('listPlates', {});
     
     console.log(`[LargeProject] Saving to 3MF...`);

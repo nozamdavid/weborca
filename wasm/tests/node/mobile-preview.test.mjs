@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { build } from '../../app/node_modules/esbuild/lib/main.js';
-import { chromium } from '../../build/web-smoke/node_modules/playwright/index.mjs';
+import { chromium } from 'playwright';
 
 const appDir = new URL('../../app/', import.meta.url).pathname;
 const fixture = `

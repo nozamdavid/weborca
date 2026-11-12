@@ -14,6 +14,10 @@
 #include "ColorRange.hpp"
 #include "GCodeInputData.hpp"
 #include "convert.hpp"
+#include "packet.hpp"
+#include "Layers.hpp"
+#include "ExtrusionRoles.hpp"
+#include <chrono>
 #include "libslic3r/GCode/GCodeProcessor.hpp"
 
 #include <string>
@@ -473,6 +477,146 @@ private:
     bool m_light_theme = false;
 };
 
+
+static double elapsed_ms(std::chrono::steady_clock::time_point start) {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+}
+static std::string prepare_gcode(const std::string& path, PreviewPacket& packet) {
+        // Report an inaccessible MEMFS input before entering the processor's error
+        // path, and leave the successfully loaded preview available to the caller.
+        std::FILE* input = std::fopen(path.c_str(), "rb");
+        if (input == nullptr)
+            return "{\"error\":\"Cannot open G-code file\"}";
+        std::fclose(input);
+
+        auto& data = packet.data;
+        auto parse_start = std::chrono::steady_clock::now();
+        std::vector<std::pair<float, float>> bed_polygon;
+        double time_s = 0.0;
+        float filament_mm = 0.0f;
+        float filament_g = 0.0f;
+        float travel_distance = 0.0f;
+        unsigned int travel_moves = 0;
+        {
+            // Keep processor storage local so it is released after conversion,
+            // before allocating the renderer's texture staging arrays.
+            Slic3r::GCodeProcessor processor;
+            try {
+                processor.process_file(path, nullptr, false);
+            } catch (const std::exception& e) {
+                std::fprintf(stderr, "OrcaPreview: GCodeProcessor::process_file failed on '%s': %s\n", path.c_str(), e.what());
+                // Exception text can contain quotes/newlines; keep the recoverable error valid JSON.
+                return "{\"error\":\"Failed to parse G-code\"}";
+            }
+
+            const Slic3r::GCodeProcessorResult& res = processor.get_result();
+
+            // An empty replacement leaves the previous data, statistics and camera intact.
+            if (res.moves.size() <= 1)
+                return "{\"error\":\"No toolpath moves in G-code\"}";
+
+            std::vector<std::string> tool_colors = res.extruder_colors;
+            if (tool_colors.empty()) {
+                tool_colors.push_back("#009688");
+            }
+            std::vector<std::string> cp_colors;
+
+            packet.parse_ms = elapsed_ms(parse_start);
+            auto conversion_start = std::chrono::steady_clock::now();
+            data = libvgcode::convert(res, tool_colors, cp_colors);
+            packet.conversion_ms = elapsed_ms(conversion_start);
+            time_s = processor.get_time(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal);
+            // Extract filament statistics
+            for (const auto& kv : res.print_statistics.used_filaments_per_role) {
+                filament_mm += static_cast<float>(kv.second.first * 1000.0);
+                filament_g += static_cast<float>(kv.second.second);
+            }
+            if (filament_mm <= 0.0f && !res.moves.empty()) {
+                for (const auto& mv : res.moves) {
+                    if (mv.delta_extruder > 0.0f) {
+                        filament_mm += mv.delta_extruder;
+                    }
+                }
+                float density = (!res.filament_densities.empty() && res.filament_densities[0] > 0.0f) ? res.filament_densities[0] : 1.24f;
+                float diam = (!res.filament_diameters.empty() && res.filament_diameters[0] > 0.0f) ? res.filament_diameters[0] : 1.75f;
+                float r = diam * 0.5f;
+                filament_g = (filament_mm * 3.14159f * r * r * density) / 1000.0f;
+            }
+
+            // Configure bed from result if available
+            if (res.printable_area.size() >= 3) {
+                for (const auto& pt : res.printable_area) {
+                    bed_polygon.push_back({static_cast<float>(pt.x()), static_cast<float>(pt.y())});
+                }
+            }
+
+            travel_distance = res.print_statistics.total_travel_distance;
+            travel_moves = res.print_statistics.total_travel_moves;
+        }
+
+    libvgcode::Layers layers;
+    libvgcode::ExtrusionRoles roles;
+    float total_time = 0, travel_time_sum = 0;
+    for (size_t i = 0; i < data.vertices.size(); ++i) {
+        const auto& v = data.vertices[i];
+        layers.update(v, static_cast<uint32_t>(i));
+        total_time += v.times[0];
+        if (v.type == libvgcode::EMoveType::Travel) travel_time_sum += v.times[0];
+        if (v.type == libvgcode::EMoveType::Extrude) roles.add(v.role, v.times);
+    }
+        size_t layers_count = layers.count();
+        size_t moves_count = data.vertices.size();
+        if (time_s <= 0.0f)
+            time_s = total_time;
+
+        // Build feature breakdown
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(2);
+        ss << "{\"layers\":" << layers_count
+           << ",\"moves\":" << moves_count
+           << ",\"timeS\":" << time_s
+           << ",\"filamentMm\":" << filament_mm
+           << ",\"filamentG\":" << filament_g
+           << ",\"travelDistance\":" << travel_distance
+           << ",\"travelMoves\":" << travel_moves
+           << ",\"features\":[";
+
+        bool first_feat = true;
+        for (const auto role : roles.get_roles()) {
+            float role_time = roles.get_time(role, libvgcode::ETimeMode::Normal);
+            if (role_time > 0.0f) {
+                if (!first_feat) ss << ",";
+                first_feat = false;
+                float pct = (time_s > 0.0f) ? (role_time / time_s * 100.0f) : 0.0f;
+                ss << "{\"name\":\"" << role_name(role) << "\""
+                   << ",\"timeS\":" << role_time
+                   << ",\"percent\":" << pct << "}";
+            }
+        }
+        float travel_time = travel_time_sum;
+        if (travel_time > 0.0f) {
+            if (!first_feat) ss << ",";
+            float pct = (time_s > 0.0f) ? (travel_time / time_s * 100.0f) : 0.0f;
+            ss << "{\"name\":\"Travel\",\"timeS\":" << travel_time << ",\"percent\":" << pct << "}";
+        }
+        ss << "]}";
+
+
+    packet.bed = std::move(bed_polygon);
+    packet.stats = ss.str();
+    return packet.stats;
+}
+static std::string parseGcode(const std::string& input, const std::string& output) {
+    try {
+        PreviewPacket packet;
+        auto result = prepare_gcode(input, packet);
+        if (result.find("\"error\"") != std::string::npos) return result;
+        save_packet(output, packet);
+        result.pop_back();
+        return result + ",\"parseMs\":" + std::to_string(packet.parse_ms) + ",\"conversionMs\":" + std::to_string(packet.conversion_ms) + "}";
+    } catch (const std::exception&) { return "{\"error\":\"Failed to create preview packet\"}"; }
+}
+
 class OrcaPreview {
 public:
     OrcaPreview()
@@ -580,76 +724,24 @@ public:
 
         emscripten_webgl_make_context_current(m_ctx);
 
-        // Report an inaccessible MEMFS input before entering the processor's error
-        // path, and leave the successfully loaded preview available to the caller.
-        std::FILE* input = std::fopen(path.c_str(), "rb");
-        if (input == nullptr)
-            return "{\"error\":\"Cannot open G-code file\"}";
-        std::fclose(input);
+        PreviewPacket packet;
+        auto result = prepare_gcode(path, packet);
+        if (result.find("\"error\"") != std::string::npos) return result;
+        return loadPacket(std::move(packet));
+    }
 
-        libvgcode::GCodeInputData data;
-        std::vector<std::pair<float, float>> bed_polygon;
-        double time_s = 0.0;
-        float filament_mm = 0.0f;
-        float filament_g = 0.0f;
-        float travel_distance = 0.0f;
-        unsigned int travel_moves = 0;
-        {
-            // Keep processor storage local so it is released after conversion,
-            // before allocating the renderer's texture staging arrays.
-            m_viewer.release_cpu_render_cache();
-            Slic3r::GCodeProcessor processor;
-            try {
-                processor.process_file(path, nullptr, false);
-            } catch (const std::exception& e) {
-                std::fprintf(stderr, "OrcaPreview: GCodeProcessor::process_file failed on '%s': %s\n", path.c_str(), e.what());
-                // Exception text can contain quotes/newlines; keep the recoverable error valid JSON.
-                return "{\"error\":\"Failed to parse G-code\"}";
-            }
+    std::string loadParsedGcode(const std::string& path) {
+        if (!m_initialized) return "{\"error\":\"Not initialized\"}";
+        try { return loadPacket(read_packet(path)); }
+        catch (const std::exception&) { return "{\"error\":\"Invalid preview packet\"}"; }
+    }
 
-            const Slic3r::GCodeProcessorResult& res = processor.get_result();
-
-            // An empty replacement leaves the previous data, statistics and camera intact.
-            if (res.moves.size() <= 1)
-                return "{\"error\":\"No toolpath moves in G-code\"}";
-            m_extrusion_bounds_valid = false;
-            m_viewer.reset();
-
-            std::vector<std::string> tool_colors = res.extruder_colors;
-            if (tool_colors.empty()) {
-                tool_colors.push_back("#009688");
-            }
-            std::vector<std::string> cp_colors;
-
-            data = libvgcode::convert(res, tool_colors, cp_colors, m_viewer);
-            time_s = processor.get_time(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal);
-            // Extract filament statistics
-            for (const auto& kv : res.print_statistics.used_filaments_per_role) {
-                filament_mm += static_cast<float>(kv.second.first * 1000.0);
-                filament_g += static_cast<float>(kv.second.second);
-            }
-            if (filament_mm <= 0.0f && !res.moves.empty()) {
-                for (const auto& mv : res.moves) {
-                    if (mv.delta_extruder > 0.0f) {
-                        filament_mm += mv.delta_extruder;
-                    }
-                }
-                float density = (!res.filament_densities.empty() && res.filament_densities[0] > 0.0f) ? res.filament_densities[0] : 1.24f;
-                float diam = (!res.filament_diameters.empty() && res.filament_diameters[0] > 0.0f) ? res.filament_diameters[0] : 1.75f;
-                float r = diam * 0.5f;
-                filament_g = (filament_mm * 3.14159f * r * r * density) / 1000.0f;
-            }
-
-            // Configure bed from result if available
-            if (res.printable_area.size() >= 3) {
-                for (const auto& pt : res.printable_area) {
-                    bed_polygon.push_back({static_cast<float>(pt.x()), static_cast<float>(pt.y())});
-                }
-            }
-
-            travel_distance = res.print_statistics.total_travel_distance;
-            travel_moves = res.print_statistics.total_travel_moves;
-        }
+    std::string loadPacket(PreviewPacket packet) {
+        auto start = std::chrono::steady_clock::now();
+        emscripten_webgl_make_context_current(m_ctx);
+        auto& data = packet.data;
+        auto& bed_polygon = packet.bed;
+        m_extrusion_bounds_valid = false;
         m_viewer.reset_default_extrusion_roles_colors();
         m_viewer.load(std::move(data));
 
@@ -679,44 +771,9 @@ public:
         m_yaw = 45.0f;
         m_pitch = 30.0f;
 
-        size_t layers_count = m_viewer.get_layers_count();
-        size_t moves_count = m_viewer.get_vertices_count();
-        if (time_s <= 0.0f)
-            time_s = m_viewer.get_estimated_time();
-
-        // Build feature breakdown
-        std::ostringstream ss;
-        ss << std::fixed << std::setprecision(2);
-        ss << "{\"layers\":" << layers_count
-           << ",\"moves\":" << moves_count
-           << ",\"timeS\":" << time_s
-           << ",\"filamentMm\":" << filament_mm
-           << ",\"filamentG\":" << filament_g
-           << ",\"travelDistance\":" << travel_distance
-           << ",\"travelMoves\":" << travel_moves
-           << ",\"features\":[";
-
-        bool first_feat = true;
-        for (const auto role : m_viewer.get_extrusion_roles()) {
-            float role_time = m_viewer.get_extrusion_role_estimated_time(role);
-            if (role_time > 0.0f) {
-                if (!first_feat) ss << ",";
-                first_feat = false;
-                float pct = (time_s > 0.0f) ? (role_time / time_s * 100.0f) : 0.0f;
-                ss << "{\"name\":\"" << role_name(role) << "\""
-                   << ",\"timeS\":" << role_time
-                   << ",\"percent\":" << pct << "}";
-            }
-        }
-        float travel_time = m_viewer.get_travels_estimated_time();
-        if (travel_time > 0.0f) {
-            if (!first_feat) ss << ",";
-            float pct = (time_s > 0.0f) ? (travel_time / time_s * 100.0f) : 0.0f;
-            ss << "{\"name\":\"Travel\",\"timeS\":" << travel_time << ",\"percent\":" << pct << "}";
-        }
-        ss << "]}";
-
-        m_cached_stats_json = ss.str();
+        m_cached_stats_json = packet.stats;
+        m_cached_stats_json.pop_back();
+        m_cached_stats_json += ",\"rendererLoadMs\":" + std::to_string(elapsed_ms(start)) + "}";
         return m_cached_stats_json;
     }
 
@@ -1363,10 +1420,12 @@ private:
 };
 
 EMSCRIPTEN_BINDINGS(orca_preview) {
+    emscripten::function("parseGcode", &parseGcode);
     emscripten::class_<OrcaPreview>("OrcaPreview")
         .constructor<>()
         .function("init", &OrcaPreview::init)
         .function("loadGcode", &OrcaPreview::loadGcode)
+        .function("loadParsedGcode", &OrcaPreview::loadParsedGcode)
         .function("clearGcode", &OrcaPreview::clearGcode)
         .function("setToolColors", &OrcaPreview::setToolColors)
         .function("setLayerRange", &OrcaPreview::setLayerRange)

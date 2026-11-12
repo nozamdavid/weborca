@@ -1,6 +1,8 @@
 import type { PresetStorageEnvelope, CloudAccount } from './types.ts';
 import type { UserPreset } from '../presets/types.ts';
 export const presetKey = (p: UserPreset) => `${p.kind}\u0000${p.name}`;
+let enrollmentVerified = false;
+export function verifyCloudEnrollment(verified: boolean) { enrollmentVerified = verified; }
 export function accountState(state: PresetStorageEnvelope, accountId: string): CloudAccount {
   if (!accountId) throw new Error('Orca account is required.');
   return state.cloud.accounts[accountId] ??= { records: {} };
@@ -25,7 +27,7 @@ export function journalLocalChanges(state: PresetStorageEnvelope, next: UserPres
     const old = oldPreset(p);
     p.cloudRef ??= old?.cloudRef;
     if (JSON.stringify(old) === JSON.stringify(p)) continue;
-    const owner = p.cloudRef?.accountId ?? state.cloud.activeAccount;
+    const owner = p.cloudRef?.accountId ?? (enrollmentVerified ? state.cloud.activeAccount : undefined);
     if (!owner) continue;
     const account = accountState(state, owner);
     const id = p.cloudRef?.id ?? crypto.randomUUID();

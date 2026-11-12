@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from '../../app/node_modules/esbuild/lib/main.js';
 
-test('Snapmaker return restores monitoring and failure preserves the last successful display', async () => {
+test('Snapmaker return restores monitoring and failure preserves the last successful display', async t => {
 const storage = new Map();
 globalThis.localStorage = {
   getItem: key => storage.get(key) ?? null,
@@ -34,6 +34,8 @@ const bundled = await build({
 });
 const { startPrinterSession, reconnectPrinterSession, usePrinterConnectionStore: store } = await import(
   `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
+t.after(() => store.getState().selectPrinter('absent'));
+t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
 const printer = {
   id: 'fixture', name: 'Fixture', host_type: 'snapmaker-cloud', print_host: 'id.snapmaker.com',
   cloud_region: 'global', cloud_account: 'fixture@example.invalid', printhost_apikey: 'access',
@@ -52,13 +54,11 @@ assert.equal(store.getState().status, 'error');
 assert.equal(store.getState().liveState, null);
 assert.equal(store.getState().cachedState.state, 'printing');
 store.getState().selectPrinter(printer.id);
-store.getState().setDeviceTabActive(false);
-store.getState().setDeviceTabActive(true);
 store.getState().savePrinter({ ...printer });
 assert.match(await store.getState().activeApi.test(), /verified/);
 await new Promise(resolve => setImmediate(resolve));
-assert.equal(Socket.all.length, 2);
-assert.equal(store.getState().status, 'connecting');
+assert.equal(Socket.all.length, 1);
+assert.equal(store.getState().status, 'error');
 assert.equal(typeof reconnectPrinterSession, 'function', 'the failed session needs an explicit retry action');
 reconnectPrinterSession();
 assert.equal(store.getState().status, 'connecting');
@@ -74,5 +74,15 @@ assert.equal(store.getState().liveState.heaters[0].current, 45);
 reconnectPrinterSession(); // Healthy sessions do not reconnect.
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(Socket.all.length, 2);
+store.getState().setDeviceTabActive(false);
+store.getState().setDeviceTabActive(true);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(Socket.all.length, 2, 'a fresh display defers monitoring on tab return');
+assert.equal(store.getState().status, 'none');
+assert.equal(store.getState().cachedState.state, 'printing');
+t.mock.timers.tick(15_000);
+await new Promise(resolve => setImmediate(resolve));
+assert.equal(Socket.all.length, 3, 'tab return restores monitoring when the display becomes due');
+assert.equal(store.getState().status, 'connecting');
 store.getState().selectPrinter('absent');
 });

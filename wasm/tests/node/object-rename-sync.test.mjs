@@ -23,7 +23,8 @@ test('real rename action republishes engine objects to the scene store before hi
     for (const direct of [true, false]) {
       let engineName = 'Before';
       const instances = [{ id: 7 }, { id: 8 }];
-      const plate = { objects: [{ id: 1, name: engineName, instances }], async refreshObjects() {
+      const plate = { objects: [{ id: 1, name: engineName, instances }], async refreshObjects(preserveGeometry) {
+        assert.equal(preserveGeometry, true, 'rename preserves unchanged mesh buffers');
         this.objects = [{ id: 1, name: engineName, instances }];
       } };
       const rename = async (id, name) => { assert.equal(id, 1); engineName = name; };

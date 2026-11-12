@@ -22,7 +22,7 @@ const bundled = await build({
   plugins: [{ name: 'store-services', setup(plugin) {
     plugin.onResolve({ filter: /^\.\./ }, args => args.importer === storePath && args.path !== '../shell/gcodeThumbnails' ? { path: args.path, namespace: 'service' } : undefined);
     plugin.onLoad({ filter: /.*/, namespace: 'service' }, args => ({ contents: (serviceExports.get(args.path) || []).map(name =>
-      name === 'usePrinterConnectionStore'
+      name === 'usePrinterConnectionStore' || name === 'usePrinterCatalog'
         ? `export const ${name} = { getState: () => ({ selectedPrinterId: null, printers: [] }), subscribe: () => () => {} };`
         : `export const ${name} = () => undefined;`
     ).join('\n'), loader: 'js' }));

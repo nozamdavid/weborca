@@ -176,6 +176,10 @@ describe('Orca WASM Variable Layer Height & Adaptive Slicing Test Suite', () => 
     const profRes = await core.call('getLayerHeightProfile', { objectId: benchyObjId });
     const expectedLayerCount = profRes.layerCount;
 
+    // Keep the model inside the 300 mm Voron bed (loaded models start at the origin).
+    const [benchy] = (await core.call('listObjects', {})).filter((o) => o.id === benchyObjId);
+    await core.call('setInstanceTransform', { objectId: benchyObjId, instanceId: benchy.instances[0].id, offset: [150, 150, benchy.instances[0].offset[2]] });
+
     const sliceRes = await core.call('slice', {
       outPath: '/out/benchy_adaptive.gcode',
       threads: 4

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createEngineCore } from '../../web/engine-core.js';
+import { prepareEngineAssets } from '../../web/engine-assets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
@@ -221,9 +222,10 @@ describe('Orca WASM Engine Advanced Paint Tools Test Suite', () => {
     // engine; structuredClone applies the same transfer semantics as postMessage.
     const workerSource = fs.readFileSync(path.join(repoRoot, 'wasm/web/engine-worker.js'), 'utf8')
       .replace("import { createEngineCore } from './engine-core.js';", '')
+      .replace("import { prepareEngineAssets } from './engine-assets.js';", '')
       .replace('let core = null;', 'let core = injectedCore;');
     let reply;
-    const worker = { injectedCore: core, self: {}, postMessage(message, transfer = []) {
+    const worker = { injectedCore: core, prepareEngineAssets, Uint8Array, AbortController, self: {}, postMessage(message, transfer = []) {
       reply = structuredClone(message, { transfer });
     } };
     vm.runInNewContext(workerSource, worker);

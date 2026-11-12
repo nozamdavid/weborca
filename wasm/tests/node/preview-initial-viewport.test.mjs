@@ -16,6 +16,7 @@ test('initializing preview synchronizes native viewport with a canvas already si
   } };
   try {
     const source = fs.readFileSync(new URL('../../app/src/preview/orcaPreviewModule.ts', import.meta.url), 'utf8')
+      .replace("import { preparePreview, cancelPreviewWorker } from './previewWorkerClient';", "const cancelPreviewWorker = () => {}; const preparePreview = () => { throw new Error('unexpected preparation'); };")
       .replace('let previewModule: any = null;', 'let previewModule: any = globalThis.__viewportModule;');
     const js = ts.transpile(source, { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 });
     const mod = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
@@ -59,6 +60,7 @@ test('disposing during initialization prevents a late native viewer and failed i
   globalThis.__viewportDeferred = modulePromise;
   try {
     const source = fs.readFileSync(new URL('../../app/src/preview/orcaPreviewModule.ts', import.meta.url), 'utf8')
+      .replace("import { preparePreview, cancelPreviewWorker } from './previewWorkerClient';", "const cancelPreviewWorker = () => {}; const preparePreview = () => { throw new Error('unexpected preparation'); };")
       .replace('let previewModulePromise: Promise<any> | null = null;', 'let previewModulePromise: Promise<any> | null = globalThis.__viewportDeferred;');
     const js = ts.transpile(source, { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 });
     const mod = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);

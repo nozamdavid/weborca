@@ -90,6 +90,8 @@ before(async () => {
     platesStore: `export const usePlatesStore = select => select({activePlateIndex: 0});`,
     wizard: `export const useWizardStore = select => select({addedFilaments: []});`,
     systemProfiles: `export const systemProfiles = async () => [];`,
+    printerCatalog: `export const loadPrinterCatalog = async () => {};
+      export const usePrinterCatalog = (select = s => s) => select({ vendors: [], loading: false, error: false });`,
     gatewayUrl: `export const DEFAULT_LOCAL_GATEWAY = 'http://gateway.invalid';
       export const fetchGatewayStatus = async () => null;
       export const discoverPrinters = () => { throw Error('unexpected discovery'); };

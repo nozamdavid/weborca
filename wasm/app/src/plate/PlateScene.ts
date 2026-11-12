@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { boxSelection, selectionRect } from './boxSelection';
+import './boxSelection.css';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
@@ -27,6 +29,7 @@ import { bindCanvasTouch } from '../components/canvasTouch';
 import { useMeasureStore, getMeasurementFeature, measureFeatures } from '../measure';
 
 export interface PlateSceneCallbacks {
+  onBoxSelect?: (refs: { objectId: number; instanceId: number }[]) => void;
   canMoveObjects?: () => boolean;
   onSelect: (objectId: number | null, instanceId: number | null, additive?: boolean, volumeId?: number) => void;
   /** The whole selection moved together: absolute transforms of the primary and every other selected instance. */
@@ -68,6 +71,59 @@ export class PlateScene {
   private orbitControls: OrbitControls;
   private disposeTouch: () => void;
   private transformControls: TransformControls;
+  private groupProxy = new THREE.Object3D();
+  private groupDrag: { pivot: THREE.Vector3; orbit: boolean; snapshots: { mesh: THREE.Mesh; position: THREE.Vector3; quaternion: THREE.Quaternion; scale: THREE.Vector3 }[] } | null = null;
+  private cancelGroupKey = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape' && this.groupDrag) { this.finishGroupDrag(false); event.stopImmediatePropagation(); }
+  };
+
+  private beginGroupDrag(): void {
+    if (this.callbacks.canMoveObjects?.() === false) { this.transformControls.dragging = false; return; }
+    const selected = this.getSelectedMesh();
+    const meshes = [...this.objectMeshes].filter(([key, mesh]) => mesh === selected || this.extraKeys.has(key)).map(([, mesh]) => mesh);
+    this.groupDrag = { pivot: this.groupProxy.position.clone(), orbit: this.orbitControls.enabled,
+      snapshots: meshes.map(mesh => ({ mesh, position: mesh.position.clone(), quaternion: mesh.quaternion.clone(), scale: mesh.scale.clone() })) };
+    this.orbitControls.enabled = false;
+    window.addEventListener('keydown', this.cancelGroupKey, true);
+  }
+
+  private changeGroupDrag(): void {
+    const drag = this.groupDrag;
+    if (!drag) return;
+    if (this.callbacks.canMoveObjects?.() === false) { this.finishGroupDrag(false); return; }
+    // Any colored scale handle applies uniform group scale. This cannot introduce shear.
+    const axis = this.transformControls.axis ?? 'XYZ';
+    const component = axis.includes('X') ? 'x' : axis.includes('Y') ? 'y' : 'z';
+    const factor = Math.max(0.001, this.groupProxy.scale[component]);
+    for (const { mesh, position, quaternion, scale } of drag.snapshots) {
+      mesh.position.copy(position).sub(drag.pivot);
+      if (this.gizmoMode === 'scale') {
+        mesh.position.multiplyScalar(factor);
+        mesh.scale.copy(scale).multiplyScalar(factor);
+      } else {
+        mesh.position.applyQuaternion(this.groupProxy.quaternion);
+        mesh.quaternion.copy(this.groupProxy.quaternion).multiply(quaternion);
+      }
+      mesh.position.add(drag.pivot);
+    }
+  }
+
+  private finishGroupDrag(commit: boolean): void {
+    const drag = this.groupDrag;
+    if (!drag) return;
+    this.groupDrag = null;
+    window.removeEventListener('keydown', this.cancelGroupKey, true);
+    this.transformControls.dragging = false;
+    this.transformControls.axis = null;
+    this.orbitControls.enabled = drag.orbit;
+    if (!commit || this.callbacks.canMoveObjects?.() === false) {
+      for (const { mesh, position, quaternion, scale } of drag.snapshots) {
+        mesh.position.copy(position); mesh.quaternion.copy(quaternion); mesh.scale.copy(scale);
+      }
+    } else this.commitMeshTransforms(drag.snapshots.map(s => s.mesh));
+    this.updateTransformControls();
+    this.requestDraw();
+  }
 
   /** Short white bounding-box corners for the current selection, independent of transform tools. */
   // Viewer-only lines: never added to objectMeshes, the engine, or exported model data.
@@ -97,6 +153,25 @@ export class PlateScene {
   public extraBedsGroup = new THREE.Group();
   private plates: { index: number; name: string; origin: [number, number, number] }[] = [{ index: 0, name: '', origin: [0, 0, 0] }];
   private activePlateIndex = 0;
+  private canceledBoxPointer: number | null = null;
+  private boxDrag: { pointerId: number; start: { x: number; y: number }; end: { x: number; y: number }; overlay: HTMLDivElement; orbit: boolean; moved: boolean } | null = null;
+  private cancelBoxKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape' && this.boxDrag) { this.finishBox(false); e.stopImmediatePropagation(); }
+  };
+
+  private finishBox(commit: boolean): boolean {
+    const drag = this.boxDrag;
+    if (!drag) return false;
+    this.boxDrag = null;
+    if (!commit) this.canceledBoxPointer = drag.pointerId;
+    drag.overlay.remove();
+    window.removeEventListener('keydown', this.cancelBoxKey, true);
+    this.orbitControls.enabled = drag.orbit;
+    const canvas = this.renderer.domElement;
+    if (canvas.hasPointerCapture(drag.pointerId)) canvas.releasePointerCapture(drag.pointerId);
+    if (commit && drag.moved && this.callbacks.canMoveObjects?.() !== false) this.callbacks.onBoxSelect?.(boxSelection(this.viewerTargets(), this.camera, canvas.getBoundingClientRect(), selectionRect(drag.start, drag.end)));
+    return drag.moved;
+  }
   private labelSprites: Map<string, THREE.Sprite> = new Map();
 
   private flattenClusters: Array<{ normal: [number, number, number]; center: [number, number, number]; area: number; outline: Array<[number, number, number]> }> = [];
@@ -126,12 +201,22 @@ export class PlateScene {
   /** `objectId_instanceId` of the other selected instances; they follow the primary while it is dragged. */
   private extraKeys = new Set<string>();
   private dragStart: { primary: THREE.Vector3; extras: Map<THREE.Mesh, THREE.Vector3> } | null = null;
+  private consumedTransformReleases = new WeakSet<PointerEvent>();
+  private pointerDownId: number | null = null;
+  private transformPointerId: number | null = null;
   private planeDrag: {
     pointerId: number; target: THREE.Mesh; plane: THREE.Plane; start: THREE.Vector3;
     origins: Map<THREE.Mesh, THREE.Vector3>; moved: boolean;
     orbitEnabled: boolean; transformEnabled: boolean;
     touchScale?: { origin: THREE.Vector3; clientY: number };
   } | null = null;
+  private cancelPlaneKey = (event: KeyboardEvent): void => {
+    if (event.key !== 'Escape' || !this.planeDrag) return;
+    this.transformPointerId = this.planeDrag.pointerId;
+    this.finishPlaneDrag(false);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  };
   private selectedInstanceId: number | null = null;
   private gizmoMode: GizmoMode = null;
   private bedConfig: BedConfig;
@@ -244,6 +329,7 @@ export class PlateScene {
     this.orbitControls.enableDamping = true;
     this.orbitControls.dampingFactor = 0.1;
     this.orbitControls.addEventListener('start', () => { this.initialBedFit = false; });
+    this.orbitControls.addEventListener("change", () => this.requestDraw());
     this.orbitControls.zoomSpeed = this.zoomSpeed;
     this.orbitControls.rotateSpeed = this.rotateSensitivity;
     this.orbitControls.mouseButtons = {
@@ -296,8 +382,11 @@ export class PlateScene {
     // 5. TransformControls
     this.transformControls = new TransformControls(this.camera, this.renderer.domElement);
     this.scene.add(this.transformControls.getHelper());
+    this.scene.add(this.groupProxy);
 
     this.transformControls.addEventListener('objectChange', () => {
+      this.requestDraw();
+      if (this.groupDrag) { this.changeGroupDrag(); return; }
       const target = this.transformControls.object;
       if (!target || !this.dragStart) return;
       const delta = target.position.clone().sub(this.dragStart.primary);
@@ -305,6 +394,11 @@ export class PlateScene {
     });
 
     this.transformControls.addEventListener('dragging-changed', (event) => {
+      if (event.value) this.transformPointerId = this.pointerDownId;
+      if (this.transformControls.object === this.groupProxy) {
+        if (event.value) this.beginGroupDrag(); else this.finishGroupDrag(true);
+        return;
+      }
       this.orbitControls.enabled = !event.value;
       if (event.value) {
         const target = this.transformControls.object;
@@ -401,6 +495,7 @@ export class PlateScene {
 
     // Subscribe to preferences store changes
     this.unsubscribePrefs = usePrefsStore.subscribe((state, prevState) => {
+      this.requestDraw();
       if (state.display.showGrid !== prevState.display.showGrid) {
         this.setShowGrid(state.display.showGrid);
       }
@@ -444,6 +539,7 @@ export class PlateScene {
 
     this.unsubscribeCut = useCutStore.subscribe(() => this.syncCutPreview());
     this.unsubscribeMeasure = useMeasureStore.subscribe((state, prevState) => {
+      this.requestDraw();
       if (state.resetGeneration !== prevState.resetGeneration || (!state.feature1 && !state.feature2 && (prevState.feature1 || prevState.feature2))) {
         this.measurePoints = [];
         this.measureSessionId++;
@@ -483,6 +579,7 @@ export class PlateScene {
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown, true);
     this.renderer.domElement.addEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.addEventListener('pointerup', this.onPointerUp);
+    this.renderer.domElement.addEventListener('pointerup', this.onTransformPointerUp, true);
     this.renderer.domElement.addEventListener('pointerleave', this.onPointerLeave);
     this.renderer.domElement.addEventListener('pointercancel', this.onPointerCancel);
     this.renderer.domElement.addEventListener('lostpointercapture', this.onPointerCancel);
@@ -499,6 +596,8 @@ export class PlateScene {
     });
     this.intersectionObserver.observe(container);
     document.addEventListener('visibilitychange', this.syncAnimation);
+    this.themeObserver = new MutationObserver(() => this.requestDraw());
+    this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     this.onWindowResize();
   }
 
@@ -570,6 +669,7 @@ export class PlateScene {
   }
 
   public setWipeTowerPreview(tower: { enabled: boolean; width?: number; depth?: number; height?: number; x?: number; y?: number; rotation?: number }, origin: [number, number, number] = [0, 0, 0]): void {
+    this.requestDraw();
     if (this.towerPreview) {
       this.scene.remove(this.towerPreview);
       this.towerPreview.geometry.dispose();
@@ -590,6 +690,7 @@ export class PlateScene {
 
   /** Invalidate pending artwork without hiding the usable JS bed. */
   public setBedLoading(loading: boolean): void {
+    this.requestDraw();
     if (loading) this.bedAssetRevision++;
   }
 
@@ -639,6 +740,7 @@ export class PlateScene {
   }
 
   public setShowGrid(visible: boolean): void {
+    this.requestDraw();
     this.showGrid = visible;
     if (this.bedGridHelper) {
       this.bedGridHelper.visible = visible;
@@ -652,6 +754,7 @@ export class PlateScene {
   }
 
   public setShowAxes(visible: boolean): void {
+    this.requestDraw();
     this.showAxes = visible;
     if (this.axesHelper) {
       this.axesHelper.visible = visible;
@@ -663,12 +766,14 @@ export class PlateScene {
 
   /** All plates with their origin: each gets a bed, its number (printed large in the front-left corner, like desktop) and its custom title. */
   public setPlates(plates: { index: number; name: string; origin: [number, number, number] }[], activeIndex: number): void {
+    this.requestDraw();
     this.plates = plates.length > 0 ? plates : this.plates;
     this.activePlateIndex = activeIndex;
     this.rebuildPlates();
   }
 
   public orbitCamera(dx: number, dy: number): void {
+    this.requestDraw();
     const controls = this.orbitControls as any;
     const height = this.renderer.domElement.clientHeight;
     if (!height || !controls.enabled) return;
@@ -712,6 +817,7 @@ export class PlateScene {
   }
 
   public focusPlate(index: number): void {
+    this.requestDraw();
     const plate = this.plates.find((p) => p.index === index);
     if (!plate) return;
     const [cx, cy] = this.bedConfig.center;
@@ -810,6 +916,7 @@ export class PlateScene {
             texture.image = image;
           }
           texture.needsUpdate = true;
+          this.requestDraw();
         }, { active, activeLabel: translate('Active'), inactiveLabel: translate('Inactive') });
         texture.addEventListener('dispose', dispose);
       }
@@ -852,6 +959,7 @@ export class PlateScene {
   }
 
   public setShowLabels(visible: boolean): void {
+    this.requestDraw();
     this.showLabels = visible;
     this.labelsGroup.visible = visible;
     if (visible) {
@@ -863,6 +971,7 @@ export class PlateScene {
   }
 
   public setShowBuildVolume(visible: boolean): void {
+    this.requestDraw();
     this.showBuildVolume = visible;
     if (this.buildVolumeHelper) {
       this.buildVolumeHelper.visible = visible;
@@ -873,6 +982,7 @@ export class PlateScene {
   }
 
   public setShowWireframe(visible: boolean): void {
+    this.requestDraw();
     this.showWireframe = visible;
     this.defaultMaterial.wireframe = visible;
     this.selectedMaterial.wireframe = visible;
@@ -884,6 +994,7 @@ export class PlateScene {
   }
 
   public setCameraType(type: 'perspective' | 'orthographic'): void {
+    this.requestDraw();
     if (
       this.cameraType === type &&
       ((type === 'perspective' && this.camera === this.perspectiveCamera) ||
@@ -928,6 +1039,7 @@ export class PlateScene {
   }
 
   public toggleCameraType(): void {
+    this.requestDraw();
     this.perspectiveOnOrbit = false;
     const next = this.cameraType === 'perspective' ? 'orthographic' : 'perspective';
     this.setCameraType(next);
@@ -948,6 +1060,7 @@ export class PlateScene {
   }
 
   public zoomToBed(): void {
+    this.requestDraw();
     this.initialBedFit = false;
     this.fitBed();
   }
@@ -1025,6 +1138,7 @@ export class PlateScene {
       sprite.userData.disposeHtmlLabel = attachHtmlObjectLabel(canvas, text, image => {
         texture.image = image;
         texture.needsUpdate = true;
+          this.requestDraw();
       });
       delete sprite.userData.startHtmlLabel;
     };
@@ -1069,6 +1183,7 @@ export class PlateScene {
 
   /** Sets the colour of each part of each object (`volumeId` to a CSS colour) and repaints the meshes. */
   public setVolumeColors(colors: Map<number, Map<number, string>>): void {
+    this.requestDraw();
     this.volumeColors = colors;
     for (const objectId of this.geometries.keys()) this.applyVolumeColors(objectId);
     this.updateVolumeMaterials();
@@ -1115,6 +1230,7 @@ export class PlateScene {
   }
 
   public updateBedConfig(bedConfig: BedConfig): void {
+    this.requestDraw();
     this.bedConfig = bedConfig;
     this.buildBed();
     delete this.scene.userData.lightTheme;
@@ -1122,7 +1238,23 @@ export class PlateScene {
     this.orbitControls.target.set(bedConfig.center[0], bedConfig.center[1], 0);
   }
 
-  public async setObjects(objects: PlateObject[]): Promise<void> {
+  private objectGeneration = 0;
+
+  public async setObjects(objects: PlateObject[]): Promise<boolean> {
+    const generation = ++this.objectGeneration;
+    const loaded = new Map();
+    for (const obj of objects) {
+      const mesh = await this.callbacks.getMesh(obj.id);
+      if (this.isDestroyed || generation !== this.objectGeneration) return false;
+      let viewer = null;
+      try { viewer = await this.callbacks.getViewerMesh(obj.id); }
+      catch (error) { console.error("[PlateScene] Viewer mesh unavailable:", error); }
+      if (this.isDestroyed || generation !== this.objectGeneration) return false;
+      loaded.set(obj.id, { mesh, viewer });
+    }
+    if (this.isDestroyed || generation !== this.objectGeneration) return false;
+    // No awaits below: publish all scene mutations as one accepted update.
+    this.finishGroupDrag(false);
     const activeKeys = new Set<string>();
 
     for (const obj of objects) {
@@ -1133,7 +1265,7 @@ export class PlateScene {
       }
       if (!geo) {
         try {
-          const meshData = await this.callbacks.getMesh(obj.id);
+          const meshData = loaded.get(obj.id).mesh;
           if (meshData.volumes) {
             this.meshVolumes.set(obj.id, meshData.volumes);
           }
@@ -1148,9 +1280,9 @@ export class PlateScene {
           console.error(`[PlateScene] Error loading mesh for object ${obj.id}:`, err);
           continue;
         }
-      } else {
+      } else if (geo.userData.meshData !== loaded.get(obj.id).mesh) {
         try {
-          const meshData = await this.callbacks.getMesh(obj.id);
+          const meshData = loaded.get(obj.id).mesh;
           if (meshData.volumes) {
             this.meshVolumes.set(obj.id, meshData.volumes);
           }
@@ -1204,10 +1336,9 @@ export class PlateScene {
         } catch (_) {}
       }
 
+      geo.userData.meshData = loaded.get(obj.id).mesh;
       this.applyVolumeColors(obj.id);
-      let viewer: ViewerMeshData | null = null;
-      try { viewer = await this.callbacks.getViewerMesh(obj.id); }
-      catch (error) { console.error('[PlateScene] Viewer mesh unavailable:', error); }
+      const viewer: ViewerMeshData | null = loaded.get(obj.id).viewer;
 
       for (const inst of obj.instances) {
         const key = `${obj.id}_${inst.id}`;
@@ -1244,7 +1375,7 @@ export class PlateScene {
           const positions = viewer!.positions.subarray(part.firstVertex * 3, (part.firstVertex + part.vertexCount) * 3);
           const old = node?.geometry.getAttribute('position').array;
           // Transform and colour changes reuse the geometry and its shared position buffer.
-          if (!node || !old || old.length !== positions.length || old.some((v, i) => v !== positions[i])) {
+          if (!node || !old || node.userData.viewer !== viewer) {
             const indices = viewer!.indices.slice(part.firstFacet * 3, (part.firstFacet + part.facetCount) * 3);
             for (let i = 0; i < indices.length; i++) indices[i] -= part.firstVertex;
             const geometry = new THREE.BufferGeometry();
@@ -1266,7 +1397,7 @@ export class PlateScene {
               this.volumeMeshes.set(volumeKey, node);
             }
           }
-          node.userData = { ...part, objectId: obj.id, instanceId: inst.id };
+          node.userData = { ...part, viewer, objectId: obj.id, instanceId: inst.id };
           node.position.fromArray(part.offset);
           node.rotation.set(...part.rotation, 'ZYX');
           node.scale.set(...part.scale.map((s, i) => s * (part.mirror?.[i] ?? 1)) as [number, number, number]);
@@ -1310,9 +1441,13 @@ export class PlateScene {
     this.updateVolumeMaterials();
     this.updateTransformControls();
     this.updateSelectionOutline();
+    this.requestDraw();
+    return true;
   }
 
   public setSelection(objectId: number | null, instanceId: number | null, extras: { objectId: number; instanceId: number }[] = [], volumeId: number | null = null): void {
+    this.requestDraw();
+    this.finishGroupDrag(false);
     this.selectedObjectId = objectId;
     this.selectedInstanceId = instanceId;
     this.selectedVolumeId = volumeId;
@@ -1337,6 +1472,7 @@ export class PlateScene {
 
   /** Follows the cut tool: preview the open cut on the target instance, and report its cut face to the store. */
   private syncCutPreview(): void {
+    this.requestDraw();
     if (this.isDestroyed) return;
     const cut = useCutStore.getState();
     let target: THREE.Mesh | null = null;
@@ -1361,11 +1497,19 @@ export class PlateScene {
   }
 
   private updateTransformControls(): void {
+    if (this.groupDrag) this.finishGroupDrag(false);
     const selected = this.getSelectedMesh();
-    // Other selected instances follow translation; rotate and scale apply to a single selection.
+    // Rotate and scale share a group pivot; translation keeps its existing mesh target.
     if (this.gizmoMode !== null && selected && (this.selectedVolumeId === null || selected.userData.volumeId !== undefined) && !this.isPaintingActive && !this.measureActive && !this.explodeActive && !this.cutPreview.active &&
-        (this.extraKeys.size === 0 || this.gizmoMode === 'translate')) {
-      this.transformControls.attach(selected);
+        this.callbacks.canMoveObjects?.() !== false) {
+      if (this.extraKeys.size && this.selectedVolumeId === null && this.gizmoMode !== 'translate') {
+        const bounds = new THREE.Box3();
+        for (const [key, mesh] of this.objectMeshes) if (mesh === selected || this.extraKeys.has(key)) bounds.expandByObject(mesh, true);
+        bounds.getCenter(this.groupProxy.position);
+        this.groupProxy.position.z = bounds.min.z;
+        this.groupProxy.quaternion.identity(); this.groupProxy.scale.setScalar(1);
+        this.transformControls.attach(this.groupProxy);
+      } else this.transformControls.attach(selected);
     } else {
       this.transformControls.detach();
       this.transformControls.axis = null;
@@ -1411,12 +1555,15 @@ export class PlateScene {
   }
 
   public setGizmoMode(mode: GizmoMode): void {
+    this.requestDraw();
+    this.finishGroupDrag(false);
     this.gizmoMode = mode;
     if (mode !== null) this.transformControls.setMode(mode);
     this.updateTransformControls();
   }
 
   public setPaintingActive(active: boolean, volumeId?: number | null): void {
+    this.requestDraw();
     this.isPaintingActive = active;
     this.paintingVolumeId = active ? (volumeId ?? null) : null;
     this.updateViewerVisibility();
@@ -1424,12 +1571,14 @@ export class PlateScene {
   }
 
   public setAdvancedPainting(active: boolean, volumeId?: number | null): void {
+    this.requestDraw();
     this.advancedPainting = active;
     this.setPaintingActive(active, volumeId);
     if (!active) this.paintCursor.setVisible(false);
   }
 
   public setPaintCursor(radius: number, tool: PaintTool): void {
+    this.requestDraw();
     this.cursorRadius = radius;
     this.cursorTool = tool;
   }
@@ -1483,16 +1632,19 @@ export class PlateScene {
   }
 
   public updateToolOverlay(objectId: number, overlay: ParsedPaintOverlay | null, layer: PaintLayer, colors: string[]): void {
+    this.requestDraw();
     for (const mesh of this.objectMeshes.values()) {
       if (mesh.userData.objectId === objectId) renderPaintOverlay(mesh, overlay, layer, colors);
     }
   }
 
   public clearToolOverlays(): void {
+    this.requestDraw();
     for (const mesh of this.objectMeshes.values()) clearPaintOverlay(mesh);
   }
 
   public setPaintingVolumeId(volumeId: number | null): void {
+    this.requestDraw();
     this.paintingVolumeId = volumeId;
   }
 
@@ -1528,6 +1680,7 @@ export class PlateScene {
   }
 
   public showFlattenClusters(clusters: Array<{ normal: [number, number, number]; center: [number, number, number]; area: number; outline: Array<[number, number, number]> }>): void {
+    this.requestDraw();
     this.clearFlattenClusters();
     this.flattenClusters = clusters;
     this.updateViewerVisibility();
@@ -1556,6 +1709,7 @@ export class PlateScene {
   }
 
   public clearFlattenClusters(): void {
+    this.requestDraw();
     while (this.flattenGroup.children.length > 0) {
       const child = this.flattenGroup.children[0] as THREE.Line;
       child.geometry.dispose();
@@ -1569,6 +1723,7 @@ export class PlateScene {
 
   /** Explode view spreads objects and their individual parts without changing engine transforms. */
   public setExplodeActive(active: boolean): void {
+    this.requestDraw();
     if (this.explodeActive === active) return;
     this.explodeActive = active;
     this.updateViewerVisibility();
@@ -1590,6 +1745,7 @@ export class PlateScene {
   }
 
   public setExplodeFactor(factor: number): void {
+    this.requestDraw();
     this.explodeFactor = factor;
     if (this.explodeActive) {
       this.applyExplode(factor);
@@ -1685,6 +1841,7 @@ export class PlateScene {
 
   /** Measure mode: two clicks on the model surface mark a segment; a third click starts a new one. */
   public setMeasureActive(active: boolean): void {
+    this.requestDraw();
     if (this.measureActive === active) return;
     this.measureActive = active;
     if (active) this.transformControls.detach();
@@ -1693,6 +1850,7 @@ export class PlateScene {
   }
 
   public clearMeasure(): void {
+    this.requestDraw();
     this.measureSessionId++;
     this.measurePoints = [];
     useMeasureStore.getState().resetSelection();
@@ -1876,10 +2034,12 @@ export class PlateScene {
   }
 
   public setBrimEarsActive(active: boolean): void {
+    this.requestDraw();
     this.brimEarsActive = active;
   }
 
   public showBrimEars(points: Array<{ position: [number, number, number]; radius: number }>): void {
+    this.requestDraw();
     this.clearBrimEarsOverlay();
     this.brimEarPoints = points;
     for (let i = 0; i < points.length; i++) {
@@ -1901,6 +2061,7 @@ export class PlateScene {
   }
 
   public clearBrimEarsOverlay(): void {
+    this.requestDraw();
     while (this.brimEarsGroup.children.length > 0) {
       const child = this.brimEarsGroup.children[0] as THREE.Mesh;
       child.geometry.dispose();
@@ -1956,6 +2117,7 @@ export class PlateScene {
   }
 
   public clearAllOverlays(objectId?: number): void {
+    this.requestDraw();
     for (const [key, mesh] of this.objectMeshes.entries()) {
       if (typeof objectId === 'number' && mesh.userData.objectId !== objectId) {
         continue;
@@ -1973,6 +2135,7 @@ export class PlateScene {
   }
 
   public cancelStroke(): void {
+    this.requestDraw();
     this.isPaintingStroke = false;
     this.orbitControls.enabled = true;
   }
@@ -1982,6 +2145,7 @@ export class PlateScene {
     paintingData: SupportPaintingData | null,
     targetVolumeId?: number | null
   ): void {
+    this.requestDraw();
     const volId = paintingData?.volumeId ?? targetVolumeId;
     const partitions = this.meshVolumes.get(objectId);
 
@@ -2110,6 +2274,9 @@ export class PlateScene {
   }
 
   private onPointerDown = (e: PointerEvent, modelTouch = false): void => {
+    this.requestDraw();
+    if (this.boxDrag) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    this.canceledBoxPointer = null;
     if (e.pointerType === 'touch' && !modelTouch) return;
     if (this.planeDrag) {
       e.preventDefault();
@@ -2117,6 +2284,24 @@ export class PlateScene {
       return;
     }
     this.pointerDownPos = { x: e.clientX, y: e.clientY };
+    this.pointerDownId = e.pointerId;
+    this.transformPointerId = null;
+    if (!modelTouch && e.pointerType !== 'touch' && e.button === 0 && e.shiftKey && this.callbacks.canMoveObjects?.() !== false &&
+        !this.isPaintingActive && !this.measureActive && !this.explodeActive && !this.brimEarsActive &&
+        !this.flattenClusters.length && !this.cutPreview.active && !this.transformControls.dragging && !this.transformControls.axis) {
+      if (this.boxDrag) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'plate-box-selection';
+      overlay.hidden = true;
+      overlay.setAttribute('aria-hidden', 'true');
+      this.renderer.domElement.parentElement!.append(overlay);
+      this.boxDrag = { pointerId: e.pointerId, start: { x: e.clientX, y: e.clientY }, end: { x: e.clientX, y: e.clientY }, overlay, orbit: this.orbitControls.enabled, moved: false };
+      this.orbitControls.enabled = false;
+      this.renderer.domElement.setPointerCapture(e.pointerId);
+      window.addEventListener('keydown', this.cancelBoxKey, true);
+      e.preventDefault(); e.stopImmediatePropagation();
+      return;
+    }
 
     // Body dragging translates in XY independently of the active gizmo mode.
     // Tool handles and tools that operate on the surface retain their own gestures.
@@ -2142,6 +2327,7 @@ export class PlateScene {
         this.planeDrag = { pointerId: e.pointerId, target, plane, start: hit.point.clone(), origins, moved: false,
           orbitEnabled: this.orbitControls.enabled, transformEnabled: this.transformControls.enabled,
           touchScale: modelTouch && this.gizmoMode === 'scale' ? { origin: target.scale.clone(), clientY: e.clientY } : undefined };
+        window.addEventListener('keydown', this.cancelPlaneKey, true);
         this.orbitControls.enabled = false;
         this.transformControls.enabled = false;
         this.renderer.domElement.setPointerCapture(e.pointerId);
@@ -2172,6 +2358,17 @@ export class PlateScene {
   };
 
   private onPointerMove = (e: PointerEvent, modelTouch = false): void => {
+    this.requestDraw();
+    if (this.boxDrag?.pointerId === e.pointerId) {
+      const drag = this.boxDrag;
+      drag.end = { x: e.clientX, y: e.clientY };
+      drag.moved ||= Math.hypot(e.clientX - drag.start.x, e.clientY - drag.start.y) > 5;
+      const rect = selectionRect(drag.start, drag.end);
+      const parent = drag.overlay.parentElement!.getBoundingClientRect();
+      Object.assign(drag.overlay.style, { left: `${rect.left - parent.left}px`, top: `${rect.top - parent.top}px`, width: `${rect.right - rect.left}px`, height: `${rect.bottom - rect.top}px` });
+      drag.overlay.hidden = !drag.moved;
+      e.preventDefault(); e.stopImmediatePropagation(); return;
+    }
     if (e.pointerType === 'touch' && !modelTouch) return;
     const drag = this.planeDrag;
     if (drag && drag.pointerId === e.pointerId) {
@@ -2216,7 +2413,23 @@ export class PlateScene {
     }
   };
 
+  private onTransformPointerUp = (e: PointerEvent): void => {
+    this.requestDraw();
+    // Capture runs before Three's pointerup listener ends the drag and clears axis.
+    // Consume this event only, so cancellation/outside release cannot eat a later click.
+    if (this.transformControls.dragging || this.transformPointerId === e.pointerId) this.consumedTransformReleases.add(e);
+    if (this.transformPointerId === e.pointerId) this.transformPointerId = null;
+  };
+
   private onPointerUp = (e: PointerEvent): void => {
+    this.requestDraw();
+    if (this.consumedTransformReleases.delete(e)) return;
+    if (this.canceledBoxPointer === e.pointerId) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    if (this.boxDrag) {
+      if (this.boxDrag.pointerId !== e.pointerId) return;
+      this.boxDrag.end = { x: e.clientX, y: e.clientY };
+      if (this.finishBox(true)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+    }
     if (e.pointerType === 'touch') return;
     if (this.planeDrag && this.planeDrag.pointerId !== e.pointerId) return;
     if (this.planeDrag?.pointerId === e.pointerId) {
@@ -2367,11 +2580,13 @@ export class PlateScene {
     const drag = this.planeDrag;
     if (!drag) return;
     this.planeDrag = null;
+    window.removeEventListener('keydown', this.cancelPlaneKey, true);
     this.orbitControls.enabled = drag.orbitEnabled;
     this.transformControls.enabled = drag.transformEnabled;
     if (this.renderer.domElement.hasPointerCapture(drag.pointerId)) this.renderer.domElement.releasePointerCapture(drag.pointerId);
     if (!commit) for (const [mesh, origin] of drag.origins) mesh.position.copy(origin);
     if (!commit && drag.touchScale) drag.target.scale.copy(drag.touchScale.origin);
+    this.requestDraw();
     if (!commit || !drag.moved) return;
     this.commitMeshTransforms([...drag.origins.keys()], !drag.touchScale);
   }
@@ -2403,12 +2618,16 @@ export class PlateScene {
   }
 
   private onPointerCancel = (event?: PointerEvent): void => {
+    this.requestDraw();
+    this.finishGroupDrag(false);
+    if (!event || this.boxDrag?.pointerId === event.pointerId) this.finishBox(false);
     if (event && this.planeDrag && this.planeDrag.pointerId !== event.pointerId) return;
     this.finishPlaneDrag(false);
     this.onPointerLeave();
   };
 
   private onPointerLeave = (): void => {
+    this.requestDraw();
     this.paintCursor.setVisible(false);
     if (this.isPaintingStroke) {
       this.isPaintingStroke = false;
@@ -2455,6 +2674,10 @@ export class PlateScene {
     this.syncAnimation();
   };
 
+  public requestDraw(): void { this.syncAnimation(); }
+
+  private themeObserver: MutationObserver | null = null;
+
   private syncAnimation = (): void => {
     const visible = !this.isDestroyed && this.hasVisibleSize && this.isInViewport && !document.hidden;
     if (visible && this.animationFrameId === null) {
@@ -2469,7 +2692,7 @@ export class PlateScene {
     this.animationFrameId = null;
     if (this.isDestroyed || !this.hasVisibleSize || !this.isInViewport || document.hidden) return;
 
-    this.orbitControls.update();
+    const moving = this.orbitControls.update();
     this.cutPreview.frame();
     this.updateSelectionOutline();
     const light = document.documentElement.dataset.theme === 'light';
@@ -2482,7 +2705,7 @@ export class PlateScene {
     // See-through when the camera is below the bed, so parts stay visible from underneath.
     if (this.bedFloorMaterial) this.bedFloorMaterial.opacity = this.camera.position.z < 0 ? 0.25 : 1;
     this.renderer.render(this.scene, this.camera);
-    this.syncAnimation();
+    if (moving) this.syncAnimation();
   };
 
   public getCameraQuaternion(): THREE.Quaternion {
@@ -2490,6 +2713,7 @@ export class PlateScene {
   }
 
   public setCameraView(view: CameraView): void {
+    this.requestDraw();
     this.initialBedFit = false;
     if (view === 'BED') {
       this.zoomToBed();
@@ -2833,6 +3057,7 @@ export class PlateScene {
     ranges?: Array<{ minZ: number; maxZ: number }> | null,
     selectedRangeIndex?: number | null
   ): void {
+    this.requestDraw();
     while (this.layerRangeOverlays.children.length > 0) {
       const child = this.layerRangeOverlays.children[0] as THREE.Mesh;
       if (child.geometry) child.geometry.dispose();
@@ -2893,6 +3118,8 @@ export class PlateScene {
   }
 
   public destroy(): void {
+    this.finishGroupDrag(false);
+    this.finishBox(false);
     this.setWipeTowerPreview({ enabled: false });
     this.disposeChildren(this.plateLabelGroup);
     this.bedAssetRevision++;
@@ -2903,6 +3130,7 @@ export class PlateScene {
       this.animationFrameId = null;
     }
 
+    this.themeObserver?.disconnect();
     this.unsubscribePrefs?.();
     this.unsubscribePrefs = null;
     this.unsubscribeCut?.();
@@ -2916,6 +3144,7 @@ export class PlateScene {
     this.renderer.domElement.removeEventListener('pointerdown', this.onPointerDown, true);
     this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
     this.renderer.domElement.removeEventListener('pointerup', this.onPointerUp);
+    this.renderer.domElement.removeEventListener('pointerup', this.onTransformPointerUp, true);
     this.renderer.domElement.removeEventListener('pointerleave', this.onPointerLeave);
     this.renderer.domElement.removeEventListener('pointercancel', this.onPointerCancel);
     this.renderer.domElement.removeEventListener('lostpointercapture', this.onPointerCancel);

@@ -7,6 +7,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 source "$REPO_ROOT/wasm/scripts/env.sh"
 
 cd "$REPO_ROOT"
+export ORCA_BUILD_SOURCE="$(node wasm/scripts/runtime-manifest.mjs fingerprint)"
+node wasm/scripts/runtime-manifest.mjs identity engine
 
 if [ -z "${ORCA_WASM_BUILD_DIR:-}" ]; then
     _PREFIX_BASE="$(basename "$WASM_PREFIX")"
@@ -37,3 +39,4 @@ emcmake cmake -S . -B "$ORCA_WASM_BUILD_DIR" -G Ninja \
     -DCMAKE_CXX_FLAGS="$WASM_CFLAGS"
 
 cmake --build "$ORCA_WASM_BUILD_DIR" --target orca_slice_driver --target orca_engine -j "$WASM_JOBS"
+node wasm/scripts/runtime-manifest.mjs create engine "$ORCA_WASM_BUILD_DIR/wasm/engine"

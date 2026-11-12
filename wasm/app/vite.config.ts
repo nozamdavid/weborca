@@ -45,6 +45,7 @@ import fs from 'node:fs';
 import { buildSync } from 'esbuild';
 import { createOctoEverywhereGateway } from './gateway/octoEverywhere';
 import { createAlphaAccess } from './gateway/alphaAccess';
+import { verifyManifest } from '../scripts/runtime-manifest.mjs';
 
 const repoRoot = path.resolve(__dirname, '../..');
 // The main engine is built without OpenCASCADE (SLIC3R_WITH_OCCT=OFF, wasm/scripts/build_orca.sh).
@@ -211,6 +212,9 @@ function orcaAssetsPlugin() {
     closeBundle() {
       const distDir = resolvedDistDir;
       if (!fs.existsSync(distDir)) return;
+      for (const [kind, dir] of [['engine', engineBuildDir], ['preview', previewBuildDir], ['step', stepModuleBuildDir]]) {
+        verifyManifest(repoRoot, dir, kind);
+      }
 
       console.log('[orca-assets] Packaging engine, preview, profiles, and worker into dist/...');
 
@@ -226,6 +230,8 @@ function orcaAssetsPlugin() {
 
       // 1. Copy engine module into dist/engine
       const distEngine = path.join(distDir, 'engine');
+      fs.mkdirSync(distEngine, { recursive: true });
+      fs.copyFileSync(path.join(engineBuildDir, 'runtime-manifest.json'), path.join(distEngine, 'runtime-manifest.json'));
       if (fs.existsSync(engineBuildDir)) {
         fs.mkdirSync(distEngine, { recursive: true });
         for (const file of fs.readdirSync(engineBuildDir)) {
@@ -237,6 +243,8 @@ function orcaAssetsPlugin() {
 
       // 1b. Copy the lazily loaded STEP module (and the OCCT license texts it embeds) into dist/engine/step
       const distStep = path.join(distEngine, 'step');
+      fs.mkdirSync(distStep, { recursive: true });
+      fs.copyFileSync(path.join(stepModuleBuildDir, 'runtime-manifest.json'), path.join(distStep, 'runtime-manifest.json'));
       if (fs.existsSync(stepModuleBuildDir)) {
         fs.mkdirSync(distStep, { recursive: true });
         for (const file of fs.readdirSync(stepModuleBuildDir)) {
@@ -248,6 +256,8 @@ function orcaAssetsPlugin() {
 
       // 2. Copy preview module into dist/preview and dist/ root
       const distPreview = path.join(distDir, 'preview');
+      fs.mkdirSync(distPreview, { recursive: true });
+      fs.copyFileSync(path.join(previewBuildDir, 'runtime-manifest.json'), path.join(distPreview, 'runtime-manifest.json'));
       if (fs.existsSync(previewBuildDir)) {
         fs.mkdirSync(distPreview, { recursive: true });
         for (const file of fs.readdirSync(previewBuildDir)) {
@@ -348,6 +358,11 @@ function orcaAssetsPlugin() {
         logLevel: 'warning'
       });
 
+      for (const [kind, dir] of [['engine', distEngine], ['preview', distPreview], ['step', distStep]]) {
+        // Compare the packaged bytes too, detecting a linker replacing inputs during copying.
+        // STEP has its own manifest and is verified separately from the main engine.
+        verifyManifest(repoRoot, dir, kind);
+      }
       console.log('[orca-assets] Assets successfully copied to dist/.');
     }
   };

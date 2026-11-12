@@ -13,6 +13,13 @@ const VIEW_TYPES: readonly PreviewViewType[] = [
   'VolumetricFlowRate', 'ActualVolumetricFlowRate', 'LayerTimeLinear', 'LayerTimeLogarithmic',
   'FanSpeed', 'Temperature', 'PressureAdvance', 'Tool', 'ColorPrint', 'Summary'
 ];
+let loadSequence = 0;
+
+export function cancelPendingPreviewLoad(): void {
+  ++loadSequence;
+  previewModule.cancelPendingGcodeLoad();
+  usePreviewStore.setState({ isLoading: false });
+}
 
 function loadStoredViewType(): PreviewViewType {
   try {
@@ -72,6 +79,7 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
   resetVersion: 0,
 
   resetGcodeAction: () => {
+    ++loadSequence;
     previewModule.clearGcode();
     set({ stats: null, layersCount: 0, layersZs: [], minLayer: 0, maxLayer: 0,
       minMove: 0, maxMove: 0, currentMove: 0, isLoading: false, showGcodeWindow: false,
@@ -85,9 +93,11 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
   },
 
   loadGcodeBytes: async (data, name = 'print.gcode') => {
+    const sequence = ++loadSequence;
     set({ isLoading: true });
     try {
-      const stats = previewModule.loadGcode(data, name);
+      const stats = await previewModule.loadGcode(data, name);
+      if (sequence !== loadSequence) { const error = new Error('Preview load canceled'); error.name = 'AbortError'; throw error; }
       // Loading G-code can reset the native viewer's color scheme.
       previewModule.setViewType(get().viewType);
       const zs = previewModule.getLayersZs();
@@ -111,7 +121,7 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
       previewModule.requestRender();
       return stats;
     } catch (err) {
-      set({ isLoading: false });
+      if (sequence === loadSequence) set({ isLoading: false });
       throw err;
     }
   },

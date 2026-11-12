@@ -1,0 +1,7 @@
+.plate-box-selection {
+  position: absolute;
+  pointer-events: none;
+  border: 1px dashed var(--accent);
+  box-sizing: border-box;
+  z-index: 1;
+}

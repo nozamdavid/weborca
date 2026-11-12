@@ -7,7 +7,7 @@ import { ObjectListPanel } from '../objectlist/ObjectListPanel';
 import { useTranslation } from '../i18n';
 import { MobileImport, MobileSheet, mobileBusy } from './MobileShell';
 import { MobileProcessSettings } from './MobileProcessSettings';
-import { NumericTransform } from '../plate/NumericTransform';
+import { NumericTransform, GroupScale } from '../plate/NumericTransform';
 import { useSliceReadiness } from '../shell/sliceReadiness';
 
 export function MobilePrepare() {
@@ -26,14 +26,15 @@ export function MobilePrepare() {
   const plate = plates.plates.find(p => p.index === plates.activePlateIndex);
   const selectedObject = objects.find(object => object.id === selectedObjectId);
   const selectedInstance = selectedObject?.instances.find(instance => instance.id === selectedInstanceId);
-  const canTransform = selectedObject && selectedInstance && !extraSelection.length &&
+  const canTransform = selectedObject && selectedInstance &&
     plate?.instances.some(ref => ref.objectId === selectedObject.id && ref.instanceId === selectedInstance.id);
   const count = objects.filter(object => object.instances.some(instance => plate?.instances.some(ref => ref.objectId === object.id && ref.instanceId === instance.id))).length;
   const sliceDisabledReason = readiness || (!count ? 'Add a model to slice.' : s.engineError || '');
   return <section className="wm-prepare">
     <div className="wm-row"><h1>{t('Prepare')}</h1><span className="wm-help">{plate?.name} · {count ? t(count === 1 ? '{{count}} object' : '{{count}} objects', { count }) : t('Empty')}</span></div>
     <div className={`wm-viewport ${tools ? 'wm-tools-open' : ''}`}><PlateView /></div>
-    {tools && canTransform && (mode === 'translate' || mode === 'scale') && <NumericTransform
+    {tools && canTransform && extraSelection.length > 0 && mode === 'scale' && <GroupScale disabled={busy} idPrefix="mobile-nt" />}
+    {tools && canTransform && !extraSelection.length && (mode === 'translate' || mode === 'scale') && <NumericTransform
       object={selectedObject} instance={selectedInstance} mode={mode === 'translate' ? 'move' : 'scale'} idPrefix="mobile-nt" />}
     <button aria-expanded={tools} onClick={() => { setTools(!tools); window.dispatchEvent(new Event('resize')); }}>{t('Plate tools')}</button>
     <button className="wm-row" aria-haspopup="dialog" onClick={() => setSheet('objects')}><strong>{t('Objects')} · {objects.length}</strong><span>{t('Open')} ›</span></button>

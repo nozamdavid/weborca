@@ -1,4 +1,6 @@
 {
+  "Group scale: whole instances, world axes, relative 100%.": "Escala del grupo: instancias completas, ejes globales, 100% relativo.",
+  "Rotated selection: keep proportions to avoid shear.": "Selección girada: conserva las proporciones para evitar deformaciones por cizallamiento.",
   "This server has no printer gateway. Host the app with the gateway to connect to printers.": "Este servidor no tiene una pasarela de impresoras. Aloja la aplicación con la pasarela para conectar impresoras.",
   "This gateway does not allow Creality Cloud. Enable ORCA_PRINTER_CLOUD=creality-cloud on the server.": "Esta pasarela no permite Creality Cloud. Activa ORCA_PRINTER_CLOUD=creality-cloud en el servidor.",
   "This gateway does not allow Bambu Cloud. Enable ORCA_PRINTER_CLOUD=bambu-cloud on the server.": "Esta pasarela no permite Bambu Cloud. Activa ORCA_PRINTER_CLOUD=bambu-cloud en el servidor.",

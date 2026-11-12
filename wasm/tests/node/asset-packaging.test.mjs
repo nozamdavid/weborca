@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { captureIdentity, createManifest } from '../../scripts/runtime-manifest.mjs';
 import { loadConfigFromFile } from '../../app/node_modules/vite/dist/node/index.js';
 
 test('explicit native/catalog/layout inputs package identically in gated and static-off modes', async t => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'orca-packaging-'));
-  const keys = ['ORCA_ENGINE_DIR', 'ORCA_STEP_MODULE_DIR', 'ORCA_PREVIEW_DIR', 'ORCA_PROFILES_DIR', 'ORCA_SETTINGS_DIR'];
+  const keys = ['ORCA_ENGINE_DIR', 'ORCA_STEP_MODULE_DIR', 'ORCA_PREVIEW_DIR', 'ORCA_PROFILES_DIR', 'ORCA_SETTINGS_DIR', 'ORCA_RUNTIME_IDENTITIES', 'WASM_PREFIX', 'OCCT_PREFIX'];
   const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   t.after(() => {
     for (const key of keys) {
@@ -31,6 +32,15 @@ test('explicit native/catalog/layout inputs package identically in gated and sta
     ['ORCA_SETTINGS_DIR', 'layout.json', '{"fixture":"layout"}'],
   ];
   for (const [key, file, bytes] of inputs) fs.writeFileSync(path.join(process.env[key], file), bytes);
+  // Synthetic runtime bytes need matching fixture provenance, just as real builds do.
+  const root = new URL('../../../', import.meta.url).pathname;
+  for (const file of ['LICENSE_LGPL_21.txt', 'OCCT_LGPL_EXCEPTION.txt']) {
+    fs.writeFileSync(path.join(process.env.ORCA_STEP_MODULE_DIR, file), 'fixture license');
+  }
+  for (const [kind, key] of [['engine', 'ORCA_ENGINE_DIR'], ['preview', 'ORCA_PREVIEW_DIR'], ['step', 'ORCA_STEP_MODULE_DIR']]) {
+    fs.writeFileSync(path.join(process.env.ORCA_RUNTIME_IDENTITIES, `${kind}.json`), JSON.stringify(captureIdentity(root, kind, process.env.WASM_PREFIX)));
+    createManifest(root, process.env[key], kind, process.env.WASM_PREFIX);
+  }
   const loaded = await loadConfigFromFile({ command: 'build', mode: 'production' }, new URL('../../app/vite.config.ts', import.meta.url).pathname);
   const plugin = loaded.config.plugins.find(plugin => plugin.name === 'orca-assets-plugin');
   for (const gated of [false, true]) {
