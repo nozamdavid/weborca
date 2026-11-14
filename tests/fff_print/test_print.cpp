@@ -2425,3 +2425,291 @@ TEST_CASE("The belt build height check uses the compensated height", "[Print][be
     else
         CHECK(error.find(expected) != std::string::npos);
 }
+
+TEST_CASE("Filament and export settings keep object slice steps done and match a fresh slice", "[Print][Regression]")
+{
+    auto base_config = []() {
+        DynamicPrintConfig cfg = DynamicPrintConfig::full_print_config();
+        cfg.set_deserialize_strict({
+            { "layer_height",                    0.2 },
+            { "initial_layer_print_height",      0.2 },
+            { "layer_change_gcode",              "G92 E0\n" },
+            { "machine_start_gcode",             "T[initial_tool]\n" },
+            { "nozzle_temperature",              210 },
+            { "filament_max_volumetric_speed",   12 },
+            { "filament_flow_ratio",             1.0 },
+            { "filament_type",                   "PLA" },
+            { "enable_overhang_speed",           0 },
+            { "slowdown_for_curled_perimeters",  0 },
+            { "ironing_type",                    "top" },
+            { "filament_ironing_speed",          30 },
+        });
+        return cfg;
+    };
+    auto fresh_body = [](const DynamicPrintConfig &cfg) {
+        Print fresh;
+        Model fresh_model;
+        init_print({ cube(4.0) }, fresh, fresh_model, cfg);
+        REQUIRE(fresh.validate().string.empty());
+        return gcode_body(gcode(fresh));
+    };
+
+    DynamicPrintConfig config = base_config();
+    Print print;
+    Model model;
+    init_print({ cube(4.0) }, print, model, config);
+    REQUIRE(print.validate().string.empty());
+    REQUIRE(! gcode(print).empty());
+
+    const PrintObject *obj = print.objects().front();
+    REQUIRE(obj->is_step_done(posSlice));
+    REQUIRE(obj->is_step_done(posPerimeters));
+    REQUIRE(obj->is_step_done(posInfill));
+    REQUIRE(obj->is_step_done(posEstimateCurledExtrusions));
+    REQUIRE(obj->is_step_done(posIroning));
+
+    // Export and filament flow/temperature/volumetric-speed settings keep slice, perimeter, and infill done.
+    config.set_deserialize_strict({
+        { "nozzle_temperature",            225 },
+        { "filament_max_volumetric_speed", 8 },
+        { "filament_flow_ratio",           0.95 },
+    });
+    print.apply(model, config);
+    CHECK(obj->is_step_done(posSlice));
+    CHECK(obj->is_step_done(posPerimeters));
+    CHECK(obj->is_step_done(posInfill));
+    CHECK(gcode_body(gcode(print)) == fresh_body(config));
+
+    // filament_type leaves posEstimateCurledExtrusions done when overhang/curled slowdown is off.
+    config.set_deserialize_strict("filament_type", "PETG");
+    print.apply(model, config);
+    CHECK(obj->is_step_done(posSlice));
+    CHECK(obj->is_step_done(posPerimeters));
+    CHECK(obj->is_step_done(posInfill));
+    CHECK(obj->is_step_done(posEstimateCurledExtrusions));
+    CHECK(gcode_body(gcode(print)) == fresh_body(config));
+
+    // Enable overhang + curled-perimeter slowdown and complete the slice, then change filament_type.
+    config.set_deserialize_strict({
+        { "enable_overhang_speed",          1 },
+        { "slowdown_for_curled_perimeters", 1 },
+    });
+    print.apply(model, config);
+    REQUIRE(! gcode(print).empty());
+    REQUIRE(obj->is_step_done(posEstimateCurledExtrusions));
+
+    config.set_deserialize_strict("filament_type", "ABS");
+    print.apply(model, config);
+    CHECK(obj->is_step_done(posSlice));
+    CHECK(obj->is_step_done(posPerimeters));
+    CHECK_FALSE(obj->is_step_done(posEstimateCurledExtrusions));
+    CHECK(gcode_body(gcode(print)) == fresh_body(config));
+
+    // filament_ironing_speed invalidates ironing while keeping slice and perimeters done.
+    config.set_deserialize_strict("filament_ironing_speed", "45");
+    print.apply(model, config);
+    CHECK(obj->is_step_done(posSlice));
+    CHECK(obj->is_step_done(posPerimeters));
+    CHECK_FALSE(obj->is_step_done(posIroning));
+    CHECK(gcode_body(gcode(print)) == fresh_body(config));
+}
+
+TEST_CASE("Adding and removing an unused filament slot keeps slice, perimeter, and infill steps done", "[Print][Regression]")
+{
+    auto make_slots_config = [](unsigned int filaments) {
+        return multifilament_config(filaments, {
+            { "nozzle_diameter",            "0.4" },
+            { "min_layer_height",           "0.08" },
+            { "max_layer_height",           "0.32" },
+            { "layer_height",               0.2 },
+            { "initial_layer_print_height", 0.2 },
+            { "enable_prime_tower",         0 },
+            { "layer_change_gcode",         "G92 E0\n" },
+            { "machine_start_gcode",        "T[initial_tool]\n" },
+        });
+    };
+    auto fresh_body = [](const DynamicPrintConfig &cfg) {
+        Print fresh;
+        Model fresh_model;
+        init_print({ cube(4.0) }, fresh, fresh_model, cfg);
+        REQUIRE(fresh.validate().string.empty());
+        return gcode_body(gcode(fresh));
+    };
+
+    const DynamicPrintConfig one_slot  = make_slots_config(1);
+    const DynamicPrintConfig two_slots = make_slots_config(2);
+
+    Print print;
+    Model model;
+    init_print({ cube(4.0) }, print, model, one_slot);
+    REQUIRE(print.validate().string.empty());
+    REQUIRE(! gcode(print).empty());
+
+    const PrintObject *obj = print.objects().front();
+    REQUIRE(obj->is_step_done(posSlice));
+    REQUIRE(obj->is_step_done(posPerimeters));
+    REQUIRE(obj->is_step_done(posInfill));
+
+    print.apply(model, two_slots);
+    CHECK(obj->is_step_done(posSlice));
+    CHECK(obj->is_step_done(posPerimeters));
+    CHECK(obj->is_step_done(posInfill));
+    CHECK(gcode_body(gcode(print)) == fresh_body(two_slots));
+
+    print.apply(model, one_slot);
+    CHECK(obj->is_step_done(posSlice));
+    CHECK(obj->is_step_done(posPerimeters));
+    CHECK(obj->is_step_done(posInfill));
+    CHECK(gcode_body(gcode(print)) == fresh_body(one_slot));
+}
+
+TEST_CASE("Reassigning an object extruder between filaments on matching nozzles keeps slice done and matches a fresh slice", "[Print][Regression]")
+{
+    DynamicPrintConfig config = multifilament_config(2, {
+        { "nozzle_diameter",                "0.4,0.4" },
+        { "min_layer_height",               "0.08,0.08" },
+        { "max_layer_height",               "0.32,0.32" },
+        { "single_extruder_multi_material", 0 },
+        { "layer_height",                   0.2 },
+        { "initial_layer_print_height",     0.2 },
+        { "enable_prime_tower",             0 },
+        { "layer_change_gcode",             "G92 E0\n" },
+        { "machine_start_gcode",            "T[initial_tool]\n" },
+    });
+    size_flush_to_nozzles(config);
+
+    const std::vector<std::vector<ConfigBase::SetDeserializeItem>> initial_overrides { { { "extruder", 1 } } };
+    const std::vector<std::vector<ConfigBase::SetDeserializeItem>> target_overrides  { { { "extruder", 2 } } };
+
+    Print print;
+    Model model;
+    init_print({ cube(4.0) }, print, model, config, &initial_overrides);
+    REQUIRE(print.validate().string.empty());
+    REQUIRE(! gcode(print).empty());
+
+    const PrintObject *obj = print.objects().front();
+    REQUIRE(obj->is_step_done(posSlice));
+
+    model.objects.front()->config.set("extruder", 2);
+    print.apply(model, config);
+    CHECK(obj->is_step_done(posSlice));
+
+    Print fresh;
+    Model fresh_model;
+    init_print({ cube(4.0) }, fresh, fresh_model, config, &target_overrides);
+    REQUIRE(fresh.validate().string.empty());
+    CHECK(gcode_body(gcode(print)) == gcode_body(gcode(fresh)));
+}
+
+TEST_CASE("Enabling the prime tower keeps object slice done without a raft and invalidates it with a raft", "[Print][PurgeTower][Regression]")
+{
+    const int raft = GENERATE(0, 2);
+    DynamicPrintConfig config = multifilament_config(2, {
+        { "layer_height",                       0.2 },
+        { "initial_layer_print_height",         0.2 },
+        { "enable_prime_tower",                 0 },
+        { "independent_support_layer_height",   1 },
+        { "raft_layers",                        raft },
+        { "wipe_tower_x",                       150 },
+        { "wipe_tower_y",                       20 },
+        { "gcode_comments",                     1 },
+        { "layer_change_gcode",                 "G92 E0\n" },
+        { "machine_start_gcode",                "T[initial_tool]\n" },
+    });
+    const std::vector<std::vector<ConfigBase::SetDeserializeItem>> overrides { { { "extruder", 1 } }, { { "extruder", 2 } } };
+
+    Print print;
+    Model model;
+    init_print(std::vector<TriangleMesh>{ cube(4.0), cube(4.0) }, print, model, config, &overrides);
+    REQUIRE(print.validate().string.empty());
+    REQUIRE(! gcode(print).empty());
+
+    REQUIRE(print.objects().size() == 2);
+    REQUIRE(print.objects()[0]->is_step_done(posSlice));
+    REQUIRE(print.objects()[1]->is_step_done(posSlice));
+
+    config.set_deserialize_strict("enable_prime_tower", "1");
+    print.apply(model, config);
+
+    if (raft == 0) {
+        CHECK(print.objects()[0]->is_step_done(posSlice));
+        CHECK(print.objects()[1]->is_step_done(posSlice));
+        CHECK_FALSE(print.objects()[0]->is_step_done(posSupportMaterial));
+        CHECK_FALSE(print.is_step_done(psWipeTower));
+        CHECK_FALSE(print.is_step_done(psSkirtBrim));
+        CHECK_FALSE(print.is_step_done(psGCodeExport));
+    } else {
+        CHECK_FALSE(print.objects()[0]->is_step_done(posSlice));
+        CHECK_FALSE(print.objects()[1]->is_step_done(posSlice));
+    }
+
+    Print fresh;
+    Model fresh_model = model;
+    fresh.apply(fresh_model, config);
+    fresh.set_status_silent();
+    REQUIRE(fresh.validate().string.empty());
+    CHECK(gcode_body(gcode(print)) == gcode_body(gcode(fresh)));
+}
+
+TEST_CASE("Object and region changes to only_one_wall_top, ironing_speed, and default_acceleration keep slice done", "[Print][Regression]")
+{
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_deserialize_strict({
+        { "layer_height",               0.2 },
+        { "initial_layer_print_height", 0.2 },
+        { "ironing_type",               "top" },
+        { "ironing_speed",              30 },
+        { "only_one_wall_top",          0 },
+        { "default_acceleration",       2000 },
+        { "gcode_comments",             1 },
+        { "layer_change_gcode",         "G92 E0\n" },
+        { "machine_start_gcode",        "T[initial_tool]\n" },
+    });
+    auto fresh_body = [&config](const Model &source_model) {
+        Print fresh;
+        Model fresh_model = source_model;
+        fresh.apply(fresh_model, config);
+        fresh.set_status_silent();
+        REQUIRE(fresh.validate().string.empty());
+        return gcode_body(gcode(fresh));
+    };
+
+    Print print;
+    Model model;
+    init_print({ cube(4.0) }, print, model, config);
+    REQUIRE(print.validate().string.empty());
+    REQUIRE(! gcode(print).empty());
+
+    const PrintObject *obj = print.objects().front();
+    REQUIRE(obj->is_step_done(posSlice));
+    REQUIRE(obj->is_step_done(posPerimeters));
+    REQUIRE(obj->is_step_done(posInfill));
+    REQUIRE(obj->is_step_done(posIroning));
+
+    auto set_obj_opt = [&model](const char *key, const char *val) {
+        DynamicPrintConfig oc;
+        oc.set_deserialize_strict(key, val);
+        model.objects.front()->config.apply(oc);
+    };
+
+    set_obj_opt("only_one_wall_top", "1");
+    print.apply(model, config);
+    CHECK(obj->is_step_done(posSlice));
+    CHECK_FALSE(obj->is_step_done(posPerimeters));
+    CHECK(gcode_body(gcode(print)) == fresh_body(model));
+
+    set_obj_opt("ironing_speed", "45");
+    print.apply(model, config);
+    CHECK(obj->is_step_done(posSlice));
+    CHECK(obj->is_step_done(posPerimeters));
+    CHECK_FALSE(obj->is_step_done(posIroning));
+    CHECK(gcode_body(gcode(print)) == fresh_body(model));
+
+    set_obj_opt("default_acceleration", "3500");
+    print.apply(model, config);
+    CHECK(obj->is_step_done(posSlice));
+    CHECK(obj->is_step_done(posPerimeters));
+    CHECK(obj->is_step_done(posInfill));
+    CHECK_FALSE(print.is_step_done(psGCodeExport));
+    CHECK(gcode_body(gcode(print)) == fresh_body(model));
+}

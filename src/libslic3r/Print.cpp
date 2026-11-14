@@ -387,6 +387,129 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         // Orca
         "chamber_temperature",
         "chamber_minimal_temperature",
+        // Filament & export-only / metadata keys
+        "supertack_plate_temp",
+        "cool_plate_temp",
+        "textured_cool_plate_temp",
+        "eng_plate_temp",
+        "hot_plate_temp",
+        "textured_plate_temp",
+        "filament_shrink",
+        "filament_shrinkage_compensation_z",
+        "filament_colour_new",
+        "filament_vendor",
+        "temperature_vitrification",
+        "filament_extruder_compatibility",
+        "nozzle_flush_dataset",
+        "support_object_skip_flush",
+        "support_fast_purge_mode",
+        "filament_flush_volumetric_speed",
+        "filament_flush_temp",
+        "filament_flush_temp_fast",
+        "filament_retract_length_nc",
+        "filament_preheat_temperature_delta",
+        "filament_change_extrusion_role_gcode",
+        "retraction_distances_when_ec",
+        "long_retractions_when_ec",
+        "adaptive_pressure_advance",
+        "adaptive_pressure_advance_overhangs",
+        "adaptive_pressure_advance_model",
+        "adaptive_pressure_advance_bridges",
+        "close_additional_fan_first_x_layers",
+        "additional_fan_full_speed_layer",
+        "first_x_layer_fan_speed",
+        "flush_volumes_vector",
+        "filament_dev_ams_drying_ams_limitations",
+        "filament_dev_ams_drying_temperature",
+        "filament_dev_ams_drying_time",
+        "filament_dev_ams_drying_heat_distortion_temperature",
+        "filament_dev_chamber_drying_bed_temperature",
+        "filament_dev_chamber_drying_time",
+        "filament_dev_drying_softening_temperature",
+        "filament_dev_drying_cooling_temperature",
+        "filament_map_2",
+        "bbl_calib_mark_logo",
+        "wipe_tower_per_color_wipe",
+        "fan_direction",
+        "support_cooling_filter",
+        "cooling_filter_enabled",
+        "support_chamber_temp_control",
+        "machine_hotend_change_time",
+        "machine_prepare_compensation_time",
+        "support_parallel_printheads",
+        "parallel_printheads_count",
+        "parallel_printheads_bed_exclude_areas",
+        "bed_custom_texture",
+        "bed_custom_model",
+        "preferred_orientation",
+        "best_object_pos",
+        "printer_model",
+        "emit_machine_limits_to_gcode",
+        "machine_max_acceleration_x",
+        "machine_max_acceleration_y",
+        "machine_max_acceleration_z",
+        "machine_max_acceleration_e",
+        "machine_max_speed_x",
+        "machine_max_speed_y",
+        "machine_max_speed_z",
+        "machine_max_speed_e",
+        "machine_max_acceleration_retracting",
+        "machine_max_acceleration_travel",
+        "machine_max_jerk_x",
+        "machine_max_jerk_y",
+        "machine_max_jerk_z",
+        "machine_max_jerk_e",
+        "machine_max_junction_deviation",
+        "machine_min_travel_rate",
+        "machine_min_extruding_rate",
+        "machine_max_force_Y",
+        "machine_bed_mass_Y",
+        "machine_max_printed_mass",
+        "resonance_avoidance",
+        "min_resonance_avoidance_speed",
+        "max_resonance_avoidance_speed",
+        "input_shaping_emit",
+        "input_shaping_type",
+        "input_shaping_freq_x",
+        "input_shaping_freq_y",
+        "input_shaping_damp_x",
+        "input_shaping_damp_y",
+        "small_area_infill_flow_compensation_model",
+        "has_scarf_joint_seam",
+        "spiral_mode_smooth",
+        "spiral_mode_max_xy_smoothing",
+        "spiral_finishing_flow_ratio",
+        "spiral_starting_flow_ratio",
+        "bed_mesh_min",
+        "bed_mesh_max",
+        "bed_mesh_probe_distance",
+        "adaptive_bed_mesh_margin",
+        "change_extrusion_role_gcode",
+        "process_change_extrusion_role_gcode",
+        "machine_pause_gcode",
+        "template_custom_gcode",
+        "file_start_gcode",
+        "bbl_bed_temperature_gcode",
+        "gcode_skip_config_block",
+        "scan_first_layer",
+        "enable_power_loss_recovery",
+        "time_cost",
+        "auxiliary_fan",
+        "support_air_filtration",
+        "printer_structure",
+        "nozzle_type",
+        "head_wrap_detect_zone",
+        "start_end_points",
+        "farthest_point_timelapse",
+        "notes",
+        "machine_tool_change_time",
+        "imex_gantry_count",
+        "imex_tools_per_gantry",
+        "imex_nozzle_clearance_x",
+        "imex_nozzle_clearance_y",
+        "imex_mode_names",
+        "imex_mode_active_tools",
+        "imex_mode_gcodes",
         "thumbnails",
         "thumbnails_format",
         "center_of_surface_pattern",
@@ -468,6 +591,8 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "draft_shield"
             || opt_key == "skirt_distance"
             || opt_key == "skirt_start_angle"
+            || opt_key == "combine_brims"
+            || opt_key == "extruder_clearance_dist_to_rod"
             || opt_key == "ooze_prevention"
             || opt_key == "wipe_tower_x"
             || opt_key == "wipe_tower_y"
@@ -486,8 +611,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "print_plugin_config_overrides"
             || opt_key == "initial_layer_print_height"
             || opt_key == "nozzle_diameter"
-            || opt_key == "filament_shrink"
-            || opt_key == "filament_shrinkage_compensation_z"
+            || opt_key == "min_layer_height"
             || opt_key == "resolution"
             || opt_key == "precise_z_height"
             // Spiral Vase forces different kind of slicing than the normal model:
@@ -502,13 +626,30 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "belt_slice_rotation"
             || opt_key == "belt_slice_rotation_angle") {
             osteps.emplace_back(posSlice);
+        } else if (opt_key == "max_layer_height") {
+            steps.emplace_back(psWipeTower);
+            steps.emplace_back(psSkirtBrim);
+            for (PrintObject *object : m_objects) {
+                const ModelObject *mo = object->model_object();
+                if (mo != nullptr && (! mo->layer_height_profile.empty() || ! mo->layer_config_ranges.empty()))
+                    osteps.emplace_back(posSlice);
+                else
+                    osteps.emplace_back(posSupportMaterial);
+            }
         } else if (
                opt_key == "belt_support_floor_offset") {
             osteps.emplace_back(posSupportMaterial);
+        } else if (opt_key == "filament_type") {
+            steps.emplace_back(psWipeTower);
+            steps.emplace_back(psSkirtBrim);
+            for (const PrintRegion *region : m_print_regions)
+                if (any_enabled(region->config().enable_overhang_speed) &&
+                    any_enabled(region->config().slowdown_for_curled_perimeters)) {
+                    osteps.emplace_back(posEstimateCurledExtrusions);
+                    break;
+                }
         } else if (
                opt_key == "print_sequence"
-            || opt_key == "filament_type"
-            || opt_key == "chamber_temperature"
             || opt_key == "nozzle_temperature_initial_layer"
             || opt_key == "filament_minimal_purge_on_wipe_tower"
             || opt_key == "filament_max_volumetric_speed"
@@ -527,17 +668,9 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "filament_multitool_ramming"
             || opt_key == "filament_multitool_ramming_volume"
             || opt_key == "filament_multitool_ramming_flow"
-            || opt_key == "filament_max_volumetric_speed"
             || opt_key == "gcode_flavor"
             || opt_key == "single_extruder_multi_material"
             || opt_key == "nozzle_temperature"
-            // BBS
-            || opt_key == "supertack_plate_temp"
-            || opt_key == "cool_plate_temp"
-            || opt_key == "textured_cool_plate_temp"
-            || opt_key == "eng_plate_temp"
-            || opt_key == "hot_plate_temp"
-            || opt_key == "textured_plate_temp"
             || opt_key == "enable_prime_tower"
             || opt_key == "enable_belt_purge_tower"
             || opt_key == "enable_wrapping_detection"
@@ -550,7 +683,7 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "enable_tower_interface_features"
             || opt_key == "first_layer_print_sequence"
             || opt_key == "other_layers_print_sequence"
-            || opt_key == "other_layers_print_sequence_nums" 
+            || opt_key == "other_layers_print_sequence_nums"
             || opt_key == "toolchange_ordering"
             || opt_key == "toolchange_cyclic_order"
             || opt_key == "toolchange_cyclic_first_layer"
@@ -599,14 +732,76 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             || opt_key == "purge_in_prime_tower"
             || opt_key == "z_offset"
             || opt_key == "support_multi_bed_types"
+            || opt_key == "filament_is_support"
+            || opt_key == "filament_printable"
+            || opt_key == "machine_max_acceleration_extruding"
+            || opt_key == "extruder_printable_area"
+            || opt_key == "extruder_printable_height"
+            || opt_key == "wrapping_detection_layers"
+            || opt_key == "wrapping_exclude_area"
+            || opt_key == "timelapse_type"
+            || opt_key == "filament_ids"
+            || opt_key == "master_extruder_id"
+            || opt_key == "extruder_max_nozzle_count"
+            || opt_key == "machine_load_filament_time"
+            || opt_key == "machine_unload_filament_time"
+            || opt_key == "extruder_type"
+            || opt_key == "nozzle_volume_type"
+            || opt_key == "printer_extruder_id"
+            || opt_key == "printer_extruder_variant"
+            || opt_key == "filament_extruder_variant"
+            || opt_key == "filament_self_index"
+            || opt_key == "physical_extruder_map"
+            || opt_key == "filament_is_mixed"
+            || opt_key == "filament_mixed_components"
+            || opt_key == "filament_mixed_sublayer_ratios"
+            || opt_key == "filament_mixed_gradient"
+            || opt_key == "filament_mixed_gradient_range"
+            || opt_key == "filament_mixed_gradient_curve"
+            || opt_key == "filament_mixed_gradient_per_part"
+            || opt_key == "enable_mixed_color_sublayer"
+            || opt_key == "cooling_tube_retraction"
+            || opt_key == "cooling_tube_length"
+            || opt_key == "high_current_on_filament_swap"
+            || opt_key == "parking_pos_retraction"
+            || opt_key == "extra_loading_move"
+            || opt_key == "filament_cooling_before_tower"
+            || opt_key == "enable_pre_heating"
+            || opt_key == "hotend_cooling_rate"
+            || opt_key == "hotend_heating_rate"
+            || opt_key == "filament_change_length_nc"
+            || opt_key == "filament_ramming_travel_time"
+            || opt_key == "filament_ramming_travel_time_nc"
+            || opt_key == "filament_pre_cooling_temperature"
+            || opt_key == "filament_pre_cooling_temperature_nc"
+            || opt_key == "filament_ramming_volumetric_speed"
+            || opt_key == "filament_ramming_volumetric_speed_nc"
+            || opt_key == "nozzle_temperature_range_low"
+            || opt_key == "nozzle_temperature_range_high"
+            || opt_key == "prime_tower_infill_gap"
+            || opt_key == "enable_tower_interface_cooldown_during_tower"
+            || opt_key == "filament_prime_volume"
+            || opt_key == "filament_prime_volume_nc"
+            || opt_key == "flush_multiplier"
+            || opt_key == "prime_volume_mode"
+            || opt_key == "flush_multiplier_fast"
+            || opt_key == "is_imex"
+            || opt_key == "imex_firmware_managed_zones"
+            || opt_key == "imex_tool_layout"
             ) {
             steps.emplace_back(psWipeTower);
             steps.emplace_back(psSkirtBrim);
-        } else if (opt_key == "filament_soluble"
-                || opt_key == "filament_is_support"
-                || opt_key == "filament_printable"
-                || opt_key == "filament_change_length"
-                || opt_key == "independent_support_layer_height") {
+        } else if (opt_key == "filament_change_length") {
+            steps.emplace_back(psWipeTower);
+        } else if (opt_key == "independent_support_layer_height") {
+            steps.emplace_back(psWipeTower);
+            for (PrintObject *object : m_objects) {
+                if (object->config().raft_layers.value > 0 || object->slicing_parameters().has_raft())
+                    invalidated |= object->invalidate_step(posSlice);
+                else
+                    invalidated |= object->invalidate_step(posSupportMaterial);
+            }
+        } else if (opt_key == "filament_soluble") {
             steps.emplace_back(psWipeTower);
             // Soluble support interface / non-soluble base interface produces non-soluble interface layers below soluble interface layers.
             // Thus switching between soluble / non-soluble interface layer material may require recalculation of supports.
@@ -615,8 +810,6 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
             osteps.emplace_back(posSimplifySupportPath);
         } else if (
                opt_key == "initial_layer_line_width"
-            || opt_key == "min_layer_height"
-            || opt_key == "max_layer_height"
             //|| opt_key == "resolution"
             //BBS: when enable arc fitting, we must re-generate perimeter
             || opt_key == "enable_arc_fitting"
@@ -641,8 +834,9 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
         else if (opt_key == "imex_viz_theme" || opt_key == "imex_carriage_margin") {
         } else {
             // for legacy, if we can't handle this option let's invalidate all steps
-            //FIXME invalidate all steps of all objects as well?
             invalidated |= this->invalidate_all_steps();
+            for (PrintObject *object : m_objects)
+                invalidated |= object->invalidate_all_steps();
             // Continue with the other opt_keys to possibly invalidate any object specific steps.
         }
     }

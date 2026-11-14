@@ -1908,9 +1908,10 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
 			// Synchronize Precise Seam modifier volumes
 			model_volume_list_copy_configs(model_object /* dst */, model_object_new /* src */, precise_seam_types);
             layer_height_ranges_copy_configs(model_object.layer_config_ranges /* dst */, model_object_new.layer_config_ranges /* src */);
-            // Copy the ModelObject name, input_file and instances. The instances will be compared against PrintObject instances in the next step.
+            // Copy the ModelObject name, input_file, printable and instances. The instances will be compared against PrintObject instances in the next step.
             model_object.name       = model_object_new.name;
             model_object.input_file = model_object_new.input_file;
+            model_object.printable  = model_object_new.printable;
             // Only refresh ModelInstances if there is any change.
             if (model_object.instances.size() != model_object_new.instances.size() ||
             	! std::equal(model_object.instances.begin(), model_object.instances.end(), model_object_new.instances.begin(), [](auto l, auto r){ return l->id() == r->id(); })) {
@@ -2039,14 +2040,6 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
             print_regions_reshuffled = true;
         }
         print_object_status_db.clear();
-
-        // BBS
-        for (PrintObject* object : m_objects) {
-            auto ept_iter = std::find(print_diff.begin(), print_diff.end(), "enable_prime_tower");
-            if (/*object->config().adaptive_layer_height &&*/ ept_iter != print_diff.end()) {
-                update_apply_status(object->invalidate_step(posSlice));
-            }
-        }
 
         // Belt printer: when any object's instances shifted, re-slice every object.
         // The global Z offset follows each object's position along the belt, and the
@@ -2225,12 +2218,6 @@ Print::ApplyStatus Print::apply(const Model &model, DynamicPrintConfig new_full_
 
         // The following call may stop the background processing.
         update_apply_status(this->invalidate_state_by_config_options(new_full_config, new_changed_keys));
-
-        // The tower also turns independent_support_layer_height off, which moves objects above a raft.
-        // Re-slice them, as done above when enable_prime_tower is in print_diff.
-        if (std::find(new_changed_keys.begin(), new_changed_keys.end(), "enable_prime_tower") != new_changed_keys.end())
-            for (PrintObject *object : m_objects)
-                update_apply_status(object->invalidate_step(posSlice));
 
         update_apply_status(this->invalidate_step(psGCodeExport));
 
