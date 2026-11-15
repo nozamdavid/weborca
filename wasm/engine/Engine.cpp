@@ -455,6 +455,7 @@ private:
     json op_setLayerEvents(const json& args);
     json op_clearLayerEvents(const json& args);
     Slic3r::DynamicPrintConfig layer_config() const;
+    void reset_retained_print();
     std::string op_slice(int jobId, const json& args);
 
     // Job queue
@@ -494,6 +495,14 @@ private:
     Slic3r::Model m_clipboard;
     Slic3r::PlateDataPtrs m_plate_data;
     Slic3r::Calib_Params m_calib_params;
+    Slic3r::Print m_print;
+    int m_print_plate_index{-1};
+    Slic3r::Vec3d m_print_plate_origin{Slic3r::Vec3d::Zero()};
+    bool m_print_is_bbl{false};
+    std::string m_last_export_path;
+    std::uintmax_t m_last_export_size_bytes{0};
+    double m_last_export_time_s{0.0};
+    json m_last_export_warnings = json::array();
 };
 
 Engine::Impl::Impl() {
@@ -649,6 +658,8 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_setInstanceTransform(args);
         } else if (op == "deleteInstances") {
             result_data = OrcaWasm::deleteInstances(m_model, args);
+            if (m_model.objects.empty())
+                reset_retained_print();
         } else if (op == "deleteObject") {
             result_data = op_deleteObject(args);
         } else if (op == "moveObject") {
@@ -770,7 +781,9 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
         } else if (op == "simplifyVolume") { result_data = op_simplifyVolume(args);
         } else if (op == "meshBoolean") { result_data = op_meshBoolean(args);
         } else if (op == "addSvg") { result_data = op_addSvg(args);
-        } else if (op == "updateSvg") { result_data = op_updateSvg(args);
+        } else if (op == "updateSvg") {
+            result_data = op_updateSvg(args);
+            reset_retained_print();
         } else if (op == "getSvg") { result_data = op_getSvg(args);
         } else if (op == "getBrimEars") { result_data = op_getBrimEars(args);
         } else if (op == "setBrimEars") { result_data = op_setBrimEars(args);
@@ -779,6 +792,7 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
             result_data = op_addText(args);
         } else if (op == "updateText") {
             result_data = op_updateText(args);
+            reset_retained_print();
         } else if (op == "getText") {
             result_data = op_getText(args);
         } else if (op == "getLayerEvents") {
@@ -2008,6 +2022,7 @@ json Engine::Impl::commit_loaded_model(Slic3r::Model&& loaded_model, const std::
         throw Slic3r::RuntimeError("No objects loaded from file: " + path);
 
     if (replace) {
+        reset_retained_print();
         m_model = std::move(loaded_model);
 
         json objects_arr = json::array();
@@ -2261,6 +2276,9 @@ json Engine::Impl::op_deleteObject(const json& args) {
     bool deleted = m_model.delete_object(Slic3r::ObjectID(object_id));
     if (!deleted) {
         throw Slic3r::RuntimeError("Object not found: " + std::to_string(object_id));
+    }
+    if (m_model.objects.empty()) {
+        reset_retained_print();
     }
     return json::object();
 }
@@ -2615,6 +2633,7 @@ json Engine::Impl::op_arrange(const json& args) {
 json Engine::Impl::op_openProject(const json& args) {
     if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized; call loadVendors first");
     m_calib_params.mode = Slic3r::CalibMode::Calib_None;
+    reset_retained_print();
     return OrcaEngine::op_openProject(args, m_model, m_bundle, m_options_override, m_selected_printer, m_selected_process, m_selected_filaments, m_plate_data);
 }
 
@@ -2696,7 +2715,9 @@ json Engine::Impl::op_deletePlate(const json& args) {
     if (!m_bundle) throw Slic3r::RuntimeError("Preset bundle not initialized");
     Slic3r::DynamicPrintConfig config = m_bundle->full_config();
     config.apply(m_options_override);
-    return OrcaEngine::deletePlate(args, m_model, m_plate_data, config);
+    json res = OrcaEngine::deletePlate(args, m_model, m_plate_data, config);
+    reset_retained_print();
+    return res;
 }
 
 json Engine::Impl::op_setPlateConfig(const json& args) {
@@ -2778,6 +2799,17 @@ json Engine::Impl::op_setLayerEvents(const json& args) { return OrcaWasm::setLay
 json Engine::Impl::op_clearLayerEvents(const json& args) { return OrcaWasm::clearLayerEvents(m_model, args); }
 
 
+void Engine::Impl::reset_retained_print() {
+    m_print.clear();
+    m_print_plate_index = -1;
+    m_print_plate_origin = Slic3r::Vec3d::Zero();
+    m_print_is_bbl = false;
+    m_last_export_path.clear();
+    m_last_export_size_bytes = 0;
+    m_last_export_time_s = 0.0;
+    m_last_export_warnings = json::array();
+}
+
 std::string Engine::Impl::op_slice(int jobId, const json& args) {
     struct SliceCleanupGuard {
         Engine::Impl* impl;
@@ -2786,6 +2818,7 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
         std::vector<std::pair<Slic3r::ModelObject*, bool>> saved_obj;
 
         ~SliceCleanupGuard() {
+            impl->m_print.set_status_callback(nullptr);
             {
                 std::lock_guard<std::mutex> progress_lock(impl->m_progress_mutex);
                 impl->m_progress_job_id = 0;
@@ -2964,69 +2997,172 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
         }.dump();
     }
 
-    Slic3r::Print print;
-    if (plate_index >= 0) {
-        double bed_w = 256.0, bed_d = 256.0, bed_h = 256.0;
-        OrcaEngine::getBedDimensions(config, bed_w, bed_d, bed_h);
-        size_t total_plates = std::max(static_cast<size_t>(plate_index + 1), m_plate_data.size());
-        if (total_plates == 0) total_plates = 1;
-        Slic3r::Vec3d plate_origin = OrcaEngine::computePlateOrigin(plate_index, total_plates, bed_w, bed_d);
-        print.set_plate_origin(plate_origin);
-        print.set_plate_index(plate_index);
-    }
-
-    for (Slic3r::ModelObject *mo : m_model.objects) {
-        if (!mo->printable) continue;
-        mo->ensure_on_bed();
-        print.auto_assign_extruders(mo);
-    }
-    print.is_BBL_printer() = m_bundle->is_bbl_vendor();
-    print.set_calib_params(m_calib_params);
-    print.apply(m_model, config);
-    if (print.empty())
-        throw Slic3r::SlicingError("The print is empty. The model is not printable with current print settings.");
-    if (auto err = print.validate(); !err.string.empty())
-        throw Slic3r::RuntimeError("Print validation failed: " + err.string);
-
-    print.set_status_callback([this, jobId](const Slic3r::PrintBase::SlicingStatus& status) {
-        std::lock_guard<std::mutex> lock(m_progress_mutex);
-        m_progress_job_id = jobId;
-        m_progress_percent = status.percent;
-        m_progress_text = status.text;
-    });
-
     {
         std::lock_guard<std::mutex> lock(m_cancel_mutex);
         if (m_cancel_requested) {
-            m_cancel_requested = false;
             return json{
                 {"ok", false},
                 {"canceled", true},
                 {"error", "canceled"}
             }.dump();
         }
-        m_current_print = &print;
+    }
+
+    Slic3r::Vec3d plate_origin = Slic3r::Vec3d::Zero();
+    if (plate_index >= 0) {
+        double bed_w = 256.0, bed_d = 256.0, bed_h = 256.0;
+        OrcaEngine::getBedDimensions(config, bed_w, bed_d, bed_h);
+        size_t total_plates = std::max(static_cast<size_t>(plate_index + 1), m_plate_data.size());
+        if (total_plates == 0) total_plates = 1;
+        plate_origin = OrcaEngine::computePlateOrigin(plate_index, total_plates, bed_w, bed_d);
+    }
+
+    const bool is_bbl = m_bundle ? m_bundle->is_bbl_vendor() : false;
+    const bool has_calib = m_calib_params.mode != Slic3r::CalibMode::Calib_None || m_model.calib_pa_pattern != nullptr;
+
+    if (has_calib || m_print_plate_index != plate_index || !m_print_plate_origin.isApprox(plate_origin) || m_print_is_bbl != is_bbl) {
+        reset_retained_print();
+    }
+    m_print_plate_index = plate_index;
+    m_print_plate_origin = plate_origin;
+    m_print_is_bbl = is_bbl;
+
+    for (Slic3r::ModelObject *mo : m_model.objects) {
+        if (!mo->printable) continue;
+        mo->ensure_on_bed();
+        m_print.auto_assign_extruders(mo);
+    }
+    m_print.is_BBL_printer() = is_bbl;
+    m_print.set_plate_index(plate_index >= 0 ? plate_index : 0);
+    m_print.set_plate_origin(plate_origin);
+    m_print.set_calib_params(m_calib_params);
+
+    m_print.set_status_callback([this, jobId](const Slic3r::PrintBase::SlicingStatus& status) {
+        std::lock_guard<std::mutex> lock(m_progress_mutex);
+        m_progress_job_id = jobId;
+        m_progress_percent = status.percent;
+        m_progress_text = status.text;
+    });
+    m_print.restart();
+
+    {
+        std::lock_guard<std::mutex> lock(m_cancel_mutex);
+        if (m_cancel_requested) {
+            return json{
+                {"ok", false},
+                {"canceled", true},
+                {"error", "canceled"}
+            }.dump();
+        }
+        m_current_print = &m_print;
+    }
+
+    const auto apply_status = m_print.apply(m_model, config);
+    if ((static_cast<unsigned int>(apply_status) & Slic3r::PrintBase::APPLY_STATUS_INVALIDATED) != 0 || !m_print.finished()) {
+        m_last_export_path.clear();
+        m_last_export_size_bytes = 0;
+        m_last_export_time_s = 0.0;
+        m_last_export_warnings = json::array();
+    }
+
+    if (m_print.empty()) {
+        reset_retained_print();
+        throw Slic3r::SlicingError("The print is empty. The model is not printable with current print settings.");
+    }
+
+    if (auto err = m_print.validate(); !err.string.empty()) {
+        reset_retained_print();
+        throw Slic3r::RuntimeError("Print validation failed: " + err.string);
+    }
+
+    json warnings_json = json::array();
+
+    if (m_print.finished() &&
+        (static_cast<unsigned int>(apply_status) & Slic3r::PrintBase::APPLY_STATUS_INVALIDATED) == 0 &&
+        !has_calib &&
+        !m_last_export_path.empty() &&
+        m_last_export_path == out_path) {
+        std::error_code ec;
+        if (std::filesystem::exists(out_path, ec) &&
+            !ec &&
+            std::filesystem::file_size(out_path, ec) == m_last_export_size_bytes &&
+            !ec) {
+            {
+                std::lock_guard<std::mutex> lock(m_cancel_mutex);
+                if (m_cancel_requested || m_print.canceled()) {
+                    return json{
+                        {"ok", false},
+                        {"canceled", true},
+                        {"error", "canceled"}
+                    }.dump();
+                }
+            }
+            {
+                std::lock_guard<std::mutex> lock(m_progress_mutex);
+                m_progress_job_id = jobId;
+                m_progress_percent = 100;
+                m_progress_text = "Exporting G-code";
+            }
+            for (const auto& w : m_last_export_warnings)
+                warnings_json.push_back(w);
+
+            size_t layer_count = 0;
+            for (const auto *obj : m_print.objects())
+                layer_count = std::max(layer_count, obj->total_layer_count());
+
+            const auto& stats = m_print.print_statistics();
+            return json{
+                {"ok", true},
+                {"result", {
+                    {"gcodePath", m_last_export_path},
+                    {"gcodeBytes", m_last_export_size_bytes},
+                    {"layers", layer_count},
+                    {"printTimeS", m_last_export_time_s},
+                    {"filamentMm", stats.total_used_filament},
+                    {"filamentG", stats.total_weight},
+                    {"warnings", warnings_json}
+                }}
+            }.dump();
+        }
     }
 
     auto do_slice_body = [&]() -> std::string {
         try {
-            print.process();
+            m_print.process();
+            {
+                std::lock_guard<std::mutex> lock(m_cancel_mutex);
+                if (m_cancel_requested || m_print.canceled())
+                    throw Slic3r::CanceledException();
+            }
+            if (m_print.is_step_done(Slic3r::psGCodeExport))
+                m_print.invalidate_gcode_export_from_worker();
+
             Slic3r::GCodeProcessorResult proc_result;
             // The browser preview reparses the exported file; retain estimates without preview interpolation.
-            std::string final_gcode = print.export_gcode(out_path, &proc_result, nullptr, false);
+            std::string final_gcode = m_print.export_gcode(out_path, &proc_result, nullptr, false);
             std::string final_path = final_gcode.empty() ? out_path : final_gcode;
             uintmax_t gcode_size = std::filesystem::file_size(final_path);
 
             size_t layer_count = 0;
-            for (const auto *obj : print.objects())
+            for (const auto *obj : m_print.objects())
                 layer_count = std::max(layer_count, obj->total_layer_count());
 
-            float print_time = proc_result.print_statistics.modes[static_cast<size_t>(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal)].time;
-            const auto& stats = print.print_statistics();
+            double print_time = proc_result.print_statistics.modes[static_cast<size_t>(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal)].time;
+            const auto& stats = m_print.print_statistics();
 
-            std::vector<std::string> warnings;
+            json export_warnings_json = json::array();
             for (const auto& w : proc_result.warnings) {
-                warnings.push_back(w.msg);
+                export_warnings_json.push_back(w.msg);
+                warnings_json.push_back(w.msg);
+            }
+
+            if (!has_calib) {
+                m_last_export_path = final_path;
+                m_last_export_size_bytes = gcode_size;
+                m_last_export_time_s = print_time;
+                m_last_export_warnings = export_warnings_json;
+            } else {
+                reset_retained_print();
             }
 
             {
@@ -3049,10 +3185,11 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
                     {"printTimeS", print_time},
                     {"filamentMm", stats.total_used_filament},
                     {"filamentG", stats.total_weight},
-                    {"warnings", warnings}
+                    {"warnings", warnings_json}
                 }}
             }.dump();
         } catch (const Slic3r::CanceledException&) {
+            reset_retained_print();
             {
                 std::lock_guard<std::mutex> lock(m_cancel_mutex);
                 m_current_print = nullptr;
@@ -3068,7 +3205,21 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
                 {"canceled", true},
                 {"error", "canceled"}
             }.dump();
+        } catch (const std::exception&) {
+            reset_retained_print();
+            {
+                std::lock_guard<std::mutex> lock(m_cancel_mutex);
+                m_current_print = nullptr;
+            }
+            {
+                std::lock_guard<std::mutex> lock(m_progress_mutex);
+                m_progress_job_id = 0;
+                m_progress_percent = 0;
+                m_progress_text.clear();
+            }
+            throw;
         } catch (...) {
+            reset_retained_print();
             {
                 std::lock_guard<std::mutex> lock(m_cancel_mutex);
                 m_current_print = nullptr;
@@ -3113,7 +3264,9 @@ void Engine::cancel() {
 json Engine::Impl::op_setupCalibration(const json& args) {
     if (!m_bundle)
         throw Slic3r::RuntimeError("Preset bundle not initialized");
-    return OrcaWasm::setupCalibration(m_model, m_options_override, *m_bundle, m_calib_params, args, m_resources_dir);
+    json res = OrcaWasm::setupCalibration(m_model, m_options_override, *m_bundle, m_calib_params, args, m_resources_dir);
+    reset_retained_print();
+    return res;
 }
 
 json Engine::Impl::op_autoOrient(const json& args) { return OrcaWasm::autoOrient(m_model, args); }

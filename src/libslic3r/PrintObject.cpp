@@ -1051,7 +1051,7 @@ void PrintObject::estimate_curled_extrusions()
             for (Layer *layer : m_layers)
                 layer->curled_lines.clear();
         }
-        //this->set_done(posEstimateCurledExtrusions);
+        this->set_done(posEstimateCurledExtrusions);
     }
 }
 
@@ -1461,6 +1461,31 @@ bool PrintObject::invalidate_state_by_config_options(
 
     std::vector<PrintObjectStep> steps;
     bool invalidated = false;
+    auto is_variable_layer_height = [this]() -> bool {
+        const ModelObject *mo = this->model_object();
+        return mo != nullptr && (! mo->layer_height_profile.empty() || ! mo->layer_config_ranges.empty());
+    };
+    auto filament_extruder_limits_differ = [this, &old_config, &new_config](const t_config_option_key &key) -> bool {
+        const auto *old_id = old_config.option<ConfigOptionInt>(key);
+        const auto *new_id = new_config.option<ConfigOptionInt>(key);
+        if (old_id == nullptr || new_id == nullptr || old_id->value == new_id->value)
+            return false;
+        const PrintConfig &pcfg = m_print->config();
+        auto min_lh = [&pcfg](int id) -> double {
+            const size_t idx = id > 0 ? size_t(id - 1) : 0;
+            const double v = pcfg.min_layer_height.get_at(idx);
+            return (v == 0.) ? 0.07 : std::max(0.01, v);
+        };
+        auto max_lh = [&pcfg, &min_lh](int id) -> double {
+            const size_t idx = id > 0 ? size_t(id - 1) : 0;
+            const double min_v = min_lh(id);
+            const double max_v = pcfg.max_layer_height.get_at(idx);
+            const double nozzle_v = pcfg.nozzle_diameter.get_at(idx);
+            return std::max(min_v, (max_v == 0.) ? (0.75 * nozzle_v) : max_v);
+        };
+        return ! is_approx(min_lh(old_id->value), min_lh(new_id->value))
+            || ! is_approx(max_lh(old_id->value), max_lh(new_id->value));
+    };
     for (const t_config_option_key &opt_key : opt_keys) {
         if (   opt_key == "brim_width"
             || opt_key == "leading_brim_length"
@@ -1508,11 +1533,15 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "seam_gap"
             || opt_key == "role_based_wipe_speed"
             || opt_key == "wipe_on_loops"
-            || opt_key == "wipe_speed") {
+            || opt_key == "wipe_speed"
+            || opt_key == "initial_layer_min_bead_width"
+            || opt_key == "fuzzy_skin_ripples_per_layer"
+            || opt_key == "fuzzy_skin_ripple_offset"
+            || opt_key == "fuzzy_skin_layers_between_ripple_offset"
+            || opt_key == "only_one_wall_top"
+            || opt_key == "counterbore_hole_bridging"
+            || opt_key == "wall_sequence") {
             steps.emplace_back(posPerimeters);
-        } else if (
-            opt_key == "small_area_infill_flow_compensation_model") {
-            steps.emplace_back(posSlice);
         } else if (opt_key == "gap_infill_speed"
             || opt_key == "filter_out_gap_fill" ) {
             // Return true if gap-fill speed has changed from zero value to non-zero or from non-zero value to zero.
@@ -1551,8 +1580,19 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "interlocking_beam_layer_count"
             || opt_key == "interlocking_depth"
             || opt_key == "interlocking_boundary_avoidance"
-            || opt_key == "interlocking_beam_width") {
+            || opt_key == "interlocking_beam_width"
+            || opt_key == "zaa_enabled"
+            || opt_key == "zaa_min_z"
+            || opt_key == "precise_z_height") {
             steps.emplace_back(posSlice);
+        } else if (opt_key == "zaa_minimize_perimeter_height") {
+            steps.emplace_back(posContouring);
+        } else if (opt_key == "line_width") {
+            steps.emplace_back(posPerimeters);
+            steps.emplace_back(posSupportMaterial);
+            steps.emplace_back(posDetectOverhangsForLift);
+            if (this->is_mm_painted())
+                steps.emplace_back(posSlice);
 		} else if (
                opt_key == "elefant_foot_compensation"
             || opt_key == "elefant_foot_compensation_layers"
@@ -1658,7 +1698,7 @@ bool PrintObject::invalidate_state_by_config_options(
 #endif
         } else if (
                opt_key == "interface_shells"
-            || opt_key == "infill_multiline"
+            || opt_key == "fill_multiline"
             || opt_key == "infill_combination"
             || opt_key == "infill_combination_max_layer_height"
             || opt_key == "bottom_shell_thickness"
@@ -1666,10 +1706,6 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "top_surface_expansion_margin"
             || opt_key == "top_surface_expansion_direction"
             || opt_key == "minimum_sparse_infill_area"
-            || opt_key == "sparse_infill_filament_id"
-            || opt_key == "internal_solid_filament_id"
-            || opt_key == "top_surface_filament_id"
-            || opt_key == "bottom_surface_filament_id"
             || opt_key == "sparse_infill_line_width"
             || opt_key == "skin_infill_line_width"
             || opt_key == "skeleton_infill_line_width"
@@ -1677,7 +1713,7 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "solid_infill_direction"
             || opt_key == "top_layer_direction"
             || opt_key == "bottom_layer_direction"
-            || opt_key == "align_infill_direction_to_model" 
+            || opt_key == "align_infill_direction_to_model"
             || opt_key == "extra_solid_infills"
             || opt_key == "ensure_vertical_shell_thickness"
             || opt_key == "bridge_angle"
@@ -1686,8 +1722,25 @@ bool PrintObject::invalidate_state_by_config_options(
             //BBS
             || opt_key == "bridge_line_width"
             || opt_key == "bridge_density"
-            || opt_key == "internal_bridge_density") {
+            || opt_key == "internal_bridge_density"
+            || opt_key == "enable_extra_bridge_layer"
+            || opt_key == "thick_internal_bridges"
+            || opt_key == "dont_filter_internal_bridges") {
             steps.emplace_back(posPrepareInfill);
+        } else if (
+               opt_key == "sparse_infill_filament_id"
+            || opt_key == "internal_solid_filament_id"
+            || opt_key == "top_surface_filament_id"
+            || opt_key == "bottom_surface_filament_id") {
+            steps.emplace_back(posPrepareInfill);
+            if (this->has_support_material())
+                steps.emplace_back(posSupportMaterial);
+            if (filament_extruder_limits_differ(opt_key)) {
+                if (is_variable_layer_height())
+                    steps.emplace_back(posSlice);
+                else if (! this->has_support_material())
+                    m_slicing_params.valid = false;
+            }
         } else if (
                opt_key == "top_surface_pattern"
             || opt_key == "bottom_surface_pattern"
@@ -1703,8 +1756,29 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "small_area_infill_flow_compensation"
             || opt_key == "lateral_lattice_angle_1"
             || opt_key == "lateral_lattice_angle_2"
-            || opt_key == "infill_overhang_angle") {
+            || opt_key == "infill_overhang_angle"
+            || opt_key == "detect_narrow_internal_solid_infill"
+            || opt_key == "gap_fill_target"
+            || opt_key == "calib_flowrate_topinfill_special_order"
+            || opt_key == "infill_complete_top"
+            || opt_key == "gyroid_optimized"
+            || opt_key == "zaa_dont_alternate_fill_direction") {
             steps.emplace_back(posInfill);
+        } else if (
+               opt_key == "ironing_type"
+            || opt_key == "ironing_pattern"
+            || opt_key == "ironing_flow"
+            || opt_key == "ironing_spacing"
+            || opt_key == "ironing_inset"
+            || opt_key == "ironing_direction"
+            || opt_key == "ironing_speed"
+            || opt_key == "ironing_angle"
+            || opt_key == "ironing_angle_fixed"
+            || opt_key == "filament_ironing_flow"
+            || opt_key == "filament_ironing_spacing"
+            || opt_key == "filament_ironing_inset"
+            || opt_key == "filament_ironing_speed") {
+            steps.emplace_back(posIroning);
         } else if (opt_key == "sparse_infill_pattern"
                    || opt_key == "adaptive_infill_mode"
                    || opt_key == "adaptive_infill_interior_density"
@@ -1759,10 +1833,24 @@ bool PrintObject::invalidate_state_by_config_options(
             // This value is used for calculating perimeter - infill overlap, thus perimeters need to be recalculated.
             steps.emplace_back(posPerimeters);
             steps.emplace_back(posPrepareInfill);
+        } else if (opt_key == "outer_wall_filament_id") {
+            steps.emplace_back(posPerimeters);
+            steps.emplace_back(posSupportMaterial);
+            const auto *old_polyhole = old_config.option<ConfigOptionBool>("hole_to_polyhole");
+            const auto *new_polyhole = new_config.option<ConfigOptionBool>("hole_to_polyhole");
+            if (this->is_mm_painted()
+                || (old_polyhole != nullptr && old_polyhole->value)
+                || (new_polyhole != nullptr && new_polyhole->value)
+                || (is_variable_layer_height() && filament_extruder_limits_differ(opt_key)))
+                steps.emplace_back(posSlice);
+        } else if (opt_key == "inner_wall_filament_id") {
+            steps.emplace_back(posPerimeters);
+            steps.emplace_back(posSupportMaterial);
+            if (is_variable_layer_height() && filament_extruder_limits_differ(opt_key))
+                steps.emplace_back(posSlice);
         } else if (
                opt_key == "outer_wall_line_width"
-            || opt_key == "outer_wall_filament_id"
-            || opt_key == "inner_wall_filament_id"
+            || opt_key == "thick_bridges"
             || opt_key == "fuzzy_skin"
             || opt_key == "fuzzy_skin_thickness"
             || opt_key == "fuzzy_skin_point_distance"
@@ -1850,13 +1938,40 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "wipe_inward"
             || opt_key == "wipe_inward_distance"
             || opt_key == "spiral_starting_flow_ratio"
-            || opt_key == "spiral_finishing_flow_ratio") {
+            || opt_key == "spiral_finishing_flow_ratio"
+            || opt_key == "outer_wall_acceleration"
+            || opt_key == "inner_wall_acceleration"
+            || opt_key == "top_surface_acceleration"
+            || opt_key == "bridge_acceleration"
+            || opt_key == "sparse_infill_acceleration"
+            || opt_key == "internal_solid_infill_acceleration"
+            || opt_key == "default_jerk"
+            || opt_key == "outer_wall_jerk"
+            || opt_key == "inner_wall_jerk"
+            || opt_key == "infill_jerk"
+            || opt_key == "top_surface_jerk"
+            || opt_key == "initial_layer_jerk"
+            || opt_key == "travel_jerk"
+            || opt_key == "default_junction_deviation"
+            || opt_key == "print_extruder_id"
+            || opt_key == "print_extruder_variant"
+            || opt_key == "wipe_before_external_loop"
+            || opt_key == "wall_infill_order"
+            || opt_key == "staggered_inner_seams"
+            || opt_key == "skirt_start_angle") {
             invalidated |= m_print->invalidate_step(psGCodeExport);
         } else if (
                opt_key == "flush_into_infill"
             || opt_key == "flush_into_objects"
             || opt_key == "flush_into_support"
-            || opt_key == "belt_purge_tower_object") {
+            || opt_key == "belt_purge_tower_object"
+            || opt_key == "set_other_flow_ratios"
+            || opt_key == "default_acceleration"
+            || opt_key == "initial_layer_acceleration"
+            || opt_key == "travel_acceleration"
+            || opt_key == "imex_parallel_mode"
+            || opt_key == "imex_head_filament_map"
+            || opt_key == "is_infill_first") {
             invalidated |= m_print->invalidate_step(psWipeTower);
             invalidated |= m_print->invalidate_step(psGCodeExport);
         } else {
@@ -1878,12 +1993,28 @@ bool PrintObject::invalidate_step(PrintObjectStep step)
 
     // propagate to dependent steps
     if (step == posPerimeters) {
-		invalidated |= this->invalidate_steps({ posPrepareInfill, posInfill, posIroning, posContouring, posSimplifyPath, posSimplifyInfill });
+		invalidated |= this->invalidate_steps({ posEstimateCurledExtrusions, posPrepareInfill, posInfill, posIroning, posContouring, posSimplifyPath, posSimplifyInfill });
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
     } else if (step == posPrepareInfill) {
-        invalidated |= this->invalidate_steps({ posInfill, posIroning, posContouring, posSimplifyPath, posSimplifyInfill });
+        if (this->need_z_contouring())
+            invalidated |= this->invalidate_steps({ posPerimeters, posEstimateCurledExtrusions, posInfill, posIroning, posContouring, posSimplifyPath, posSimplifyInfill });
+        else
+            invalidated |= this->invalidate_steps({ posInfill, posIroning, posContouring, posSimplifyInfill });
+        invalidated |= m_print->invalidate_steps({ psSkirtBrim });
     } else if (step == posInfill) {
-        invalidated |= this->invalidate_steps({ posIroning, posContouring, posSimplifyInfill });
+        if (this->need_z_contouring())
+            invalidated |= this->invalidate_steps({ posPerimeters, posEstimateCurledExtrusions, posPrepareInfill, posIroning, posContouring, posSimplifyPath, posSimplifyInfill });
+        else
+            invalidated |= this->invalidate_steps({ posIroning, posContouring, posSimplifyInfill });
+        invalidated |= m_print->invalidate_steps({ psSkirtBrim });
+    } else if (step == posIroning) {
+        if (this->need_z_contouring())
+            invalidated |= this->invalidate_steps({ posPerimeters, posEstimateCurledExtrusions, posPrepareInfill, posInfill, posContouring, posSimplifyPath, posSimplifyInfill });
+        else
+            invalidated |= this->invalidate_steps({ posInfill, posContouring, posSimplifyInfill });
+        invalidated |= m_print->invalidate_steps({ psSkirtBrim });
+    } else if (step == posContouring) {
+        invalidated |= this->invalidate_steps({ posPerimeters, posEstimateCurledExtrusions, posPrepareInfill, posInfill, posIroning, posSimplifyPath, posSimplifyInfill });
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
     } else if (step == posSlice) {
         // posSimplifySupportPath is listed with posSupportMaterial: invalidate_steps() does not
@@ -1893,7 +2024,7 @@ bool PrintObject::invalidate_step(PrintObjectStep step)
 		// starts over empty: without it here the step stayed done and the lift logic in
 		// GCode::needs_retraction() had no overhangs to test against until something else
 		// invalidated it.
-		invalidated |= this->invalidate_steps({ posPerimeters, posPrepareInfill, posInfill, posIroning, posContouring, posSupportMaterial, posSimplifyPath, posSimplifyInfill, posSimplifySupportPath, posDetectOverhangsForLift });
+		invalidated |= this->invalidate_steps({ posPerimeters, posEstimateCurledExtrusions, posPrepareInfill, posInfill, posIroning, posContouring, posSupportMaterial, posSimplifyPath, posSimplifyInfill, posSimplifySupportPath, posDetectOverhangsForLift });
         invalidated |= m_print->invalidate_steps({ psSkirtBrim });
         m_slicing_params.valid = false;
         // The exact belt_floor_z_shift is recomputed when slice() runs again.

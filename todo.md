@@ -3,7 +3,7 @@
 Source: [consolidated audit](wasm/reports/codebase-review-20261111.md). These items await separate implementation and qualification.
 
 - [ ] Skip unnecessary containment projections for already-disabled instances; investigate conservative bounds and per-slice reuse. Verify equivalent eligibility and cancellation behavior; containment cancellation is already implemented.
-- [ ] Investigate retained Print and incremental reslicing. Establish invalidation rules, output equivalence and memory checks.
+- [x] Investigate retained Print and incremental reslicing. Establish invalidation rules, output equivalence and memory checks. See [incremental reslicing report](wasm/reports/incremental-reslicing-20261112.md).
 - [ ] Show each plate as current, needing reslicing or having no output; verify transitions after edits and slicing.
 - [ ] Explain which out-of-bed objects were skipped, with identifiable objects and a corrective action.
 - [ ] Give readiness messages direct corrective actions; verify each action resolves its stated blocker.
