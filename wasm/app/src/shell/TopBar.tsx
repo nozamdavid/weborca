@@ -443,6 +443,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
         { label: t("Split to objects"), disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().splitSelectedObject() },
         { label: t("Split to parts"), disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().splitSelectedVolume() },
         { label: t("Simplify..."), disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().openSimplifyDialog() },
+        { label: t("Texture displacement"), disabled: isBusy || !hasSelection, onClick: () => useEditOpsStore.setState({ activeDialog: 'texture', error: null }) },
         { label: t("Mesh boolean..."), disabled: isBusy || objectCount < 2, onClick: () => void useEditOpsStore.getState().openBooleanDialog() },
         { label: t("Brim ears..."), disabled: isBusy || !hasSelection, onClick: () => void useEditOpsStore.getState().startBrimEars() },
         { label: t("Add SVG..."), disabled: isBusy, onClick: () => void useEditOpsStore.getState().openSvgDialog() },
