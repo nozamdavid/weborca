@@ -893,6 +893,25 @@ export const PlateView: React.FC = () => {
       }
     ],
     [
+      textureTool(!!selectedObject, busy || isOperatingEdit),
+      { id: 'tool-paint-btn', label: t("Support painting"), shortcut: 'P', icon: 'toolbar_support', active: isPaintingActive && paintLayer === 'support', disabled: !selectedObject || busy || isOperatingEdit, onClick: handleTogglePainting },
+      ...([['seam', 'toolbar_seam', 'Seam painting'], ['color', 'mmu_segmentation', 'Color painting'], ['fuzzy', 'toolbar_fuzzy_skin_paint', 'Fuzzy skin painting']] as const).map(([layer, icon, label]): CanvasTool => ({
+        id: `tool-${layer}-paint-btn`, label, icon, active: isPaintingActive && paintLayer === layer, disabled: !selectedObject || busy || isOperatingEdit,
+        onClick: () => {
+          useCutStore.getState().closeCut();
+          void useTextStore.getState().close();
+          useLayersStore.getState().stopEditing();
+          if (activeEditTool) {
+            useEditOpsStore.getState().stopFlatten();
+            useEditOpsStore.getState().stopBrimEars();
+          }
+          usePaintToolsStore.getState().setLayer(layer);
+          const volume = sceneRef.current?.getMeshVolumes(selectedObjectId!)?.[0]?.volumeId;
+          void usePaintToolsStore.getState().startPainting(selectedObjectId!, volume, selectedInstanceId);
+        }
+      }))
+    ],
+    [
       { id: 'tool-cut-btn', testId: 'tool-cut-btn', label: t("Cut"), shortcut: 'C', icon: 'toolbar_cut', active: isCutActive, disabled: !selectedObject || busy || isCutting || isRepairing || isOperatingEdit,
         onClick: () => {
           const cutStore = useCutStore.getState();
@@ -910,7 +929,6 @@ export const PlateView: React.FC = () => {
             cutStore.openCut(selectedObjectId, 0, height, height / 2);
           }
         } },
-      textureTool(!!selectedObject, busy || isOperatingEdit),
       { id: 'tool-meshboolean-btn', testId: 'tool-meshboolean-btn', label: t("Mesh boolean"), icon: 'toolbar_meshboolean', active: activeEditDialog === 'boolean', disabled: objects.length < 2 || busy || isOperatingEdit,
         onClick: () => {
           stopPainting();
@@ -976,24 +994,6 @@ export const PlateView: React.FC = () => {
           if (isLayersActive) useLayersStore.getState().stopEditing();
           else void useLayersStore.getState().startEditing(selectedObjectId!);
         } }
-    ],
-    [
-      { id: 'tool-paint-btn', label: t("Support painting"), shortcut: 'P', icon: 'toolbar_support', active: isPaintingActive && paintLayer === 'support', disabled: !selectedObject || busy || isOperatingEdit, onClick: handleTogglePainting },
-      ...([['seam', 'toolbar_seam', 'Seam painting'], ['color', 'mmu_segmentation', 'Color painting'], ['fuzzy', 'toolbar_fuzzy_skin_paint', 'Fuzzy skin painting']] as const).map(([layer, icon, label]): CanvasTool => ({
-        id: `tool-${layer}-paint-btn`, label, icon, active: isPaintingActive && paintLayer === layer, disabled: !selectedObject || busy || isOperatingEdit,
-        onClick: () => {
-          useCutStore.getState().closeCut();
-          void useTextStore.getState().close();
-          useLayersStore.getState().stopEditing();
-          if (activeEditTool) {
-            useEditOpsStore.getState().stopFlatten();
-            useEditOpsStore.getState().stopBrimEars();
-          }
-          usePaintToolsStore.getState().setLayer(layer);
-          const volume = sceneRef.current?.getMeshVolumes(selectedObjectId!)?.[0]?.volumeId;
-          void usePaintToolsStore.getState().startPainting(selectedObjectId!, volume, selectedInstanceId);
-        }
-      }))
     ],
     [
       { id: 'tool-arrange-btn', label: t("Arrange"), shortcut: 'A', icon: 'toolbar_arrange', disabled: busy || isOperatingEdit, onClick: () => arrange(true) },
