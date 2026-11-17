@@ -778,6 +778,9 @@ std::string Engine::Impl::execute_job(int jobId, const std::string& op, const st
         } else if (op == "placeOnFace") { result_data = op_placeOnFace(args);
         } else if (op == "splitObject") { result_data = op_splitObject(args);
         } else if (op == "splitVolume") { result_data = op_splitVolume(args);
+        } else if (op == "textureDisplace") {
+            result_data = OrcaWasm::textureDisplace(m_model, args);
+            reset_retained_print();
         } else if (op == "simplifyVolume") { result_data = op_simplifyVolume(args);
         } else if (op == "meshBoolean") { result_data = op_meshBoolean(args);
         } else if (op == "addSvg") { result_data = op_addSvg(args);

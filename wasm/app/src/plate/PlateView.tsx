@@ -31,6 +31,7 @@ import { RepairBadge, useRepairStore } from '../repair';
 import { useEditOpsStore, FlattenPanel, BrimEarsPanel } from '../editops';
 import { CanvasToolbar, ViewButtons } from '../shell/CanvasToolbar';
 import type { CanvasTool } from '../shell/CanvasToolbar';
+import { textureTool } from '../editops/textureTool';
 import { registerCameraHandler, registerCameraOrbitHandler, setCameraView } from '../shell/cameraBridge';
 import type { CameraView } from '../shell/cameraBridge';
 import { RedoIcon, UndoIcon } from '../shell/glyphs';
@@ -909,6 +910,7 @@ export const PlateView: React.FC = () => {
             cutStore.openCut(selectedObjectId, 0, height, height / 2);
           }
         } },
+      textureTool(!!selectedObject, busy || isOperatingEdit),
       { id: 'tool-meshboolean-btn', testId: 'tool-meshboolean-btn', label: t("Mesh boolean"), icon: 'toolbar_meshboolean', active: activeEditDialog === 'boolean', disabled: objects.length < 2 || busy || isOperatingEdit,
         onClick: () => {
           stopPainting();

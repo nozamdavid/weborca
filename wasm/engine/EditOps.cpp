@@ -6,6 +6,7 @@
 #include "libslic3r/QuadricEdgeCollapse.hpp"
 #include "libslic3r/MeshBoolean.hpp"
 #include "libslic3r/TriangleSelector.hpp"
+#include "libslic3r/TextureDisplacement.hpp"
 #include <iostream>
 
 using json = nlohmann::json;
@@ -316,6 +317,71 @@ json simplifyVolume(Slic3r::Model& model, const json& args) {
         {"triangleCountAfter", vol->mesh().facets_count()},
         {"maxError", max_error}
     };
+}
+
+json textureDisplace(Slic3r::Model& model, const json& args) {
+    auto* obj = find_object(model, args.at("objectId").get<size_t>());
+    if (!obj) throw Slic3r::RuntimeError("Object not found");
+    auto* vol = find_volume(obj, args.at("volumeId").get<size_t>());
+    if (!vol || !vol->is_model_part()) throw Slic3r::RuntimeError("Select a model part");
+    if (obj->instances.size() != 1 || !vol->texture_uv.empty() ||
+        !vol->supported_facets.empty() || !vol->seam_facets.empty() ||
+        !vol->mmu_segmentation_facets.empty() || !vol->fuzzy_skin_facets.empty() ||
+        !vol->texture_displacement_facets_all_empty())
+        throw Slic3r::RuntimeError("Bake requires one instance and an unpainted part without UV coordinates");
+    Slic3r::TextureDisplacementLayer layer;
+    layer.slot = 0;
+    layer.depth_mm = args.at("depth").get<float>();
+    layer.tiling_scale = args.at("tileSize").get<float>();
+    layer.rotation_deg = args.value("rotation", 0.f);
+    layer.midlevel = args.value("midlevel", 0.f);
+    layer.invert = args.value("invert", false);
+    int projection = args.value("projection", 0);
+    if (!std::isfinite(layer.depth_mm) || layer.depth_mm <= 0 || layer.depth_mm > 5 ||
+        !std::isfinite(layer.tiling_scale) || layer.tiling_scale < 0.5f || layer.tiling_scale > 1000 ||
+        !std::isfinite(layer.rotation_deg) || !std::isfinite(layer.midlevel) ||
+        layer.midlevel < 0 || layer.midlevel > 1 || projection < 0 || projection > 2)
+        throw Slic3r::RuntimeError("Invalid texture displacement settings");
+    layer.projection_method = static_cast<Slic3r::TextureProjectionMethod>(projection);
+    auto bytes = args.at("image").get<std::vector<unsigned char>>();
+    if (bytes.empty() || bytes.size() > 8 * 1024 * 1024)
+        throw Slic3r::RuntimeError("Texture must be a PNG smaller than 8 MB");
+    // Check IHDR before the decoder allocates buffers from untrusted dimensions.
+    const unsigned char png_header[] = {137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 'I', 'H', 'D', 'R'};
+    if (bytes.size() < 33 || !std::equal(std::begin(png_header), std::end(png_header), bytes.begin()))
+        throw Slic3r::RuntimeError("Cannot decode texture image: invalid PNG header");
+    const auto dimension = [&](size_t offset) {
+        return (uint32_t(bytes[offset]) << 24) | (uint32_t(bytes[offset + 1]) << 16) |
+               (uint32_t(bytes[offset + 2]) << 8) | uint32_t(bytes[offset + 3]);
+    };
+    const auto width = dimension(16), height = dimension(20);
+    if (width == 0 || height == 0 || width > 2048 || height > 2048)
+        throw Slic3r::RuntimeError("Texture dimensions must be at most 2048 x 2048 pixels");
+    layer.image_data = std::make_shared<std::vector<unsigned char>>(std::move(bytes));
+    const auto decoded = Slic3r::decode_height_texture(layer);
+    if (decoded.empty())
+        throw Slic3r::RuntimeError("Cannot decode texture image");
+    if (std::all_of(decoded.pixels.begin(), decoded.pixels.end(), [&](uint8_t p) {
+            return std::abs(float(p) / 255.f - layer.midlevel) < 1e-6f;
+        })) throw Slic3r::RuntimeError("Texture has no relief at this neutral height; nothing changed");
+    Slic3r::TriangleSelector selector(vol->mesh());
+    for (size_t i = 0; i < vol->mesh().facets_count(); ++i)
+        selector.set_facet(int(i), Slic3r::EnforcerBlockerType::ENFORCER);
+    Slic3r::TextureDisplacementFacetsData masks;
+    masks[0] = selector.serialize();
+    Slic3r::TextureDisplacementOptions options;
+    options.v2_max_triangles_k = 200;
+    auto transform = vol->get_matrix();
+    if (!obj->instances.empty()) transform = obj->instances.front()->get_matrix() * transform;
+    auto mesh = Slic3r::build_texture_displacement(vol->mesh().its, {layer}, masks, options, {}, nullptr, transform);
+    if (mesh.indices.empty()) throw Slic3r::RuntimeError("Texture produced no displacement; nothing changed");
+    vol->set_mesh(Slic3r::TriangleMesh(std::move(mesh)));
+    vol->calculate_convex_hull();
+    vol->invalidate_convex_hull_2d();
+    vol->set_new_unique_id();
+    obj->invalidate_bounding_box();
+    obj->ensure_on_bed();
+    return {{"success", true}, {"triangleCountAfter", vol->mesh().facets_count()}};
 }
 
 json meshBoolean(Slic3r::Model& model, const json& args) {

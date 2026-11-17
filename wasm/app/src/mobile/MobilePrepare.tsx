@@ -9,6 +9,10 @@ import { MobileImport, MobileSheet, mobileBusy } from './MobileShell';
 import { MobileProcessSettings } from './MobileProcessSettings';
 import { NumericTransform, GroupScale } from '../plate/NumericTransform';
 import { useSliceReadiness } from '../shell/sliceReadiness';
+import { textureTool } from '../editops/textureTool';
+import { useEditOpsStore } from '../editops/editOpsStore';
+import { useHistoryStore } from '../history/historyStore';
+import { Icon } from '../shell/Icon';
 
 export function MobilePrepare() {
   const { t } = useTranslation();
@@ -19,12 +23,15 @@ export function MobilePrepare() {
   const selectedInstanceId = usePlateStore(state => state.selectedInstanceId);
   const extraSelection = usePlateStore(state => state.extraSelection);
   const mode = usePlateStore(state => state.gizmoMode);
-  const [sheet, setSheet] = useState<'objects' | 'settings' | null>(null);
+  const [sheet, setSheet] = useState<'objects' | 'settings' | 'tools' | null>(null);
+  const operating = useEditOpsStore(state => state.isOperating);
+  const restoring = useHistoryStore(state => state.isRestoring);
   const [tools, setTools] = useState(false);
   const busy = mobileBusy(s);
   const readiness = useSliceReadiness();
   const plate = plates.plates.find(p => p.index === plates.activePlateIndex);
   const selectedObject = objects.find(object => object.id === selectedObjectId);
+  const texture = textureTool(!!selectedObject, busy || operating || restoring);
   const selectedInstance = selectedObject?.instances.find(instance => instance.id === selectedInstanceId);
   const canTransform = selectedObject && selectedInstance &&
     plate?.instances.some(ref => ref.objectId === selectedObject.id && ref.instanceId === selectedInstance.id);
@@ -37,6 +44,10 @@ export function MobilePrepare() {
     {tools && canTransform && !extraSelection.length && (mode === 'translate' || mode === 'scale') && <NumericTransform
       object={selectedObject} instance={selectedInstance} mode={mode === 'translate' ? 'move' : 'scale'} idPrefix="mobile-nt" />}
     <button aria-expanded={tools} onClick={() => { setTools(!tools); window.dispatchEvent(new Event('resize')); }}>{t('Plate tools')}</button>
+    <button aria-haspopup="dialog" onClick={() => setSheet('tools')}>{t('Tools')}</button>
+    {sheet === 'tools' && <MobileSheet title={t('Tools')} onClose={() => setSheet(null)}>
+      <button disabled={texture.disabled} title={t(texture.label)} onClick={() => { setSheet(null); texture.onClick(); }}><Icon name={texture.icon as string} />{t(texture.label)}</button>
+    </MobileSheet>}
     <button className="wm-row" aria-haspopup="dialog" onClick={() => setSheet('objects')}><strong>{t('Objects')} · {objects.length}</strong><span>{t('Open')} ›</span></button>
     <section className="wm-card"><div className="wm-row"><h2>{t('Process Settings')}</h2><button aria-haspopup="dialog" onClick={() => setSheet('settings')}>{t('Settings')}</button></div>
       <p>{s.selectedProcess || t('No process preset selected')}</p><small>{s.selectedFilaments.join(', ') || s.selectedFilament || t('No filament selected')}</small>

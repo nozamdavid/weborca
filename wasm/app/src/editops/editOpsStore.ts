@@ -16,7 +16,7 @@ import type {
 } from './types';
 
 export type ActiveEditTool = 'flatten' | 'brimears' | null;
-export type ActiveEditDialog = 'boolean' | 'simplify' | 'svg' | null;
+export type ActiveEditDialog = 'boolean' | 'simplify' | 'svg' | 'texture' | null;
 
 // An offer threshold, not an import limit. Small meshes need no extra decision.
 export const IMPORT_SIMPLIFY_TRIANGLES = 100_000;
@@ -110,7 +110,7 @@ export interface EditOpsState {
   applyAddSvg: (svgText?: string, depth?: number, objectId?: number | null) => Promise<boolean>;
 }
 
-async function stopConflictingTools(): Promise<void> {
+export async function stopConflictingTools(): Promise<void> {
   try {
     const { usePaintToolsStore } = await import('../paint-tools');
     usePaintToolsStore.getState().stopPainting();
@@ -129,7 +129,7 @@ async function stopConflictingTools(): Promise<void> {
   } catch (_) {}
 }
 
-async function refreshAndCommit(
+export async function refreshAndCommit(
   description: string,
   invalidatedIds: number[] = [],
   reselectId?: number | null
