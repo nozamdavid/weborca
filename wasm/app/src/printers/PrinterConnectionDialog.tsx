@@ -242,10 +242,10 @@ export const PrinterConnectionDialog: React.FC = () => {
     setTesting(true);
     setResult(null);
     try {
-      const { token, username, devices } = await loginBambuCloud(draft, cloudAccount,
+      const { token, refreshToken, username, devices } = await loginBambuCloud(draft, cloudAccount,
         { password: cloudPassword, code: cloudCode }, controller.signal);
       if (controller.signal.aborted) return;
-      setDraft((d) => ({ ...d, cloud_account: cloudAccount.trim(), printhost_apikey: token, printhost_user: username,
+      setDraft((d) => ({ ...d, cloud_account: cloudAccount.trim(), printhost_apikey: token, cloud_refresh_token: refreshToken, printhost_user: username,
         serial: devices.some(device => device.dev_id === d.serial) ? d.serial : devices[0]?.dev_id ?? '' }));
       setCloudDevices(devices);
       setCloudPassword('');

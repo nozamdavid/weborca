@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="referrer" content="no-referrer" />
+    <script>
+      if (location.pathname === '/orca-cloud/callback') {
+        window.__orcaCloudCallback = location.href;
+        history.replaceState(null, '', '/orca-cloud/callback');
+      }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OrcaSlicer Web</title>
+    <script type="module" crossorigin src="/assets/index-BYFGXxj0.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

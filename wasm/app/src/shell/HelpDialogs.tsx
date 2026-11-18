@@ -1,9 +1,10 @@
 import React from 'react';
+import { BambuAccountDialog } from '../printers/BambuAccountDialog';
 import { create } from 'zustand';
 import { Dialog } from '../components/Dialog';
 import { useTranslation } from "../i18n";
 
-export const useHelpStore = create<{ dialog: 'about' | 'shortcuts' | null; open: (d: 'about' | 'shortcuts') => void; close: () => void }>((set) => ({
+export const useHelpStore = create<{ dialog: 'about' | 'shortcuts' | 'bambu' | null; open: (d: 'about' | 'shortcuts' | 'bambu') => void; close: () => void }>((set) => ({
   dialog: null,
   open: (dialog) => set({ dialog }),
   close: () => set({ dialog: null })
@@ -44,6 +45,7 @@ export const HelpDialogs: React.FC = () => {
     const { t } = useTranslation();
   const { dialog, close } = useHelpStore();
   if (!dialog) return null;
+  if (dialog === 'bambu') return <BambuAccountDialog onClose={close} />;
   return (
     <Dialog onClose={close} role="dialog" aria-label={t(dialog === "about" ? "About" : "Keyboard shortcuts")}>
       <div className="modal-content ds-dialog" onClick={(e) => e.stopPropagation()}>

@@ -19,7 +19,12 @@ describe('Bambu Cloud integration', () => {
       let body = '';
       req.on('data', chunk => body += chunk);
       req.on('end', () => {
-        if (req.method === 'POST' && req.url === '/v1/user-service/user/login') {
+        if (req.url === '/v1/design-service/instance/456/f3mf?type=download') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ url: 'https://makerworld.bblmw.com/mock.3mf' }));
+        } else if (req.url === '/v1/design-service/design/123') {
+          res.writeHead(302, { location: 'https://evil.test/file' }); res.end();
+        } else if (req.method === 'POST' && req.url === '/v1/user-service/user/login') {
           const data = JSON.parse(body || '{}');
           if (data.account === 'test@example.com' && data.password === 'badpassword') {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -109,6 +114,16 @@ describe('Bambu Cloud integration', () => {
       assert.equal(response.status, 403);
       assert.match(await response.text(), /not enabled/);
     } finally { await disabled.close(); }
+  });
+
+  test('HTTP: Model metadata keeps exact query, rejects redirects and arbitrary queries', async () => {
+    const root = `${gateway.url}/_printer/bambu-cloud/api/v1/design-service`;
+    const response = await fetch(`${root}/instance/456/f3mf?type=download`);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal((await response.json()).url, 'https://makerworld.bblmw.com/mock.3mf');
+    assert.equal((await fetch(`${root}/design/123`)).status, 502);
+    assert.equal((await fetch(`${root}/instance/456/f3mf?type=download&url=https://evil.test`)).status, 403);
   });
 
   test('HTTP: Authentication challenge', async () => {

@@ -148,6 +148,10 @@ export const usePrinterConnectionStore = create<PrinterConnectionState>()(
         set((s) => {
           const cached = s.prusaSessions.filter(p => samePrusaScope(p, source) && p.cloud_account === source.cloud_account);
           const saved = s.printers.find(p => p.id === source.id && samePrusaScope(p, source) && p.cloud_account === source.cloud_account);
+          if (source.host_type === 'bambu-cloud' && s.printers.some(p => p.id === source.id) && (!saved || !sameTokens(saved, source))) {
+            current = false;
+            return {};
+          }
           if (source.host_type === 'prusaconnect' &&
             ((source.id === 'prusa-account-session' && !s.prusaSessions.some(p => samePrusaScope(p, source) && sameTokens(p, source))) ||
               (cached.length > 0 && !cached.some(p => sameTokens(p, source))) || (saved && !sameTokens(saved, source)))) {

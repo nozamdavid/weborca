@@ -41,5 +41,5 @@ for (const file of ['orca_preview.js', 'orca_preview.wasm']) {
 }
 assert.equal((await request('/engine/missing.wasm')).status, 404);
 assert.equal((await request('/', 'unapproved.example')).status, 421);
-assert.equal((await request('/_printer/status')).status, 404, 'gateway runs separately');
+assert.equal((await request('/_printer/status')).status, 403, 'gateway runs separately');
 console.log('Host restrictions, missing-asset 404 and separate gateway: OK');

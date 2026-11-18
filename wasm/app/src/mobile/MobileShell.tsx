@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { useHelpStore } from '../shell/HelpDialogs';
 import { Dialog } from '../components/Dialog';
 import { useAppStore } from '../store/appStore';
 import { SavedPrinterSelector } from '../printers/SavedPrinterSelector';
@@ -67,6 +68,7 @@ function MobileMenu({ onClose }: { onClose: () => void }) {
     </label>;
   };
   return <MobileSheet title={t('Menu & presets')} onClose={onClose}>
+    <button aria-haspopup="dialog" onClick={() => { onClose(); useHelpStore.getState().open('bambu'); }}>{t('Bambu Cloud account')}</button>
     <section className="wm-stack"><h2>{t('Project')}</h2><MobileImport disabled={busy} onImported={onClose} />
       <button disabled={busy || !s.modelFile} onClick={() => void s.saveProjectFile()}>{t('Save project')}</button>
     </section>
@@ -103,7 +105,7 @@ export function MobileHeader() {
 export function MobileNavigation({ activeTab, setActiveTab }: { activeTab: TabId; setActiveTab: (tab: TabId) => void }) {
   const { t } = useTranslation();
   return <nav className="wm-nav" aria-label={t('Main navigation')}>
-    {(['prepare', 'preview', 'device'] as const).map(tab => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined}
+    {(['models', 'prepare', 'preview', 'device'] as const).map(tab => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined}
       onClick={() => setActiveTab(tab)}>{t(tab[0].toUpperCase() + tab.slice(1))}</button>)}
   </nav>;
 }

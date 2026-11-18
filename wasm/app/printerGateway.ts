@@ -631,7 +631,7 @@ export function createGateway(options: GatewayOptions = {}) {
       }
       const cloud = BAMBU_CLOUD_ROUTE.exec(url);
       if (cloud?.[1] === 'api') {
-        await handleBambuCloudApi(req, res, '/' + cloud[2], options);
+        await handleBambuCloudApi(req, res, '/' + cloud[2] + new URL(url, 'http://localhost').search, options);
         return true;
       }
       const match = ROUTE.exec(url);

@@ -55,7 +55,8 @@ export async function validateCloudSession(source: PhysicalPrinter, signal: Abor
       throw Object.assign(new Error('Saved session validation is unavailable for this Bambu region.'), { code: 'unsupported-region' });
     const data = await fetchBambuCloudSession(source, signal);
     signal.throwIfAborted();
-    return { provider: 'bambu-cloud', data, credentials: { ...source, printhost_user: data.username } };
+    return { provider: 'bambu-cloud', data, credentials: { ...source, printhost_user: data.username,
+      printhost_apikey: data.token, cloud_refresh_token: data.refreshToken } };
   }
   if (source.host_type === 'creality-cloud') {
     const devices: CrealityCloudDevice[] = [];

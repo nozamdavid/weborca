@@ -26,9 +26,10 @@ import { useTranslation } from "../i18n";
 import { AutosaveStatus } from './AutosaveStatus';
 import { rovingKeyDown, useRovingFocus } from '../components/rovingFocus';
 
-export type TabId = 'prepare' | 'preview' | 'device';
+export type TabId = 'models' | 'prepare' | 'preview' | 'device';
 
 const TABS: Array<{ id: TabId; label: string }> = [
+  { id: 'models', label: "Models" },
   { id: 'prepare', label: "Prepare" },
   { id: 'preview', label: "Preview" },
   { id: 'device', label: "Device" }
@@ -603,6 +604,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
     [
       'Help',
       [
+        { label: t('Bambu Cloud account'), onClick: () => useHelpStore.getState().open('bambu') },
         { label: t("Configuration wizard..."), onClick: () => useWizardStore.getState().setOpen(true) },
         { label: t("Calibration Guide"), onClick: () => window.open('https://www.orcaslicer.com/wiki/calibration_guide', '_blank', 'noopener,noreferrer') },
         {

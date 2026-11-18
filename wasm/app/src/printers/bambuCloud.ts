@@ -1,12 +1,14 @@
 import { bambuCloudApiUrl, bambuCloudMqttUrl } from './gatewayUrl';
 import { deriveBambuState, mergeBambuReport } from './bambu';
 import type { PhysicalPrinter, PrinterApi, PrinterState, ConnectOptions, UploadOptions } from './types';
+import { usePrinterConnectionStore } from './connectionStore';
+import { accountRequest } from './bambuAccount';
 
 export interface BambuCloudDevice { dev_id: string; name: string }
 
-async function cloudJson(printer: PhysicalPrinter, path: string, init: RequestInit = {}): Promise<any> {
+export async function cloudJson(printer: PhysicalPrinter, path: string, init: RequestInit = {}): Promise<any> {
   const signal = init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000);
-  const response = await fetch(bambuCloudApiUrl(printer, path), { ...init, signal });
+  const response = await fetch(bambuCloudApiUrl(printer, path), { ...init, signal, cache: 'no-store', redirect: 'error' });
   const data = await response.json().catch(() => null);
   if (!response.ok) throw Object.assign(new Error(`Cloud API answered ${response.status}.`), { status: response.status });
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid cloud API response.');
@@ -21,19 +23,97 @@ export async function loginBambuCloud(printer: PhysicalPrinter, account: string,
   });
   if (login.loginType === 'verifyCode') throw new Error('Verification code required (check email).');
   if (typeof login.accessToken !== 'string' || !login.accessToken) throw new Error('No access token returned.');
-  return fetchBambuCloudSession({ ...printer, printhost_apikey: login.accessToken }, signal);
+  return fetchBambuCloudSession({ ...printer, printhost_apikey: login.accessToken,
+    cloud_refresh_token: typeof login.refreshToken === 'string' ? login.refreshToken : undefined }, signal);
+}
+
+const renewals = new Map<string, Promise<{ accessToken: string; refreshToken: string }>>();
+
+/** One renewal per credential pair; logout/replacement cannot be overwritten by a late response. */
+async function accountJson(printer: PhysicalPrinter, path: string, signal?: AbortSignal): Promise<any> {
+  if (printer.id === 'bambu-account') return accountRequest(path, signal);
+  const wasSaved = usePrinterConnectionStore.getState().printers.some(p => p.id === printer.id);
+  const read = async () => {
+    const data = await cloudJson(printer, path, { signal, headers: { authorization: `Bearer ${printer.printhost_apikey}` } });
+    signal?.throwIfAborted();
+    if (wasSaved && !usePrinterConnectionStore.getState().printers.some(p => p.id === printer.id &&
+      p.host_type === printer.host_type && p.print_host === printer.print_host && p.cloud_account === printer.cloud_account &&
+      p.printhost_apikey === printer.printhost_apikey && p.cloud_refresh_token === printer.cloud_refresh_token))
+      throw new DOMException('Session superseded', 'AbortError');
+    return data;
+  };
+  try { return await read(); } catch (error) {
+    if ((error as { status?: number }).status !== 401 || !printer.cloud_refresh_token) throw error;
+    const original = { ...printer };
+    const key = JSON.stringify([printer.printhost_apikey, printer.cloud_refresh_token]);
+    let renewal = renewals.get(key);
+    if (!renewal) {
+      renewal = cloudJson(printer, '/v1/user-service/user/refreshtoken', { method: 'POST',
+        headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refreshToken: printer.cloud_refresh_token })
+      }).then(data => {
+        if (typeof data.accessToken !== 'string' || !data.accessToken || typeof data.refreshToken !== 'string' || !data.refreshToken)
+          throw new Error('Cloud renewal unavailable. Sign in again.');
+        return { accessToken: data.accessToken, refreshToken: data.refreshToken };
+      }).finally(() => renewals.delete(key));
+      renewals.set(key, renewal);
+    }
+    const tokens = await renewal;
+    signal?.throwIfAborted();
+    const store = usePrinterConnectionStore.getState();
+    const saved = store.printers.find(p => p.id === original.id);
+    if (wasSaved && !saved) throw new DOMException('Session superseded', 'AbortError');
+    if (saved && saved.printhost_apikey === tokens.accessToken && saved.cloud_refresh_token === tokens.refreshToken) {
+      Object.assign(printer, { printhost_apikey: tokens.accessToken, cloud_refresh_token: tokens.refreshToken });
+    } else {
+      if (!store.updateCloudTokens(original, tokens.accessToken, tokens.refreshToken)) throw new DOMException('Session superseded', 'AbortError');
+      Object.assign(printer, { printhost_apikey: tokens.accessToken, cloud_refresh_token: tokens.refreshToken });
+    }
+    return read();
+  }
 }
 
 export async function fetchBambuCloudSession(printer: PhysicalPrinter, signal?: AbortSignal) {
-  const headers = { authorization: `Bearer ${printer.printhost_apikey}` };
-  const preference = await cloudJson(printer, '/v1/design-user-service/my/preference', { headers, signal });
+  printer = { ...printer };
+  const preference = await accountJson(printer, '/v1/design-user-service/my/preference', signal);
   if (!/^\d+$/.test(String(preference.uid ?? ''))) throw new Error('The cloud account did not return a valid user ID.');
-  const bound = await cloudJson(printer, '/v1/iot-service/api/user/bind', { headers, signal });
+  const bound = await accountJson(printer, '/v1/iot-service/api/user/bind', signal);
   if (!Array.isArray(bound.devices)) throw new Error('The cloud account did not return a device list.');
   const devices: BambuCloudDevice[] = bound.devices.filter((device: any) =>
     device && typeof device.dev_id === 'string' && /^[A-Za-z0-9_-]+$/.test(device.dev_id)
   ).map((device: any) => ({ dev_id: device.dev_id, name: typeof device.name === 'string' ? device.name : device.dev_id }));
-  return { token: printer.printhost_apikey!, username: `u_${preference.uid}`, devices };
+  return { token: printer.printhost_apikey!, refreshToken: printer.cloud_refresh_token, username: `u_${preference.uid}`, devices };
+}
+
+/** Resolve JSON on the account API; the browser navigates to the CDN without a bearer. */
+export async function makerWorldDownload(printer: PhysicalPrinter, designId: string, signal?: AbortSignal): Promise<string> {
+  if (!/^[1-9]\d*$/.test(designId) || printer.host_type !== 'bambu-cloud' ||
+    !['us.mqtt.bambulab.com', 'mqtt.bambu-lab.com'].includes(printer.print_host) || !printer.printhost_apikey)
+    throw new Error('Sign in to a global Bambu Cloud account in printer settings.');
+  printer = { ...printer };
+  const design = await accountJson(printer, `/v1/design-service/design/${designId}`, signal);
+  const id = String(design.defaultInstanceId || design.instances?.find((i: any) => i?.isDefault)?.id || design.instances?.[0]?.id || '');
+  if (!/^[1-9]\d*$/.test(id)) throw new Error('No printable profile available.');
+  const result = await accountJson(printer, `/v1/design-service/instance/${id}/f3mf?type=download`, signal);
+  let url: URL;
+  try { url = new URL(result.url); } catch { throw new Error('Invalid download response.'); }
+  if (url.protocol !== 'https:' || url.username || url.password || url.port ||
+    !['makerworld.bblmw.com', 'model-file.bambulab.com'].includes(url.hostname)) throw new Error('Unsupported download host.');
+  signal?.throwIfAborted();
+  return url.href;
+}
+
+export async function makerWorldFile(printer: PhysicalPrinter, designId: string, signal?: AbortSignal): Promise<File> {
+  const url = await makerWorldDownload(printer, designId, signal);
+  const response = await fetch(bambuCloudApiUrl(printer, '/v1/design-service/model-bytes'), {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url }),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(65_000)]) : AbortSignal.timeout(65_000),
+    cache: 'no-store', redirect: 'error', credentials: 'omit'
+  });
+  if (!response.ok) throw new Error('Model transfer failed.');
+  const blob = await response.blob();
+  const magic = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
+  if (blob.size > 100 * 1024 * 1024 || magic.join(',') !== '80,75,3,4') throw new Error('Invalid 3MF download.');
+  return new File([blob], `MakerWorld-${designId}.3mf`, { type: 'model/3mf' });
 }
 
 export class BambuCloudApi implements PrinterApi {

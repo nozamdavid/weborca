@@ -1,5 +1,8 @@
 /** Static staging server with explicitly enabled, restricted cloud bridges. */
 import http from 'node:http';
+import { embedderPolicy } from './coep.mjs';
+import { createThumbnailHandler } from './model-thumbnail.mjs';
+const modelThumbnail = createThumbnailHandler();
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
@@ -11,6 +14,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = path.resolve(process.env.ORCA_ROOT || fileURLToPath(new URL('./dist/', import.meta.url)));
 const allowedHosts = new Set([process.env.ORCA_HOST || 'weborca.noz.am', ...(process.env.ORCA_EXTRA_HOSTS || '').split(',').filter(Boolean), 'localhost', '127.0.0.1', '[::1]']);
 const port = Number(process.env.PORT || 8080);
+const coep = process.env.ORCA_COEP || 'require-corp';
+if (!['require-corp', 'credentialless'].includes(coep)) throw new Error('Invalid ORCA_COEP');
 const bindAddress = process.env.ORCA_BIND || '0.0.0.0';
 let cloud;
 let printerCloud;
@@ -131,7 +136,8 @@ function validateCloudOrigin(req) {
 }
 const server = http.createServer(async (req, res) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  res.setHeader('Cross-Origin-Embedder-Policy', embedderPolicy(coep, req.headers['user-agent']));
+  res.setHeader('Vary', 'User-Agent, Accept-Encoding');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cache-Control', 'no-cache');
   try {
@@ -185,6 +191,7 @@ const server = http.createServer(async (req, res) => {
       res.setHeader('Referrer-Policy', 'no-referrer');
       res.setHeader('Cache-Control', 'no-store');
     }
+    if (pathname === '/_model-thumbnail' || pathname === '/_model-thumbnail/v300') return await modelThumbnail(req, res);
     if (pathname === '/healthz') return reply(res, 200, 'ok');
     if (pathname === '/app-config.json') {
       res.setHeader('Content-Type', 'application/json');
@@ -225,7 +232,7 @@ const server = http.createServer(async (req, res) => {
       : !pairVersion && req.headers['if-modified-since'] && Date.parse(req.headers['if-modified-since']) >= Math.floor(info.mtimeMs / 1000) * 1000;
     if (unchanged) { res.statusCode = 304; return res.end(); }
     const encoding = info.size > 1024 && compressible.has(path.extname(file).toLowerCase()) ? pickEncoding(req.headers['accept-encoding']) : undefined;
-    if (compressible.has(path.extname(file).toLowerCase())) res.setHeader('Vary', 'Accept-Encoding');
+    // Vary is already set before validators, including hashed worker 304s.
     if (encoding) {
       // Files compressed at build time (precompress.mjs) are streamed as they are; anything else is compressed here once.
       const ext = encoding === 'br' ? '.br' : '.gz';
