@@ -224,6 +224,12 @@ The 2026-11-05 desktop refinement is implemented in `src/desktop-polish.css` and
 - Everything over the canvas is a `.ds-float`: translucent `--surface-overlay`, `--radius-md`, `--shadow-2`, kept `--canvas-inset` from the edges. Fixed slots: toolbar top-centre, view cube top-right, gizmo panels top-left (next to the sidebar), layer slider right edge, move slider bottom, plate selector bottom-left, stats and legend top-left in Preview.
 - Dialogs are centred `.ds-dialog` sized `sm` 400 (confirm), default 560 (forms), `lg` 820 (preset manager, flush volumes), `xl` 1100 (calibration wizards).
 
+### Project replacement
+
+New project, Open project, recent projects, 3MF drops and Models → Open in slicer use the same confirmation on desktop and mobile. It appears when the workspace has geometry, a loaded file or preview, notes, edited settings, multiple filament slots, or custom plates. A blank workspace proceeds directly. Cancel leaves the current project, preview and tab intact. Opening reads and loads the incoming 3MF before clearing the current preview. A successful drop or open from Models switches to Prepare.
+
+Import model and mobile Add model keep adding geometry, including 3MF files, to the current project. Recent files preserve their original project or model intent, including when the cached file has to be picked again. Autosave recovery and Undo/Redo restore directly.
+
 ### Phone: first Doop mobile batch
 
 Mobile field consistency r2 is live on CURRENT5070 (2026-11-05), root `wasm/build/ui-mobile-field-consistency-candidate-20261105-r2`, selected by `zzzzzzzzzzz-mobile-field-consistency.conf`. Normal mobile fields use regular semantic secondary stacked labels, an 8px label/control gap, 16px between related fields and 24px between groups. Control/unit rows fill the available width; boolean/domain rows retain their intended horizontal relationships. Desktop layout and label typography are preserved, including 13px Creality controls with 12px labels. See the [release receipt](../build/tests-mobile-field-consistency/verification.txt) and [publication report](../build/tests-mobile-field-consistency/publication/report.md) for live browser checks, limits and guarded rollback to model-tools r2. Restart clears OrcaCloud RAM sign-in; browser presets remain.

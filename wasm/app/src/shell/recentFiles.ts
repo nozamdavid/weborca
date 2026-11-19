@@ -117,13 +117,13 @@ export async function getRecentFileBytes(name: string): Promise<Uint8Array | nul
 
 export async function openRecentFile(
   item: RecentFileItem,
-  fallbackPicker?: (fileName: string) => void
+  fallbackPicker?: (type: RecentFileItem['type']) => void
 ): Promise<void> {
   const bytes = await getRecentFileBytes(item.name);
   if (!bytes) {
     showToast(`Cached data not found for ${item.name}. Please select the file to open.`, 'info');
     if (fallbackPicker) {
-      fallbackPicker(item.name);
+      fallbackPicker(item.type);
     }
     return;
   }
@@ -131,9 +131,10 @@ export async function openRecentFile(
   const { useAppStore } = await import('../store/appStore');
   const file = new File([bytes as any], item.name);
 
-  if (item.type === 'project' || item.name.toLowerCase().endsWith('.3mf')) {
-    await useAppStore.getState().openProjectFile(file);
-  } else if (item.type === 'gcode' || item.name.toLowerCase().endsWith('.gcode')) {
+  if (item.type === 'project') {
+    const { requestOpenProject } = await import('./projectActions');
+    await requestOpenProject(file);
+  } else if (item.type === 'gcode') {
     await useAppStore.getState().openGcodeFile(file);
   } else {
     await useAppStore.getState().importModelFile(file);

@@ -34,6 +34,7 @@ import { PrepareSidebar } from './shell/PrepareSidebar';
 import { TopBar } from './shell/TopBar';
 import { SlicingGuard } from './shell/SlicingGuard';
 import { RecoveryDialog } from './shell/RecoveryDialog';
+import { requestOpenProject } from './shell/projectActions';
 import { ProjectNotesDialog } from './shell/ProjectNotesDialog';
 import { SlicingWarningsDialog } from './shell/SlicingWarningsDialog';
 import { ToastContainer } from './shell/Toast';
@@ -136,7 +137,7 @@ export const App: React.FC = () => {
 
       const ext = file.name.split('.').pop()?.toLowerCase();
       if (ext === '3mf') {
-        await useAppStore.getState().openProjectFile(file);
+        if (await requestOpenProject(file)) setActiveTab('prepare');
       } else if (ext === 'gcode') {
         await useAppStore.getState().openGcodeFile(file);
       } else if (['stl', 'obj', 'amf', 'step', 'stp', 'svg'].includes(ext || '')) {
@@ -152,7 +153,7 @@ export const App: React.FC = () => {
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
     };
-  }, []);
+  }, [setActiveTab]);
 
   if (!isIsolated) return <IsolationNotice />;
 

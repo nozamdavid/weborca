@@ -3,7 +3,7 @@ import { useTranslation } from '../i18n';
 import { directThumbnail, fetchModels, fetchStats, fetchModel, type CatalogQuery, type CatalogStats, type Model } from './sources';
 import './models.css';
 import { makerWorldDownload, makerWorldFile } from '../printers/bambuCloud';
-import { useAppStore } from '../store/appStore';
+import { requestOpenProject } from '../shell/projectActions';
 import { accountPrinter, useBambuAccount } from '../printers/bambuAccount';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
 
@@ -75,10 +75,7 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
         });
         setOpening(undefined);
         setInfoModel(undefined);
-        const state = useAppStore.getState();
-        if (state.isSlicing || state.isModelLoading || !state.isEngineReady) throw new Error('Slicer busy');
-        onPrepare();
-        state.requestImportFile(file);
+        if (await requestOpenProject(file)) onPrepare();
         return;
       }
       const url = await makerWorldDownload(printer, id, controller.signal);

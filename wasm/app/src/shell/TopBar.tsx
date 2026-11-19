@@ -1,13 +1,10 @@
 import { useCompareStore } from '../settings/ComparePresetsDialog';
 import { useWizardStore } from '../wizard';
-import { confirmDialog } from '../components/ModalBackdrop';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useCalibrationStore } from '../calibration/calibrationStore';
 import { useInputShapingStore } from '../calibration/inputShapingStore';
 import { useOtherCalibrationStore } from '../calibration/otherCalibrationStore';
 import { useHistoryStore } from '../history';
-import { restorePlatesOnEmptyCanvas } from '../history/historyStore';
-import { getEngine } from '../engine/orcaEngine';
 import { usePlateStore } from '../plate/plateStore';
 import { usePlatesStore } from '../plates/platesStore';
 import { useAppStore } from '../store/appStore';
@@ -17,6 +14,7 @@ import { exportGcode, exportGcodeToFile } from './exportGcode';
 import { exportPlateAsStl, exportModels } from './exportStl';
 import { exportPlateSlicedFile, exportAllPlateSlicedFiles } from './exportPlateSlicedFile';
 import { getRecentFiles, openRecentFile } from './recentFiles';
+import { requestNewProject, requestOpenProject } from './projectActions';
 import { RedoIcon, UndoIcon } from './glyphs';
 import { useHelpStore } from './HelpDialogs';
 import { useProjectNotesStore } from './ProjectNotesDialog';
@@ -185,7 +183,6 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
   const gcodeFileInput = useRef<HTMLInputElement>(null);
 
   const requestImportFile = useAppStore((s) => s.requestImportFile);
-  const openProjectFile = useAppStore((s) => s.openProjectFile);
   const saveProjectFile = useAppStore((s) => s.saveProjectFile);
   const openGcodeFile = useAppStore((s) => s.openGcodeFile);
   const openManagePresetsDialog = useAppStore((s) => s.openManagePresetsDialog);
@@ -351,23 +348,11 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
   const other = useOtherCalibrationStore.getState;
   const inPreview = activeTab === 'preview';
 
-  /** Empties the plate and the extra plates, like desktop's File > New project. */
-  const newProject = async () => {
-    if (!(await confirmDialog({ title: t("Close the current project?"), message: 'Unsaved changes are lost.', confirmLabel: 'Close project', cancelLabel: 'Cancel' }))) return;
-    await usePlateStore.getState().deleteAll();
-    await restorePlatesOnEmptyCanvas(await getEngine());
-    await useAppStore.getState().applyOptionChange('notes', '', 'print');
-    useAppStore.setState({ modelFile: null, modelObjects: null, sliceResult: null, gcodeUrl: null });
-    usePreviewStore.getState().resetGcodeAction();
-    await useHistoryStore.getState().initHistory();
-    await (await import('./autosave')).clearAutosave();
-  };
-
   const menus: Array<[string, Entry[]]> = [
     [
       'File',
       [
-        { label: t("New project"), disabled: isBusy, onClick: newProject },
+        { label: t("New project"), disabled: isBusy, onClick: requestNewProject },
         { label: t("Open project..."), keys: 'Ctrl+O', disabled: isBusy, onClick: openProject },
         { label: t("Save project"), keys: 'Ctrl+S', disabled: isBusy || !hasObjects, onClick: saveProject },
         { label: t("Project notes..."), disabled: isBusy, onClick: () => useProjectNotesStore.getState().setOpen(true) },
@@ -379,9 +364,9 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
               ? recentFiles.map((rf) => ({
                   label: rf.name,
                   onClick: () =>
-                    openRecentFile(rf, (name) => {
-                      if (name.toLowerCase().endsWith('.3mf')) projectFileInput.current?.click();
-                      else if (name.toLowerCase().endsWith('.gcode')) gcodeFileInput.current?.click();
+                    openRecentFile(rf, (type) => {
+                      if (type === 'project') projectFileInput.current?.click();
+                      else if (type === 'gcode') gcodeFileInput.current?.click();
                       else fileInput.current?.click();
                     })
                 }))
@@ -684,7 +669,7 @@ export const TopBar: React.FC<{ activeTab: TabId; setActiveTab: (t: TabId) => vo
           accept=".3mf"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) void openProjectFile(file);
+            if (file) void requestOpenProject(file);
             e.target.value = '';
           }}
         />

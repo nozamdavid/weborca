@@ -184,7 +184,7 @@ export interface AppState {
   setStepImportState: (state: { file: File } | null) => void;
   requestImportFile: (file: File) => void;
   importModelFile: (file: File, options?: StepImportOptions, inArchive?: boolean, context?: { source: 'builtin-handy' }) => Promise<void>;
-  openProjectFile: (file: File) => Promise<void>;
+  openProjectFile: (file: File) => Promise<boolean>;
   saveProjectFile: (fileName?: string) => Promise<Uint8Array | null>;
   openGcodeFile: (file: File) => Promise<void>;
   startSlice: () => Promise<void>;
@@ -979,12 +979,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   openProjectFile: async (file: File) => {
-    if (!get().isEngineReady) { showToast('Wait for the current operation to finish.', 'error'); return; }
-    if (!file) return;
+    if (!get().isEngineReady) { showToast('Wait for the current operation to finish.', 'error'); return false; }
+    if (!file) return false;
     set({
       isModelLoading: true,
       engineError: null,
-      sliceResult: null,
       sliceStatusText: `Opening project ${file.name}...`
     });
 
@@ -995,6 +994,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const vfsPath = `/models/${file.name}`;
       await engine.writeFile(vfsPath, bytes);
       const res = await engine.call('openProject', { path: vfsPath });
+      get().invalidateSlicePreview();
 
       if (res.selectedPresets) {
         const { printer, process, filaments } = res.selectedPresets;
@@ -1068,6 +1068,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       try {
         await storeImportedRecentFile(file, 'project');
       } catch (_) {}
+      return true;
     } catch (err: any) {
       set({
         isModelLoading: false,
@@ -1075,6 +1076,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         sliceStatusText: 'Project loading failed'
       });
       showToast(`Failed to open project: ${err.message || String(err)}`, 'error');
+      return false;
     }
   },
 

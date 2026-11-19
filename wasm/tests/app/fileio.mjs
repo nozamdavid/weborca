@@ -136,6 +136,7 @@ async function runSuite(browserType, name) {
     fs.writeFileSync(tmpProjPath, projectBuffer);
     try {
       await page.setInputFiles('#project-file-input', tmpProjPath);
+      await page.getByTestId('confirm-ok').click();
       await page.waitForFunction(() => window.__plateStore?.getState().objects.length >= 1, null, { timeout: 30000 });
       const restoredNames = await objectNames();
 

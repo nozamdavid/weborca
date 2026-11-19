@@ -9,6 +9,7 @@ import { exportGcode } from '../shell/exportGcode';
 import { Dialog } from '../components/Dialog';
 import { PlateRenameDialog } from './PlateRenameDialog';
 import { isDefaultPlateName } from '../plates/plateName';
+import { requestOpenProject } from '../shell/projectActions';
 import { usePlatesStore } from '../plates/platesStore';
 import { addBoxSelection } from './boxSelection';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
@@ -782,8 +783,10 @@ export const PlateView: React.FC = () => {
     const file = e.dataTransfer.files?.[0];
     if (file) {
       const ext = file.name.split('.').pop()?.toLowerCase();
-      if (ext && ['stl', 'obj', '3mf', 'amf', 'step', 'stp', 'svg', 'zip'].includes(ext)) {
-        await useAppStore.getState().requestImportFile(file);
+      if (ext === '3mf') {
+        await requestOpenProject(file);
+      } else if (ext && ['stl', 'obj', 'amf', 'step', 'stp', 'svg', 'zip'].includes(ext)) {
+        app.requestImportFile(file);
       }
     }
   };
