@@ -158,7 +158,8 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
       {status === 'ready' && (total ? t('{{count}} models', { count: total }) : t('No models found. Try another search or clear the filters.'))}
     </div>
     {downloadStatus && <p role="status">{t(downloadStatus)}</p>}
-    <div className="model-grid" ref={grid}>{models.map(model => <div key={model.id} className="model-cell"><a className="model-card" href={model.url} target="_blank" rel="noopener noreferrer">
+    <div className="model-grid" ref={grid}>{models.map(model => <div key={model.id} className="model-cell"><a className="model-card" href={model.url} target="_blank" rel="noopener noreferrer"
+      onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openInfo(model); }}>
       <div className="model-thumbnail"><Thumbnail url={model.thumbnail} /></div>
       <div className="model-card-copy"><h2>{model.title}</h2><p>{model.source} · {model.fileFormats.length ? model.fileFormats.map(ext => `.${ext}`).join(', ') : t('No verified file formats')}</p>{model.estimatedFileFormats.length > 0 && <p>{t('Estimated formats: {{formats}}', { formats: model.estimatedFileFormats.map(ext => `.${ext}`).join(', ') })}</p>}{(model.author || model.license) && <p>{[model.author, model.license].filter(Boolean).join(' · ')}</p>}</div>
     </a><div className="model-card-actions">
