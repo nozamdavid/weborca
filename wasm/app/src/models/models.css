@@ -28,6 +28,8 @@
 .model-modal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .model-modal-actions > .ds-btn { flex: 1 1 auto; }
 @media (max-width: 720px) { .model-modal { grid-template-columns: 1fr; } .model-modal-thumb { margin: 16px 16px 0; } .model-modal-copy { padding: 16px 24px 24px; } }
+.model-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.model-tag { display: inline-flex; align-items: center; max-width: 100%; padding: 2px 9px; border: 1px solid var(--border-default); border-radius: 999px; background: var(--control-bg); color: var(--text-secondary); font-size: 12px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .model-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding: 12px 16px 16px; border-top: 1px solid var(--border-default); }
 .model-card-actions > .ds-btn { flex: 1 1 auto; min-width: 0; }
 .model-card-actions > .model-card-open { flex-basis: 100%; }

@@ -161,7 +161,7 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
     <div className="model-grid" ref={grid}>{models.map(model => <div key={model.id} className="model-cell"><a className="model-card" href={model.url} target="_blank" rel="noopener noreferrer"
       onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openInfo(model); }}>
       <div className="model-thumbnail"><Thumbnail url={model.thumbnail} /></div>
-      <div className="model-card-copy"><h2>{model.title}</h2><p>{model.source} · {model.fileFormats.length ? model.fileFormats.map(ext => `.${ext}`).join(', ') : t('No verified file formats')}</p>{model.estimatedFileFormats.length > 0 && <p>{t('Estimated formats: {{formats}}', { formats: model.estimatedFileFormats.map(ext => `.${ext}`).join(', ') })}</p>}{(model.author || model.license) && <p>{[model.author, model.license].filter(Boolean).join(' · ')}</p>}</div>
+      <div className="model-card-copy"><h2>{model.title}</h2><p>{model.source} · {model.fileFormats.length ? model.fileFormats.map(ext => `.${ext}`).join(', ') : t('No verified file formats')}</p>{model.estimatedFileFormats.length > 0 && <p>{t('Estimated formats: {{formats}}', { formats: model.estimatedFileFormats.map(ext => `.${ext}`).join(', ') })}</p>}{(model.author || model.license) && <p>{[model.author, model.license].filter(Boolean).join(' · ')}</p>}{model.tags.length > 0 && <div className="model-tags">{model.tags.slice(0, 2).map(tag => <span key={tag} className="model-tag">{tag}</span>)}</div>}</div>
     </a><div className="model-card-actions">
       <button className="ds-btn ds-btn--sm" onClick={() => openInfo(model)}>{t('More info')}</button>
       {new URL(model.url).hostname === 'makerworld.com' && <><button className="ds-btn ds-btn--sm" disabled={busy} onClick={() => void download(model)}>{t('Download 3MF')}</button><button className="ds-btn ds-btn--sm ds-btn--subtle model-card-open" disabled={busy} onClick={() => void download(model, true)}>{t('Open in slicer')}</button></>}
@@ -176,6 +176,7 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
           <p>{platformName(infoModel.source)} · {infoModel.fileFormats.length ? infoModel.fileFormats.map(ext => `.${ext}`).join(', ') : t('No verified file formats')}</p>
           {infoModel.estimatedFileFormats.length > 0 && <p>{t('Estimated formats: {{formats}}', { formats: infoModel.estimatedFileFormats.map(ext => `.${ext}`).join(', ') })}</p>}
           {(infoModel.author || infoModel.license) && <p>{[infoModel.author, infoModel.license].filter(Boolean).join(' · ')}</p>}
+          {infoModel.tags.length > 0 && <div className="model-tags">{infoModel.tags.map(tag => <span key={tag} className="model-tag">{tag}</span>)}</div>}
           <p className="model-modal-description" role="status">{details?.id === infoModel.id ? details.text : t('Loading description…')}</p>
           {downloadStatus && <p className="model-modal-status" role="status">{t(downloadStatus)}</p>}
           <div className="model-modal-actions">

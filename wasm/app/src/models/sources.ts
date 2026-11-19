@@ -18,6 +18,7 @@ export function directThumbnail(relay?: string): string | undefined {
 export interface Model {
   id: string; title: string; source: string; url: string; thumbnail?: string;
   fileFormats: string[]; estimatedFileFormats: string[]; author: string; license?: string;
+  tags: string[];
   category?: string; subcategory?: string; likes: number; downloads: number;
   uploadedAt?: string; sourceUpdatedAt?: string; description?: string;
   categoryPath?: string[]; observedAt?: string; searchText: string;
@@ -65,7 +66,7 @@ function model(value: unknown): Model {
   return {
     id, title: item.title, source: 'makerworld', url, thumbnail: trustedUrl(item.thumbnailUrl, true) ? `/_model-thumbnail/v300?url=${encodeURIComponent(item.thumbnailUrl as string)}` : undefined,
     fileFormats, estimatedFileFormats: item.estimated3mf === true && !fileFormats.includes('3mf') ? ['3mf'] : [],
-    author, license: string(item.license), category: string(item.category), subcategory: string(item.subcategory),
+    author, license: string(item.license), tags: [...new Set(strings(item.tags))], category: string(item.category), subcategory: string(item.subcategory),
     likes: number(item.likes), downloads: number(item.downloads), uploadedAt: string(item.uploadedAt),
     sourceUpdatedAt: string(item.sourceUpdatedAt), description: string(item.description),
     categoryPath: Array.isArray(item.categoryPath) ? strings(item.categoryPath) : undefined, observedAt: string(item.observedAt),

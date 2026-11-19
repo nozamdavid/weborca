@@ -28,6 +28,7 @@ test('live schema maps design IDs, attribution, dates and trusted thumbnails', a
   assert.equal(model.thumbnail, `/_model-thumbnail/v300?url=${encodeURIComponent(raw.thumbnailUrl)}`); assert.equal(model.author, raw.author);
   for (const key of ['license', 'category', 'subcategory', 'likes', 'downloads', 'uploadedAt', 'sourceUpdatedAt']) assert.equal(model[key], raw[key]);
   assert.deepEqual(model.fileFormats, raw.fileFormats); assert.deepEqual(model.estimatedFileFormats, []);
+  assert.deepEqual(model.tags, raw.tags);
 });
 test('estimates never become verified formats and untrusted thumbnails are omitted', async t => {
   t.mock.method(globalThis, 'fetch', respond({ ...sample, items: [{ ...sample.items[0], fileFormats: ['STL'], estimated3mf: true, thumbnailUrl: 'https://makerworld.bblmw.com.evil.test/image' }] }));
