@@ -4,6 +4,20 @@ Models API browser (2026-11-18): Models uses server search, sort, pagination, to
 
 The private Models preview sizes each API page to fill the visible grid columns, such as 25 models for five columns. Changing the page size returns to page one. The last page can contain a partial row.
 
+Importing a multicolor Orca or Bambu 3MF into Prepare now creates the missing filament slots. An empty project takes the file’s palette in its original slot order. When adding to a populated project, existing slot colors are kept and new slots take their colors from the file. The private Tailscale demo on port 18974 and the Arcane instance at `https://weborca.noz.am` serve this update as of 2026-11-19. Arcane pins `dmarcosm/orcaweb@sha256:8856f0e3f3c62de98fd79ab4c80dd46d3f503c446a3f4712ebfc43dc4007a9e5`. A browser check with a four-color Benchy confirmed four rows in the Filament sidebar from File → Import and Models → Open in slicer, using fixture bytes for the Models download.
+
+The 2026-11-19 build shows download progress on Models → Open in slicer and uses the existing loading overlay during import. New Project, Open Project, recent projects, and 3MF drops ask before replacing a workspace that contains work. The active plate’s translucent prime tower follows the pointer during a drag and checks placement when released. Invalid drops restore the earlier position. Tower moves are saved per plate and support undo. Arcane serves the tested `wasm/build/tower-drag-candidate-20261119` bundle in `dmarcosm/orcaweb@sha256:6c2a81c85d7375a170fe58c1c5009c968d606ac0c65ddcc0e3d566ffc92eccf4`.
+
+The Preview fixes in `wasm/build/preview-issues-candidate-20261119` align slicing warning bullets, display the duplicate traditional timelapse warning once, and suppress obsolete G-code preparation cancellations.
+
+Models → Open in slicer now asks before replacing a project, including from the model details dialog. Cancel keeps the existing project and stays on Models. A successful open loads the downloaded 3MF as a project and switches to Prepare. Chromium verified both choices at desktop and phone widths with fixture downloads. The Tailscale demo serves `wasm/build/models-open-project-candidate-20261119` from local image `weborca-private:models-open-project-20261119` (`sha256:b748d99216993993a816f3ddba0bfaa32fcb528f6c97dd6444ae8eee7e130f5d`). The rollback container is `weborca-models-demo-before-models-project-20261119`.
+
+The parser fills filament slots from the G-code palette before applying fallback colors. Chromium and Firefox verified Filament, Color print, and Summary with four colors, with palette metadata in the header and footer. Chromium also passed with the four-color Benchy export.
+
+The Tailscale demo now uses the rebuilt Preview module from `wasm/build/manual-color-print-candidate-20261119`. Color print uses the colors recorded by filament swap tags in G-code. Chromium and Firefox verified the original color before a swap and the new color after it on the same filament slot. HTTPS served the tested module on both Preview paths from local image `weborca-private:manual-color-print-20261119` (`sha256:5fe944c65aab91a45e8ff002e2e6ec4ac7a27370e906cfbf912955e4bcac35c1`). The rollback container is `weborca-models-demo-before-manual-color-print-20261119`. The candidate uses the demo’s existing slicing engine and STEP modules. A fresh full package requires current manifests for those modules.
+
+Desktop Orca 2.5.0 and WebOrca sliced the same four-color A1 mini project with the prime tower enabled. Both produced a tower extrusion footprint of about 27.4 × 26.8 mm and the same 452 non-extruding XY moves ending outside the nominal bed. Desktop Preview also showed the off-bed timelapse parking band when opening WebOrca’s exported G-code with Travel enabled.
+
 <div align="center">
 
 <picture>
