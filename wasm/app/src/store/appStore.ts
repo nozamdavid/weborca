@@ -51,6 +51,7 @@ import type { SettingsLayout, SettingsMode } from '../settings/types';
 import type { UserPreset, PresetKind, ConflictStrategy, PresetBundle, ImportBundleResult } from '../presets/types';
 import { loadUserPresets } from '../presets/presetStorage';
 import { effectivePreset } from '../presets/effectivePreset';
+import { MAX_FILAMENT_SLOTS, readImportedFilamentColours } from './importedFilaments';
 import {
   saveCurrentUserPresetHelper,
   duplicateUserPresetHelper,
@@ -824,7 +825,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { selectedFilaments, selectedFilament, filaments, selectedPrinter, selectedProcess, userPresets } = get();
     const candidate = presetName || (selectedFilaments[selectedFilaments.length - 1] || selectedFilament || (filaments[0]?.name ?? 'Generic PLA'));
     const nextList = [...(selectedFilaments.length > 0 ? selectedFilaments : [selectedFilament]), candidate];
-    if (nextList.length > 16) return;
+    if (nextList.length > MAX_FILAMENT_SLOTS) return;
     if (get().isSlicing) get().cancelSlice();
     get().invalidateSlicePreview();
 
@@ -1238,8 +1239,55 @@ export const useAppStore = create<AppState>((set, get) => ({
         const objs = await engine.listObjects();
         res = { objects: objs };
       } else {
-        const buffer = await file.arrayBuffer();
-        res = await addModel(file.name, new Uint8Array(buffer), options);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const importedColours = ext === '3mf' ? readImportedFilamentColours(bytes) : [];
+        res = await addModel(file.name, bytes, options);
+        const state = get();
+        const currentFilaments = state.selectedFilaments.length ? state.selectedFilaments : [state.selectedFilament];
+        if (importedColours.length && state.selectedPrinter && state.selectedProcess && currentFilaments[0] &&
+            (knownObjectIds.size === 0 || importedColours.length > currentFilaments.length)) {
+          const nextFilaments = [...currentFilaments];
+          while (nextFilaments.length < importedColours.length) {
+            nextFilaments.push(currentFilaments[currentFilaments.length - 1]);
+          }
+          const currentColours = (state.currentConfig.filament_colour || '').split(';');
+          const resolveSelection = (names: string[]) => ({
+            printer: resolveSystemPreset('printer', state.selectedPrinter, state.userPresets),
+            process: resolveSystemPreset('process', state.selectedProcess, state.userPresets),
+            filaments: names.map(name => resolveSystemPreset('filament', name, state.userPresets)),
+          });
+          const overrides = { ...state.processOverrides, ...state.printerOverrides, ...state.filamentOverrides };
+          try {
+            await selectPresets(resolveSelection(nextFilaments));
+            const baseline = await computeBaselineConfig(nextFilaments, state.userPresets);
+            const defaults = (baseline.filament_colour || '').split(';');
+            const colours = nextFilaments.map((_, i) => {
+              // Reuse numbered slots when adding to an existing project. Changing
+              // their colours would also recolour objects already on the plate.
+              const preserve = knownObjectIds.size > 0 && i < currentFilaments.length;
+              return (!preserve && importedColours[i]) || currentColours[i] || defaults[i] || '#009688';
+            });
+            const filamentOverrides = { ...state.filamentOverrides, filament_colour: colours.join(';') };
+            await reapplyPresetOverrides(nextFilaments, { ...overrides, ...filamentOverrides });
+            const currentConfig = await getConfig();
+            const rules = await evaluateRules({ kind: 'print', filamentIndex: state.activeFilamentSlot });
+            set({
+              selectedFilaments: nextFilaments,
+              selectedFilament: nextFilaments[0],
+              filamentOverrides,
+              presetConfig: baseline,
+              currentConfig,
+              rulesState: { fields: rules.fields || {}, fixes: rules.fixes || [], messages: rules.messages || [] },
+            });
+          } catch (error) {
+            const engine = await getEngine();
+            for (const object of res.objects) await engine.deleteObject(object.id);
+            await selectPresets(resolveSelection(currentFilaments));
+            await reapplyPresetOverrides(currentFilaments, { ...overrides, ...(state.currentConfig.filament_colour
+              ? { filament_colour: state.currentConfig.filament_colour } : {}) });
+            throw error;
+          }
+        }
       }
 
       const { usePlateStore } = await import('../plate/plateStore');
