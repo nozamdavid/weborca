@@ -64,11 +64,15 @@ async function relayModel(req: http.IncomingMessage, res: http.ServerResponse) {
     await new Promise<void>((resolve, reject) => {
       // Deliberately create fresh headers: account authorization and cookies never reach the CDN.
       const upstream = https.get(url, { headers: { accept: 'application/octet-stream' }, signal: controller.signal }, response => {
-        if (response.statusCode !== 200 || Number(response.headers['content-length']) > MODEL_BYTE_LIMIT) {
+        const bytes = Number(response.headers['content-length']);
+        if (response.statusCode !== 200 || bytes > MODEL_BYTE_LIMIT) {
           response.destroy(); reject(new Error('Model unavailable or exceeds limit.')); return;
         }
         res.setHeader('content-type', 'application/octet-stream');
         res.setHeader('x-content-type-options', 'nosniff');
+        if (!response.headers['content-encoding'] && Number.isSafeInteger(bytes) && bytes > 0) {
+          res.setHeader('content-length', bytes);
+        }
         pipeline(response, modelByteLimiter(), res).then(resolve, reject);
       });
       upstream.on('error', reject);

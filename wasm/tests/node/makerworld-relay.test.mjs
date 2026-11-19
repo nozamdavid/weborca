@@ -17,7 +17,7 @@ test('normal relay streams bytes with fresh CDN headers and rejects redirects', 
     queueMicrotask(() => {
       const response = Readable.from([Buffer.from([80, 75, 3, 4]), Buffer.from('fixture')]);
       response.statusCode = status;
-      response.headers = {};
+      response.headers = { 'content-length': '11' };
       callback(response);
     });
     return request;
@@ -32,6 +32,7 @@ test('normal relay streams bytes with fresh CDN headers and rejects redirects', 
       body: JSON.stringify({ url: 'https://makerworld.bblmw.com/makerworld/model/US123/design/a.3mf?signature=fixture' }) });
     const response = await request();
     assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('content-length'), '11');
     assert.deepEqual([...new Uint8Array(await response.arrayBuffer())], [...Buffer.from([80, 75, 3, 4]), ...Buffer.from('fixture')]);
     status = 302;
     assert.equal((await request()).status, 502);

@@ -106,11 +106,19 @@ test('MakerWorld byte import posts signed destination privately and returns a 3M
   const requests = [];
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     requests.push({ url, options });
-    if (url.endsWith('/model-bytes')) return new Response(new Uint8Array([80, 75, 3, 4, 0]));
+    if (url.endsWith('/model-bytes')) return new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([80, 75]));
+        controller.enqueue(new Uint8Array([3, 4, 0]));
+        controller.close();
+      }
+    }), { headers: { 'content-length': '5' } });
     return Response.json(url.includes('/design/123') ? { defaultInstanceId: 456 } :
       { url: 'https://makerworld.bblmw.com/makerworld/model/US123/design/fixture.3mf?signature=mock' });
   });
-  const file = await client.makerWorldFile(printer, '123');
+  const progress = [];
+  const file = await client.makerWorldFile(printer, '123', undefined, percent => progress.push(percent));
+  assert.deepEqual(progress, [undefined, 0, 40, 100]);
   assert.equal(file.name, 'MakerWorld-123.3mf');
   assert.deepEqual([...new Uint8Array(await file.arrayBuffer())], [80, 75, 3, 4, 0]);
   const relay = requests[2];

@@ -102,18 +102,57 @@ export async function makerWorldDownload(printer: PhysicalPrinter, designId: str
   return url.href;
 }
 
-export async function makerWorldFile(printer: PhysicalPrinter, designId: string, signal?: AbortSignal): Promise<File> {
+export async function makerWorldFile(
+  printer: PhysicalPrinter,
+  designId: string,
+  signal?: AbortSignal,
+  onProgress?: (percent: number | undefined) => void,
+): Promise<File> {
   const url = await makerWorldDownload(printer, designId, signal);
+  onProgress?.(undefined);
+  const transferSignal = signal ? AbortSignal.any([signal, AbortSignal.timeout(65_000)]) : AbortSignal.timeout(65_000);
   const response = await fetch(bambuCloudApiUrl(printer, '/v1/design-service/model-bytes'), {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url }),
-    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(65_000)]) : AbortSignal.timeout(65_000),
+    signal: transferSignal,
     cache: 'no-store', redirect: 'error', credentials: 'omit'
   });
-  if (!response.ok) throw new Error('Model transfer failed.');
-  const blob = await response.blob();
-  const magic = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
-  if (blob.size > 100 * 1024 * 1024 || magic.join(',') !== '80,75,3,4') throw new Error('Invalid 3MF download.');
-  return new File([blob], `MakerWorld-${designId}.3mf`, { type: 'model/3mf' });
+  if (!response.ok || !response.body) throw new Error('Model transfer failed.');
+
+  const total = response.headers.has('content-encoding') ? 0 : Number(response.headers.get('content-length'));
+  const limit = 100 * 1024 * 1024;
+  const reader = response.body.getReader();
+  const chunks: BlobPart[] = [];
+  let bytes = 0;
+  let reported = 0;
+  try {
+    if (total > limit) throw new Error('Model exceeds size limit.');
+    if (total > 0) onProgress?.(0);
+    for (;;) {
+      const { value, done } = await reader.read();
+      transferSignal.throwIfAborted();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > limit) throw new Error('Model exceeds size limit.');
+      chunks.push(value as BlobPart);
+      if (total > 0) {
+        const percent = Math.min(100, Math.floor(bytes * 100 / total));
+        if (percent !== reported) {
+          reported = percent;
+          onProgress?.(percent);
+        }
+      }
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+
+  const file = new File(chunks, `MakerWorld-${designId}.3mf`, { type: 'model/3mf' });
+  const magic = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+  if (magic.join(',') !== '80,75,3,4') throw new Error('Invalid 3MF download.');
+  return file;
 }
 
 export class BambuCloudApi implements PrinterApi {

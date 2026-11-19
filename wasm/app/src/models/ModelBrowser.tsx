@@ -55,26 +55,30 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
   const change = (patch: Partial<CatalogQuery>) => { setCriteria(current => ({ ...current, ...patch, page: 1 })); setDetails(undefined); detailsRequest.current?.abort(); };
   const [downloadStatus, setDownloadStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [opening, setOpening] = useState<{ id: string; phase: 'preparing' | 'downloading'; percent?: number }>();
   const transfer = useRef<AbortController>();
   const download = async (model: Model, open = false) => {
-    if (busy) return;
+    if (transfer.current) return;
     const id = new URL(model.url).pathname.match(/\/models\/([1-9]\d*)/)?.[1];
     const printer = useBambuAccount.getState().account ? { ...accountPrinter, printhost_apikey: useBambuAccount.getState().account!.accessToken } : usePrinterConnectionStore.getState().printers.find(p => p.host_type === 'bambu-cloud' && p.printhost_apikey &&
       ['us.mqtt.bambulab.com', 'mqtt.bambu-lab.com'].includes(p.print_host));
     if (!id || !printer) { setDownloadStatus('Sign in to Bambu Cloud under Help or the mobile menu.'); return; }
-    setDownloadStatus('Preparing download…');
+    setDownloadStatus(open ? '' : 'Preparing download…');
+    if (open) setOpening({ id: model.id, phase: 'preparing' });
     setBusy(true);
     const controller = new AbortController();
     transfer.current = controller;
     try {
       if (open) {
-        const file = await makerWorldFile(printer, id, controller.signal);
+        const file = await makerWorldFile(printer, id, controller.signal, percent => {
+          if (!controller.signal.aborted) setOpening({ id: model.id, phase: 'downloading', percent });
+        });
+        setOpening(undefined);
+        setInfoModel(undefined);
         const state = useAppStore.getState();
         if (state.isSlicing || state.isModelLoading || !state.isEngineReady) throw new Error('Slicer busy');
         onPrepare();
         state.requestImportFile(file);
-        setInfoModel(undefined);
-        setDownloadStatus('');
         return;
       }
       const url = await makerWorldDownload(printer, id, controller.signal);
@@ -82,8 +86,21 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
       link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.referrerPolicy = 'no-referrer';
       link.click();
       setDownloadStatus('Download opened in your browser. Import the downloaded 3MF in Prepare.');
-    } catch { setDownloadStatus('Could not open model. Check your Bambu Cloud sign-in and retry, or download on the original page.'); }
-    finally { setBusy(false); }
+    } catch {
+      if (!controller.signal.aborted) setDownloadStatus('Could not open model. Check your Bambu Cloud sign-in and retry, or download on the original page.');
+    } finally {
+      transfer.current = undefined;
+      setOpening(undefined);
+      setBusy(false);
+    }
+  };
+  const openingLabel = opening?.phase === 'downloading' ? t('Downloading...') : t('Preparing download…');
+  const openButton = (model: Model, classes: string) => {
+    const working = opening?.id === model.id;
+    return <button className={classes} disabled={busy} aria-busy={working} onClick={() => void download(model, true)}>
+      {working && opening.percent === undefined && <span className="ds-spinner" aria-hidden="true" />}
+      {working ? openingLabel : t('Open in slicer')}{working && opening.percent !== undefined && ` ${opening.percent}%`}
+    </button>;
   };
   useEffect(() => () => { request.current?.abort(); transfer.current?.abort(); detailsRequest.current?.abort(); }, []);
   const statsKey = useRef(-1);
@@ -158,13 +175,14 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
       {status === 'ready' && (total ? t('{{count}} models', { count: total }) : t('No models found. Try another search or clear the filters.'))}
     </div>
     {downloadStatus && <p role="status">{t(downloadStatus)}</p>}
+    {opening && !infoModel && <span className="ds-visually-hidden" role="status">{openingLabel}</span>}
     <div className="model-grid" ref={grid}>{models.map(model => <div key={model.id} className="model-cell"><a className="model-card" href={model.url} target="_blank" rel="noopener noreferrer"
       onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openInfo(model); }}>
       <div className="model-thumbnail"><Thumbnail url={model.thumbnail} /></div>
       <div className="model-card-copy"><h2>{model.title}</h2><p>{model.source} · {model.fileFormats.length ? model.fileFormats.map(ext => `.${ext}`).join(', ') : t('No verified file formats')}</p>{model.estimatedFileFormats.length > 0 && <p>{t('Estimated formats: {{formats}}', { formats: model.estimatedFileFormats.map(ext => `.${ext}`).join(', ') })}</p>}{(model.author || model.license) && <p>{[model.author, model.license].filter(Boolean).join(' · ')}</p>}{model.tags.length > 0 && <div className="model-tags">{model.tags.slice(0, 2).map(tag => <span key={tag} className="model-tag">{tag}</span>)}</div>}</div>
     </a><div className="model-card-actions">
       <button className="ds-btn ds-btn--sm" onClick={() => openInfo(model)}>{t('More info')}</button>
-      {new URL(model.url).hostname === 'makerworld.com' && <><button className="ds-btn ds-btn--sm" disabled={busy} onClick={() => void download(model)}>{t('Download 3MF')}</button><button className="ds-btn ds-btn--sm ds-btn--subtle model-card-open" disabled={busy} onClick={() => void download(model, true)}>{t('Open in slicer')}</button></>}
+      {new URL(model.url).hostname === 'makerworld.com' && <><button className="ds-btn ds-btn--sm" disabled={busy} onClick={() => void download(model)}>{t('Download 3MF')}</button>{openButton(model, 'ds-btn ds-btn--sm ds-btn--subtle model-card-open')}</>}
     </div></div>)}</div>
     {status === 'ready' && pages > 0 && <nav className="model-pagination" aria-label={t('Model pages')}><button className="ds-btn" disabled={(criteria.page || 1) <= 1} onClick={() => setCriteria(current => ({ ...current, page: (current.page || 1) - 1 }))}>{t('Previous')}</button><span>{t('Page {{page}} of {{pages}}', { page: criteria.page || 1, pages })}</span><button className="ds-btn" disabled={(criteria.page || 1) >= pages} onClick={() => setCriteria(current => ({ ...current, page: (current.page || 1) + 1 }))}>{t('Next')}</button></nav>}
     {infoModel && <div className="model-modal-backdrop" onClick={event => { if (event.target === event.currentTarget) closeInfo(); }}>
@@ -179,9 +197,10 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
           {infoModel.tags.length > 0 && <div className="model-tags">{infoModel.tags.map(tag => <span key={tag} className="model-tag">{tag}</span>)}</div>}
           <p className="model-modal-description" role="status">{details?.id === infoModel.id ? details.text : t('Loading description…')}</p>
           {downloadStatus && <p className="model-modal-status" role="status">{t(downloadStatus)}</p>}
+          {opening && <span className="ds-visually-hidden" role="status">{openingLabel}</span>}
           <div className="model-modal-actions">
             <a className="ds-btn ds-btn--primary" href={infoModel.url} target="_blank" rel="noopener noreferrer">{t('Open in {{platform}}', { platform: platformName(infoModel.source) })}</a>
-            {new URL(infoModel.url).hostname === 'makerworld.com' && <><button className="ds-btn" disabled={busy} onClick={() => void download(infoModel)}>{t('Download 3MF')}</button><button className="ds-btn ds-btn--subtle" disabled={busy} onClick={() => void download(infoModel, true)}>{t('Open in slicer')}</button></>}
+            {new URL(infoModel.url).hostname === 'makerworld.com' && <><button className="ds-btn" disabled={busy} onClick={() => void download(infoModel)}>{t('Download 3MF')}</button>{openButton(infoModel, 'ds-btn ds-btn--subtle')}</>}
           </div>
         </div>
       </div>
