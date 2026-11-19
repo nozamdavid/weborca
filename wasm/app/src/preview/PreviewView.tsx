@@ -208,14 +208,17 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
 
   // 2. Load G-code when slice result is available
   useEffect(() => {
-    if (!isInitialized || !sliceResult?.gcode || isSlicing || (mobile && !active)) return;
+    const gcode = sliceResult?.gcode;
+    if (!isInitialized || !gcode || isSlicing || (mobile && !active)) return;
+    let current = true;
     setInitError(null);
     const tStart = performance.now();
     const markFrameReady = () => {
       updateCanvasSize();
       requestAnimationFrame(() => requestAnimationFrame(() => {
         const canvas = canvasRef.current;
-        if (!canvas || loadedGcodeRef.current?.deref() !== sliceResult.gcode) return;
+        if (!current || !canvas || loadedGcodeRef.current?.deref() !== gcode ||
+          !previewModule.isGcodeLoaded(gcode)) return;
         const sliceEnd = performance.getEntriesByName('orca-slice-end').at(-1);
         canvas.dataset.previewReady = 'true';
         const ms = sliceEnd ? (performance.now() - sliceEnd.startTime) : (performance.now() - tStart);
@@ -223,29 +226,29 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
         (window as any)._previewFirstFrameTime = performance.now();
       }));
     };
-    if ((loadedGcodeRef.current?.deref() === sliceResult.gcode || previewModule.isGcodeLoaded(sliceResult.gcode))
-      && previewModule.getLayersCount() > 0) {
-      if (mobile && loadedGcodeRef.current?.deref() !== sliceResult.gcode) resetCamera();
-      loadedGcodeRef.current = new WeakRef(sliceResult.gcode);
+    if (previewModule.isGcodeLoaded(gcode) && previewModule.getLayersCount() > 0) {
+      if (mobile && loadedGcodeRef.current?.deref() !== gcode) resetCamera();
+      loadedGcodeRef.current = new WeakRef(gcode);
       previewModule.requestRender();
       markFrameReady();
-      return;
+      return () => { current = false; };
     }
 
-    loadedGcodeRef.current = new WeakRef(sliceResult.gcode);
-
-    loadGcodeBytes(sliceResult.gcode, 'print.gcode')
+    loadGcodeBytes(gcode, 'print.gcode')
       .then((stats) => {
+        if (!current || !previewModule.isGcodeLoaded(gcode)) return;
+        loadedGcodeRef.current = new WeakRef(gcode);
         const elapsed = (performance.now() - tStart).toFixed(1);
         console.log(`[OrcaPreview] Loaded G-code in ${elapsed}ms:`, stats);
         if (mobile) resetCamera();
         markFrameReady();
       })
       .catch((err) => {
+        if (!current || err?.name === 'AbortError') return;
         setInitError(err.message || String(err));
-        loadedGcodeRef.current = null;
         console.error('[OrcaPreview] Failed to load G-code data:', err);
       });
+    return () => { current = false; };
   }, [isInitialized, sliceResult, isSlicing, loadGcodeBytes, updateCanvasSize, mobile, resetCamera, active]);
 
   // 3. Resize listener
