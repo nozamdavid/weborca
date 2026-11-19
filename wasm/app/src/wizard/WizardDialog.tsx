@@ -21,6 +21,31 @@ function safeId(str: string): string {
   return str.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
 
+/** Per-build id: the hashed entry chunk changes with every deployment, so a
+ * dismissal recorded for one build does not suppress the wizard on the next. */
+function deploymentId(): string {
+  if (typeof document === 'undefined') return 'ssr';
+  const src = document.querySelector('script[type="module"][src]')?.getAttribute('src') || '';
+  return src.match(/assets\/[A-Za-z0-9_.-]+-([A-Za-z0-9_-]+)\.(?:js|mjs)/)?.[1] || 'dev';
+}
+
+const WIZARD_DISMISSED_KEY = 'orca.wizard-dismissed';
+
+function recordDismissal() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(WIZARD_DISMISSED_KEY, JSON.stringify({ deployment: deploymentId(), dismissedAt: new Date().toISOString() }));
+  } catch (_) {}
+}
+
+function dismissedForThisDeployment(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    const record: unknown = JSON.parse(localStorage.getItem(WIZARD_DISMISSED_KEY) || 'null');
+    return !!record && typeof record === 'object' && (record as { deployment?: string }).deployment === deploymentId();
+  } catch (_) { return false; }
+}
+
 function parseFilament(p: PresetItem) {
   const clean = p.name.replace(/@.*$/, '').trim();
   const matchedType = FILAMENT_TYPES.find((t) =>
@@ -79,6 +104,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
     setCustomName('My custom printer');
     setCustomSize({ x: 220, y: 220, z: 250, nozzle: 0.4 });
     setCustomPolygon('0x0,220x0,220x220,0x220');
+    recordDismissal();
     setOpen(false);
   };
 
@@ -92,7 +118,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
       if (typeof localStorage !== 'undefined') {
         const hasWizard = !!localStorage.getItem('orca.wizard');
         const hasPrefs = !!localStorage.getItem('orcaslicer_preferences_v1');
-        if (!hasWizard && !hasPrefs) {
+        if (!hasWizard && !hasPrefs && !dismissedForThisDeployment()) {
           setOpen(true);
         }
       }
