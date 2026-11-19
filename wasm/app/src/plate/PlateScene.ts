@@ -31,6 +31,8 @@ import { useMeasureStore, getMeasurementFeature, measureFeatures } from '../meas
 export interface PlateSceneCallbacks {
   onBoxSelect?: (refs: { objectId: number; instanceId: number }[]) => void;
   canMoveObjects?: () => boolean;
+  canMoveWipeTower?: (plateIndex: number) => boolean;
+  onMoveWipeTower?: (plateIndex: number, x: number, y: number) => Promise<boolean>;
   onSelect: (objectId: number | null, instanceId: number | null, additive?: boolean, volumeId?: number) => void;
   /** The whole selection moved together: absolute transforms of the primary and every other selected instance. */
   onTransformMany?: (
@@ -140,6 +142,7 @@ export class PlateScene {
 
   private bedGroup: THREE.Group;
   private towerPreview: THREE.Mesh | null = null;
+  private towerPlacement: { index: number; anchorOffset: THREE.Vector3; width: number; depth: number; brim: number; excludedArea: [number, number][]; signature: string } | null = null;
   private bedAssetRevision = 0;
   private bedTexture: THREE.Texture | null = null;
   private bedModelPoints: [number, number][] | null = null;
@@ -668,24 +671,72 @@ export class PlateScene {
     this.bedGroup.add(boxLines);
   }
 
-  public setWipeTowerPreview(tower: { enabled: boolean; width?: number; depth?: number; height?: number; x?: number; y?: number; rotation?: number }, origin: [number, number, number] = [0, 0, 0]): void {
+  public setWipeTowerPreview(
+    tower: { enabled: boolean; width?: number; depth?: number; height?: number; x?: number; y?: number; rotation?: number; brim?: number },
+    origin: [number, number, number] = [0, 0, 0],
+    index = 0,
+    excludedArea: [number, number][] = [],
+  ): void {
+    const signature = JSON.stringify([tower, origin, index, excludedArea]);
+    // The worker can return the same placement while the user is holding it.
+    // Keep the existing mesh and pointer capture for an unchanged preview.
+    if (this.towerPlacement?.signature === signature) return;
     this.requestDraw();
     if (this.towerPreview) {
+      if (this.planeDrag?.target === this.towerPreview) this.finishPlaneDrag(false);
       this.scene.remove(this.towerPreview);
       this.towerPreview.geometry.dispose();
       (this.towerPreview.material as THREE.Material).dispose();
       this.towerPreview = null;
+      this.towerPlacement = null;
     }
     if (!tower.enabled || !tower.width || !tower.depth || !tower.height) return;
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(tower.width, tower.depth, tower.height),
-      new THREE.MeshLambertMaterial({ color: 0x009688, flatShading: true }));
+      new THREE.MeshLambertMaterial({ color: 0x009688, flatShading: true, transparent: true, opacity: 0.58, depthWrite: false }));
     const rotation = (tower.rotation || 0) * Math.PI / 180;
     const localCenter = new THREE.Vector3(tower.width / 2, tower.depth / 2, tower.height / 2).applyAxisAngle(new THREE.Vector3(0, 0, 1), rotation);
-    mesh.position.set(origin[0] + (tower.x || 0) + localCenter.x, origin[1] + (tower.y || 0) + localCenter.y, origin[2] + localCenter.z);
+    const anchorOffset = localCenter.add(new THREE.Vector3(...origin));
+    mesh.position.copy(anchorOffset).add(new THREE.Vector3(tower.x ?? 0, tower.y ?? 0, 0));
     mesh.rotation.z = rotation;
     mesh.name = 'prime-tower-preview';
     this.towerPreview = mesh;
+    this.towerPlacement = { index, anchorOffset, width: tower.width, depth: tower.depth, brim: Math.max(0, tower.brim ?? 0), excludedArea, signature };
     this.scene.add(mesh);
+  }
+
+  private towerFitsBed(center: THREE.Vector3): boolean {
+    const tower = this.towerPlacement!;
+    const anchor = center.clone().sub(tower.anchorOffset);
+    const rotation = this.towerPreview!.rotation.z;
+    const checkPolygon = (polygon: [number, number][], angle: number, margin: number, excluded = false) => {
+      const sin = Math.sin(angle), cos = Math.cos(angle);
+      const box = new THREE.Box3(new THREE.Vector3(-margin, -margin, -1),
+        new THREE.Vector3(tower.width + margin, tower.depth + margin, 1));
+      const points = polygon.map(([x, y]) => {
+        const dx = x - anchor.x, dy = y - anchor.y;
+        return new THREE.Vector3(dx * cos + dy * sin, dy * cos - dx * sin, 0);
+      });
+      const middle = box.getCenter(new THREE.Vector3());
+      let inside = false;
+      const ray = new THREE.Ray();
+      const intersection = new THREE.Vector3();
+      for (let i = 0; i < points.length; i++) {
+        const a = points[i], b = points[(i + 1) % points.length];
+        if (box.containsPoint(a)) return false;
+        ray.origin.copy(a);
+        ray.direction.subVectors(b, a).normalize();
+        if (ray.intersectBox(box, intersection) && intersection.distanceToSquared(a) <= a.distanceToSquared(b)) return false;
+        if ((a.y > middle.y) !== (b.y > middle.y) &&
+            middle.x < a.x + (b.x - a.x) * (middle.y - a.y) / (b.y - a.y)) inside = !inside;
+      }
+      return inside !== excluded;
+    };
+    // Native slicing also reserves an unrotated box with a 15 mm automatic placement margin.
+    const margin = 15 + tower.brim;
+    const bed = this.bedConfig.points;
+    return anchor.y >= margin && checkPolygon(bed, 0, margin) &&
+      (!rotation || checkPolygon(bed, rotation, tower.brim)) &&
+      (tower.excludedArea.length < 3 || checkPolygon(tower.excludedArea, rotation, tower.brim, true));
   }
 
   /** Invalidate pending artwork without hiding the usable JS bed. */
@@ -767,6 +818,7 @@ export class PlateScene {
   /** All plates with their origin: each gets a bed, its number (printed large in the front-left corner, like desktop) and its custom title. */
   public setPlates(plates: { index: number; name: string; origin: [number, number, number] }[], activeIndex: number): void {
     this.requestDraw();
+    if (this.towerPlacement && this.towerPlacement.index !== activeIndex) this.setWipeTowerPreview({ enabled: false });
     this.plates = plates.length > 0 ? plates : this.plates;
     this.activePlateIndex = activeIndex;
     this.rebuildPlates();
@@ -2308,25 +2360,31 @@ export class PlateScene {
     if (e.button === 0 && !e.shiftKey && !e.ctrlKey && !e.metaKey && !this.isPaintingActive &&
         !this.measureActive && !this.explodeActive && !this.brimEarsActive && !this.flattenClusters.length &&
         !this.transformControls.dragging && (modelTouch || !this.transformControls.axis) && !this.cutPreview.active &&
-        (!modelTouch || this.gizmoMode === null || this.gizmoMode === 'translate' || this.gizmoMode === 'scale') &&
         this.callbacks.canMoveObjects?.() !== false) {
       const raycaster = this.pointerRay(e);
-      const hit = raycaster.intersectObjects(this.viewerTargets(), false)[0];
+      const targets = this.viewerTargets();
+      if (this.towerPreview?.visible && this.towerPlacement) targets.push(this.towerPreview);
+      const hit = raycaster.intersectObjects(targets, false)[0];
       if (hit) {
         const body = hit.object as THREE.Mesh;
-        if (this.selectedVolumeId !== null && body.userData.volumeId === undefined) return;
-        const target = body.userData.volumeId === undefined || this.selectedVolumeId !== null ? body : body.parent as THREE.Mesh;
-        if (modelTouch && this.gizmoMode === 'scale' && (this.extraKeys.size > 0 || target !== this.getSelectedMesh())) return;
+        const tower = body === this.towerPreview;
+        if (tower) {
+          if (!this.callbacks.onMoveWipeTower || this.callbacks.canMoveWipeTower?.(this.towerPlacement!.index) === false) return;
+        } else if ((this.selectedVolumeId !== null && body.userData.volumeId === undefined) ||
+                   (modelTouch && this.gizmoMode !== null && this.gizmoMode !== 'translate' && this.gizmoMode !== 'scale')) return;
+        const target = tower || body.userData.volumeId === undefined || this.selectedVolumeId !== null ? body : body.parent as THREE.Mesh;
+        const touchScale = !tower && modelTouch && this.gizmoMode === 'scale';
+        if (touchScale && (this.extraKeys.size > 0 || target !== this.getSelectedMesh())) return;
         const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -hit.point.z);
         const selected = target.userData.objectId === this.selectedObjectId && target.userData.instanceId === this.selectedInstanceId ||
           this.extraKeys.has(`${target.userData.objectId}_${target.userData.instanceId}`);
         const origins = new Map([[target, target.position.clone()]]);
-        if (selected) for (const mesh of this.objectMeshes.values()) {
+        if (!tower && selected) for (const mesh of this.objectMeshes.values()) {
           if (mesh === this.getSelectedMesh() || this.extraKeys.has(`${mesh.userData.objectId}_${mesh.userData.instanceId}`)) origins.set(mesh, mesh.position.clone());
         }
         this.planeDrag = { pointerId: e.pointerId, target, plane, start: hit.point.clone(), origins, moved: false,
           orbitEnabled: this.orbitControls.enabled, transformEnabled: this.transformControls.enabled,
-          touchScale: modelTouch && this.gizmoMode === 'scale' ? { origin: target.scale.clone(), clientY: e.clientY } : undefined };
+          touchScale: touchScale ? { origin: target.scale.clone(), clientY: e.clientY } : undefined };
         window.addEventListener('keydown', this.cancelPlaneKey, true);
         this.orbitControls.enabled = false;
         this.transformControls.enabled = false;
@@ -2372,12 +2430,13 @@ export class PlateScene {
     if (e.pointerType === 'touch' && !modelTouch) return;
     const drag = this.planeDrag;
     if (drag && drag.pointerId === e.pointerId) {
-      if (!drag.moved && Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y) <= 5) return;
+      const draggingTower = drag.target === this.towerPreview;
+      if (!drag.moved && Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y) <= (draggingTower ? 2 : 5)) return;
       const point = drag.touchScale ? null : this.pointerRay(e).ray.intersectPlane(drag.plane, new THREE.Vector3());
       if (!drag.touchScale && !point) return;
       if (!drag.moved) {
         drag.moved = true;
-        if (drag.origins.size === 1) this.callbacks.onSelect(drag.target.userData.objectId, drag.target.userData.instanceId, false, drag.target.userData.volumeId);
+        if (!draggingTower && drag.origins.size === 1) this.callbacks.onSelect(drag.target.userData.objectId, drag.target.userData.instanceId, false, drag.target.userData.volumeId);
       }
       if (drag.touchScale) {
         // One finger on the selected body scales uniformly around its origin.
@@ -2387,6 +2446,10 @@ export class PlateScene {
       }
       const delta = point!.sub(drag.start);
       delta.z = 0;
+      if (draggingTower) {
+        drag.target.position.copy(drag.origins.get(drag.target)!).add(delta);
+        return;
+      }
       for (const [mesh, origin] of drag.origins) {
         const localDelta = delta.clone();
         if (mesh.userData.volumeId !== undefined && mesh.parent) {
@@ -2433,7 +2496,7 @@ export class PlateScene {
     if (e.pointerType === 'touch') return;
     if (this.planeDrag && this.planeDrag.pointerId !== e.pointerId) return;
     if (this.planeDrag?.pointerId === e.pointerId) {
-      const moved = this.planeDrag.moved;
+      const moved = this.planeDrag.moved || this.planeDrag.target === this.towerPreview;
       this.finishPlaneDrag(true);
       if (moved) return;
     }
@@ -2588,6 +2651,24 @@ export class PlateScene {
     if (!commit && drag.touchScale) drag.target.scale.copy(drag.touchScale.origin);
     this.requestDraw();
     if (!commit || !drag.moved) return;
+    if (drag.target === this.towerPreview && this.towerPlacement) {
+      const { index, anchorOffset } = this.towerPlacement;
+      const start = drag.origins.get(drag.target)!;
+      if (start.distanceToSquared(drag.target.position) < 1e-8) return;
+      if (this.callbacks.canMoveObjects?.() === false || this.callbacks.canMoveWipeTower?.(index) === false ||
+          !this.towerFitsBed(drag.target.position)) {
+        drag.target.position.copy(start);
+        return;
+      }
+      const { x, y } = drag.target.position.clone().sub(anchorOffset);
+      void this.callbacks.onMoveWipeTower?.(index, x, y).then(saved => {
+        if (!saved && this.towerPreview === drag.target) {
+          drag.target.position.copy(start);
+          this.requestDraw();
+        }
+      });
+      return;
+    }
     this.commitMeshTransforms([...drag.origins.keys()], !drag.touchScale);
   }
 

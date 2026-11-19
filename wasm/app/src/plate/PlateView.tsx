@@ -17,7 +17,7 @@ import { usePaintToolsStore, PaintToolsPanel, StrokeCollector } from '../paint-t
 import { useLayersStore, LayerHeightPanel } from '../layers';
 import { getPaintOverlay, parsePaintOverlayBinary } from '../paint-tools/paintToolsApi';
 import type { PaintState, ParsedPaintOverlay } from '../paint-tools/types';
-import { getEngine } from '../engine/orcaEngine';
+import { getEngine, setOptions } from '../engine/orcaEngine';
 import { useHistoryStore } from '../history';
 import { TextPanel, useTextStore } from '../text';
 import { CutPanel, useCutStore } from '../cut';
@@ -124,6 +124,8 @@ export const PlateView: React.FC = () => {
   const currentConfig = useAppStore((s) => s.currentConfig);
   const bedConfigLoading = useAppStore((s) => !s.isEngineReady || s.isSelectingPreset || s.isModelLoading);
   const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
+  const activePlate = usePlatesStore((s) => s.plates.find(p => p.index === s.activePlateIndex));
+  const movingTower = useRef(false);
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [renamingPlate, setRenamingPlate] = useState<{ index: number; x: number; y: number; value: string } | null>(null);
@@ -172,6 +174,44 @@ export const PlateView: React.FC = () => {
       canMoveObjects: () => {
         const app = useAppStore.getState();
         return app.isEngineReady && !app.isSlicing && !app.isModelLoading && !app.isSelectingPreset && !useHistoryStore.getState().isRestoring;
+      },
+      canMoveWipeTower: (index) => {
+        const state = usePlatesStore.getState();
+        return !movingTower.current && !state.isLoading && state.activePlateIndex === index &&
+          !state.plates.find(p => p.index === index)?.locked;
+      },
+      onMoveWipeTower: async (index, x, y) => {
+        const app = useAppStore.getState();
+        const { plates } = usePlatesStore.getState();
+        // These project vectors are serialized in 3MF and read by native slicing.
+        const coordinate = (key: string, value: number, fallback: number) => {
+          const serialized = app.currentConfig[key];
+          const slots = serialized ? serialized.split(',') : [String(fallback)];
+          const defaultCoordinate = slots[slots.length - 1];
+          while (slots.length < Math.max(plates.length, index + 1)) slots.push(defaultCoordinate);
+          slots[index] = String(value);
+          return slots.join(',');
+        };
+        const options = {
+          wipe_tower_x: coordinate('wipe_tower_x', x, 165),
+          wipe_tower_y: coordinate('wipe_tower_y', y, 250),
+        };
+        movingTower.current = true;
+        try {
+          await setOptions(options);
+          useAppStore.setState(state => ({
+            currentConfig: { ...state.currentConfig, ...options },
+            processOverrides: { ...state.processOverrides, ...options },
+          }));
+          useAppStore.getState().invalidateSlicePreview();
+          await useHistoryStore.getState().commitTransaction('Move prime tower');
+          return true;
+        } catch (error) {
+          console.error('[PlateView] Failed to move prime tower:', error);
+          return false;
+        } finally {
+          movingTower.current = false;
+        }
       },
       onSelect: (objId, instId, additive, volumeId) => {
         if (additive && objId !== null && instId !== null) {
@@ -297,15 +337,21 @@ export const PlateView: React.FC = () => {
   const objectTree = useObjectListStore((s) => s.objects);
   const selectedRangeIndex = useObjectListStore((s) => s.selectedRangeIndex);
   useEffect(() => {
-    if (!isEngineReady) return;
+    const scene = sceneRef.current;
+    if (!scene || !isEngineReady || !activePlate) {
+      scene?.setWipeTowerPreview({ enabled: false });
+      return;
+    }
     let cancelled = false;
+    const excludedArea = (activePlate.config.bed_exclude_area ?? currentConfig.bed_exclude_area ?? '')
+      .split(',').map(point => point.split('x').map(Number))
+      .filter((point): point is [number, number] => point.length === 2 && point.every(Number.isFinite));
     void getEngine().then((engine) => engine.call('getWipeTowerPreview', { plateIndex: activePlateIndex }))
       .then((tower: any) => {
-        const origin = usePlatesStore.getState().plates.find((p) => p.index === activePlateIndex)?.origin ?? [0, 0, 0];
-        if (!cancelled) sceneRef.current?.setWipeTowerPreview(tower, origin as [number, number, number]);
-      }).catch(() => { if (!cancelled) sceneRef.current?.setWipeTowerPreview({ enabled: false }); });
+        if (!cancelled) scene.setWipeTowerPreview(tower, activePlate.origin, activePlateIndex, excludedArea);
+      }).catch(() => { if (!cancelled) scene.setWipeTowerPreview({ enabled: false }); });
     return () => { cancelled = true; };
-  }, [isEngineReady, currentConfig, activePlateIndex, objects, objectTree, paintOverlayRevision]);
+  }, [isEngineReady, currentConfig, activePlate, activePlateIndex, objects, objectTree, paintOverlayRevision]);
 
   // Each part takes the colour of the filament it is assigned to (extruder 0 means the first filament).
   const filamentColours = useAppStore((s) => s.currentConfig['filament_colour']);
