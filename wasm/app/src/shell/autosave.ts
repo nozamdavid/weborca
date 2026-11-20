@@ -217,19 +217,27 @@ function normalizedPlates(state: HistoryPlateState): HistoryPlateState {
 
 /** Retire only legacy empty backups whose recovered state is already hydrated. */
 export function isRedundantAutosave(record: AutosaveRecord): boolean {
-  if (startupBaseline === undefined || record.objects !== 0 || record.bytes !== undefined ||
+  return isRedundantAutosaveRecord(record, startupBaseline);
+}
+
+export function isRedundantAutosaveRecord(record: AutosaveRecord, baselineJson: string | undefined): boolean {
+  if (baselineJson === undefined || record.objects !== 0 || record.bytes !== undefined ||
       !record.setup?.presetConfig || !Object.keys(record.setup.presetConfig).length || !record.plateState) return false;
-  const baseline = JSON.parse(startupBaseline);
+  const baseline = JSON.parse(baselineJson);
   const setup = record.setup;
-  const values = [setup.presetConfig, setup.options, setup.overrides?.process,
-    setup.overrides?.filament, setup.overrides?.printer];
+  const values = { ...setup.presetConfig, ...setup.overrides?.process,
+    ...setup.overrides?.filament, ...setup.overrides?.printer, ...setup.options };
   return setup.vendor === baseline.vendor && setup.printer === baseline.printer && setup.process === baseline.process &&
     JSON.stringify(setup.filaments) === JSON.stringify(baseline.filaments) &&
-    values.every(options => Object.entries(options ?? {}).every(([key, value]) => value === baseline.config[key])) &&
+    Object.entries(values).every(([key, value]) => value === baseline.config[key]) &&
     JSON.stringify(normalizedPlates(record.plateState)) === JSON.stringify(baseline.plates);
 }
 
 /** Startup device preferences are a baseline, rather than unsaved project edits. */
+export function isAtStartupBaseline(): boolean {
+  return startupBaseline !== undefined && captureAutosaveBaseline() === startupBaseline;
+}
+
 export function captureAutosaveBaseline(): string {
   const app = useAppStore.getState();
   return JSON.stringify({

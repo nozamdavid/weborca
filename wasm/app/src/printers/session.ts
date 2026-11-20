@@ -23,7 +23,7 @@ const refreshIntervalMs = 15_000;
 const signedOut = (p: PhysicalPrinter) => ['snapmaker-cloud', 'prusaconnect', 'bambu-cloud', 'creality-cloud'].includes(p.host_type) && !p.printhost_apikey;
 // Filament choices and display names do not restart the transport.
 const connectionKey = (p?: PhysicalPrinter) => p ? JSON.stringify({ ...p, name: undefined, preset: undefined, vendor: undefined,
-  filamentPresets: undefined, filamentColors: undefined }) : '';
+  filamentPresets: undefined, filamentColors: undefined, filamentTypes: undefined }) : '';
 
 export function getCurrentPrinterApi(): PrinterApi | undefined { return currentApi; }
 

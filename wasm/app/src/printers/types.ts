@@ -46,6 +46,7 @@ export interface PhysicalPrinter {
   /** Prepare tab filament presets and colors, stored per physical device. */
   filamentPresets?: string[];
   filamentColors?: string[];
+  filamentTypes?: string[];
   host_type: HostType;
   /** Hostname, IP or URL of the API (`print_host`). */
   print_host: string;

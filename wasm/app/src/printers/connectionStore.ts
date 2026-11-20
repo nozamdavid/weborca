@@ -69,7 +69,7 @@ interface PrinterConnectionState {
   updateCloudTokens: (source: PhysicalPrinter, access: string, refresh?: string) => boolean;
   deletePrinter: (id: string) => void;
   selectPrinter: (id: string) => void;
-  saveFilaments: (id: string, presets: string[], colors: string[]) => void;
+  saveFilaments: (id: string, presets: string[], colors: string[], types?: string[]) => void;
 }
 
 export const usePrinterConnectionStore = create<PrinterConnectionState>()(
@@ -177,8 +177,8 @@ export const usePrinterConnectionStore = create<PrinterConnectionState>()(
           return { printers, selectedPrinterId: s.selectedPrinterId === id ? printers[0]?.id ?? null : s.selectedPrinterId };
         }),
       selectPrinter: (selectedPrinterId) => set({ selectedPrinterId }),
-      saveFilaments: (id, filamentPresets, filamentColors) => set((s) => ({
-        printers: s.printers.map((p) => p.id === id ? { ...p, filamentPresets, filamentColors } : p)
+      saveFilaments: (id, filamentPresets, filamentColors, filamentTypes) => set((s) => ({
+        printers: s.printers.map((p) => p.id === id ? { ...p, filamentPresets, filamentColors, ...(filamentTypes ? { filamentTypes } : {}) } : p)
       }))
     }),
     {

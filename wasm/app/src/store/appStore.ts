@@ -2047,9 +2047,20 @@ export async function resolveDeviceVendor(device: { id: string; preset?: string;
 
 const LAST_SETUP_KEY = 'orca.lastSetup';
 
+export function persistLastSetup(state = useAppStore.getState()) {
+  if (!state.selectedPrinter || !state.isEngineReady || state.engineError) return;
+  try {
+    localStorage.setItem(LAST_SETUP_KEY, JSON.stringify({
+      printer: state.selectedPrinter, vendor: state.selectedVendor, process: state.selectedProcess, filaments: state.selectedFilaments,
+      filamentColors: (state.currentConfig.filament_colour || '').split(';').map(c => c.trim()).slice(0, state.selectedFilaments.length),
+      filamentTypes: (state.currentConfig.filament_type || '').split(';').map(t => t.trim()).slice(0, state.selectedFilaments.length)
+    }));
+  } catch { /* storage unavailable */ }
+}
+
 /** Restores the printer, process and filaments picked last time when no device decides them. */
 async function restoreLastSetup() {
-  let saved: { printer?: string; process?: string; filaments?: string[] } | null = null;
+  let saved: { printer?: string; vendor?: string; process?: string; filaments?: string[]; filamentColors?: string[]; filamentTypes?: string[] } | null = null;
   try { saved = JSON.parse(localStorage.getItem(LAST_SETUP_KEY) || 'null'); } catch { /* ignore */ }
   if (!saved?.printer) return;
   const app = () => useAppStore.getState();
@@ -2078,17 +2089,36 @@ async function restoreLastSetup() {
       if (canonical) await app().chooseFilament(canonical, slot);
     }
   }
+  if (saved.filaments) {
+    const targetCount = Math.max(saved.filaments.length, minimumFilamentSlots(app().presetConfig));
+    while (app().selectedFilaments.length > targetCount) {
+      const before = app().selectedFilaments.length;
+      await app().removeFilamentSlot();
+      if (app().selectedFilaments.length >= before) break;
+    }
+  }
+  for (const [slot, color] of (saved.filamentColors || []).entries()) {
+    if (color && slot < app().selectedFilaments.length &&
+        color.trim().toUpperCase() !== (app().currentConfig.filament_colour || '').split(';')[slot]?.trim().toUpperCase()) {
+      await app().setSlotColor(slot, color);
+    }
+  }
+  const currentTypes = (app().currentConfig.filament_type || '').split(';').map(t => t.trim());
+  for (const [slot, fType] of (saved.filamentTypes || []).entries()) {
+    if (fType && slot < app().selectedFilaments.length && currentTypes[slot] !== fType) {
+      await app().applyOptionChange('filament_type', fType, 'filament', undefined, slot);
+    }
+  }
 }
 
 useAppStore.subscribe((state, previous) => {
-  if (applyingDevice || !state.isEngineReady || state.isModelLoading || state.engineError || !state.selectedPrinter) return;
+  if (state.modelFile || state.modelObjects?.length) return;
+  if (applyingDevice || selectingPrinterProfile || !state.isEngineReady || state.isModelLoading || state.sessionRecovery === 'restoring' || state.engineError || !state.selectedPrinter) return;
   if (state.selectedPrinter === previous.selectedPrinter && state.selectedProcess === previous.selectedProcess &&
-      state.selectedFilaments === previous.selectedFilaments) return;
-  try {
-    localStorage.setItem(LAST_SETUP_KEY, JSON.stringify({
-      printer: state.selectedPrinter, vendor: state.selectedVendor, process: state.selectedProcess, filaments: state.selectedFilaments
-    }));
-  } catch { /* storage unavailable */ }
+      state.selectedFilaments === previous.selectedFilaments &&
+      state.currentConfig.filament_colour === previous.currentConfig.filament_colour &&
+      state.currentConfig.filament_type === previous.currentConfig.filament_type) return;
+  persistLastSetup(state);
 });
 
 async function restoreDeviceFilaments() {
@@ -2114,7 +2144,14 @@ async function restoreDeviceFilaments() {
     if (useAppStore.getState().selectedFilaments.length >= before) break;
   }
   for (let i = 0; i < valid.length; i++) {
-    if (device.filamentColors?.[i]) await useAppStore.getState().setSlotColor(i, device.filamentColors[i]);
+    const color = device.filamentColors?.[i];
+    if (color && color.trim().toUpperCase() !== (useAppStore.getState().currentConfig.filament_colour || '').split(';')[i]?.trim().toUpperCase()) {
+      await useAppStore.getState().setSlotColor(i, color);
+    }
+    const fType = device.filamentTypes?.[i];
+    if (fType && fType !== (useAppStore.getState().currentConfig.filament_type || '').split(';').map(t => t.trim())[i]) {
+      await useAppStore.getState().applyOptionChange('filament_type', fType, 'filament', undefined, i);
+    }
   }
 }
 
@@ -2163,6 +2200,9 @@ export function withPrinterProfileSelection(select: () => Promise<void>): Promis
       await select();
     } finally {
       selectingPrinterProfile = false;
+      const state = useAppStore.getState();
+      if (!state.modelFile && !state.modelObjects?.length && !applyingDevice && state.isEngineReady &&
+          !state.isModelLoading && state.sessionRecovery !== 'restoring' && !state.engineError) persistLastSetup(state);
     }
   });
   // A failed pick must not prevent the next device switch; the caller receives the failure.
@@ -2185,9 +2225,12 @@ useAppStore.subscribe((state, previous) => {
     useAppStore.setState({ gcodeUrl: null });
   if (state.sliceResult?.gcode !== previous.sliceResult?.gcode)
     clearExportGcodeCache(state.sliceResult?.gcode ?? null);
+  if (state.modelFile || state.modelObjects?.length) return;
   if (applyingDevice || selectingPrinterProfile || !state.isEngineReady || state.isModelLoading || state.engineError) return;
   const device = selectedDevice();
   if (!device || device.preset !== state.selectedPrinter) return;
-  if (state.selectedFilaments === previous.selectedFilaments && state.currentConfig.filament_colour === previous.currentConfig.filament_colour) return;
-  usePrinterConnectionStore.getState().saveFilaments(device.id, [...state.selectedFilaments], (state.currentConfig.filament_colour || '').split(';'));
+  if (state.selectedFilaments === previous.selectedFilaments && state.currentConfig.filament_colour === previous.currentConfig.filament_colour &&
+      state.currentConfig.filament_type === previous.currentConfig.filament_type) return;
+  usePrinterConnectionStore.getState().saveFilaments(device.id, [...state.selectedFilaments], (state.currentConfig.filament_colour || '').split(';'),
+    (state.currentConfig.filament_type || '').split(';').map(t => t.trim()).slice(0, state.selectedFilaments.length));
 });

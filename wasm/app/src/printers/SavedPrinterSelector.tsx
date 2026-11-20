@@ -28,7 +28,8 @@ export async function bindDeviceProfile(name: string, deviceId: string | null) {
   store.savePrinter({
     ...device, preset: name, vendor,
     filamentPresets: [...app.selectedFilaments],
-    filamentColors: (app.currentConfig.filament_colour || '').split(';')
+    filamentColors: (app.currentConfig.filament_colour || '').split(';'),
+    filamentTypes: (app.currentConfig.filament_type || '').split(';').map(t => t.trim()).slice(0, app.selectedFilaments.length)
   });
 }
 
