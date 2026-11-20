@@ -6,8 +6,105 @@
   font-weight: var(--weight-semibold);
 }
 .setting-help-link:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.setting-help-mobile { display: none; }
 @media (max-width: 800px) {
   .setting-help-link { display: none; }
+  .setting-row:has(input[type=checkbox]),
+  .sidebar .setting-row:has(.setting-help-mobile) {
+    flex-wrap: wrap;
+  }
+  .setting-help-mobile {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1-5);
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+  }
+  .setting-help-mobile .setting-help-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1-5);
+    width: auto;
+    max-width: 100%;
+    min-height: 44px;
+    padding: var(--space-2) var(--space-3);
+    box-sizing: border-box;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--control-bg);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    font-weight: var(--weight-medium);
+    line-height: var(--leading-normal);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+  }
+  .setting-help-mobile .setting-help-toggle[aria-expanded="true"] {
+    background: var(--accent-subtle);
+  }
+  .setting-help-mobile .setting-help-toggle:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  .setting-help-chevron {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform var(--dur-fast) var(--ease-standard);
+  }
+  .setting-help-mobile .setting-help-toggle[aria-expanded="true"] .setting-help-chevron {
+    transform: rotate(180deg);
+  }
+  .setting-help-body {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+  }
+  .setting-help-body .wm-help {
+    margin: 0;
+    width: 100%;
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.45;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+  .setting-help-doc-link {
+    min-height: 44px;
+    max-width: 100%;
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: var(--weight-medium);
+    line-height: var(--leading-normal);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    overflow-wrap: anywhere;
+  }
+  .setting-help-doc-link:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
 }
 
 .settings-dialog-modal > .modal-header {

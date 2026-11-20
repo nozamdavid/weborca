@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { SettingInput } from './SettingInput';
 import type { LayoutLine } from './types';
@@ -15,6 +15,8 @@ interface SettingsLineProps {
 export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
   const { t } = useTranslation();
   const { configDefs, rulesState, settingsMode, highlightedKey } = useAppStore();
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpId = useId();
 
   const helpLink = (keys: Array<string | undefined>) => {
     const key = keys.find(key => getSettingDocUrl(key));
@@ -23,6 +25,49 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
     return url ? (
       <a href={url} target="_blank" rel="noopener noreferrer" className="setting-help-link" title={description ? t(description) : undefined} aria-label={t("Open documentation")}>?</a>
     ) : null;
+  };
+
+  const renderMobileHelp = (label: string, tooltip: string, keys: Array<string | undefined>) => {
+    const docKey = keys.find(key => getSettingDocUrl(key));
+    const docUrl = getSettingDocUrl(docKey);
+    const resolvedTooltip = (tooltip && tooltip.trim() ? tooltip : undefined)
+      || (docKey && configDefs[docKey]?.tooltip?.trim() ? configDefs[docKey]?.tooltip : undefined)
+      || keys.map(key => (key ? configDefs[key]?.tooltip : undefined)).find(tip => Boolean(tip && tip.trim()))
+      || '';
+    if (!resolvedTooltip && !docUrl) return null;
+
+    return (
+      <div className="setting-help-mobile">
+        <button
+          type="button"
+          className="setting-help-toggle"
+          aria-expanded={helpOpen}
+          aria-controls={helpId}
+          aria-label={`${t('Help')}: ${t(label)}`}
+          onClick={() => setHelpOpen(open => !open)}
+        >
+          <span>{t('Help')}</span>
+          <svg className="setting-help-chevron" aria-hidden="true" viewBox="0 0 16 16">
+            <path d="m4 6 4 4 4-4" />
+          </svg>
+        </button>
+        {helpOpen && (
+          <div id={helpId} className="setting-help-body">
+            {resolvedTooltip && <p className="wm-help">{t(resolvedTooltip)}</p>}
+            {docUrl && (
+              <a
+                href={docUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="setting-help-doc-link"
+              >
+                {t("Open documentation")}
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (line.type === 'option' && line.key) {
@@ -58,6 +103,7 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
           fieldState={fieldState}
           kind={kind}
         />
+        {renderMobileHelp(displayLabel, tooltip, [line.key])}
       </div>
     );
   }
@@ -75,6 +121,7 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
     if (visibleOptions.length === 0) return null;
 
     const firstDef = configDefs[visibleOptions[0]];
+    const rowLabel = line.label || firstDef?.label || visibleOptions[0];
     const tooltip = firstDef?.tooltip || '';
     const isHighlighted = visibleOptions.some((k) => k === highlightedKey);
 
@@ -85,7 +132,7 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
         title={tooltip ? t(tooltip) : ''}
       >
         <span className="setting-label" title={tooltip ? t(tooltip) : ''}>
-          {t(line.label || firstDef?.label || visibleOptions[0])}
+          {t(rowLabel)}
           {helpLink(visibleOptions)}
         </span>
         <div className="multi-option-inputs">
@@ -104,6 +151,7 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
             );
           })}
         </div>
+        {renderMobileHelp(rowLabel, tooltip, visibleOptions)}
       </div>
     );
   }
