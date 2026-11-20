@@ -3,9 +3,45 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { build } from '../../app/node_modules/esbuild/lib/main.js';
 const result = await build({ entryPoints: [new URL('../../app/src/models/sources.ts', import.meta.url).pathname], bundle: true, platform: 'node', format: 'esm', write: false });
-const { fetchModels, fetchStats, fetchModel, CatalogError, CATALOG_ENDPOINT } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+const { fetchModels, fetchStats, fetchModel, createCatalogPageLoader, preloadModelThumbnails, CatalogError, CATALOG_ENDPOINT } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
 const sample = JSON.parse(readFileSync(new URL('./fixtures/model-catalog.json', import.meta.url)));
 const respond = body => async () => ({ ok: true, json: async () => body });
+test('page cache shares pending foreground requests and separates criteria and page sizes', async t => {
+  const calls = [];
+  let finish;
+  t.mock.method(globalThis, 'fetch', url => { calls.push(url); return new Promise(resolve => { finish = () => resolve({ ok: true, json: async () => sample }); }); });
+  const load = createCatalogPageLoader();
+  const query = { page: 2, pageSize: 24, q: 'cat', sort: 'newest' };
+  const prefetched = load(query);
+  assert.equal(load({ sort: 'newest', q: 'cat', pageSize: 24, page: 2 }), prefetched);
+  finish();
+  const page = await prefetched;
+  assert.equal(await load(query), page);
+  assert.equal(calls.length, 1);
+  for (const patch of [{ page: 3 }, { pageSize: 25 }, { q: 'dog' }, { sort: 'likes' }]) {
+    const pending = load({ ...query, ...patch }); finish(); await pending;
+  }
+  assert.equal(calls.length, 5);
+});
+test('failed prefetch can be retried', async t => {
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('offline'); });
+  const load = createCatalogPageLoader();
+  await assert.rejects(load({ page: 2 }), /offline/);
+  fetch.mock.mockImplementation(respond(sample));
+  assert.equal((await load({ page: 2 })).items.length, 1);
+  assert.equal(fetch.mock.callCount(), 2);
+});
+test('thumbnail preloading uses relay cards paths and only the first ten models', t => {
+  const images = [];
+  const previous = globalThis.Image;
+  globalThis.Image = class { constructor() { images.push(this); } };
+  t.after(() => { if (previous) globalThis.Image = previous; else delete globalThis.Image; });
+  const models = Array.from({ length: 12 }, (_, i) => ({ thumbnail: i === 0 ? undefined : `/_model-thumbnail/v300?url=${i}` }));
+  preloadModelThumbnails(models);
+  assert.equal(images.length, 9);
+  assert.deepEqual(images.map(image => image.src), models.slice(1, 10).map(model => model.thumbnail));
+  assert.ok(images.every(image => image.referrerPolicy === 'no-referrer'));
+});
 test('query transport preserves server filter and pagination semantics', async t => {
   const signal = new AbortController().signal;
   const params = { q: 'cat & book', formats: ['stl', '3mf'], category: 'Household', subcategory: 'Decor', author: 'RoyalGreen', license: 'BY-NC', minLikes: 0, maxLikes: 200, minDownloads: 0, maxDownloads: 1000, uploadedAfter: '2023-01-01', uploadedBefore: '2026-12-31', hasThumbnail: false, sort: 'downloads', page: 2, pageSize: 1 };

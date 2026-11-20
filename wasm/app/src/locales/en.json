@@ -1,5 +1,12 @@
 {
   "Bambu Cloud account": "Bambu Cloud account",
+  "Sign in with your Bambu Cloud or MakerWorld account to download 3MF files and open them directly in the slicer.": "Sign in with your Bambu Cloud or MakerWorld account to download 3MF files and open them directly in the slicer.",
+  "WebOrca does not store your email, password, or verification code. Your access and refresh tokens are saved only in this browser.": "WebOrca does not store your email, password, or verification code. Your access and refresh tokens are saved only in this browser.",
+  "Check your email for a verification code from Bambu Lab.": "Check your email for a verification code from Bambu Lab.",
+  "Sign-in failed. Check your email and password and try again.": "Sign-in failed. Check your email and password and try again.",
+  "Sign-in failed. Check the verification code and try again.": "Sign-in failed. Check the verification code and try again.",
+  "Signing in…": "Signing in…",
+  "Verify code": "Verify code",
   "Sign in to download MakerWorld models. No printer required.": "Sign in to download MakerWorld models. No printer required.",
   "Sign in to Bambu Cloud under Help or the mobile menu.": "Sign in to Bambu Cloud under Help or the mobile menu.",
   "Sign-in failed. Check credentials or enter the email verification code.": "Sign-in failed. Check credentials or enter the email verification code.",

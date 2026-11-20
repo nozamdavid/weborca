@@ -29,15 +29,17 @@ function tokens(data: any): Account {
   return { accessToken: data.accessToken, refreshToken: typeof data.refreshToken === 'string' ? data.refreshToken : undefined,
     expiresAt: expiry(data.expiresIn), refreshExpiresAt: expiry(data.refreshExpiresIn) };
 }
-export async function signInBambu(account: string, credentials: { password?: string; code?: string }) {
+export async function signInBambu(account: string, credentials: { password?: string; code?: string }, signal?: AbortSignal) {
   const version = ++generation;
-  const data = await cloudJson(accountPrinter, '/v1/user-service/user/login', { method: 'POST',
+  const data = await cloudJson(accountPrinter, '/v1/user-service/user/login', { method: 'POST', signal,
     headers: { 'content-type': 'application/json' }, body: JSON.stringify({ account: account.trim(), ...credentials }) });
-  if (version !== generation) return;
-  if (data.loginType === 'verifyCode') throw new Error('Verification code required');
+  signal?.throwIfAborted();
+  if (version !== generation) throw new DOMException('Session superseded', 'AbortError');
+  if (data.loginType === 'verifyCode') return 'verification-required';
   const next = tokens(data);
   save(next);
   await validateBambuAccount();
+  return 'signed-in';
 }
 async function renew() {
   if (pending) return pending;

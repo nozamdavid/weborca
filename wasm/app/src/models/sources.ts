@@ -30,6 +30,49 @@ export interface CatalogQuery {
   sort?: 'relevance' | 'newest' | 'oldest' | 'likes' | 'downloads'; page?: number; pageSize?: number;
 }
 export interface CatalogPage { total: number; page: number; pageSize: number; pages: number; items: Model[] }
+
+// Share in-flight requests when a prefetched page becomes the foreground page.
+export function createCatalogPageLoader() {
+  const cached = new Map<string, CatalogPage>();
+  const pending = new Map<string, Promise<CatalogPage>>();
+  const keyFor = (query: CatalogQuery) => JSON.stringify(Object.entries(query).filter(([, value]) => value !== undefined).sort(([a], [b]) => a.localeCompare(b)));
+  const load = (query: CatalogQuery): Promise<CatalogPage> => {
+    const key = keyFor(query);
+    const hit = cached.get(key);
+    if (hit) return Promise.resolve(hit);
+    const running = pending.get(key);
+    if (running) return running;
+    const result = fetchModels(query).then(page => {
+      cached.set(key, page);
+      if (cached.size > 8) cached.delete(cached.keys().next().value!);
+      return page;
+    }).finally(() => pending.delete(key));
+    pending.set(key, result);
+    return result;
+  };
+  return Object.assign(load, {
+    hasRequest(query: CatalogQuery) {
+      const key = keyFor(query);
+      return cached.has(key) || pending.has(key);
+    }
+  });
+}
+
+export function preloadModelThumbnails(models: Model[]) {
+  for (const model of models.slice(0, 10)) {
+    if (!model.thumbnail) continue;
+    const image = new Image();
+    const relay = model.thumbnail;
+    const direct = directThumbnail(relay);
+    image.referrerPolicy = 'no-referrer';
+    const fallback = () => {
+      if (direct && image.src === direct) image.src = relay;
+    };
+    image.onerror = fallback;
+    image.onload = () => { if (image.naturalWidth > 300 || image.naturalHeight > 300) fallback(); };
+    image.src = direct || relay;
+  }
+}
 export interface CatalogCount { name: string; count: number }
 export interface CatalogStats {
   models: number; formats: CatalogCount[]; categories: CatalogCount[]; authors: CatalogCount[]; licenses: CatalogCount[];

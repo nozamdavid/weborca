@@ -1,13 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
+import { Dialog } from '../components/Dialog';
 import { useTranslation } from '../i18n';
-import { directThumbnail, fetchModels, fetchStats, fetchModel, type CatalogQuery, type CatalogStats, type Model } from './sources';
+import { directThumbnail, createCatalogPageLoader, preloadModelThumbnails, fetchStats, fetchModel, type CatalogQuery, type CatalogStats, type Model } from './sources';
 import './models.css';
 import { makerWorldDownload, makerWorldFile } from '../printers/bambuCloud';
 import { requestOpenProject } from '../shell/projectActions';
+import { useHelpStore } from '../shell/HelpDialogs';
 import { accountPrinter, useBambuAccount } from '../printers/bambuAccount';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
 
 const platformName = (source: string) => source === 'makerworld' ? 'MakerWorld' : source;
+
+function ModelFacts({ model, compact = false }: { model: Model; compact?: boolean }) {
+  const { t } = useTranslation();
+  const tags = compact ? model.tags.slice(0, 2) : model.tags;
+  return <div className="model-facts">
+    <p className="model-file-info"><strong>{platformName(model.source)}</strong><span>
+      {model.fileFormats.length ? model.fileFormats.map(ext => `.${ext}`).join(', ') : t('No verified file formats')}
+    </span></p>
+    {model.estimatedFileFormats.length > 0 && <p>{t('Estimated formats: {{formats}}', { formats: model.estimatedFileFormats.map(ext => `.${ext}`).join(', ') })}</p>}
+    {(model.author || model.license) && <p>{[model.author, model.license].filter(Boolean).join(' · ')}</p>}
+    {tags.length > 0 && <div className="model-tags">{tags.map(tag => <span className="model-tag" key={tag}>{tag}</span>)}</div>}
+  </div>;
+}
 
 function Thumbnail({ url }: { url?: string }) {
   const { t } = useTranslation();
@@ -24,6 +39,7 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
   const { t } = useTranslation();
   const [criteria, setCriteria] = useState<CatalogQuery>({ page: 1, pageSize: 24, sort: 'newest' });
   const grid = useRef<HTMLDivElement>(null);
+  const browser = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!active || !grid.current) return;
     const element = grid.current;
@@ -51,7 +67,6 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
   const detailsRequest = useRef<AbortController>();
   const [details, setDetails] = useState<{ id: string; text: string }>();
   const [infoModel, setInfoModel] = useState<Model>();
-  const modal = useRef<HTMLDivElement>(null);
   const change = (patch: Partial<CatalogQuery>) => { setCriteria(current => ({ ...current, ...patch, page: 1 })); setDetails(undefined); detailsRequest.current?.abort(); };
   const [downloadStatus, setDownloadStatus] = useState('');
   const [busy, setBusy] = useState(false);
@@ -62,7 +77,13 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
     const id = new URL(model.url).pathname.match(/\/models\/([1-9]\d*)/)?.[1];
     const printer = useBambuAccount.getState().account ? { ...accountPrinter, printhost_apikey: useBambuAccount.getState().account!.accessToken } : usePrinterConnectionStore.getState().printers.find(p => p.host_type === 'bambu-cloud' && p.printhost_apikey &&
       ['us.mqtt.bambulab.com', 'mqtt.bambu-lab.com'].includes(p.print_host));
-    if (!id || !printer) { setDownloadStatus('Sign in to Bambu Cloud under Help or the mobile menu.'); return; }
+    if (!id) return;
+    if (!printer) {
+      setDownloadStatus('');
+      setInfoModel(undefined);
+      useHelpStore.getState().open('bambu');
+      return;
+    }
     setDownloadStatus(open ? '' : 'Preparing download…');
     if (open) setOpening({ id: model.id, phase: 'preparing' });
     setBusy(true);
@@ -102,6 +123,7 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
   useEffect(() => () => { request.current?.abort(); transfer.current?.abort(); detailsRequest.current?.abort(); }, []);
   const statsKey = useRef(-1);
   const loadedKey = useRef('');
+  const pageLoader = useRef({ retry, load: createCatalogPageLoader() });
   useEffect(() => {
     if (!active || statsKey.current === retry) return;
     const controller = new AbortController();
@@ -116,12 +138,23 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
     if (loadedKey.current === key) return;
     const controller = new AbortController();
     request.current = controller;
+    if (pageLoader.current.retry !== retry) pageLoader.current = { retry, load: createCatalogPageLoader() };
+    const load = pageLoader.current.load;
     setModels([]); setStatus('loading'); setDetails(undefined); detailsRequest.current?.abort();
-    const timer = setTimeout(() => {
-      void fetchModels(criteria, controller.signal).then(result => {
-        if (!controller.signal.aborted) { loadedKey.current = key; setModels(result.items); setTotal(result.total); setPages(result.pages); setStatus('ready'); }
+    const showPage = () => {
+      void load(criteria).then(result => {
+        if (!controller.signal.aborted) {
+          loadedKey.current = key; setModels(result.items); setTotal(result.total); setPages(result.pages); setStatus('ready');
+          if (result.page < result.pages) {
+            void load({ ...criteria, page: result.page + 1, pageSize: result.pageSize }).then(next => {
+              if (!controller.signal.aborted) preloadModelThumbnails(next.items);
+            }).catch(() => { /* A failed prefetch is retried when the page is opened. */ });
+          }
+        }
       }).catch(() => { if (!controller.signal.aborted) setStatus('error'); });
-    }, 250);
+    };
+    const timer = load.hasRequest(criteria) ? undefined : setTimeout(showPage, 250);
+    if (timer === undefined) showPage();
     return () => { clearTimeout(timer); controller.abort(); };
   }, [active, criteria, retry]);
   const fetchDescription = async (model: Model) => {
@@ -138,15 +171,7 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
     setInfoModel(model);
     if (details?.id !== model.id) void fetchDescription(model);
   };
-  useEffect(() => {
-    if (!infoModel) return;
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopImmediatePropagation(); event.preventDefault(); closeInfo(); } };
-    window.addEventListener('keydown', onKey, true);
-    const timer = window.setTimeout(() => modal.current?.querySelector<HTMLElement>('.model-modal-close')?.focus(), 0);
-    return () => { window.removeEventListener('keydown', onKey, true); clearTimeout(timer); previous?.focus(); };
-  }, [infoModel]);
-  return <section className="model-browser" aria-labelledby="models-title" aria-busy={status === 'loading'}>
+  return <section ref={browser} className="model-browser" aria-labelledby="models-title" aria-busy={status === 'loading'}>
     <h1 id="models-title" className="ds-title--page">{t('Models')}</h1>
     <p>{t('Discover models and open their original pages. Download files there, then import them in Prepare.')}</p>
     <form className="model-search" onSubmit={event => event.preventDefault()}>
@@ -176,31 +201,37 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
     <div className="model-grid" ref={grid}>{models.map(model => <div key={model.id} className="model-cell"><a className="model-card" href={model.url} target="_blank" rel="noopener noreferrer"
       onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openInfo(model); }}>
       <div className="model-thumbnail"><Thumbnail url={model.thumbnail} /></div>
-      <div className="model-card-copy"><h2>{model.title}</h2><p>{model.source} · {model.fileFormats.length ? model.fileFormats.map(ext => `.${ext}`).join(', ') : t('No verified file formats')}</p>{model.estimatedFileFormats.length > 0 && <p>{t('Estimated formats: {{formats}}', { formats: model.estimatedFileFormats.map(ext => `.${ext}`).join(', ') })}</p>}{(model.author || model.license) && <p>{[model.author, model.license].filter(Boolean).join(' · ')}</p>}{model.tags.length > 0 && <div className="model-tags">{model.tags.slice(0, 2).map(tag => <span key={tag} className="model-tag">{tag}</span>)}</div>}</div>
+      <div className="model-card-copy"><h2>{model.title}</h2><ModelFacts model={model} compact /></div>
     </a><div className="model-card-actions">
-      <button className="ds-btn ds-btn--sm" onClick={() => openInfo(model)}>{t('More info')}</button>
-      {new URL(model.url).hostname === 'makerworld.com' && <><button className="ds-btn ds-btn--sm" disabled={busy} onClick={() => void download(model)}>{t('Download 3MF')}</button>{openButton(model, 'ds-btn ds-btn--sm ds-btn--subtle model-card-open')}</>}
+      {openButton(model, 'ds-btn ds-btn--sm ds-btn--primary model-card-open')}
+      <button className="ds-btn ds-btn--sm ds-btn--subtle" onClick={() => openInfo(model)}>{t('More info')}</button>
+      <button className="ds-btn ds-btn--sm ds-btn--subtle" disabled={busy} onClick={() => void download(model)}>{t('Download 3MF')}</button>
     </div></div>)}</div>
-    {status === 'ready' && pages > 0 && <nav className="model-pagination" aria-label={t('Model pages')}><button className="ds-btn" disabled={(criteria.page || 1) <= 1} onClick={() => setCriteria(current => ({ ...current, page: (current.page || 1) - 1 }))}>{t('Previous')}</button><span>{t('Page {{page}} of {{pages}}', { page: criteria.page || 1, pages })}</span><button className="ds-btn" disabled={(criteria.page || 1) >= pages} onClick={() => setCriteria(current => ({ ...current, page: (current.page || 1) + 1 }))}>{t('Next')}</button></nav>}
-    {infoModel && <div className="model-modal-backdrop" onClick={event => { if (event.target === event.currentTarget) closeInfo(); }}>
-      <div className="model-modal" role="dialog" aria-modal="true" aria-labelledby="model-modal-title" ref={modal}>
-        <button className="ds-icon-btn model-modal-close" type="button" aria-label={t('Close')} onClick={closeInfo}>✕</button>
-        <div className="model-modal-thumb"><Thumbnail url={infoModel.thumbnail} /></div>
-        <div className="model-modal-copy">
+    {status === 'ready' && pages > 0 && <nav className="model-pagination" aria-label={t('Model pages')}><button className="ds-btn" disabled={(criteria.page || 1) <= 1} onClick={() => setCriteria(current => ({ ...current, page: (current.page || 1) - 1 }))}>{t('Previous')}</button><span>{t('Page {{page}} of {{pages}}', { page: criteria.page || 1, pages })}</span><button className="ds-btn" disabled={(criteria.page || 1) >= pages} onClick={() => {
+      setCriteria(current => ({ ...current, page: (current.page || 1) + 1 }));
+      if (browser.current) browser.current.scrollTop = 0;
+    }}>{t('Next')}</button></nav>}
+    {active && infoModel && <Dialog onClose={closeInfo} aria-labelledby="model-modal-title">
+      <div className="model-detail">
+        <header className="ds-dialog__head">
           <h2 id="model-modal-title">{infoModel.title}</h2>
-          <p>{platformName(infoModel.source)} · {infoModel.fileFormats.length ? infoModel.fileFormats.map(ext => `.${ext}`).join(', ') : t('No verified file formats')}</p>
-          {infoModel.estimatedFileFormats.length > 0 && <p>{t('Estimated formats: {{formats}}', { formats: infoModel.estimatedFileFormats.map(ext => `.${ext}`).join(', ') })}</p>}
-          {(infoModel.author || infoModel.license) && <p>{[infoModel.author, infoModel.license].filter(Boolean).join(' · ')}</p>}
-          {infoModel.tags.length > 0 && <div className="model-tags">{infoModel.tags.map(tag => <span key={tag} className="model-tag">{tag}</span>)}</div>}
-          <p className="model-modal-description" role="status">{details?.id === infoModel.id ? details.text : t('Loading description…')}</p>
-          {downloadStatus && <p className="model-modal-status" role="status">{t(downloadStatus)}</p>}
-          {opening && <span className="ds-visually-hidden" role="status">{openingLabel}</span>}
-          <div className="model-modal-actions">
-            <a className="ds-btn ds-btn--primary" href={infoModel.url} target="_blank" rel="noopener noreferrer">{t('Open in {{platform}}', { platform: platformName(infoModel.source) })}</a>
-            {new URL(infoModel.url).hostname === 'makerworld.com' && <><button className="ds-btn" disabled={busy} onClick={() => void download(infoModel)}>{t('Download 3MF')}</button>{openButton(infoModel, 'ds-btn ds-btn--subtle')}</>}
+          <button className="ds-btn ds-btn--sm ds-btn--subtle" type="button" onClick={closeInfo}>{t('Close')}</button>
+        </header>
+        <div className="ds-dialog__body">
+          <div className="model-thumbnail model-detail-thumbnail"><Thumbnail url={infoModel.thumbnail} /></div>
+          <div className="model-detail-copy">
+            <ModelFacts model={infoModel} />
+            <p className="model-modal-description" role="status">{details?.id === infoModel.id ? details.text : t('Loading description…')}</p>
+            {downloadStatus && <p className="model-modal-status" role="status">{t(downloadStatus)}</p>}
           </div>
         </div>
+        <footer className="ds-dialog__foot">
+          <a className="ds-btn ds-btn--subtle" href={infoModel.url} target="_blank" rel="noopener noreferrer">{t('Open in {{platform}}', { platform: platformName(infoModel.source) })}</a>
+          <button className="ds-btn" disabled={busy} onClick={() => void download(infoModel)}>{t('Download 3MF')}</button>
+          {openButton(infoModel, 'ds-btn ds-btn--primary')}
+          {opening && <span className="ds-visually-hidden" role="status">{openingLabel}</span>}
+        </footer>
       </div>
-    </div>}
+    </Dialog>}
   </section>;
 }
