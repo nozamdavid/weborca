@@ -16,6 +16,7 @@
   .mobile-import-bar .ds-btn { display: inline-flex; align-items: center; }
   .orca-app #toast-container { top: auto; bottom: 200px; width: calc(100vw - 24px); }
   .orca-app:has(.prepare-page:not([hidden])) #toast-container { bottom: 16px; }
+  .orca-app:has(.wm-header):has(.prepare-page:not([hidden])) #toast-container { top: calc(max(12px, env(safe-area-inset-top)) + 68px); bottom: auto; width: calc(100vw - 32px); }
   .orca-app:has(.mobile-flow) #toast-container { bottom: 84px !important; }
   .orca-app:has(.prepare-page[hidden]) #toast-container { left: 12px; width: calc(100vw - 124px); transform: none; }
   .orca-app #toast-container .toast-item { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }

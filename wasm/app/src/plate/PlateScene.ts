@@ -977,7 +977,10 @@ export class PlateScene {
       return mesh;
     };
 
-    const orange = (active: boolean) => (active ? '#ff7a45' : 'rgba(255, 122, 69, 0.6)');
+    const light = this.isLightTheme();
+    const orange = (active: boolean) => light
+      ? (active ? '#b8420f' : 'rgba(184, 66, 15, 0.72)')
+      : (active ? '#ff7a45' : 'rgba(255, 122, 69, 0.6)');
     for (const plate of this.plates) {
       const [ox, oy, oz] = plate.origin;
       const active = plate.index === this.activePlateIndex;
@@ -2775,6 +2778,10 @@ export class PlateScene {
     }
   };
 
+  private isLightTheme(): boolean {
+    return document.documentElement.dataset.theme === 'light' && !this.container.closest('.wm-viewport');
+  }
+
   private animate = (): void => {
     this.animationFrameId = null;
     if (this.isDestroyed || !this.hasVisibleSize || !this.isInViewport || document.hidden) return;
@@ -2782,12 +2789,13 @@ export class PlateScene {
     const moving = this.orbitControls.update();
     this.cutPreview.frame();
     this.updateSelectionOutline();
-    const light = document.documentElement.dataset.theme === 'light';
+    const light = this.isLightTheme();
     if (this.scene.userData.lightTheme !== light) {
       this.scene.userData.lightTheme = light;
       this.updateVolumeMaterials();
       (this.scene.background as THREE.Color).setHex(light ? 0xe7e9ec : 0x1e1e24);
       this.bedFloorMaterial?.color.setHex(this.bedTexture ? 0xffffff : light ? 0xd4d8dd : 0x27272a);
+      this.rebuildPlates();
     }
     // See-through when the camera is below the bed, so parts stay visible from underneath.
     if (this.bedFloorMaterial) this.bedFloorMaterial.opacity = this.camera.position.z < 0 ? 0.25 : 1;

@@ -218,7 +218,7 @@ export const SettingsSearchBar: React.FC<SettingsSearchBarProps> = ({
         role="combobox"
         aria-autocomplete="list"
         aria-expanded={isOpen}
-        aria-controls={resultsId}
+        aria-controls={isOpen ? resultsId : undefined}
         aria-activedescendant={
           activeIndex >= 0 ? `${prefix}search-result-option-${activeIndex}` : undefined
         }

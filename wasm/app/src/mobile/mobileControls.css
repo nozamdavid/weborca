@@ -36,7 +36,11 @@
   :is(.wm-sheet, .settings-dialog-modal) .settings-group .group-title { margin: 0; }
   :is(.wm-sheet, .settings-dialog-modal) .settings-group :is(.group-lines, .multi-option-inputs) { display: flex; flex-direction: column; gap: var(--space-4); }
   .settings-dialog-modal .settings-dialog-content { gap: var(--space-6); }
-  .settings-dialog-modal .settings-group .setting-row:has(input[type=checkbox]) .setting-control-wrapper { width: auto; flex: 0 0 auto; }
+  :is(.wm-sheet, .settings-dialog-modal) .settings-group .setting-row:has(input[type=checkbox]) { flex-wrap: wrap; }
+  :is(.wm-sheet, .settings-dialog-modal) .settings-group .setting-row:has(input[type=checkbox]) > .setting-label {
+    flex: 1 1 0; max-width: none; min-width: 0; white-space: normal; overflow-wrap: anywhere;
+  }
+  :is(.wm-sheet, .settings-dialog-modal) .settings-group .setting-row:has(input[type=checkbox]) .setting-control-wrapper { width: auto; flex: 0 0 auto; }
   .settings-dialog-modal .bed-assets-settings { gap: var(--space-4) !important; }
   .settings-dialog-modal .bed-assets-settings .wm-field { align-items: stretch !important; }
   .wm-sheet #object-settings-editor { --canvas-bg: var(--surface-2); color: var(--text-primary); }

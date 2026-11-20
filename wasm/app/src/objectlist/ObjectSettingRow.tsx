@@ -16,7 +16,7 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
   onChange,
   onRemove
 }) => {
-    const { t } = useTranslation();
+  const { t } = useTranslation();
   const configDefs = useAppStore((state) => state.configDefs);
   const def = configDefs[optionKey];
 
@@ -35,16 +35,11 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
       const currentColor = currentValNum > 0 ? (rawColors[currentValNum - 1] || defaultColors[(currentValNum - 1) % defaultColors.length]) : null;
 
       return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%' }}>
+        <div className="object-setting-extruder-wrap">
           {currentColor && (
             <span
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                backgroundColor: currentColor,
-                flexShrink: 0
-              }}
+              className="object-setting-swatch"
+              style={{ backgroundColor: currentColor }}
             />
           )}
           <select
@@ -52,8 +47,7 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
             data-testid={`override-input-${optionKey}`}
             value={value || '0'}
             onChange={(e) => onChange(e.target.value)}
-            className="setting-select"
-            style={{ flex: 1, fontSize: '0.8rem' }}
+            className="setting-select object-setting-select"
           >
             <option value="0">{t("0: Default (Inherit)")}</option>
             {Array.from({ length: count }, (_, i) => {
@@ -91,8 +85,7 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
           data-testid={`override-input-${optionKey}`}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="setting-select"
-          style={{ width: '100%', fontSize: '0.8rem' }}
+          className="setting-select object-setting-select-full"
         >
           {def.enumValues.map((val, idx) => (
             <option key={val} value={val}>
@@ -104,7 +97,7 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
     }
 
     return (
-      <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 4 }}>
+      <div className="object-setting-value-wrap">
         <input
           type={optType === 'int' || optType === 'float' || optType === 'percent' ? 'number' : 'text'}
           id={`override-input-${optionKey}`}
@@ -112,9 +105,8 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className={optType === 'int' || optType === 'float' ? 'setting-number object-setting-input' : 'setting-text object-setting-input'}
-          style={{ flex: 1, fontSize: '0.8rem' }}
         />
-        {unit && <span className="setting-unit" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{unit}</span>}
+        {unit && <span className="setting-unit object-setting-unit">{unit}</span>}
       </div>
     );
   };
@@ -125,13 +117,6 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
       data-testid={`override-row-${optionKey}`}
       className={`setting-row object-setting-row ${optType === 'bool' || optType === 'bools' ? 'object-setting-row-bool' : 'wm-field'}`}
       title={tooltip}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-        gap: 8
-      }}
     >
       <label
         htmlFor={`override-input-${optionKey}`}
@@ -141,27 +126,16 @@ export const ObjectSettingRow: React.FC<ObjectSettingRowProps> = ({
         {label}
       </label>
 
-      <div className="object-setting-controls" style={{ flex: '1 1 auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-        <div style={{ flex: 1 }}>{renderInput()}</div>
+      <div className="object-setting-controls">
+        <div className="object-setting-input-wrap">{renderInput()}</div>
         <button
           type="button"
           id={`override-remove-${optionKey}`}
           data-testid={`override-remove-${optionKey}`}
           onClick={onRemove}
+          aria-label={t("Remove override")}
           title={t("Remove override")}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            padding: 2,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 4
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+          className="object-setting-remove-btn"
         >
           <TrashIcon size={14} />
         </button>

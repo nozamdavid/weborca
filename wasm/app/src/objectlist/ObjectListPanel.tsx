@@ -7,9 +7,14 @@ import { ObjectTreeItem } from './ObjectTreeItem';
 import { instancesInGroup } from './plateGroups';
 import { ObjectSettingsEditor } from './ObjectSettingsEditor';
 import { useTranslation } from "../i18n";
+import './ObjectSettingsEditor.css';
 
-export const ObjectListPanel: React.FC = () => {
-    const { t } = useTranslation();
+export interface ObjectListPanelProps {
+  hideHeader?: boolean;
+}
+
+export const ObjectListPanel: React.FC<ObjectListPanelProps> = ({ hideHeader = false }) => {
+  const { t } = useTranslation();
   const { objects, selectedObjectId, isLoading, error, refreshTree } = useObjectListStore();
   const hasSelection = objects.some((object) => object.id === selectedObjectId);
   const plateObjects = usePlateStore((state) => state.objects);
@@ -40,63 +45,40 @@ export const ObjectListPanel: React.FC = () => {
       id="object-list-panel"
       data-testid="object-list-panel"
       className="orca-object-list-panel"
-      style={{
-        width: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--canvas-bg)',
-        borderRight: '1px solid var(--panel-bg)',
-        flexShrink: 0,
-        overflow: 'hidden',
-        zIndex: 5
-      }}
     >
-      {/* Panel Title Bar */}
-      <div
-        style={{
-          padding: '10px 14px',
-          background: '#202023',
-          borderBottom: '1px solid var(--panel-bg)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-color)' }}>
-            {t("Objects")}</span>
-          <span
-            id="objects-count-badge"
-            data-testid="objects-count-badge"
-            style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              color: 'var(--text-muted)',
-              fontSize: '0.7rem',
-              padding: '1px 6px',
-              borderRadius: 10
-            }}
-          >
-            {objects.length}
+      {/* Panel Title Bar (hidden when embedded in an already-titled section/sheet) */}
+      {!hideHeader ? (
+        <div className="object-list-header">
+          <div className="object-list-header-title-wrap">
+            <span className="object-list-header-title">
+              {t("Objects")}
+            </span>
+            <span
+              id="objects-count-badge"
+              data-testid="objects-count-badge"
+              className="object-list-count-badge"
+            >
+              {objects.length}
+            </span>
+          </div>
+
+          {isLoading && (
+            <span className="object-list-loading">
+              {t("Updating...")}
+            </span>
+          )}
+        </div>
+      ) : isLoading ? (
+        <div className="object-list-status-row">
+          <span className="object-list-loading">
+            {t("Updating...")}
           </span>
         </div>
-
-        {isLoading && (
-          <span style={{ fontSize: '0.75rem', color: '#009688' }}>
-            {t("Updating...")}</span>
-        )}
-      </div>
+      ) : null}
 
       {/* Error Notice */}
       {error && (
-        <div
-          style={{
-            padding: '6px 12px',
-            background: 'rgba(239, 68, 68, 0.15)',
-            color: '#f87171',
-            fontSize: '0.75rem',
-            borderBottom: '1px solid rgba(239, 68, 68, 0.3)'
-          }}
-        >
+        <div className="object-list-error">
           {error}
         </div>
       )}
@@ -105,69 +87,65 @@ export const ObjectListPanel: React.FC = () => {
       <div
         id="object-tree-container"
         data-testid="object-tree-container"
-        style={{
-          flex: '0 0 auto',
-          minHeight: 0,
-          maxHeight: 260,
-          overflowY: 'auto',
-          padding: '8px 10px',
-          borderBottom: '1px solid var(--panel-bg)'
-        }}
+        className="object-tree-container"
       >
         {objects.length === 0 ? (
           <div
             id="empty-objects-message"
             data-testid="empty-objects-message"
-            style={{
-              padding: '24px 12px',
-              textAlign: 'center',
-              color: 'var(--text-dim)',
-              fontSize: '0.8rem'
-            }}
+            className="object-list-empty"
           >
             {t("No objects loaded.")}<br />
-            {t("Import a 3D model to begin.")}</div>
+            {t("Import a 3D model to begin.")}
+          </div>
         ) : (
-          groups.map((group) => (
-            <div key={group.key} className="object-plate-group" data-testid={`plate-group-${group.key}`}>
-              <div
-                role="button"
-                tabIndex={0}
-                data-testid={`plate-group-header-${group.key}`}
-                aria-pressed={group.plateIndex === activePlateIndex}
-                onClick={() => group.plateIndex !== null && setActivePlate(group.plateIndex)}
-                onKeyDown={(e) => {
-                  if ((e.key === 'Enter' || e.key === ' ') && group.plateIndex !== null) {
-                    e.preventDefault();
-                    setActivePlate(group.plateIndex);
-                  }
-                }}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  padding: '4px 8px',
-                  margin: '4px 0 2px',
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                  borderRadius: 4,
-                  cursor: group.plateIndex === null ? 'default' : 'pointer',
-                  color: group.plateIndex === activePlateIndex ? '#009688' : 'var(--text-muted)',
-                  background: group.plateIndex === activePlateIndex ? 'rgba(0, 150, 136, 0.12)' : 'rgba(255, 255, 255, 0.04)'
-                }}
-              >
-                <span>{group.title}</span>
-                <span data-testid={`plate-group-count-${group.key}`}>{group.objects.length}</span>
+          groups.map((group) => {
+            const isActivePlate = group.plateIndex === activePlateIndex;
+            const isUnassigned = group.plateIndex === null;
+            return (
+              <div key={group.key} className="object-plate-group" data-testid={`plate-group-${group.key}`}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  data-testid={`plate-group-header-${group.key}`}
+                  aria-pressed={isActivePlate}
+                  onClick={() => !isUnassigned && setActivePlate(group.plateIndex!)}
+                  onKeyDown={(e) => {
+                    if ((e.key === 'Enter' || e.key === ' ') && !isUnassigned) {
+                      e.preventDefault();
+                      setActivePlate(group.plateIndex!);
+                    }
+                  }}
+                  className={`object-plate-group-header${isActivePlate ? ' is-active' : ''}${isUnassigned ? ' is-unassigned' : ''}`}
+                >
+                  <span className="object-plate-group-title">{group.title}</span>
+                  <span className="object-plate-group-count" data-testid={`plate-group-count-${group.key}`}>
+                    {group.objects.length}
+                  </span>
+                </div>
+                {group.objects.map((obj) => (
+                  <ObjectTreeItem
+                    key={`${group.key}:${obj.id}`}
+                    object={obj}
+                    groupKey={group.key}
+                    primaryGroup={groups.find((g) => g.instances.has(obj.id)) === group}
+                    plateIndex={group.plateIndex}
+                    instanceIds={group.instances.get(obj.id)!}
+                    groupIds={group.objects.map((o) => o.id)}
+                  />
+                ))}
               </div>
-              {group.objects.map((obj) => <ObjectTreeItem key={`${group.key}:${obj.id}`} object={obj} groupKey={group.key} primaryGroup={groups.find((g) => g.instances.has(obj.id)) === group} plateIndex={group.plateIndex} instanceIds={group.instances.get(obj.id)!} groupIds={group.objects.map((o) => o.id)} />)}
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
       {/* The sidebar or mobile sheet scrolls the full selected editor. */}
-      {hasSelection && <div>
-        <ObjectSettingsEditor />
-      </div>}
+      {hasSelection && (
+        <div className="object-list-editor-wrap">
+          <ObjectSettingsEditor />
+        </div>
+      )}
     </aside>
   );
 };
