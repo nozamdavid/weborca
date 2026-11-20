@@ -40,7 +40,7 @@ export const SettingsLine: React.FC<SettingsLineProps> = ({ line, kind }) => {
     return (
       <div
         id={`setting-row-${line.key}`}
-        className={`setting-row ${isHighlighted ? 'highlighted-row' : ''}`}
+        className={`setting-row ${def?.multiline ? 'setting-row--multiline' : ''} ${isHighlighted ? 'highlighted-row' : ''}`}
         title={tooltip ? t(tooltip) : ''}
       >
         <label

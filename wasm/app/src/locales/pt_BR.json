@@ -7930,5 +7930,10 @@
   "Printer Settings": "Configurações da Impressora",
   "Filament Settings": "Configurações de Filamento",
   "Height range Modifier": "Modificador de Faixa de Altura",
-  "Range:": "Intervalo:"
+  "Range:": "Intervalo:",
+  "Search models…": "Pesquisar modelos…",
+  "Clear search": "Limpar pesquisa",
+  "Likes": "Curtidas",
+  "Downloads": "Downloads",
+  "Upload date": "Data de envio"
 }

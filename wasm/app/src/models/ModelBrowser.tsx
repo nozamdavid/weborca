@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog } from '../components/Dialog';
 import { useTranslation } from '../i18n';
 import { directThumbnail, createCatalogPageLoader, preloadModelThumbnails, fetchStats, fetchModel, type CatalogQuery, type CatalogStats, type Model } from './sources';
 import './models.css';
+import { renderSafeDescriptionHtml } from './descriptionHtml';
 import { makerWorldDownload, makerWorldFile } from '../printers/bambuCloud';
 import { requestOpenProject } from '../shell/projectActions';
 import { useHelpStore } from '../shell/HelpDialogs';
@@ -38,6 +39,15 @@ function Thumbnail({ url }: { url?: string }) {
 export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare: () => void }) {
   const { t } = useTranslation();
   const [criteria, setCriteria] = useState<CatalogQuery>({ page: 1, pageSize: 24, sort: 'newest' });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterLabels = {
+    q: 'Search models', category: 'Category', author: 'Author (exact)', license: 'License (exact)', subcategory: 'Subcategory (exact)',
+    minLikes: 'Minimum likes', maxLikes: 'Maximum likes', minDownloads: 'Minimum downloads', maxDownloads: 'Maximum downloads',
+    uploadedAfter: 'Uploaded after', uploadedBefore: 'Uploaded before', hasThumbnail: 'Thumbnail',
+  } as const;
+  const activeFilters = (Object.keys(filterLabels) as (keyof typeof filterLabels)[]).filter(key => criteria[key] !== undefined && criteria[key] !== '');
+  const advancedCount = activeFilters.filter(key => key !== 'q' && key !== 'category').length + (criteria.formats?.length || 0);
+  const hasFilters = activeFilters.length > 0 || !!criteria.formats?.length || criteria.sort !== 'newest';
   const grid = useRef<HTMLDivElement>(null);
   const browser = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -65,8 +75,10 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const request = useRef<AbortController>();
   const detailsRequest = useRef<AbortController>();
-  const [details, setDetails] = useState<{ id: string; text: string }>();
+  const [details, setDetails] = useState<{ id: string; text: string; html?: string }>();
   const [infoModel, setInfoModel] = useState<Model>();
+  const descriptionHtml = details?.id === infoModel?.id ? details?.html : undefined;
+  const renderedDescription = useMemo(() => descriptionHtml ? renderSafeDescriptionHtml(descriptionHtml, infoModel?.url) : null, [descriptionHtml, infoModel?.url]);
   const change = (patch: Partial<CatalogQuery>) => { setCriteria(current => ({ ...current, ...patch, page: 1 })); setDetails(undefined); detailsRequest.current?.abort(); };
   const [downloadStatus, setDownloadStatus] = useState('');
   const [busy, setBusy] = useState(false);
@@ -163,7 +175,9 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
     setDetails({ id: model.id, text: t('Loading description…') });
     try {
       const result = await fetchModel(model.id, controller.signal);
-      if (!controller.signal.aborted) setDetails({ id: model.id, text: result.description || t('No description available.') });
+      if (!controller.signal.aborted) setDetails(result.descriptionHtml?.trim()
+        ? { id: model.id, text: result.description || '', html: result.descriptionHtml }
+        : { id: model.id, text: result.description || t('No description available.') });
     } catch { if (!controller.signal.aborted) setDetails({ id: model.id, text: t('Could not load description. Try again.') }); }
   };
   const closeInfo = () => setInfoModel(undefined);
@@ -172,32 +186,57 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
     if (details?.id !== model.id) void fetchDescription(model);
   };
   return <section ref={browser} className="model-browser" aria-labelledby="models-title" aria-busy={status === 'loading'}>
-    <h1 id="models-title" className="ds-title--page">{t('Models')}</h1>
+    <header className="model-header"><h1 id="models-title" className="ds-title--page">{t('Models')}</h1>
     <p>{t('Discover models and open their original pages. Download files there, then import them in Prepare.')}</p>
+    </header>
+    <div className="model-controls">
     <form className="model-search" onSubmit={event => event.preventDefault()}>
-      <label>{t('Search models')}<input className="ds-input" type="search" value={criteria.q || ''} onChange={event => change({ q: event.target.value })} /></label>
+      <div className="model-search-field">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4 4" /></svg>
+        <label className="ds-visually-hidden" htmlFor="model-search-input">{t('Search models')}</label>
+        <input id="model-search-input" className="ds-input" type="search" placeholder={t('Search models…')} value={criteria.q || ''} onChange={event => change({ q: event.target.value })} />
+        {criteria.q && <button type="button" className="model-search-clear" aria-label={t('Clear search')} onClick={() => change({ q: '' })}>×</button>}
+      </div>
       <label>{t('Sort')}<select className="ds-select" value={criteria.sort} onChange={event => change({ sort: event.target.value as CatalogQuery['sort'] })}>
         {['newest', 'oldest', 'relevance', 'likes', 'downloads'].map(value => <option key={value} value={value}>{t(value)}</option>)}
       </select></label>
       <label>{t('Category')}<select className="ds-select" value={criteria.category || ''} onChange={event => change({ category: event.target.value })}>
         <option value="">{t('All categories')}</option>{stats?.categories.map(choice => <option key={choice.name}>{choice.name}</option>)}
       </select></label>
-      <button className="ds-btn" type="button" onClick={() => setCriteria(current => ({ page: 1, pageSize: current.pageSize, sort: 'newest' }))}>{t('Clear filters')}</button>
+      <button className="ds-btn model-filter-toggle" type="button" aria-expanded={filtersOpen} aria-controls="model-advanced-panel" onClick={() => setFiltersOpen(value => !value)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><path d="M4 7h7m4 0h5M4 17h3m4 0h9" /><circle cx="13" cy="7" r="2" /><circle cx="9" cy="17" r="2" /></svg>
+        {t('Advanced filters')}{advancedCount > 0 && <span className="model-filter-count">{advancedCount}</span>}
+      </button>
+      <button className="ds-btn ds-btn--ghost" type="button" disabled={!hasFilters} onClick={() => { setCriteria(current => ({ page: 1, pageSize: current.pageSize, sort: 'newest' })); setDetails(undefined); detailsRequest.current?.abort(); }}>{t('Clear filters')}</button>
     </form>
-    <details className="model-advanced"><summary>{t('Advanced filters')}</summary><div className="model-filter-fields">
+    <div id="model-advanced-panel" className="model-advanced" hidden={!filtersOpen}><div className="model-filter-fields">
       {(['author', 'license', 'subcategory'] as const).map(key => <label key={key}>{t(key === 'author' ? 'Author (exact)' : key === 'license' ? 'License (exact)' : 'Subcategory (exact)')}<input className="ds-input" value={criteria[key] || ''} list={key === 'subcategory' ? undefined : `model-${key}`} onChange={event => change({ [key]: event.target.value })} />{key !== 'subcategory' && <datalist id={`model-${key}`}>{stats?.[key === 'author' ? 'authors' : 'licenses'].map(choice => <option key={choice.name} value={choice.name} />)}</datalist>}</label>)}
-      {([['minLikes', 'Minimum likes'], ['maxLikes', 'Maximum likes'], ['minDownloads', 'Minimum downloads'], ['maxDownloads', 'Maximum downloads']] as const).map(([key, label]) => <label key={key}>{t(label)}<input className="ds-input" type="number" min="0" step="1" value={criteria[key] ?? ''} onChange={event => change({ [key]: event.target.value === '' ? undefined : Number(event.target.value) })} /></label>)}
-      {([['uploadedAfter', 'Uploaded after'], ['uploadedBefore', 'Uploaded before']] as const).map(([key, label]) => <label key={key}>{t(label)}<input className="ds-input" type="date" value={criteria[key] || ''} onChange={event => change({ [key]: event.target.value })} /></label>)}
       <label>{t('Thumbnail')}<select className="ds-select" value={criteria.hasThumbnail === undefined ? '' : String(criteria.hasThumbnail)} onChange={event => change({ hasThumbnail: event.target.value === '' ? undefined : event.target.value === 'true' })}><option value="">{t('Any')}</option><option value="true">{t('With thumbnail')}</option><option value="false">{t('Without thumbnail')}</option></select></label>
-    </div><fieldset className="model-formats"><legend>{t('Verified file formats (match any)')}</legend>{stats?.formats.map(choice => <label key={choice.name}><input type="checkbox" checked={criteria.formats?.includes(choice.name) || false} onChange={event => change({ formats: event.target.checked ? [...(criteria.formats || []), choice.name] : criteria.formats?.filter(format => format !== choice.name) })} />.{choice.name}</label>)}</fieldset></details>
+    </div>
+    <div className="model-range-fields">
+      {([
+        ['Likes', ['minLikes', 'Minimum likes'], ['maxLikes', 'Maximum likes']],
+        ['Downloads', ['minDownloads', 'Minimum downloads'], ['maxDownloads', 'Maximum downloads']],
+        ['Upload date', ['uploadedAfter', 'Uploaded after'], ['uploadedBefore', 'Uploaded before']],
+      ] as const).map(([label, ...fields]) => <fieldset className="model-range" key={label}><legend>{t(label)}</legend><div>{fields.map(([key, name]) => <label key={key}><span className="ds-visually-hidden">{t(name)}</span><input className="ds-input" type={label === 'Upload date' ? 'date' : 'number'} aria-label={t(name)} placeholder={t(name)} min={label === 'Upload date' ? undefined : '0'} step={label === 'Upload date' ? undefined : '1'} value={criteria[key] ?? ''} onChange={event => change({ [key]: event.target.value === '' ? undefined : label === 'Upload date' ? event.target.value : Number(event.target.value) })} /></label>)}</div></fieldset>)}
+    </div>
+    <fieldset className="model-formats"><legend>{t('Verified file formats (match any)')}{!!criteria.formats?.length && <span className="model-filter-count">{criteria.formats.length}</span>}</legend><div className="model-format-list">{stats?.formats.map(choice => <label className="model-format-chip" key={choice.name}><input className="ds-visually-hidden" type="checkbox" checked={criteria.formats?.includes(choice.name) || false} onChange={event => change({ formats: event.target.checked ? [...(criteria.formats || []), choice.name] : criteria.formats?.filter(format => format !== choice.name) })} /><span>.{choice.name}</span></label>)}</div></fieldset></div>
+    </div>
+    <div className="model-results-bar">
     {statsError && <p>{t('Filter choices unavailable. Retry to load them.')} <button className="ds-btn" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></p>}
     <div role="status" aria-live="polite">
       {status === 'loading' && t('Loading catalog…')}
       {status === 'error' && <p>{t('Could not load the catalog. Check your connection and retry.')} <button className="ds-btn" onClick={() => setRetry(value => value + 1)}>{t('Retry')}</button></p>}
-      {status === 'ready' && (total ? t('{{count}} models', { count: total }) : t('No models found. Try another search or clear the filters.'))}
+      {status === 'ready' && (total ? t('{{count}} models', { count: total.toLocaleString() }) : t('No models found. Try another search or clear the filters.'))}
     </div>
+    {hasFilters && <div className="model-active-filters">
+      {activeFilters.map(key => <button className="model-active-filter" type="button" key={key} onClick={() => change({ [key]: undefined })} aria-label={t('Remove filter: {{filter}}', { filter: t(filterLabels[key]) })}>{t(filterLabels[key])}: {key === 'hasThumbnail' ? t(criteria.hasThumbnail ? 'With thumbnail' : 'Without thumbnail') : String(criteria[key])}<span aria-hidden="true">×</span></button>)}
+      {criteria.formats?.map(format => <button className="model-active-filter" type="button" key={format} aria-label={t('Remove filter: {{filter}}', { filter: `.${format}` })} onClick={() => change({ formats: criteria.formats?.filter(value => value !== format) })}>.{format}<span aria-hidden="true">×</span></button>)}
+      {criteria.sort !== 'newest' && <button className="model-active-filter" type="button" aria-label={t('Remove filter: {{filter}}', { filter: t('Sort') })} onClick={() => change({ sort: 'newest' })}>{t('Sort')}: {t(criteria.sort || 'newest')}<span aria-hidden="true">×</span></button>}
+    </div>}
     {downloadStatus && <p role="status">{t(downloadStatus)}</p>}
     {opening && !infoModel && <span className="ds-visually-hidden" role="status">{openingLabel}</span>}
+    </div>
     <div className="model-grid" ref={grid}>{models.map(model => <div key={model.id} className="model-cell"><a className="model-card" href={model.url} target="_blank" rel="noopener noreferrer"
       onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openInfo(model); }}>
       <div className="model-thumbnail"><Thumbnail url={model.thumbnail} /></div>
@@ -221,7 +260,11 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
           <div className="model-thumbnail model-detail-thumbnail"><Thumbnail url={infoModel.thumbnail} /></div>
           <div className="model-detail-copy">
             <ModelFacts model={infoModel} />
-            <p className="model-modal-description" role="status">{details?.id === infoModel.id ? details.text : t('Loading description…')}</p>
+            {details?.id === infoModel.id && details.html
+              ? <div className="model-modal-description model-modal-description--html">{renderedDescription || details.text || t('No description available.')}</div>
+              : details?.id === infoModel.id
+                ? <p className="model-modal-description">{details.text}</p>
+                : <p className="model-modal-description" role="status">{t('Loading description…')}</p>}
             {downloadStatus && <p className="model-modal-status" role="status">{t(downloadStatus)}</p>}
           </div>
         </div>

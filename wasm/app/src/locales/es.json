@@ -8829,5 +8829,9 @@
   "Select a printer to slice.": "Selecciona una impresora para laminar.",
   "Select a process preset to slice.": "Selecciona un perfil de proceso para laminar.",
   "Select a filament to slice.": "Selecciona un filamento para laminar.",
-  "Inactive": "Inactivo"
+  "Inactive": "Inactivo",
+  "Search models…": "Buscar modelos…",
+  "Likes": "Me gusta",
+  "Downloads": "Descargas",
+  "Upload date": "Fecha de subida"
 }

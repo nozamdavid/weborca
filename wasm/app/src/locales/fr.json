@@ -7930,5 +7930,10 @@
   "Printer Settings": "Paramètres de l'imprimante",
   "Filament Settings": "Réglages du filament",
   "Height range Modifier": "Modificateur de plage de hauteur",
-  "Range:": "Zone:"
+  "Range:": "Zone:",
+  "Search models…": "Rechercher des modèles…",
+  "Clear search": "Effacer la recherche",
+  "Likes": "J'aime",
+  "Downloads": "Téléchargements",
+  "Upload date": "Date de mise en ligne"
 }

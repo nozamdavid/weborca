@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { BedAssetsSettings } from '../plate/BedAssetsSettings';
 import { SettingsGroup } from './SettingsGroup';
@@ -9,6 +9,7 @@ import { SettingsSearchBar } from './SettingsSearchBar';
 import type { SettingsMode } from './types';
 import { Icon } from '../shell/Icon';
 import { useTranslation } from "../i18n";
+import { normalizeSlotColor } from './slotColor';
 import './settings-ui.css';
 
 export const SettingsDialog: React.FC = () => {
@@ -35,6 +36,38 @@ export const SettingsDialog: React.FC = () => {
   } = useAppStore();
 
   const config = useAppStore((s) => s.currentConfig);
+  const slotsTrack = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const updateSlotScroll = () => {
+    const track = slotsTrack.current;
+    setCanScrollLeft(Boolean(track && track.scrollLeft > 1));
+    setCanScrollRight(Boolean(track && track.scrollLeft + track.clientWidth < track.scrollWidth - 1));
+  };
+  const scrollSlots = (left: number) => slotsTrack.current?.scrollBy({ left, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  useEffect(() => {
+    const track = slotsTrack.current;
+    if (!track) return;
+    updateSlotScroll();
+    const observer = new ResizeObserver(updateSlotScroll);
+    observer.observe(track);
+    for (const chip of track.children) observer.observe(chip);
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || Math.abs(event.deltaX) >= Math.abs(event.deltaY) || track.scrollWidth <= track.clientWidth) return;
+      const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? track.clientWidth : 1);
+      if ((delta < 0 && track.scrollLeft > 0) || (delta > 0 && track.scrollLeft + track.clientWidth < track.scrollWidth)) {
+        event.preventDefault();
+        track.scrollLeft += delta;
+      }
+    };
+    track.addEventListener('wheel', onWheel, { passive: false });
+    return () => { observer.disconnect(); track.removeEventListener('wheel', onWheel); };
+  }, [activeDialog, selectedFilaments]);
+  useEffect(() => {
+    slotsTrack.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest', inline: 'nearest'
+    });
+  }, [activeDialog, activeFilamentSlot, selectedFilaments]);
   const initial = useRef<Record<string, string>>({});
   useEffect(() => { if (activeDialog) initial.current = { ...useAppStore.getState().currentConfig }; }, [activeDialog]);
   const requestClose = async () => {
@@ -115,32 +148,43 @@ export const SettingsDialog: React.FC = () => {
 
         {/* Filament Slot navigation (multi-material setups) */}
         {!isPrinter && selectedFilaments.length > 1 && (
-          <div
-            className="settings-dialog-slots"
-            style={{
-              display: 'flex',
-              gap: '8px',
-              padding: '8px 16px',
-              backgroundColor: 'var(--surface-2)',
-              borderBottom: '1px solid var(--border-default)',
-              alignItems: 'center',
-              overflowX: 'auto'
-            }}
-          >
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-              {t('Slot')}:
-            </span>
-            {selectedFilaments.map((fName, idx) => (
-              <button
-                key={idx}
-                type="button"
-                className={`btn btn-sm ${activeFilamentSlot === idx ? 'btn-primary' : 'btn-secondary'}`}
-                data-testid={`dialog-filament-slot-${idx}`}
-                onClick={() => openDialog('filament', idx)}
-              >
-                {t('Slot {{num}}', { num: idx + 1 })}: {fName}
-              </button>
-            ))}
+          <div className="settings-dialog-slots">
+            <span className="settings-slots-label">{t('Slot')}</span>
+            <div className={`settings-slots-viewport ${canScrollLeft ? 'can-scroll-left' : ''} ${canScrollRight ? 'can-scroll-right' : ''}`}>
+              <div className="settings-slots-track" ref={slotsTrack} onScroll={updateSlotScroll}>
+                {selectedFilaments.map((fName, idx) => {
+                  const color = normalizeSlotColor(config['filament_colour']?.split(';')[idx], idx);
+                  const label = `${t('Slot {{num}}', { num: idx + 1 })}: ${fName}`;
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      className="settings-slot-chip"
+                      style={{ '--slot-color': color } as React.CSSProperties}
+                      data-testid={`dialog-filament-slot-${idx}`}
+                      aria-pressed={activeFilamentSlot === idx}
+                      title={label}
+                      aria-label={label}
+                      onClick={() => openDialog('filament', idx)}
+                    >
+                      <span className="settings-slot-swatch" aria-hidden="true" />
+                      <span className="settings-slot-number">{idx + 1}</span>
+                      <span className="settings-slot-name">{fName}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {canScrollLeft && (
+                <button type="button" className="settings-slots-nav settings-slots-nav--left" aria-label={t('Previous')} onClick={() => scrollSlots(-200)}>
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m10 4-4 4 4 4" /></svg>
+                </button>
+              )}
+              {canScrollRight && (
+                <button type="button" className="settings-slots-nav settings-slots-nav--right" aria-label={t('Next')} onClick={() => scrollSlots(200)}>
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 4 4 4-4 4" /></svg>
+                </button>
+              )}
+            </div>
           </div>
         )}
 

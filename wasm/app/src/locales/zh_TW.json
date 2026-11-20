@@ -7924,5 +7924,10 @@
   "Printer Settings": "列印裝置設定",
   "Filament Settings": "線材設定",
   "Height range Modifier": "高度範圍修改器",
-  "Range:": "範圍:"
+  "Range:": "範圍:",
+  "Search models…": "搜尋模型…",
+  "Clear search": "清除搜尋",
+  "Likes": "按讚",
+  "Downloads": "下載次數",
+  "Upload date": "上傳日期"
 }

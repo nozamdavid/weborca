@@ -7930,5 +7930,10 @@
   "Printer Settings": "プリンター設定",
   "Filament Settings": "フィラメント設定",
   "Height range Modifier": "高さ範囲修正",
-  "Range:": "範囲:"
+  "Range:": "範囲:",
+  "Search models…": "モデルを検索…",
+  "Clear search": "検索をクリア",
+  "Likes": "いいね",
+  "Downloads": "ダウンロード",
+  "Upload date": "アップロード日"
 }

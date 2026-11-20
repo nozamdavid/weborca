@@ -20,7 +20,7 @@ export interface Model {
   fileFormats: string[]; estimatedFileFormats: string[]; author: string; license?: string;
   tags: string[];
   category?: string; subcategory?: string; likes: number; downloads: number;
-  uploadedAt?: string; sourceUpdatedAt?: string; description?: string;
+  uploadedAt?: string; sourceUpdatedAt?: string; description?: string; descriptionHtml?: string;
   categoryPath?: string[]; observedAt?: string; searchText: string;
 }
 export interface CatalogQuery {
@@ -111,7 +111,7 @@ function model(value: unknown): Model {
     fileFormats, estimatedFileFormats: item.estimated3mf === true && !fileFormats.includes('3mf') ? ['3mf'] : [],
     author, license: string(item.license), tags: [...new Set(strings(item.tags))], category: string(item.category), subcategory: string(item.subcategory),
     likes: number(item.likes), downloads: number(item.downloads), uploadedAt: string(item.uploadedAt),
-    sourceUpdatedAt: string(item.sourceUpdatedAt), description: string(item.description),
+    sourceUpdatedAt: string(item.sourceUpdatedAt), description: string(item.description), descriptionHtml: string(item.descriptionHtml),
     categoryPath: Array.isArray(item.categoryPath) ? strings(item.categoryPath) : undefined, observedAt: string(item.observedAt),
     searchText: [item.title, author, item.category, item.subcategory, ...strings(item.tags)].filter(v => typeof v === 'string').join(' ').toLowerCase(),
   };
