@@ -1292,7 +1292,10 @@ export class PlateScene {
 
   private objectGeneration = 0;
 
-  public async setObjects(objects: PlateObject[]): Promise<boolean> {
+  public async setObjects(
+    objects: PlateObject[],
+    colorsForCommit?: () => Map<number, Map<number, string>> | null,
+  ): Promise<boolean> {
     const generation = ++this.objectGeneration;
     const loaded = new Map();
     for (const obj of objects) {
@@ -1305,7 +1308,10 @@ export class PlateScene {
       loaded.set(obj.id, { mesh, viewer });
     }
     if (this.isDestroyed || generation !== this.objectGeneration) return false;
+    const colors = colorsForCommit?.();
+    if (colors === null) return false;
     // No awaits below: publish all scene mutations as one accepted update.
+    if (colors) this.volumeColors = colors;
     this.finishGroupDrag(false);
     const activeKeys = new Set<string>();
 

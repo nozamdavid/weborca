@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
+import type { PlateObject } from './types';
 import { useAppStore } from '../store/appStore';
 import { useObjectListStore } from '../objectlist/objectListStore';
 import { PlateContextMenu } from './PlateContextMenu';
@@ -39,6 +40,20 @@ import { useTranslation } from "../i18n";
 import { ChevronDown, ChevronRight } from '../objectlist/Icons';
 import './selectionPanel.css';
 
+function readVolumeColors(): Map<number, Map<number, string>> {
+  const palette = (useAppStore.getState().currentConfig.filament_colour || '').split(';').map(c => c.trim().slice(0, 7));
+  const colors = new Map<number, Map<number, string>>();
+  for (const object of useObjectListStore.getState().objects) {
+    const parts = new Map<number, string>();
+    for (const volume of object.volumes) {
+      const color = palette[Math.max(1, volume.extruder) - 1];
+      if (color) parts.set(volume.id, color);
+    }
+    colors.set(object.id, parts);
+  }
+  return colors;
+}
+
 function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
   const hrs = Math.floor(seconds / 3600);
@@ -65,6 +80,7 @@ export const PlateView: React.FC = () => {
 
   // Plate Store
   const objects = usePlateStore((s) => s.objects);
+  const displayedObjects = useRef<PlateObject[]>();
   const selectedObjectId = usePlateStore((s) => s.selectedObjectId);
   const selectedInstanceId = usePlateStore((s) => s.selectedInstanceId);
   const selectedPartId = useObjectListStore((s) => s.selectedVolumeId);
@@ -288,6 +304,7 @@ export const PlateView: React.FC = () => {
     return () => {
       scene.destroy();
       sceneRef.current = null;
+      displayedObjects.current = undefined;
       if (typeof window !== 'undefined' && (window as any).__plateScene === scene) {
         delete (window as any).__plateScene;
       }
@@ -356,18 +373,10 @@ export const PlateView: React.FC = () => {
   // Each part takes the colour of the filament it is assigned to (extruder 0 means the first filament).
   const filamentColours = useAppStore((s) => s.currentConfig['filament_colour']);
   useEffect(() => {
-    const palette = (filamentColours || '').split(';').map((c) => c.trim().slice(0, 7));
-    const colors = new Map<number, Map<number, string>>();
-    for (const obj of objectTree) {
-      const parts = new Map<number, string>();
-      for (const vol of obj.volumes) {
-        const colour = palette[Math.max(1, vol.extruder) - 1];
-        if (colour) parts.set(vol.id, colour);
-      }
-      colors.set(obj.id, parts);
+    if (!isRestoring && displayedObjects.current === objects) {
+      sceneRef.current?.setVolumeColors(readVolumeColors());
     }
-    sceneRef.current?.setVolumeColors(colors);
-  }, [objectTree, filamentColours, objects]);
+  }, [objectTree, filamentColours, objects, isRestoring]);
 
   const measureActive = usePlateStore((s) => s.measureActive);
   useEffect(() => { sceneRef.current?.setMeasureActive(measureActive); }, [measureActive]);
@@ -392,7 +401,7 @@ export const PlateView: React.FC = () => {
 
   // Update scene objects when objects change
   useEffect(() => {
-    if (sceneRef.current) {
+    if (sceneRef.current && !isRestoring) {
       const paintState = usePaintToolsStore.getState();
       if (paintState.isActive && paintState.selectedObjectId !== null) {
         if (!objects.some((o) => o.id === paintState.selectedObjectId)) {
@@ -402,12 +411,17 @@ export const PlateView: React.FC = () => {
       }
       const scene = sceneRef.current;
       let cancelled = false;
-      void scene.setObjects(objects).then((accepted) => {
-        if (accepted && !cancelled && sceneRef.current === scene) setMeshRevision((revision) => revision + 1);
+      // Undo/redo may replace both object IDs and part colors. Keep the current
+      // meshes and colors together until both sides of the restore are ready.
+      void scene.setObjects(objects, () => cancelled || useHistoryStore.getState().isRestoring ? null : readVolumeColors()).then((accepted) => {
+        if (accepted && !cancelled && sceneRef.current === scene) {
+          displayedObjects.current = objects;
+          setMeshRevision((revision) => revision + 1);
+        }
       }).catch((error) => console.error("[PlateView] Scene update failed:", error));
       return () => { cancelled = true; };
     }
-  }, [objects]);
+  }, [objects, isRestoring]);
 
   // Update selection in scene and stores
   useEffect(() => {
@@ -479,6 +493,7 @@ export const PlateView: React.FC = () => {
 
   // Re-query split-triangle overlays on layer, volume, or selection changes.
   useEffect(() => {
+    if (isRestoring || displayedObjects.current !== objects) return;
     let cancelled = false;
     const scene = sceneRef.current;
     scene?.clearToolOverlays();
@@ -518,7 +533,7 @@ export const PlateView: React.FC = () => {
       }
     }
     return () => { cancelled = true; };
-  }, [selectedObjectId, selectedVolumeId, paintLayer, isPaintingActive, meshRevision, paintOverlayRevision, isEngineReady, objectTree, filamentColours]);
+  }, [selectedObjectId, selectedVolumeId, paintLayer, isPaintingActive, meshRevision, paintOverlayRevision, isEngineReady, objectTree, filamentColours, objects, isRestoring]);
 
   useEffect(() => {
     const targetObj = objectTree.find((o) => o.id === selectedObjectId);
