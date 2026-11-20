@@ -65,6 +65,7 @@ function parseFilament(p: PresetItem) {
 export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true }) => {
   const { t } = useTranslation();
   const open = useWizardStore((s) => s.open);
+  const filamentsOnly = useWizardStore((s) => s.filamentsOnly);
   const setOpen = useWizardStore((s) => s.setOpen);
   const step = useWizardStore((s) => s.step);
   const setStep = useWizardStore((s) => s.setStep);
@@ -94,7 +95,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
   const [finishError, setFinishError] = useState('');
   const [isFinishing, setIsFinishing] = useState(false);
 
-  useEffect(() => { if (open) void loadPrinterCatalog().catch(() => {}); }, [open]);
+  useEffect(() => { if (open && !filamentsOnly) void loadPrinterCatalog().catch(() => {}); }, [open, filamentsOnly]);
 
   const handleClose = () => {
     setFinishError('');
@@ -127,7 +128,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
 
   // Load printer presets whenever vendor changes in Step 1
   useEffect(() => {
-    if (!open || !selectedVendor || !isEngineReady) return;
+    if (!open || filamentsOnly || !selectedVendor || !isEngineReady) return;
     let cancelled = false;
     (async () => {
       try {
@@ -150,7 +151,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
     return () => {
       cancelled = true;
     };
-  }, [open, selectedVendor, isEngineReady]);
+  }, [open, filamentsOnly, selectedVendor, isEngineReady]);
 
   // Load compatible filaments when entering Step 2
   useEffect(() => {
@@ -158,7 +159,8 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
     let cancelled = false;
     (async () => {
       try {
-        const printer = selectedPrinters[0] || useAppStore.getState().selectedPrinter;
+        const currentPrinter = useAppStore.getState().selectedPrinter;
+        const printer = filamentsOnly ? currentPrinter : selectedPrinters[0] || currentPrinter;
         let compNames: string[] = [];
         if (printer) {
           try {
@@ -177,7 +179,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
         if (!cancelled) {
           setCompatibleFilaments(list);
           // If no filaments selected yet, pre-select compatible ones or generic
-          if (selectedFilaments.length === 0 && list.length > 0) {
+          if (!filamentsOnly && selectedFilaments.length === 0 && list.length > 0) {
             const defaults = list.filter((f) => f.name.includes('Generic')).map((f) => f.name);
             selectAllFilaments(defaults.length > 0 ? defaults : list.slice(0, 5).map((f) => f.name));
           }
@@ -189,7 +191,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
     return () => {
       cancelled = true;
     };
-  }, [open, step, selectedPrinters, selectAllFilaments, isEngineReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, step, filamentsOnly, selectedPrinters, selectAllFilaments, isEngineReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Group printers by Model
   const printerModels = useMemo(() => {
@@ -239,10 +241,26 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
     return filamentGroups.flatMap(([, items]) => items.map((i) => i.name));
   }, [filamentGroups]);
 
+  const saveChoices = (printers: string[]) => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('orca.wizard', JSON.stringify({
+        printers, filaments: selectedFilaments, completedAt: new Date().toISOString()
+      }));
+    }
+    const wizard = useWizardStore.getState();
+    wizard.setAddedPrinters(printers);
+    wizard.setAddedFilaments(selectedFilaments);
+    handleClose();
+  };
+
   const handleFinish = async () => {
     setIsFinishing(true);
     setFinishError('');
     try {
+      if (filamentsOnly) {
+        saveChoices(useWizardStore.getState().addedPrinters);
+        return;
+      }
       let areaStr = '';
       if (customPrinter) {
         if (!customName.trim()) throw new Error(t('Enter a printer name.'));
@@ -322,18 +340,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
         await useAppStore.getState().chooseFilament(selectedFilaments[0], 0);
       }
 
-      const wizardData = {
-        printers: selectedPrinters,
-        filaments: selectedFilaments,
-        completedAt: new Date().toISOString()
-      };
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('orca.wizard', JSON.stringify(wizardData));
-      }
-      useWizardStore.getState().setAddedPrinters(selectedPrinters);
-      useWizardStore.getState().setAddedFilaments(selectedFilaments);
-
-      handleClose();
+      saveChoices(selectedPrinters);
     } catch (err) {
       setFinishError(err instanceof Error ? err.message : String(err));
       console.error('Wizard finish error:', err);
@@ -345,11 +352,11 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
   if (!open) return null;
 
   return (
-    <Dialog className="ds-scrim" onClose={handleClose} id="wizard-dialog" role="dialog" aria-modal="true" aria-label={t("Configuration wizard")}>
+    <Dialog className="ds-scrim" onClose={handleClose} id="wizard-dialog" role="dialog" aria-modal="true" aria-label={t(filamentsOnly ? "Filaments" : "Configuration wizard")}>
       <div className="wizard-modal ds-dialog ds-dialog--lg">
         {/* Header */}
         <div className="wizard-header ds-dialog__head">
-          <h2 className="ds-title ds-title--dialog">{t("Configuration Wizard")}</h2>
+          <h2 className="ds-title ds-title--dialog">{t(filamentsOnly ? "Filaments" : "Configuration Wizard")}</h2>
           <button
             id="wizard-close-x"
             className="ds-btn ds-btn--icon"
@@ -361,7 +368,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
         </div>
 
         {/* Steps indicator */}
-        <div className="wizard-steps-bar" id="wizard-step-indicator">
+        {!filamentsOnly && <div className="wizard-steps-bar" id="wizard-step-indicator">
           <div className={`wizard-step-pill ${step === 1 ? 'active' : step > 1 ? 'completed' : ''}`}>
             <span>1</span> {t("Printers & Nozzles")}</div>
           <span style={{ color: 'var(--text-secondary)' }}>›</span>
@@ -370,11 +377,11 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
           <span style={{ color: 'var(--text-secondary)' }}>›</span>
           <div className={`wizard-step-pill ${step === 3 ? 'active' : ''}`}>
             <span>3</span> {t("Summary")}</div>
-        </div>
+        </div>}
 
         {finishError && <p id="wizard-error" role="alert" className="wizard-error" style={{ color: 'var(--danger-fg)', margin: '8px 0', fontSize: '0.8125rem', fontWeight: 500 }}>{finishError}</p>}
-        {catalogLoading && <p role="status">{t('Loading...')}</p>}
-        {catalogError && <div role="alert"><p>{t('Failed to load printer catalog. Check your connection and retry.')}</p><button className="ds-btn" onClick={() => void loadPrinterCatalog().catch(() => {})}>{t('Retry')}</button></div>}
+        {!filamentsOnly && catalogLoading && <p role="status">{t('Loading...')}</p>}
+        {!filamentsOnly && catalogError && <div role="alert"><p>{t('Failed to load printer catalog. Check your connection and retry.')}</p><button className="ds-btn" onClick={() => void loadPrinterCatalog().catch(() => {})}>{t('Retry')}</button></div>}
         {/* Step 1: Printers & Nozzles */}
         {step === 1 && (
           <div className="wizard-body" id="wizard-step-1">
@@ -555,7 +562,18 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
             <div className="wizard-filament-groups">
               {filamentGroups.map(([brand, items]) => (
                 <div key={brand} className="wizard-filament-group">
-                  <div className="wizard-group-title">{brand}</div>
+                  <div className="wizard-group-title ds-titlebar">
+                    <span>{brand}</span>
+                    <button
+                      type="button"
+                      className="ds-btn ds-btn--sm ds-btn--ghost"
+                      aria-label={`${brand}: ${t("Select all")}`}
+                      disabled={items.every((item) => selectedFilaments.includes(item.name))}
+                      onClick={() => selectAllFilaments(items.map((item) => item.name))}
+                    >
+                      {t("Select all")}
+                    </button>
+                  </div>
                   <div className="wizard-filament-grid">
                     {items.map((item) => {
                       const id = `wizard-filament-${safeId(item.name)}`;
@@ -638,7 +656,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
           >
             {t("Cancel")}</button>
           <div className="wizard-footer-right">
-            {step > 1 && (
+            {!filamentsOnly && step > 1 && (
               <button
                 id="wizard-back-btn"
                 type="button"
@@ -647,7 +665,7 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
               >
                 {t("Back")}</button>
             )}
-            {step < 3 && (
+            {!filamentsOnly && step < 3 && (
               <button
                 id="wizard-next-btn"
                 type="button"
@@ -657,15 +675,15 @@ export const WizardDialog: React.FC<{ autoOpen?: boolean }> = ({ autoOpen = true
               >
                 {t("Next")}</button>
             )}
-            {step === 3 && (
+            {(filamentsOnly || step === 3) && (
               <button
                 id="wizard-finish-btn"
                 type="button"
                 className="ds-btn ds-btn--primary"
                 onClick={handleFinish}
-                disabled={!isEngineReady || isFinishing || (!customPrinter && selectedPrinters.length === 0)}
+                disabled={!isEngineReady || isFinishing || (!filamentsOnly && !customPrinter && selectedPrinters.length === 0)}
               >
-                {isFinishing ? 'Applying...' : 'Finish'}
+                {filamentsOnly ? t('Save') : isFinishing ? 'Applying...' : 'Finish'}
               </button>
             )}
           </div>

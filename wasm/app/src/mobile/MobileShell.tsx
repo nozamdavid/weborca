@@ -3,6 +3,7 @@ import { useHelpStore } from '../shell/HelpDialogs';
 import { Dialog } from '../components/Dialog';
 import { useAppStore } from '../store/appStore';
 import { SavedPrinterSelector } from '../printers/SavedPrinterSelector';
+import { ADD_FILAMENT, openAddFilament } from '../wizard/addFilament';
 import { useHistoryStore } from '../history';
 import { exportGcode } from '../shell/exportGcode';
 import { requestNewProject, requestOpenProject } from '../shell/projectActions';
@@ -58,6 +59,11 @@ function MobileMenu({ onClose }: { onClose: () => void }) {
     return <label className="wm-field"><span className="wm-field-label">{t(kind === 'process' ? 'Process preset' : 'Filament')}</span>
       <MobileSelect aria-label={t(kind === 'process' ? 'Process preset' : 'Filament')} value={active ? `user:${active}` : selected} disabled={busy}
         onValueChange={value => {
+          if (kind === 'filament' && value === ADD_FILAMENT) {
+            onClose();
+            openAddFilament();
+            return;
+          }
           if (value.startsWith('user:')) void s.selectUserPreset(kind, value.slice(5));
           else if (kind === 'process') void s.chooseProcess(value);
           else void s.chooseFilament(value);
@@ -65,6 +71,7 @@ function MobileMenu({ onClose }: { onClose: () => void }) {
         <option value="" disabled>{t('Select...')}</option>
         {system.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
         <optgroup label={t('User presets')}>{s.userPresets.filter(p => p.kind === kind).map(p => <option key={p.name} value={`user:${p.name}`}>{p.name}</option>)}</optgroup>
+        {kind === 'filament' && <option value={ADD_FILAMENT}>{t('Add filament')}...</option>}
       </MobileSelect>
     </label>;
   };

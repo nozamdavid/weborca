@@ -363,7 +363,18 @@
 .sb-section-title .ds-section__head { height: max(30px, var(--ctl-h)); }
 .sb-section-title .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-head-extra { flex: none; padding-right: var(--space-1); }
-.sidebar .filament-flush-btn { max-width: 120px; height: auto; min-height: var(--ctl-h); white-space: normal; line-height: 1.2; padding: var(--space-1); font-size: var(--text-sm); }
+.filament-section { container-type: inline-size; }
+.filament-section .sb-head { gap: var(--space-1); }
+.filament-section .sb-section-title { min-width: min(40%, 86px); }
+.filament-section .sb-head-extra { flex-shrink: 1; min-width: 0; padding-block: var(--space-1-5); }
+.filament-section .sb-head-extra > .ds-toolbar { max-width: 100%; }
+.sidebar .filament-flush-btn { flex: 0 1 auto; min-width: 0; max-width: 120px; height: auto; min-height: var(--ctl-h); white-space: normal; overflow-wrap: anywhere; line-height: 1.2; padding: var(--space-1-5) var(--space-2); font-size: var(--text-sm); }
+@container (max-width: 244px) {
+  .filament-section .sb-head:has(.filament-flush-btn) { flex-direction: column; align-items: stretch; gap: 0; }
+  .filament-section .sb-head-extra:has(.filament-flush-btn) { padding: 0 var(--space-2) var(--space-1-5); }
+  .filament-section .sb-head-extra:has(.filament-flush-btn) > .ds-toolbar { display: flex; }
+  .sidebar .filament-flush-btn { max-width: none; margin-inline-end: auto; }
+}
 .sidebar .ds-icon-btn { width: var(--icon-btn); height: var(--icon-btn); }
 .sidebar .ds-toolbar--flat { flex: none; }
 .sidebar :is(select, input[type=text], input[type=number], input:not([type])) {

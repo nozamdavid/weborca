@@ -29,17 +29,23 @@ const bundleDir = path.join(repoRoot, 'wasm', 'build', 'tests-node');
 async function storeActions(core, initial) {
   const source = fs.readFileSync(path.join(repoRoot, 'wasm/app/src/store/appStore.ts'), 'utf8');
   const action = (start, end) => source.slice(source.indexOf(start), source.indexOf(end)).trim().replace(/,$/, '');
-  const helpers = source.slice(source.indexOf('function resolveSystemPreset('), source.indexOf('/** Pause UI actions'));
+  const helpers = source.slice(source.indexOf('function resolveSystemPreset('), source.indexOf('/** Pause UI actions'))
+    .replace(/^export (?=function )/gm, '');
+  const history = fs.readFileSync(path.join(repoRoot, 'wasm/app/src/history/historyStore.ts'), 'utf8');
+  const restore = history.slice(history.indexOf('async function restoreSnapshotInternal('), history.indexOf('  // Refresh plate store & object list store from engine')) + '}';
   const compiled = await transform(`export default function(deps:any){
     const {get,set,getEngine,getConfig,selectPresets,setOptions,setOption,getOption,resetOptions,evaluateRules,effectivePreset}=deps;
-    const useAppStore={getState:get};const showToast=()=>{};const storeImportedRecentFile=async()=>{};
+    const useAppStore={getState:get,setState:set};const showToast=()=>{};const storeImportedRecentFile=async()=>{};const MAX_FILAMENT_SLOTS=16;
+    const usePlateStore={setState:()=>{}};
+    ${restore}
     const LAST_SETUP_KEY='orca.lastSetup';const localStorage=deps.localStorage;
     const resolveDeviceVendor=async()=> 'Voron';
     ${helpers}
     ${source.slice(source.indexOf('async function restoreLastSetup()'), source.indexOf('useAppStore.subscribe(', source.indexOf('async function restoreLastSetup()')))}
-    return ({computeBaselineConfig,reapplyPresetOverrides,restoreLastSetup,
+    return ({computeBaselineConfig,reapplyPresetOverrides,restoreLastSetup,restoreSnapshotInternal,
       ${action('  resetOption: async', '  applyFixes: async')},
       ${action('  chooseFilament: async', '  addFilamentSlot: async')},
+      ${action('  addFilamentSlot: async', '  removeFilamentSlot: async')},
       ${action('  removeFilamentSlot: async', '  setSlotColor: async')},
       ${action('  openProjectFile: async', '  saveProjectFile: async')}});
   }`, { loader: 'ts', format: 'esm' });
@@ -47,7 +53,7 @@ async function storeActions(core, initial) {
   let state = { isEngineReady: true, selectedPrinter: 'Voron 2.4 300 0.4 nozzle', selectedProcess: '0.20mm Standard @Voron',
     userPresets: [], processOverrides: {}, printerOverrides: {}, filamentOverrides: {},
     activeUserPreset: { printer: null, process: null, filament: null },
-    activeFilamentSlot: 0, configDefs: {}, rulesState: { fields: {}, fixes: [], messages: [] },
+    activeFilamentSlot: 0, configDefs: {}, presetConfig: {}, rulesState: { fields: {}, fixes: [], messages: [] },
     choosePrinter: async () => {}, selectedVendor: 'Voron', engineError: null,
     invalidateSlicePreview() {}, ...initial };
   const actions = factory({ get: () => state, set: update => { state = { ...state, ...(typeof update === 'function' ? update(state) : update) }; },
@@ -116,6 +122,59 @@ describe('Filament Temperature Slot & Vector Resolution', () => {
 
 describe('Filament Temperature Settings Engine Integration', () => {
   let core;
+
+  test('history restore keeps native slot count aligned before removal', async () => {
+    const mod = await import(modulePath);
+    const engine = await createEngineCore({ moduleFactory: mod.createOrcaEngine || mod.default, threads: 2 });
+    try {
+      for (const bundle of ['resources.json', 'profiles/OrcaFilamentLibrary.json', 'profiles/Voron.json'])
+        await engine.addVendorBundle(JSON.parse(fs.readFileSync(path.join(bundleDir, bundle), 'utf8')));
+      await engine.call('init', { resourcesDir: '/resources', dataDir: '/data' });
+      await engine.call('loadVendors', {});
+      const names = Array(3).fill('Generic PLA @System');
+      const selection = { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: names };
+      await engine.call('selectPresets', selection);
+      engine.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
+      await engine.call('loadModel', { path: '/models/cube.obj' });
+      await engine.call('saveProject', { path: '/out/history.3mf' });
+      const options = await engine.call('getConfig', {});
+      const app = await storeActions(engine, { selectedFilaments: names, selectedFilament: names[0], currentConfig: options });
+      await app.addFilamentSlot();
+      await app.restoreSnapshotInternal({ filePath: '/out/history.3mf', settings: { ...selection, options } });
+      assert.equal(app.state().selectedFilaments.length, 3);
+      await app.removeFilamentSlot();
+      assert.equal(app.state().engineError, null);
+      assert.equal(app.state().selectedFilaments.length, 2);
+    } finally { engine.dispose(); }
+  });
+
+  test('imported plate maps survive adding then removing a filament', async () => {
+    const mod = await import(modulePath);
+    const engine = await createEngineCore({ moduleFactory: mod.createOrcaEngine || mod.default, threads: 2 });
+    try {
+      for (const bundle of ['resources.json', 'profiles/OrcaFilamentLibrary.json', 'profiles/Voron.json'])
+        await engine.addVendorBundle(JSON.parse(fs.readFileSync(path.join(bundleDir, bundle), 'utf8')));
+      await engine.call('init', { resourcesDir: '/resources', dataDir: '/data' });
+      await engine.call('loadVendors', {});
+      const names = ['Generic PLA @System', 'Generic PETG @System'];
+      await engine.call('selectPresets', { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: names });
+      await engine.call('listPlates', {});
+      await engine.call('setPlateConfig', { plateIndex: 0, config: { filament_map: '1,1', filament_volume_map: '0,0', filament_nozzle_map: '0,0' } });
+      const app = await storeActions(engine, { selectedFilaments: names, selectedFilament: names[0], currentConfig: await engine.call('getConfig', {}) });
+      await app.addFilamentSlot();
+      assert.equal(app.state().selectedFilaments.length, 3);
+      await app.removeFilamentSlot();
+      assert.equal(app.state().engineError, null);
+      assert.equal(app.state().selectedFilaments.length, 2);
+      assert.equal((await engine.call('listPlates', {}))[0].config.filament_map, '1,1');
+      await app.removeFilamentSlot(0);
+      assert.equal(app.state().engineError, null);
+      const plate = (await engine.call('listPlates', {}))[0];
+      assert.equal(plate.config.filament_map, '1');
+      assert.equal(plate.config.filament_volume_map, '0');
+      assert.equal(plate.config.filament_nozzle_map, '0');
+    } finally { engine.dispose(); }
+  });
 
   test('saved boolean arc and aliases form a canonical baseline that survives reset and filament change', async () => {
     const mod = await import(modulePath);
@@ -283,6 +342,56 @@ describe('Filament Temperature Settings Engine Integration', () => {
     } finally { engine.dispose(); }
   });
 
+  test('minus removes slots with mismatched imported assignment map widths', async () => {
+    const mod = await import(modulePath);
+    const engine = await createEngineCore({ moduleFactory: mod.createOrcaEngine || mod.default, threads: 2 });
+    try {
+      for (const b of ['resources.json', 'profiles/OrcaFilamentLibrary.json', 'profiles/Voron.json'])
+        await engine.addVendorBundle(JSON.parse(fs.readFileSync(path.join(bundleDir, b), 'utf8')));
+      await engine.call('init', { resourcesDir: '/resources', dataDir: '/data' });
+      await engine.call('loadVendors', {});
+      const names = ['Generic PLA @System', 'Generic PLA @System', 'Generic PLA @System', 'Generic PLA @System'];
+      await engine.call('selectPresets', { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: names });
+      await engine.call('setOptions', { options: { filament_nozzle_map: '1,0,0,0,0,0,0,0' } });
+      const app = await storeActions(engine, { selectedFilaments: names, selectedFilament: names[0],
+        processOverrides: { filament_map: '1,1' }, currentConfig: await engine.call('getConfig', {}) });
+      engine.writeFile('/models/cube.obj', fs.readFileSync(path.join(repoRoot, 'tests/data/20mm_cube.obj')));
+      await engine.call('loadModel', { path: '/models/cube.obj' });
+      await engine.call('saveProject', { path: '/out/removal.3mf' });
+      const restored = await engine.call('openProject', { path: '/out/removal.3mf' });
+      assert.equal(restored.selectedPresets.filaments.length, names.length);
+      for (let remaining = 3; remaining >= 1; --remaining) {
+        await app.removeFilamentSlot();
+        assert.equal(app.state().engineError, null);
+        assert.deepEqual(app.state().selectedFilaments, names.slice(0, remaining));
+        assert.equal(app.state().currentConfig.filament_nozzle_map, ['1', ...Array(remaining - 1).fill('0')].join(','));
+      }
+    } finally { engine.dispose(); }
+  });
+
+  test('minus still removes a slot after an invalid user filament addition', async () => {
+    const mod = await import(modulePath);
+    const engine = await createEngineCore({ moduleFactory: mod.createOrcaEngine || mod.default, threads: 2 });
+    try {
+      for (const b of ['resources.json', 'profiles/OrcaFilamentLibrary.json', 'profiles/Voron.json'])
+        await engine.addVendorBundle(JSON.parse(fs.readFileSync(path.join(bundleDir, b), 'utf8')));
+      await engine.call('init', { resourcesDir: '/resources', dataDir: '/data' });
+      await engine.call('loadVendors', {});
+      const names = ['Generic PLA @System', 'Generic PETG @System'];
+      await engine.call('selectPresets', { printer: 'Voron 2.4 300 0.4 nozzle', process: '0.20mm Standard @Voron', filaments: names });
+      const app = await storeActions(engine, { selectedFilaments: names, selectedFilament: names[0],
+        userPresets: [{ kind: 'filament', name: 'Invalid user filament', inherits: names[0], values: { nozzle_temperature: 'invalid' } }],
+        currentConfig: await engine.call('getConfig', {}) });
+      await app.addFilamentSlot('Invalid user filament');
+      assert.match(app.state().engineError, /Failed to add filament slot/);
+      assert.deepEqual(app.state().selectedFilaments, names);
+      app.state().engineError = null;
+      await app.removeFilamentSlot();
+      assert.equal(app.state().engineError, null);
+      assert.deepEqual(app.state().selectedFilaments, [names[0]]);
+    } finally { engine.dispose(); }
+  });
+
   test('removing first, middle and last slots preserves typed surviving overrides and identity', async () => {
     const mod = await import(modulePath);
     const engine = await createEngineCore({ moduleFactory: mod.createOrcaEngine || mod.default, threads: 2 });
@@ -375,11 +484,11 @@ describe('Filament Temperature Settings Engine Integration', () => {
       assert.deepEqual(await engine.call('getPaintData', paintArgs), paintBefore);
       assert.deepEqual(await engine.call('listPlates', {}), beforePlates);
       // The browser also retains its slots/maps on an invalid projection.
-      app.state().processOverrides = { ...processOverrides, filament_map: '1,2' };
+      app.state().processOverrides = { ...processOverrides, filament_map: '1,invalid,1' };
       await app.removeFilamentSlot(1);
       assert.match(app.state().engineError, /Failed to remove filament slot/);
       assert.deepEqual(app.state().selectedFilaments, names);
-      assert.equal(app.state().processOverrides.filament_map, '1,2');
+      assert.equal(app.state().processOverrides.filament_map, '1,invalid,1');
       assert.deepEqual(await engine.call('getConfig', {}), beforeConfig);
       assert.deepEqual(await engine.call('getObjectTree', {}), beforeTree);
       assert.deepEqual(await engine.call('getPaintData', paintArgs), paintBefore);

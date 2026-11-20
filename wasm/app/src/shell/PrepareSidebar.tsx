@@ -1,5 +1,6 @@
 import { usePlatesStore } from '../plates/platesStore';
 import { useWizardStore } from '../wizard';
+import { ADD_FILAMENT, openAddFilament } from '../wizard/addFilament';
 import { usePrefsStore } from '../prefs';
 import { FilamentSyncButton } from '../printers/FilamentSyncDialog';
 import React, { useEffect, useRef, useState } from 'react';
@@ -11,7 +12,7 @@ import { ObjectListPanel } from '../objectlist/ObjectListPanel';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
 import { SavedPrinterSelector, bindDeviceProfile } from '../printers/SavedPrinterSelector';
 import { SettingsPanel } from '../settings/SettingsPanel';
-import { useAppStore, resolveDeviceVendor, pendingOptionKey } from '../store/appStore';
+import { useAppStore, resolveDeviceVendor, pendingOptionKey, minimumFilamentSlots } from '../store/appStore';
 import type { PresetKind } from '../presets/types';
 import { exportGcode } from './exportGcode';
 import { EditIcon, GearIcon, PlugIcon, SaveIcon, TrashIcon } from './glyphs';
@@ -151,7 +152,7 @@ export const PrepareSidebar: React.FC = () => {
   const {
     vendors, selectedVendor, chooseVendor, printers, selectedPrinter, choosePrinter,
     processes, selectedProcess, chooseProcess, filaments, selectedFilament, selectedFilaments, chooseFilament,
-    addFilamentSlot, removeFilamentSlot, setSlotColor, currentConfig, configDefs, applyOptionChange,
+    addFilamentSlot, removeFilamentSlot, setSlotColor, currentConfig, presetConfig, configDefs, applyOptionChange,
     userPresets, activeUserPreset, isSlicing, isModelLoading, startSlice, cancelSlice, isEngineReady, modelFile, sliceResult, modelObjects,
     selectUserPreset, openDialog, openSavePresetDialog, openManagePresetsDialog, deleteUserPresetAction
   } = useAppStore();
@@ -228,7 +229,7 @@ export const PrepareSidebar: React.FC = () => {
         className="ds-icon-btn icon-btn btn-remove-filament"
         title={t("Remove filament")}
         aria-label={t("Remove filament")}
-        disabled={isBusy || activeFilaments.length <= 1}
+        disabled={isBusy || activeFilaments.length <= minimumFilamentSlots(presetConfig)}
         onClick={(e) => {
           e.stopPropagation();
           void changePreset(() => removeFilamentSlot());
@@ -306,7 +307,7 @@ export const PrepareSidebar: React.FC = () => {
           )}
         </Section>
 
-        <Section id="filament" title={t("Filament")} headerExtra={filamentHeaderActions}>
+        <Section id="filament" className="filament-section" title={t("Filament")} headerExtra={filamentHeaderActions}>
           <FilamentSyncButton />
           <div className="filament-slots-list">
             {activeFilaments.map((filamentName, idx) => {
@@ -353,9 +354,14 @@ export const PrepareSidebar: React.FC = () => {
                     data-testid={selectId}
                     aria-label={t(`filament preset ${slotNumber}`)}
                     value={current('filament', filamentName)}
-                    disabled={isBusy || !selectedPrinter || filaments.length === 0}
+                    disabled={isBusy || !selectedPrinter}
                     onChange={(e) => {
                       const value = e.target.value;
+                      if (value === ADD_FILAMENT) {
+                        e.target.value = current('filament', filamentName);
+                        openAddFilament();
+                        return;
+                      }
                       void changePreset(() => value.startsWith('user:')
                         ? selectUserPreset('filament', value.substring(5), idx)
                         : chooseFilament(value, idx));
@@ -380,6 +386,7 @@ export const PrepareSidebar: React.FC = () => {
                         ))}
                       </optgroup>
                     )}
+                    <option value={ADD_FILAMENT}>{t('Add filament')}...</option>
                   </select>
 
                   <Toolbar label={t('Manage filament presets')}>
