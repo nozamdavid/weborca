@@ -1134,11 +1134,14 @@ json Engine::Impl::op_selectPresets(const json& args) {
     m_bundle->prints.select_preset_by_name(process_name, true);
     m_selected_process = m_bundle->prints.get_edited_preset().name;
 
-    m_bundle->set_num_filaments(static_cast<unsigned int>(filament_names.size()));
-    m_bundle->filament_presets = filament_names;
-    m_bundle->filaments.select_preset_by_name(filament_names[0], true);
-    for (size_t i = 0; i < filament_names.size(); ++i) {
-        if (const auto* p = m_bundle->filaments.find_preset(filament_names[i], false)) {
+    m_bundle->filament_presets = std::move(filament_names);
+    // Tool changers require one slot per tool. Size project vectors to the
+    // actual selection before setting colors or reporting the active slots.
+    m_bundle->update_filament_count();
+    m_bundle->set_num_filaments(static_cast<unsigned int>(m_bundle->filament_presets.size()));
+    m_bundle->filaments.select_preset_by_name(m_bundle->filament_presets.front(), true);
+    for (size_t i = 0; i < m_bundle->filament_presets.size(); ++i) {
+        if (const auto* p = m_bundle->filaments.find_preset(m_bundle->filament_presets[i], false)) {
             if (p->config.has("filament_colour") && !p->config.opt_string("filament_colour").empty()) {
                 m_bundle->project_config.option<Slic3r::ConfigOptionStrings>("filament_colour")->values[i] = p->config.opt_string("filament_colour");
                 m_bundle->project_config.option<Slic3r::ConfigOptionStrings>("filament_multi_colour")->values[i] = p->config.opt_string("filament_colour");
@@ -1189,9 +1192,16 @@ json Engine::Impl::op_removeFilamentSlot(const json& args) {
     for (const auto* plate : m_plate_data) {
         plates.emplace_back(std::make_unique<Slic3r::PlateData>(*plate));
         auto& next = *plates.back();
-        next.config = project_removed_slot(plate->config, count, slot, false);
+        // Imported plate maps retain their original width when slots are added.
+        // Match full_config's defaults for newly introduced slots before erasing.
+        for (const auto& key : next.config.keys()) {
+            if (!is_slot_map(key)) continue;
+            if (auto* map = dynamic_cast<Slic3r::ConfigOptionInts*>(next.config.option(key)))
+                map->values.resize(count, key == "filament_map" ? 1 : 0);
+        }
+        next.config = project_removed_slot(next.config, count, slot, false);
         if (!next.filament_maps.empty()) {
-            if (next.filament_maps.size() != count) throw Slic3r::RuntimeError("Invalid plate filament map width");
+            next.filament_maps.resize(count, 1);
             next.filament_maps.erase(next.filament_maps.begin() + slot);
         }
         next.is_sliced_valid = false;

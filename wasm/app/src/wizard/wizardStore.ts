@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 export interface WizardStore {
   open: boolean;
+  filamentsOnly: boolean;
   /** The printers the wizard last finished with; the sidebar offers these (plus the selected one) for their brand. */
   addedPrinters: string[];
   addedFilaments: string[];
@@ -11,7 +12,7 @@ export interface WizardStore {
   selectedVendor: string;
   selectedPrinters: string[];
   selectedFilaments: string[];
-  setOpen: (open: boolean) => void;
+  setOpen: (open: boolean, filamentsOnly?: boolean) => void;
   setStep: (step: 1 | 2 | 3) => void;
   setSelectedVendor: (vendor: string) => void;
   setSelectedPrinters: (printers: string[]) => void;
@@ -41,6 +42,7 @@ function loadSavedChoices(): { printers: string[]; filaments: string[] } {
 
 export const useWizardStore = create<WizardStore>((set) => ({
   open: false,
+  filamentsOnly: false,
   addedPrinters: loadSavedChoices().printers,
   addedFilaments: loadSavedChoices().filaments,
   setAddedFilaments: (addedFilaments) => set({ addedFilaments }),
@@ -50,18 +52,20 @@ export const useWizardStore = create<WizardStore>((set) => ({
   selectedPrinters: [],
   selectedFilaments: [],
 
-  setOpen: (open) =>
+  setOpen: (open, filamentsOnly = false) =>
     set((state) => {
       if (open && !state.open) {
         const saved = loadSavedChoices();
         return {
           open: true,
-          step: 1,
+          filamentsOnly,
+          step: filamentsOnly ? 2 : 1,
           selectedPrinters: saved.printers.length > 0 ? saved.printers : state.selectedPrinters,
-          selectedFilaments: saved.filaments.length > 0 ? saved.filaments : state.selectedFilaments
+          selectedFilaments: filamentsOnly ? state.addedFilaments
+            : saved.filaments.length > 0 ? saved.filaments : state.selectedFilaments
         };
       }
-      return { open };
+      return { open, filamentsOnly };
     }),
 
   setStep: (step) => set({ step }),

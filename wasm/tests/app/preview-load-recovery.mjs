@@ -27,9 +27,9 @@ try {
 
       await page.evaluate(() => {
         const prototype = window.previewModule.OrcaPreview.prototype;
-        window.__originalPreviewLoad = prototype.loadGcode;
+        window.__originalPreviewLoad = prototype.loadParsedGcode;
         // Native returned errors leave the previous viewer intact.
-        prototype.loadGcode = () => JSON.stringify({ error: 'Rejected replacement fixture' });
+        prototype.loadParsedGcode = () => JSON.stringify({ error: 'Rejected replacement fixture' });
         const result = window.__appStore.getState().sliceResult;
         window.__appStore.setState({ sliceResult: { ...result, gcode: new Uint8Array(result.gcode) } });
       });
@@ -38,19 +38,21 @@ try {
       assert.deepEqual(await page.evaluate(() => window.__previewStore.getState().stats), oldStats);
 
       await page.evaluate(() => {
-        window.previewModule.OrcaPreview.prototype.loadGcode = window.__originalPreviewLoad;
+        window.previewModule.OrcaPreview.prototype.loadParsedGcode = window.__originalPreviewLoad;
         const result = window.__appStore.getState().sliceResult;
         delete document.getElementById('canvas').dataset.previewReady;
         window.__appStore.setState({ sliceResult: { ...result, gcode: new Uint8Array(result.gcode) } });
       });
       await page.waitForFunction(() => document.getElementById('canvas')?.dataset.previewReady === 'true');
       assert.equal(await page.locator('#preview-error-overlay').count(), 0, 'a valid replacement clears the prior error');
-      assert.deepEqual(await page.evaluate(() => window.__previewStore.getState().stats), oldStats);
+      const { rendererLoadMs: oldLoadTime, ...oldPrintStats } = oldStats;
+      const { rendererLoadMs: newLoadTime, ...newPrintStats } = await page.evaluate(() => window.__previewStore.getState().stats);
+      assert.deepEqual(newPrintStats, oldPrintStats);
       console.log(`${browserType.name()}: failed replacement preserves statistics and a valid retry recovers`);
     } finally {
       await browser.close();
     }
   }
 } finally {
-  stopServer();
+  await stopServer(port);
 }

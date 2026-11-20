@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { usePlateStore } from './plateStore';
 import { PlateScene } from './PlateScene';
+import type { PlateObject } from './types';
 import { useAppStore } from '../store/appStore';
 import { useObjectListStore } from '../objectlist/objectListStore';
 import { PlateContextMenu } from './PlateContextMenu';
@@ -9,6 +10,7 @@ import { exportGcode } from '../shell/exportGcode';
 import { Dialog } from '../components/Dialog';
 import { PlateRenameDialog } from './PlateRenameDialog';
 import { isDefaultPlateName } from '../plates/plateName';
+import { requestOpenProject } from '../shell/projectActions';
 import { usePlatesStore } from '../plates/platesStore';
 import { addBoxSelection } from './boxSelection';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
@@ -16,7 +18,7 @@ import { usePaintToolsStore, PaintToolsPanel, StrokeCollector } from '../paint-t
 import { useLayersStore, LayerHeightPanel } from '../layers';
 import { getPaintOverlay, parsePaintOverlayBinary } from '../paint-tools/paintToolsApi';
 import type { PaintState, ParsedPaintOverlay } from '../paint-tools/types';
-import { getEngine } from '../engine/orcaEngine';
+import { getEngine, setOptions } from '../engine/orcaEngine';
 import { useHistoryStore } from '../history';
 import { TextPanel, useTextStore } from '../text';
 import { CutPanel, useCutStore } from '../cut';
@@ -38,6 +40,20 @@ import { RedoIcon, UndoIcon } from '../shell/glyphs';
 import { useTranslation } from "../i18n";
 import { ChevronDown, ChevronRight } from '../objectlist/Icons';
 import './selectionPanel.css';
+
+function readVolumeColors(): Map<number, Map<number, string>> {
+  const palette = (useAppStore.getState().currentConfig.filament_colour || '').split(';').map(c => c.trim().slice(0, 7));
+  const colors = new Map<number, Map<number, string>>();
+  for (const object of useObjectListStore.getState().objects) {
+    const parts = new Map<number, string>();
+    for (const volume of object.volumes) {
+      const color = palette[Math.max(1, volume.extruder) - 1];
+      if (color) parts.set(volume.id, color);
+    }
+    colors.set(object.id, parts);
+  }
+  return colors;
+}
 
 function formatPrintTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '0s';
@@ -65,6 +81,7 @@ export const PlateView: React.FC = () => {
 
   // Plate Store
   const objects = usePlateStore((s) => s.objects);
+  const displayedObjects = useRef<PlateObject[]>();
   const selectedObjectId = usePlateStore((s) => s.selectedObjectId);
   const selectedInstanceId = usePlateStore((s) => s.selectedInstanceId);
   const selectedPartId = useObjectListStore((s) => s.selectedVolumeId);
@@ -124,6 +141,8 @@ export const PlateView: React.FC = () => {
   const currentConfig = useAppStore((s) => s.currentConfig);
   const bedConfigLoading = useAppStore((s) => !s.isEngineReady || s.isSelectingPreset || s.isModelLoading);
   const activePlateIndex = usePlatesStore((s) => s.activePlateIndex);
+  const activePlate = usePlatesStore((s) => s.plates.find(p => p.index === s.activePlateIndex));
+  const movingTower = useRef(false);
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [renamingPlate, setRenamingPlate] = useState<{ index: number; x: number; y: number; value: string } | null>(null);
@@ -172,6 +191,44 @@ export const PlateView: React.FC = () => {
       canMoveObjects: () => {
         const app = useAppStore.getState();
         return app.isEngineReady && !app.isSlicing && !app.isModelLoading && !app.isSelectingPreset && !useHistoryStore.getState().isRestoring;
+      },
+      canMoveWipeTower: (index) => {
+        const state = usePlatesStore.getState();
+        return !movingTower.current && !state.isLoading && state.activePlateIndex === index &&
+          !state.plates.find(p => p.index === index)?.locked;
+      },
+      onMoveWipeTower: async (index, x, y) => {
+        const app = useAppStore.getState();
+        const { plates } = usePlatesStore.getState();
+        // These project vectors are serialized in 3MF and read by native slicing.
+        const coordinate = (key: string, value: number, fallback: number) => {
+          const serialized = app.currentConfig[key];
+          const slots = serialized ? serialized.split(',') : [String(fallback)];
+          const defaultCoordinate = slots[slots.length - 1];
+          while (slots.length < Math.max(plates.length, index + 1)) slots.push(defaultCoordinate);
+          slots[index] = String(value);
+          return slots.join(',');
+        };
+        const options = {
+          wipe_tower_x: coordinate('wipe_tower_x', x, 165),
+          wipe_tower_y: coordinate('wipe_tower_y', y, 250),
+        };
+        movingTower.current = true;
+        try {
+          await setOptions(options);
+          useAppStore.setState(state => ({
+            currentConfig: { ...state.currentConfig, ...options },
+            processOverrides: { ...state.processOverrides, ...options },
+          }));
+          useAppStore.getState().invalidateSlicePreview();
+          await useHistoryStore.getState().commitTransaction('Move prime tower');
+          return true;
+        } catch (error) {
+          console.error('[PlateView] Failed to move prime tower:', error);
+          return false;
+        } finally {
+          movingTower.current = false;
+        }
       },
       onSelect: (objId, instId, additive, volumeId) => {
         if (additive && objId !== null && instId !== null) {
@@ -248,6 +305,7 @@ export const PlateView: React.FC = () => {
     return () => {
       scene.destroy();
       sceneRef.current = null;
+      displayedObjects.current = undefined;
       if (typeof window !== 'undefined' && (window as any).__plateScene === scene) {
         delete (window as any).__plateScene;
       }
@@ -297,31 +355,29 @@ export const PlateView: React.FC = () => {
   const objectTree = useObjectListStore((s) => s.objects);
   const selectedRangeIndex = useObjectListStore((s) => s.selectedRangeIndex);
   useEffect(() => {
-    if (!isEngineReady) return;
+    const scene = sceneRef.current;
+    if (!scene || !isEngineReady || !activePlate) {
+      scene?.setWipeTowerPreview({ enabled: false });
+      return;
+    }
     let cancelled = false;
+    const excludedArea = (activePlate.config.bed_exclude_area ?? currentConfig.bed_exclude_area ?? '')
+      .split(',').map(point => point.split('x').map(Number))
+      .filter((point): point is [number, number] => point.length === 2 && point.every(Number.isFinite));
     void getEngine().then((engine) => engine.call('getWipeTowerPreview', { plateIndex: activePlateIndex }))
       .then((tower: any) => {
-        const origin = usePlatesStore.getState().plates.find((p) => p.index === activePlateIndex)?.origin ?? [0, 0, 0];
-        if (!cancelled) sceneRef.current?.setWipeTowerPreview(tower, origin as [number, number, number]);
-      }).catch(() => { if (!cancelled) sceneRef.current?.setWipeTowerPreview({ enabled: false }); });
+        if (!cancelled) scene.setWipeTowerPreview(tower, activePlate.origin, activePlateIndex, excludedArea);
+      }).catch(() => { if (!cancelled) scene.setWipeTowerPreview({ enabled: false }); });
     return () => { cancelled = true; };
-  }, [isEngineReady, currentConfig, activePlateIndex, objects, objectTree, paintOverlayRevision]);
+  }, [isEngineReady, currentConfig, activePlate, activePlateIndex, objects, objectTree, paintOverlayRevision]);
 
   // Each part takes the colour of the filament it is assigned to (extruder 0 means the first filament).
   const filamentColours = useAppStore((s) => s.currentConfig['filament_colour']);
   useEffect(() => {
-    const palette = (filamentColours || '').split(';').map((c) => c.trim().slice(0, 7));
-    const colors = new Map<number, Map<number, string>>();
-    for (const obj of objectTree) {
-      const parts = new Map<number, string>();
-      for (const vol of obj.volumes) {
-        const colour = palette[Math.max(1, vol.extruder) - 1];
-        if (colour) parts.set(vol.id, colour);
-      }
-      colors.set(obj.id, parts);
+    if (!isRestoring && displayedObjects.current === objects) {
+      sceneRef.current?.setVolumeColors(readVolumeColors());
     }
-    sceneRef.current?.setVolumeColors(colors);
-  }, [objectTree, filamentColours, objects]);
+  }, [objectTree, filamentColours, objects, isRestoring]);
 
   const measureActive = usePlateStore((s) => s.measureActive);
   useEffect(() => { sceneRef.current?.setMeasureActive(measureActive); }, [measureActive]);
@@ -346,7 +402,7 @@ export const PlateView: React.FC = () => {
 
   // Update scene objects when objects change
   useEffect(() => {
-    if (sceneRef.current) {
+    if (sceneRef.current && !isRestoring) {
       const paintState = usePaintToolsStore.getState();
       if (paintState.isActive && paintState.selectedObjectId !== null) {
         if (!objects.some((o) => o.id === paintState.selectedObjectId)) {
@@ -356,12 +412,17 @@ export const PlateView: React.FC = () => {
       }
       const scene = sceneRef.current;
       let cancelled = false;
-      void scene.setObjects(objects).then((accepted) => {
-        if (accepted && !cancelled && sceneRef.current === scene) setMeshRevision((revision) => revision + 1);
+      // Undo/redo may replace both object IDs and part colors. Keep the current
+      // meshes and colors together until both sides of the restore are ready.
+      void scene.setObjects(objects, () => cancelled || useHistoryStore.getState().isRestoring ? null : readVolumeColors()).then((accepted) => {
+        if (accepted && !cancelled && sceneRef.current === scene) {
+          displayedObjects.current = objects;
+          setMeshRevision((revision) => revision + 1);
+        }
       }).catch((error) => console.error("[PlateView] Scene update failed:", error));
       return () => { cancelled = true; };
     }
-  }, [objects]);
+  }, [objects, isRestoring]);
 
   // Update selection in scene and stores
   useEffect(() => {
@@ -433,6 +494,7 @@ export const PlateView: React.FC = () => {
 
   // Re-query split-triangle overlays on layer, volume, or selection changes.
   useEffect(() => {
+    if (isRestoring || displayedObjects.current !== objects) return;
     let cancelled = false;
     const scene = sceneRef.current;
     scene?.clearToolOverlays();
@@ -472,7 +534,7 @@ export const PlateView: React.FC = () => {
       }
     }
     return () => { cancelled = true; };
-  }, [selectedObjectId, selectedVolumeId, paintLayer, isPaintingActive, meshRevision, paintOverlayRevision, isEngineReady, objectTree, filamentColours]);
+  }, [selectedObjectId, selectedVolumeId, paintLayer, isPaintingActive, meshRevision, paintOverlayRevision, isEngineReady, objectTree, filamentColours, objects, isRestoring]);
 
   useEffect(() => {
     const targetObj = objectTree.find((o) => o.id === selectedObjectId);
@@ -783,8 +845,10 @@ export const PlateView: React.FC = () => {
     const file = e.dataTransfer.files?.[0];
     if (file) {
       const ext = file.name.split('.').pop()?.toLowerCase();
-      if (ext && ['stl', 'obj', '3mf', 'amf', 'step', 'stp', 'svg', 'zip'].includes(ext)) {
-        await useAppStore.getState().requestImportFile(file);
+      if (ext === '3mf') {
+        await requestOpenProject(file);
+      } else if (ext && ['stl', 'obj', 'amf', 'step', 'stp', 'svg', 'zip'].includes(ext)) {
+        app.requestImportFile(file);
       }
     }
   };

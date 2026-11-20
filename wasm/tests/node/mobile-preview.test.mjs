@@ -34,6 +34,8 @@ export const usePrefsStore = create((set,get)=>({display:{previewLowQuality:fals
 export const usePlatesStore = create(()=>({activePlateIndex:0}));
 export const usePrinterConnectionStore = create(set=>({sendDialogOpen:false,openSendDialog:()=>{calls.push(['send']);set({sendDialogOpen:true})}}));
 export const useHistoryStore = create(()=>({}));
+export const requestNewProject = () => {};
+export const requestOpenProject = () => {};
 export const exportGcode = ()=>calls.push(['export']);
 export const useTranslation = ()=>({t:key=>key});
 export const SavedPrinterSelector = ()=>null;
@@ -54,7 +56,7 @@ test('mobile preview sheets retain live actions and state, export, and honest em
     window.renderPreview();`,loader:'tsx',resolveDir:appDir},
     bundle:true,write:false,format:'iife',platform:'browser',loader:{'.css':'empty'},
     plugins:[{name:'engine-free-component-fixture',setup(build){
-      build.onResolve({filter:/^(fixture)$|\/(appStore|previewStore|prefsStore|platesStore|connectionStore|exportGcode|i18n|history|SettingInput|SavedPrinterSelector|SendToPrinterDialog|orcaPreviewModule)$/},()=>({path:'fixture',namespace:'fixture'}));
+      build.onResolve({filter:/^(fixture)$|\/(appStore|previewStore|prefsStore|platesStore|connectionStore|exportGcode|i18n|history|projectActions|SettingInput|SavedPrinterSelector|SendToPrinterDialog|orcaPreviewModule)$/},()=>({path:'fixture',namespace:'fixture'}));
       build.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:fixture,resolveDir:appDir}));
     }}]});
   const browser = await chromium.launch({headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});

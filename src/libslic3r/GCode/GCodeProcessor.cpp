@@ -3562,18 +3562,16 @@ void GCodeProcessor::apply_config(const DynamicPrintConfig& config)
         }
     }
 
-    // BBS
+    // Allocate the filament slots before filling them from the file's palette.
+    if (m_result.extruder_colors.size() < m_result.filaments_count)
+        m_result.extruder_colors.resize(m_result.filaments_count);
+
     const ConfigOptionStrings* filament_colour = config.option<ConfigOptionStrings>("filament_colour");
-    if (filament_colour != nullptr && filament_colour->values.size() == m_result.extruder_colors.size()) {
-        for (size_t i = 0; i < m_result.extruder_colors.size(); ++i) {
+    if (filament_colour != nullptr) {
+        const size_t count = std::min(filament_colour->values.size(), m_result.extruder_colors.size());
+        for (size_t i = 0; i < count; ++i) {
             if (m_result.extruder_colors[i].empty())
                 m_result.extruder_colors[i] = filament_colour->values[i];
-        }
-    }
-
-    if (m_result.extruder_colors.size() < m_result.filaments_count) {
-        for (size_t i = m_result.extruder_colors.size(); i < m_result.filaments_count; ++i) {
-            m_result.extruder_colors.emplace_back(std::string());
         }
     }
 

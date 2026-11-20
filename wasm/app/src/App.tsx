@@ -1,4 +1,5 @@
 import { useTranslation } from './i18n';
+import { ModelBrowser } from './models/ModelBrowser';
 import { ConfirmHost } from './components/ModalBackdrop';
 import { ComparePresetsDialog } from './settings/ComparePresetsDialog';
 import { WizardDialog } from './wizard';
@@ -28,10 +29,12 @@ import { SavePresetDialog } from './settings/SavePresetDialog';
 import { SettingsDialog } from './settings/SettingsDialog';
 import { useAppStore } from './store/appStore';
 import { HelpDialogs } from './shell/HelpDialogs';
+import { BambuAccountLifecycle } from './printers/BambuAccountDialog';
 import { PrepareSidebar } from './shell/PrepareSidebar';
 import { TopBar } from './shell/TopBar';
 import { SlicingGuard } from './shell/SlicingGuard';
 import { RecoveryDialog } from './shell/RecoveryDialog';
+import { requestOpenProject } from './shell/projectActions';
 import { ProjectNotesDialog } from './shell/ProjectNotesDialog';
 import { SlicingWarningsDialog } from './shell/SlicingWarningsDialog';
 import { ToastContainer } from './shell/Toast';
@@ -40,7 +43,7 @@ import { EditOpsDialogs } from './editops';
 import { PreferencesDialog, usePrefsStore } from './prefs';
 import type { TabId } from './shell/TopBar';
 
-const TAB_IDS: TabId[] = ['prepare', 'preview', 'device'];
+const TAB_IDS: TabId[] = ['models', 'prepare', 'preview', 'device'];
 
 function tabFromPath(): TabId {
   const name = window.location.pathname.replace(/^\/+|\/+$/g, '');
@@ -134,7 +137,7 @@ export const App: React.FC = () => {
 
       const ext = file.name.split('.').pop()?.toLowerCase();
       if (ext === '3mf') {
-        await useAppStore.getState().openProjectFile(file);
+        if (await requestOpenProject(file)) setActiveTab('prepare');
       } else if (ext === 'gcode') {
         await useAppStore.getState().openGcodeFile(file);
       } else if (['stl', 'obj', 'amf', 'step', 'stp', 'svg'].includes(ext || '')) {
@@ -150,7 +153,7 @@ export const App: React.FC = () => {
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
     };
-  }, []);
+  }, [setActiveTab]);
 
   if (!isIsolated) return <IsolationNotice />;
 
@@ -178,6 +181,9 @@ export const App: React.FC = () => {
       <SlicingWarningsDialog />
 
       <main className="workspace orca-workspace" aria-busy={isModelLoading}>
+        <div className="tab-page" hidden={activeTab !== 'models'}>
+          <ModelBrowser active={activeTab === 'models'} onPrepare={() => setActiveTab('prepare')} />
+        </div>
         <div className="tab-page prepare-page" hidden={activeTab !== 'prepare'}>
           {mobile ? <MobilePrepare /> : <>{showSidebar && <PrepareSidebar />}<PlateView /></>}
         </div>
@@ -221,6 +227,7 @@ export const App: React.FC = () => {
       <OtherCalibrationsDialogs />
       <PrinterConnectionDialog />
       <HelpDialogs />
+      <BambuAccountLifecycle />
       <ComparePresetsDialog />
       <ConfirmHost />
       <WizardDialog autoOpen={!mobile} />

@@ -1,0 +1,56 @@
+.bambu-account-dialog {
+  --dialog-w: 460px;
+}
+
+.dialog-layer .bambu-account-dialog > :is(.ds-dialog__head, .ds-dialog__body, .ds-dialog__foot) {
+  padding-inline: var(--space-6);
+}
+
+.dialog-layer .bambu-account-dialog > .ds-dialog__body {
+  gap: var(--space-5);
+  padding-block: var(--space-5);
+}
+
+.bambu-account-dialog p {
+  margin: 0;
+  line-height: var(--leading-normal);
+}
+
+.bambu-account-dialog__fields {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.bambu-account-dialog__fields label,
+.bambu-account-dialog__code {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.bambu-account-dialog__fields label > span {
+  font-weight: var(--weight-semibold);
+}
+
+.dialog-layer .bambu-account-dialog > .ds-dialog__body .bambu-account-dialog__fields .ds-input {
+  width: 100%;
+  min-height: 44px;
+}
+
+.bambu-account-dialog__hint,
+.bambu-account-dialog__privacy {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.bambu-account-dialog__privacy {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.bambu-account-dialog__error {
+  color: var(--danger-fg);
+}
+
+.bambu-account-dialog .ds-dialog__foot > .ds-btn {
+  min-height: 40px;
+}

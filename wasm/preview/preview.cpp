@@ -519,10 +519,27 @@ static std::string prepare_gcode(const std::string& path, PreviewPacket& packet)
             if (tool_colors.empty()) {
                 tool_colors.push_back("#009688");
             }
-            std::vector<std::string> cp_colors;
-
             packet.parse_ms = elapsed_ms(parse_start);
             auto conversion_start = std::chrono::steady_clock::now();
+            std::vector<std::string> cp_colors = tool_colors;
+            auto swap_vertex = res.moves.cbegin();
+            for (const auto& event : res.custom_gcode_per_print_z) {
+                if (event.type != Slic3r::CustomGCode::ColorChange)
+                    continue;
+                swap_vertex = std::find_if(swap_vertex, res.moves.cend(), [](const auto& vertex) {
+                    return vertex.type == Slic3r::EMoveType::Color_change;
+                });
+                if (swap_vertex == res.moves.cend())
+                    break;
+                // The indices in the toolpath can have gaps between swaps.
+                const size_t color_id = swap_vertex->cp_color_id;
+                ++swap_vertex;
+                if (color_id < tool_colors.size())
+                    continue;
+                if (color_id >= cp_colors.size())
+                    cp_colors.resize(color_id + 1, tool_colors.front());
+                cp_colors[color_id] = event.color;
+            }
             data = libvgcode::convert(res, tool_colors, cp_colors);
             packet.conversion_ms = elapsed_ms(conversion_start);
             time_s = processor.get_time(Slic3r::PrintEstimatedStatistics::ETimeMode::Normal);

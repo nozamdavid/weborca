@@ -39,6 +39,18 @@ import { printerGatewayPlugin } from './printerGateway';
  */
 
 import { defineConfig, loadEnv } from 'vite';
+
+const coep = process.env.VITE_COEP || 'require-corp';
+function compatibleCoep(server: any) {
+  server.middlewares.use((req: any, res: any, next: () => void) => {
+    const ua = req.headers['user-agent'] || '';
+    const chrome = ua.match(/(?:Chrome|Chromium)\/(\d+)/);
+    res.setHeader('Cross-Origin-Embedder-Policy', coep === 'credentialless' && chrome && Number(chrome[1]) >= 110 && !/EdgiOS|CriOS|Firefox|; wv\)/.test(ua) ? 'credentialless' : 'require-corp');
+    res.setHeader('Vary', 'User-Agent, Accept-Encoding');
+    next();
+  });
+}
+if (!['require-corp', 'credentialless'].includes(coep)) throw new Error('Invalid VITE_COEP');
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -110,7 +122,7 @@ function serveStaticFile(reqPath: string, baseDir: string, res: any): boolean {
     const mime = getMimeType(targetPath);
     res.setHeader('Content-Type', mime);
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    // The first middleware selects the compatible policy for all responses.
     fs.createReadStream(targetPath).pipe(res);
     return true;
   }
@@ -445,7 +457,7 @@ export default defineConfig(({ mode }) => {
   }); };
   return {
   define: { 'import.meta.env.VITE_MOBILE_SLICE_STEPS': JSON.stringify(mobileSliceSteps) },
-  plugins: [{ name: 'alpha-access', enforce: 'pre', configureServer: (server: any) => attachAlpha(server),
+  plugins: [{ name: 'compatible-coep', configureServer: compatibleCoep, configurePreviewServer: compatibleCoep }, { name: 'alpha-access', enforce: 'pre', configureServer: (server: any) => attachAlpha(server),
     configurePreviewServer: (server: any) => attachAlpha(server, true) },
     react(), orcaAssetsPlugin(), printerGatewayPlugin(), {
     name: 'octoeverywhere-gateway', configureServer: attachOctoEverywhere, configurePreviewServer: attachOctoEverywhere
@@ -458,16 +470,14 @@ export default defineConfig(({ mode }) => {
       allow: [repoRoot]
     },
     headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp'
+      'Cross-Origin-Opener-Policy': 'same-origin'
     }
   },
   preview: {
     port: 5058,
     allowedHosts: ['server-1.barbel-hops.ts.net', 'weborca.noz.am'],
     headers: {
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'require-corp'
+      'Cross-Origin-Opener-Policy': 'same-origin'
     }
   }
   };

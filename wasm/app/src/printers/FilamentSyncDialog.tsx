@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../i18n';
 import { Dialog } from '../components/Dialog';
-import { useAppStore } from '../store/appStore';
+import { useAppStore, minimumFilamentSlots } from '../store/appStore';
 import { usePrinterConnectionStore } from './connectionStore';
 import type { PrinterFilament } from './types';
 
@@ -30,8 +30,15 @@ const SyncEditor: React.FC<{ slots: PrinterFilament[]; onClose: () => void }> = 
         const failure = useAppStore.getState().engineError;
         if (failure) throw new Error(failure);
       }
-      const slotCount = Math.max(...slots.map((slot, i) => slot.slotIndex ?? i)) + 1;
-      while (useAppStore.getState().selectedFilaments.length > slotCount) await useAppStore.getState().removeFilamentSlot();
+      const slotCount = Math.max(minimumFilamentSlots(useAppStore.getState().presetConfig),
+        Math.max(...slots.map((slot, i) => slot.slotIndex ?? i)) + 1);
+      while (useAppStore.getState().selectedFilaments.length > slotCount) {
+        const before = useAppStore.getState().selectedFilaments.length;
+        await useAppStore.getState().removeFilamentSlot();
+        if (useAppStore.getState().selectedFilaments.length >= before) {
+          throw new Error(useAppStore.getState().engineError || 'Could not remove filament slot');
+        }
+      }
       onClose();
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }

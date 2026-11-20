@@ -85,8 +85,10 @@ async function suite(browserType) {
       scene.setCameraView(0);
       return { fromAbove, fromBelow };
     });
-    assert.deepEqual(tower.fromAbove, { transparent: false, opacity: 1, depthWrite: true });
-    assert.deepEqual(tower.fromBelow, tower.fromAbove, 'wipe tower remains opaque from the opposite side');
+    assert.equal(tower.fromAbove.transparent, true);
+    assert.ok(tower.fromAbove.opacity > 0 && tower.fromAbove.opacity < 1, 'the tower is translucent');
+    assert.equal(tower.fromAbove.depthWrite, false);
+    assert.deepEqual(tower.fromBelow, tower.fromAbove, 'the tower is also translucent from the opposite side');
 
     let releaseModel;
     const modelGate = new Promise(resolve => { releaseModel = resolve; });

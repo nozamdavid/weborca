@@ -37,6 +37,8 @@ ARG MOBILE_SLICE_STEPS=layer_height,wall_loops,sparse_infill_density,sparse_infi
 ENV MOBILE_SLICE_STEPS=${MOBILE_SLICE_STEPS}
 ARG VITE_ALPHA_GATE_ENABLED=0
 ENV VITE_ALPHA_GATE_ENABLED=${VITE_ALPHA_GATE_ENABLED}
+ARG VITE_COEP=require-corp
+ENV VITE_COEP=${VITE_COEP}
 RUN npm run build
 COPY wasm/deploy/precompress.mjs /workspace/wasm/deploy/precompress.mjs
 RUN node /workspace/wasm/deploy/precompress.mjs dist
@@ -65,6 +67,7 @@ ENV NODE_ENV=production ORCA_HOST=weborca.noz.am
 WORKDIR /app
 COPY --from=build --chown=node:node /workspace/wasm/app/dist/ ./dist/
 COPY --chown=node:node wasm/deploy/server.mjs ./server.mjs
+COPY --chown=node:node wasm/deploy/coep.mjs wasm/deploy/model-thumbnail.mjs ./
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s CMD ["node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]

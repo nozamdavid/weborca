@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+Vary: User-Agent, Accept-Encoding
+X-Content-Type-Options: nosniff
+Cache-Control: no-cache
+Content-Type: text/html; charset=utf-8
+Last-Modified: Wed, 18 Nov 2026 22:15:40 GMT
+ETag: W/"287-1a1f0bade08"
+Content-Length: 647
+Date: Wed, 18 Nov 2026 22:23:07 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+

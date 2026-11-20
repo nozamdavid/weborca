@@ -58,6 +58,8 @@ Once the concurrency cap for an entry is full, move down the list. `(N) (diff)` 
 
 ## Communication and verification
 
+- After verifying a WebOrca runtime or UI change, deploy the tested build to the local Tailscale demo on port 18974. Retain the previous build for rollback and verify the deployed assets over HTTPS before reporting completion.
+
 - Avoid using slop words or phrases like "Bottom Line:" in conclusions, "delve," "foster," "leverage," "it's worth noting," "importantly," "Question? Answer." or "This isn't about X. It's about Y.", "genuinely" or hyphenated compound descriptions and adjectives. Do not use concluding summary statements such as "In short:..", "The simplest mental model is:...\".
 - State the intended action directly. Avoid adding what you won't do, what will remain unchanged, or how you'll separate or categorize results. Do not use contrastive framing such as "X, not Y" or "X—not Y". Avoid invented compound labels like "exact-head checks" and "editorial-row layouts", vague qualifiers, and canned transitions.
 - Lead with the outcome. Use concise paragraphs, short sentences, plain language, and only as much formatting and technical detail as the user needs.

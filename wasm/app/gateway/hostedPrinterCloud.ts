@@ -29,7 +29,7 @@ export function createHostedPrinterCloudBridge(cloud: string, publicOrigin?: str
       } else if (pathname.startsWith('/_printer/snapmaker-cloud/')) {
         await handleSnapmakerCloudRequest(req, res, req.url ?? pathname, options);
       } else if (pathname.startsWith('/_printer/bambu-cloud/api/')) {
-        await handleBambuCloudApi(req, res, '/' + pathname.slice('/_printer/bambu-cloud/api/'.length), options);
+        await handleBambuCloudApi(req, res, '/' + pathname.slice('/_printer/bambu-cloud/api/'.length) + new URL(req.url ?? pathname, 'http://localhost').search, options);
       } else {
         res.writeHead(404);
         res.end('Unknown printer cloud route.');

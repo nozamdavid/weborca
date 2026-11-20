@@ -1,0 +1,12 @@
+HTTP/2 200 
+cache-control: no-cache
+content-type: text/html; charset=utf-8
+cross-origin-embedder-policy: require-corp
+cross-origin-opener-policy: same-origin
+date: Wed, 18 Nov 2026 22:17:14 GMT
+etag: W/"287-1a1f0bade08"
+last-modified: Wed, 18 Nov 2026 22:15:40 GMT
+vary: User-Agent, Accept-Encoding
+x-content-type-options: nosniff
+content-length: 647
+

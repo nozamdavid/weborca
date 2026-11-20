@@ -24,8 +24,9 @@ async function runSuite(browserType, name) {
 
     log('an empty plate has nothing to close');
     await openFileMenu();
-    assert.equal(await newProject().isDisabled(), true);
-    await page.keyboard.press('Escape');
+    await newProject().click();
+    await page.waitForFunction(() => !window.__appStore.getState().isModelLoading);
+    assert.equal(await page.getByTestId('confirm-dialog').count(), 0);
 
     await page.mouse.click(1000, 300, { button: 'right' });
     await page.hover('#plate-menu-primitive');

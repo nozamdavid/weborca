@@ -51,6 +51,7 @@ async function suite(browserType) {
     await page.getByRole('button', { name: 'File', exact: true }).click();
     await page.getByText('Recent files', { exact: true }).hover();
     await page.getByText('cached-project.3mf', { exact: true }).last().click();
+    await page.getByTestId('confirm-ok').click();
     await page.waitForFunction(() => window.__fileReadCounts['cached-project.3mf'] === 4 && !window.__appStore.getState().isModelLoading);
     assert.equal(await page.evaluate(() => window.__appStore.getState().engineError), null);
     const afterGeometry = await page.evaluate(async () => {

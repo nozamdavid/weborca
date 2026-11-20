@@ -1,0 +1,16 @@
+HTTP/1.1 200 OK
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+X-Content-Type-Options: nosniff
+Cache-Control: private, no-cache
+Content-Type: application/javascript
+Last-Modified: Wed, 11 Nov 2026 22:12:56 GMT
+X-Orca-Engine-Version: c40aa5921d95b74d5af1ed84bb45aa6ad870456ae3c642e988ab7e394c130059
+X-Orca-Decoded-Length: 129081
+ETag: W/"c40aa5921d95b74d5af1ed84bb45aa6ad870456ae3c642e988ab7e394c130059"
+Vary: Accept-Encoding
+Content-Length: 129081
+Date: Wed, 18 Nov 2026 16:00:47 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+

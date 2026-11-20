@@ -1,9 +1,12 @@
 import React, { useRef, useState } from 'react';
+import { useHelpStore } from '../shell/HelpDialogs';
 import { Dialog } from '../components/Dialog';
 import { useAppStore } from '../store/appStore';
 import { SavedPrinterSelector } from '../printers/SavedPrinterSelector';
+import { ADD_FILAMENT, openAddFilament } from '../wizard/addFilament';
 import { useHistoryStore } from '../history';
 import { exportGcode } from '../shell/exportGcode';
+import { requestNewProject, requestOpenProject } from '../shell/projectActions';
 import type { TabId } from '../shell/TopBar';
 import { useTranslation } from '../i18n';
 import { MobileSelect } from './MobileSelect';
@@ -33,8 +36,7 @@ export function MobileImport({ disabled, onImported }: { disabled: boolean; onIm
       event.target.value = '';
       if (!file) return;
       const s = useAppStore.getState();
-      if (/\.3mf$/i.test(file.name)) void s.openProjectFile(file);
-      else if (/\.gcode$/i.test(file.name)) void s.openGcodeFile(file);
+      if (/\.gcode$/i.test(file.name)) void s.openGcodeFile(file);
       else s.requestImportFile(file);
       onImported?.();
     }} /><button className="wm-primary" disabled={disabled} onClick={() => input.current?.click()}>{t('Add model')}</button></>;
@@ -49,6 +51,7 @@ function MobileMenu({ onClose }: { onClose: () => void }) {
   const s = useAppStore();
   const history = useHistoryStore();
   const busy = mobileBusy(s);
+  const projectInput = useRef<HTMLInputElement>(null);
   const preset = (kind: 'process' | 'filament') => {
     const selected = kind === 'process' ? s.selectedProcess : s.selectedFilament;
     const active = s.activeUserPreset[kind];
@@ -56,6 +59,11 @@ function MobileMenu({ onClose }: { onClose: () => void }) {
     return <label className="wm-field"><span className="wm-field-label">{t(kind === 'process' ? 'Process preset' : 'Filament')}</span>
       <MobileSelect aria-label={t(kind === 'process' ? 'Process preset' : 'Filament')} value={active ? `user:${active}` : selected} disabled={busy}
         onValueChange={value => {
+          if (kind === 'filament' && value === ADD_FILAMENT) {
+            onClose();
+            openAddFilament();
+            return;
+          }
           if (value.startsWith('user:')) void s.selectUserPreset(kind, value.slice(5));
           else if (kind === 'process') void s.chooseProcess(value);
           else void s.chooseFilament(value);
@@ -63,11 +71,23 @@ function MobileMenu({ onClose }: { onClose: () => void }) {
         <option value="" disabled>{t('Select...')}</option>
         {system.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
         <optgroup label={t('User presets')}>{s.userPresets.filter(p => p.kind === kind).map(p => <option key={p.name} value={`user:${p.name}`}>{p.name}</option>)}</optgroup>
+        {kind === 'filament' && <option value={ADD_FILAMENT}>{t('Add filament')}...</option>}
       </MobileSelect>
     </label>;
   };
   return <MobileSheet title={t('Menu & presets')} onClose={onClose}>
+    <button aria-haspopup="dialog" onClick={() => { onClose(); useHelpStore.getState().open('bambu'); }}>{t('Bambu Cloud account')}</button>
     <section className="wm-stack"><h2>{t('Project')}</h2><MobileImport disabled={busy} onImported={onClose} />
+      <button disabled={busy} onClick={() => { onClose(); void requestNewProject(); }}>{t('New project')}</button>
+      <input ref={projectInput} type="file" hidden accept=".3mf" aria-label={t('Open project...')}
+        onChange={event => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (!file) return;
+          onClose();
+          void requestOpenProject(file);
+        }} />
+      <button disabled={busy} onClick={() => projectInput.current?.click()}>{t('Open project...')}</button>
       <button disabled={busy || !s.modelFile} onClick={() => void s.saveProjectFile()}>{t('Save project')}</button>
     </section>
     <section className="wm-group">
@@ -103,7 +123,7 @@ export function MobileHeader() {
 export function MobileNavigation({ activeTab, setActiveTab }: { activeTab: TabId; setActiveTab: (tab: TabId) => void }) {
   const { t } = useTranslation();
   return <nav className="wm-nav" aria-label={t('Main navigation')}>
-    {(['prepare', 'preview', 'device'] as const).map(tab => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined}
+    {(['models', 'prepare', 'preview', 'device'] as const).map(tab => <button key={tab} aria-current={activeTab === tab ? 'page' : undefined}
       onClick={() => setActiveTab(tab)}>{t(tab[0].toUpperCase() + tab.slice(1))}</button>)}
   </nav>;
 }

@@ -51,6 +51,8 @@ import type { SettingsLayout, SettingsMode } from '../settings/types';
 import type { UserPreset, PresetKind, ConflictStrategy, PresetBundle, ImportBundleResult } from '../presets/types';
 import { loadUserPresets } from '../presets/presetStorage';
 import { effectivePreset } from '../presets/effectivePreset';
+import { MAX_FILAMENT_SLOTS, readImportedFilamentColours } from './importedFilaments';
+
 import {
   saveCurrentUserPresetHelper,
   duplicateUserPresetHelper,
@@ -183,7 +185,7 @@ export interface AppState {
   setStepImportState: (state: { file: File } | null) => void;
   requestImportFile: (file: File) => void;
   importModelFile: (file: File, options?: StepImportOptions, inArchive?: boolean, context?: { source: 'builtin-handy' }) => Promise<void>;
-  openProjectFile: (file: File) => Promise<void>;
+  openProjectFile: (file: File) => Promise<boolean>;
   saveProjectFile: (fileName?: string) => Promise<Uint8Array | null>;
   openGcodeFile: (file: File) => Promise<void>;
   startSlice: () => Promise<void>;
@@ -291,6 +293,16 @@ async function computeBaselineConfig(
   if (process) await mergeKnown(effectivePreset('process', process.name, userPresets).values);
   await mergeKnown(userValues);
   return baseline;
+}
+
+export function minimumFilamentSlots(config: Record<string, string>): number {
+  if (['1', 'true'].includes(config.single_extruder_multi_material)) return 1;
+  return Math.max(1, (config.nozzle_diameter || '').split(',').length);
+}
+
+/** Keep user preset names while accepting slots padded by native selection. */
+function selectedFilamentSlots(requested: string[], native: string[]): string[] {
+  return native.map((name, index) => requested[index] || name);
 }
 
 /** Pause UI actions and autosave while a managed preset is persisted and applied. */
@@ -627,7 +639,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           activeUserPreset: { process: null, filament: null, printer: null }
         });
 
-        await selectPresets({
+        const selection = await selectPresets({
           printer,
           process: defaultProc,
           filaments: [defaultFilament]
@@ -635,11 +647,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
         // Capture pristine baseline preset config
         const baselineConfig = await getConfig();
+        const selectedSlots = selectedFilamentSlots([defaultFilament], selection.filaments);
 
         // Re-apply remaining process & filament overrides
         const { processOverrides, filamentOverrides } = get();
         const activeOverrides = { ...processOverrides, ...filamentOverrides };
-        await reapplyPresetOverrides([defaultFilament], activeOverrides);
+        await reapplyPresetOverrides(selectedSlots, activeOverrides);
 
         const effectiveConfig = await getConfig();
 
@@ -663,7 +676,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           selectedProcess: defaultProc,
           filaments,
           selectedFilament: defaultFilament,
-          selectedFilaments: [defaultFilament],
+          selectedFilaments: selectedSlots,
+          activeFilamentSlot: 0,
           presetConfig: baselineConfig,
           currentConfig: effectiveConfig,
           rulesState: {
@@ -823,8 +837,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   addFilamentSlot: async (presetName?: string) => {
     const { selectedFilaments, selectedFilament, filaments, selectedPrinter, selectedProcess, userPresets } = get();
     const candidate = presetName || (selectedFilaments[selectedFilaments.length - 1] || selectedFilament || (filaments[0]?.name ?? 'Generic PLA'));
-    const nextList = [...(selectedFilaments.length > 0 ? selectedFilaments : [selectedFilament]), candidate];
-    if (nextList.length > 16) return;
+    let nextList = [...(selectedFilaments.length > 0 ? selectedFilaments : [selectedFilament]), candidate];
+    if (nextList.length > MAX_FILAMENT_SLOTS) return;
     if (get().isSlicing) get().cancelSlice();
     get().invalidateSlicePreview();
 
@@ -834,11 +848,20 @@ export const useAppStore = create<AppState>((set, get) => ({
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
         const systemFilaments = nextList.map((f) => resolveSystemPreset('filament', f, userPresets));
 
-        await selectPresets({
+        // Validate saved filament values before changing the native slot count.
+        // A rejected merge must leave native selection aligned with the store.
+        const slots = nextList.map(name => effectivePreset('filament', name, userPresets));
+        if (slots.some(slot => Object.keys(slot.values).length)) {
+          await (await getEngine()).call('mergeFilamentPresets', { slots });
+        }
+
+        const selection = await selectPresets({
           printer: systemPrinter,
           process: systemProcess,
           filaments: systemFilaments
         });
+
+        nextList = selectedFilamentSlots(nextList, selection.filaments);
 
         const baselineConfig = await computeBaselineConfig(nextList, userPresets);
 
@@ -885,7 +908,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeFilamentSlot: async (slotIndex?: number) => {
     const { selectedPrinter, selectedProcess, selectedFilaments, selectedFilament, userPresets } = get();
     const currentList = selectedFilaments && selectedFilaments.length > 0 ? [...selectedFilaments] : [selectedFilament];
-    if (currentList.length <= 1) return;
+    if (currentList.length <= minimumFilamentSlots(get().presetConfig)) return;
 
     const removedSlot = Number.isInteger(slotIndex) && slotIndex! >= 0 && slotIndex! < currentList.length
       ? slotIndex! : currentList.length - 1;
@@ -906,6 +929,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         // Imported maps/colors may exist only in native project settings.
         for (const key of ['filament_map', 'filament_volume_map', 'filament_nozzle_map', 'filament_colour']) {
           if (!(key in overrides) && get().currentConfig[key] !== undefined) overrides[key] = get().currentConfig[key];
+        }
+        // Imported assignments can outlive changes to the number of slots.
+        for (const key of ['filament_map', 'filament_volume_map', 'filament_nozzle_map']) {
+          if (!overrides[key]) continue;
+          const values = overrides[key].split(',');
+          const fallback = key === 'filament_map' ? '1' : '0';
+          overrides[key] = Array.from({ length: currentList.length }, (_, index) => values[index] ?? fallback).join(',');
         }
         const systemPrinter = resolveSystemPreset('printer', selectedPrinter, userPresets);
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
@@ -978,12 +1008,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   openProjectFile: async (file: File) => {
-    if (!get().isEngineReady) { showToast('Wait for the current operation to finish.', 'error'); return; }
-    if (!file) return;
+    if (!get().isEngineReady) { showToast('Wait for the current operation to finish.', 'error'); return false; }
+    if (!file) return false;
     set({
       isModelLoading: true,
       engineError: null,
-      sliceResult: null,
       sliceStatusText: `Opening project ${file.name}...`
     });
 
@@ -994,6 +1023,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const vfsPath = `/models/${file.name}`;
       await engine.writeFile(vfsPath, bytes);
       const res = await engine.call('openProject', { path: vfsPath });
+      get().invalidateSlicePreview();
 
       if (res.selectedPresets) {
         const { printer, process, filaments } = res.selectedPresets;
@@ -1067,6 +1097,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       try {
         await storeImportedRecentFile(file, 'project');
       } catch (_) {}
+      return true;
     } catch (err: any) {
       set({
         isModelLoading: false,
@@ -1074,6 +1105,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         sliceStatusText: 'Project loading failed'
       });
       showToast(`Failed to open project: ${err.message || String(err)}`, 'error');
+      return false;
     }
   },
 
@@ -1238,8 +1270,55 @@ export const useAppStore = create<AppState>((set, get) => ({
         const objs = await engine.listObjects();
         res = { objects: objs };
       } else {
-        const buffer = await file.arrayBuffer();
-        res = await addModel(file.name, new Uint8Array(buffer), options);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const importedColours = ext === '3mf' ? readImportedFilamentColours(bytes) : [];
+        res = await addModel(file.name, bytes, options);
+        const state = get();
+        const currentFilaments = state.selectedFilaments.length ? state.selectedFilaments : [state.selectedFilament];
+        if (importedColours.length && state.selectedPrinter && state.selectedProcess && currentFilaments[0] &&
+            (knownObjectIds.size === 0 || importedColours.length > currentFilaments.length)) {
+          const nextFilaments = [...currentFilaments];
+          while (nextFilaments.length < importedColours.length) {
+            nextFilaments.push(currentFilaments[currentFilaments.length - 1]);
+          }
+          const currentColours = (state.currentConfig.filament_colour || '').split(';');
+          const resolveSelection = (names: string[]) => ({
+            printer: resolveSystemPreset('printer', state.selectedPrinter, state.userPresets),
+            process: resolveSystemPreset('process', state.selectedProcess, state.userPresets),
+            filaments: names.map(name => resolveSystemPreset('filament', name, state.userPresets)),
+          });
+          const overrides = { ...state.processOverrides, ...state.printerOverrides, ...state.filamentOverrides };
+          try {
+            await selectPresets(resolveSelection(nextFilaments));
+            const baseline = await computeBaselineConfig(nextFilaments, state.userPresets);
+            const defaults = (baseline.filament_colour || '').split(';');
+            const colours = nextFilaments.map((_, i) => {
+              // Reuse numbered slots when adding to an existing project. Changing
+              // their colours would also recolour objects already on the plate.
+              const preserve = knownObjectIds.size > 0 && i < currentFilaments.length;
+              return (!preserve && importedColours[i]) || currentColours[i] || defaults[i] || '#009688';
+            });
+            const filamentOverrides = { ...state.filamentOverrides, filament_colour: colours.join(';') };
+            await reapplyPresetOverrides(nextFilaments, { ...overrides, ...filamentOverrides });
+            const currentConfig = await getConfig();
+            const rules = await evaluateRules({ kind: 'print', filamentIndex: state.activeFilamentSlot });
+            set({
+              selectedFilaments: nextFilaments,
+              selectedFilament: nextFilaments[0],
+              filamentOverrides,
+              presetConfig: baseline,
+              currentConfig,
+              rulesState: { fields: rules.fields || {}, fixes: rules.fixes || [], messages: rules.messages || [] },
+            });
+          } catch (error) {
+            const engine = await getEngine();
+            for (const object of res.objects) await engine.deleteObject(object.id);
+            await selectPresets(resolveSelection(currentFilaments));
+            await reapplyPresetOverrides(currentFilaments, { ...overrides, ...(state.currentConfig.filament_colour
+              ? { filament_colour: state.currentConfig.filament_colour } : {}) });
+            throw error;
+          }
+        }
       }
 
       const { usePlateStore } = await import('../plate/plateStore');
@@ -1826,14 +1905,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         const targetActive = { ...prevState.activeUserPreset, printer: name };
         const systemProcess = resolveSystemPreset('process', selectedProcess, userPresets);
         const { selectedFilaments: curFils } = get();
-        const filamentsList = curFils && curFils.length > 0 ? curFils : [selectedFilament];
+        let filamentsList = curFils && curFils.length > 0 ? curFils : [selectedFilament];
         const systemFilaments = filamentsList.map((f) => resolveSystemPreset('filament', f, userPresets));
 
-        await selectPresets({
+        const selection = await selectPresets({
           printer: systemParent,
           process: systemProcess,
           filaments: systemFilaments
         });
+        filamentsList = selectedFilamentSlots(filamentsList, selection.filaments);
 
         const baselineConfig = await computeBaselineConfig(filamentsList, userPresets, targetActive);
         const nextPrinterOverrides = await normalizePersistedOptions(effectivePreset(kind, name, userPresets).values);
@@ -1865,6 +1945,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...(compFilaments.length > 0 ? { filaments: compFilaments } : {}),
           activeUserPreset: targetActive,
           selectedPrinter: name,
+          selectedFilaments: filamentsList,
+          selectedFilament: filamentsList[0],
           printerOverrides: nextPrinterOverrides,
           presetConfig: baselineConfig,
           currentConfig: effectiveConfig,
@@ -2025,7 +2107,12 @@ async function restoreDeviceFilaments() {
     if (user) await useAppStore.getState().selectUserPreset('filament', valid[i], i);
     else await useAppStore.getState().chooseFilament(valid[i], i);
   }
-  while (useAppStore.getState().selectedFilaments.length > valid.length) await useAppStore.getState().removeFilamentSlot();
+  const targetCount = Math.max(valid.length, minimumFilamentSlots(useAppStore.getState().presetConfig));
+  while (useAppStore.getState().selectedFilaments.length > targetCount) {
+    const before = useAppStore.getState().selectedFilaments.length;
+    await useAppStore.getState().removeFilamentSlot();
+    if (useAppStore.getState().selectedFilaments.length >= before) break;
+  }
   for (let i = 0; i < valid.length; i++) {
     if (device.filamentColors?.[i]) await useAppStore.getState().setSlotColor(i, device.filamentColors[i]);
   }
