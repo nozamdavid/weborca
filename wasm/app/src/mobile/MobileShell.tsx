@@ -27,7 +27,7 @@ export function MobileSheet({ title, onClose, children, footer, full = false }: 
   </Dialog>;
 }
 
-export function MobileImport({ disabled, onImported }: { disabled: boolean; onImported?: () => void }) {
+export function MobileImport({ disabled, onImported, primary = true }: { disabled: boolean; onImported?: () => void; primary?: boolean }) {
   const { t } = useTranslation();
   const input = useRef<HTMLInputElement>(null);
   return <><input ref={input} type="file" hidden accept=".stl,.obj,.3mf,.amf,.step,.stp,.svg,.gcode" aria-label={t('Import model')}
@@ -39,7 +39,7 @@ export function MobileImport({ disabled, onImported }: { disabled: boolean; onIm
       if (/\.gcode$/i.test(file.name)) void s.openGcodeFile(file);
       else s.requestImportFile(file);
       onImported?.();
-    }} /><button className="wm-primary" disabled={disabled} onClick={() => input.current?.click()}>{t('Add model')}</button></>;
+    }} /><button className={primary ? 'wm-primary' : undefined} disabled={disabled} onClick={() => input.current?.click()}>{t('Add model')}</button></>;
 }
 
 export function mobileBusy(s: ReturnType<typeof useAppStore.getState>) {
@@ -76,7 +76,6 @@ function MobileMenu({ onClose }: { onClose: () => void }) {
     </label>;
   };
   return <MobileSheet title={t('Menu & presets')} onClose={onClose}>
-    <button aria-haspopup="dialog" onClick={() => { onClose(); useHelpStore.getState().open('bambu'); }}>{t('Bambu Cloud account')}</button>
     <section className="wm-stack"><h2>{t('Project')}</h2><MobileImport disabled={busy} onImported={onClose} />
       <button disabled={busy} onClick={() => { onClose(); void requestNewProject(); }}>{t('New project')}</button>
       <input ref={projectInput} type="file" hidden accept=".3mf" aria-label={t('Open project...')}
@@ -102,6 +101,7 @@ function MobileMenu({ onClose }: { onClose: () => void }) {
     <section className="wm-group">{preset('filament')}<button disabled={busy} onClick={() => s.openDialog('filament')}>{t('Filament Settings')}</button></section>
     <section className="wm-stack">{preset('process')}</section>
     <button aria-haspopup="dialog" onClick={() => usePrefsStore.getState().openDialog('general')}>{t('Preferences...')}</button>
+    <button aria-haspopup="dialog" onClick={() => { onClose(); useHelpStore.getState().open('bambu'); }}>{t('Bambu Cloud account')}</button>
     <details><summary>{t('Secondary actions')}</summary><div className="wm-stack">
       <button disabled={busy || !history.canUndo} onClick={() => void history.undo()}>{t('Undo')}</button>
       <button disabled={busy || !history.canRedo} onClick={() => void history.redo()}>{t('Redo')}</button>

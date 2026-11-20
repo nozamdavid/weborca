@@ -73,7 +73,7 @@ export const SettingsPanel: React.FC = () => {
             <h2 className="settings-title">{t("Process Settings")}</h2>
             <button
               type="button"
-              className="btn btn-secondary btn-xs save-preset-btn"
+              className="btn btn-secondary btn-sm save-preset-btn"
               data-testid="save-process-btn"
               aria-label={t('Save process preset')}
               title={t("Save current overrides as user process preset")}

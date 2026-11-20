@@ -39,25 +39,37 @@ export function MobilePrepare() {
   const sliceDisabledReason = readiness || (!count ? 'Add a model to slice.' : s.engineError || '');
   return <section className="wm-prepare">
     <div className="wm-row"><h1>{t('Prepare')}</h1><span className="wm-help">{plate?.name} · {count ? t(count === 1 ? '{{count}} object' : '{{count}} objects', { count }) : t('Empty')}</span></div>
-    <div className={`wm-viewport ${tools ? 'wm-tools-open' : ''}`}><PlateView /></div>
-    {tools && canTransform && extraSelection.length > 0 && mode === 'scale' && <GroupScale disabled={busy} idPrefix="mobile-nt" />}
-    {tools && canTransform && !extraSelection.length && (mode === 'translate' || mode === 'scale') && <NumericTransform
-      object={selectedObject} instance={selectedInstance} mode={mode === 'translate' ? 'move' : 'scale'} idPrefix="mobile-nt" />}
-    <button aria-expanded={tools} onClick={() => { setTools(!tools); window.dispatchEvent(new Event('resize')); }}>{t('Plate tools')}</button>
-    <button aria-haspopup="dialog" onClick={() => setSheet('tools')}>{t('Tools')}</button>
+    <div className="wm-prepare-scroll">
+      <div className={`wm-viewport ${tools ? 'wm-tools-open' : ''}`}><PlateView /></div>
+      {tools && canTransform && extraSelection.length > 0 && mode === 'scale' && <GroupScale disabled={busy} idPrefix="mobile-nt" />}
+      {tools && canTransform && !extraSelection.length && (mode === 'translate' || mode === 'scale') && <NumericTransform
+        object={selectedObject} instance={selectedInstance} mode={mode === 'translate' ? 'move' : 'scale'} idPrefix="mobile-nt" />}
+      <div className="wm-prepare-tools-row">
+        <button aria-expanded={tools} onClick={() => { setTools(!tools); window.dispatchEvent(new Event('resize')); }}>{t('Plate tools')}</button>
+        <button aria-haspopup="dialog" onClick={() => setSheet('tools')}>{t('Tools')}</button>
+      </div>
+      <button className="wm-row" aria-haspopup="dialog" onClick={() => setSheet('objects')}><strong>{t('Objects')} · {objects.length}</strong><span>{t('Open')} ›</span></button>
+      <section className="wm-card"><div className="wm-row"><h2>{t('Process Settings')}</h2><button aria-haspopup="dialog" onClick={() => setSheet('settings')}>{t('Settings')}</button></div>
+        <dl className="wm-prepare-presets">
+          <div><dt>{t('Printer')}</dt><dd>{s.selectedPrinter || '—'}</dd></div>
+          <div><dt>{t('Process')}</dt><dd>{s.selectedProcess || t('No process preset selected')}</dd></div>
+          <div><dt>{t('Filament')}</dt><dd>{s.selectedFilaments.join(', ') || s.selectedFilament || t('No filament selected')}</dd></div>
+        </dl>
+      </section>
+    </div>
+    <div className="wm-prepare-actions">
+      <div className="wm-prepare-action-row">
+        <MobileImport disabled={busy} primary={count === 0} />
+        <button className={count > 0 ? 'wm-primary' : undefined} disabled={!!sliceDisabledReason} aria-describedby={sliceDisabledReason ? 'mobile-slice-readiness' : undefined}
+          onClick={() => void plates.slicePlate(plates.activePlateIndex)}>{t('Slice plate')}</button>
+      </div>
+      {sliceDisabledReason && <p id="mobile-slice-readiness" className="wm-help">{t(sliceDisabledReason)}</p>}
+    </div>
     {sheet === 'tools' && <MobileSheet title={t('Tools')} onClose={() => setSheet(null)}>
-      <button disabled={texture.disabled} title={t(texture.label)} onClick={() => { setSheet(null); texture.onClick(); }}><Icon name={texture.icon as string} />{t(texture.label)}</button>
+      <button className="wm-tool-action" disabled={texture.disabled} title={t(texture.label)} onClick={() => { setSheet(null); texture.onClick(); }}><Icon name={texture.icon as string} />{t(texture.label)}</button>
     </MobileSheet>}
-    <button className="wm-row" aria-haspopup="dialog" onClick={() => setSheet('objects')}><strong>{t('Objects')} · {objects.length}</strong><span>{t('Open')} ›</span></button>
-    <section className="wm-card"><div className="wm-row"><h2>{t('Process Settings')}</h2><button aria-haspopup="dialog" onClick={() => setSheet('settings')}>{t('Settings')}</button></div>
-      <p>{s.selectedProcess || t('No process preset selected')}</p><small>{s.selectedFilaments.join(', ') || s.selectedFilament || t('No filament selected')}</small>
-    </section>
-    <MobileImport disabled={busy} />
-    <button className="wm-primary" disabled={!!sliceDisabledReason} aria-describedby={sliceDisabledReason ? 'mobile-slice-readiness' : undefined}
-      onClick={() => void plates.slicePlate(plates.activePlateIndex)}>{t('Slice plate')}</button>
-    {sliceDisabledReason && <p id="mobile-slice-readiness" className="wm-help">{t(sliceDisabledReason)}</p>}
     {sheet === 'objects' && <MobileSheet title={`${t('Objects')} · ${objects.length}`} onClose={() => setSheet(null)}>
-      {objects.length ? <ObjectListPanel /> : <div className="wm-empty"><h2>{t('No objects yet')}</h2><p>{t('Add a model to arrange it on the plate and edit its settings.')}</p><MobileImport disabled={busy} onImported={() => setSheet(null)} /></div>}
+      {objects.length ? <ObjectListPanel hideHeader /> : <div className="wm-empty"><h2>{t('No objects yet')}</h2><p>{t('Add a model to arrange it on the plate and edit its settings.')}</p><MobileImport disabled={busy} onImported={() => setSheet(null)} /></div>}
     </MobileSheet>}
     {sheet === 'settings' && <MobileProcessSettings onClose={() => setSheet(null)} />}
   </section>;

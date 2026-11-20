@@ -1249,6 +1249,7 @@ export const PlateView: React.FC = () => {
       {objects.length === 0 && !busy && <div className="desktop-prepare-empty">
         <button className="ds-btn ds-btn--primary" onClick={() => document.getElementById('model-file')?.click()}>{t('Add model')}</button>
         <p>{t('Or drop a model onto the plate')}</p>
+        <p className="desktop-prepare-formats">STL · 3MF · OBJ · STEP · SVG</p>
       </div>}
       <ViewButtons />
 
@@ -1309,24 +1310,8 @@ export const PlateView: React.FC = () => {
 
       {/* Loading overlay */}
       {isLoading && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 24,
-            right: 24,
-            background: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(6px)',
-            color: '#fff',
-            padding: '8px 16px',
-            borderRadius: 8,
-            fontSize: '0.85rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            zIndex: 15
-          }}
-        >
-          <div className="spinner" style={{ width: 14, height: 14 }} />
+        <div className="plate-loading-badge">
+          <div className="spinner" />
           <span>{t("Processing model...")}</span>
         </div>
       )}
@@ -1397,10 +1382,11 @@ export const PlateView: React.FC = () => {
         >
           <div className="ds-dialog ds-dialog--sm">
             <h2 className="ds-title--dialog">{renamingItem.volumeId !== undefined ? t("Rename part") : t("Rename object")}</h2>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            <label className="item-rename-field">
               {t("Name")}<input
                 id="item-rename-input"
                 data-testid="item-rename-input"
+                className="item-rename-input"
                 autoFocus
                 defaultValue={renamingItem.name}
                 onKeyDown={(e) => {
@@ -1418,7 +1404,6 @@ export const PlateView: React.FC = () => {
                   }
                   if (e.key === 'Escape') setRenamingItem(null);
                 }}
-                style={{ padding: '8px 10px', fontSize: '0.875rem', background: 'var(--canvas-bg)', color: 'var(--text-color)', border: '1px solid var(--border-color)', borderRadius: 6, outline: 'none' }}
               />
             </label>
             <div className="ds-dialog__foot">

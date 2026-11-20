@@ -384,7 +384,7 @@
 .sidebar-footer .ds-btn { height: auto; }
 .quick-toggles { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); padding: var(--space-1) var(--space-3) var(--space-2); font-size: var(--text-sm); }
 .quick-toggle { display: flex; align-items: center; gap: var(--space-1); min-height: var(--ctl-h); }
-.quick-toggle:has(:disabled) { color: var(--text-disabled); }
+.quick-toggle:has(:disabled) { color: var(--text-secondary); }
 .bed-type-row { display: flex; align-items: center; gap: var(--space-2); }
 .bed-type-row select { flex: 1; min-width: 0; }
 .filament-slots-list { display: flex; flex-direction: column; gap: var(--space-1-5); }
@@ -397,7 +397,7 @@
 .canvas-toolbar.ds-toolbar .ds-icon-btn { width: var(--icon-btn); height: var(--icon-btn); }
 .canvas-toolbar.ds-toolbar .ico { width: var(--icon); height: var(--icon); }
 .view-buttons.ds-toolbar { background: var(--surface-overlay); border-radius: var(--radius-md); box-shadow: var(--shadow-2); }
-.view-buttons.ds-toolbar > button { height: var(--ctl-h); font-size: var(--text-xs); }
+.view-buttons.ds-toolbar > button { height: var(--ctl-h); font-size: var(--text-sm); padding: 0 7px; }
 .toolbar-overflow, .context-menu { position: fixed; width: max-content; user-select: none; z-index: var(--z-popover); }
 .toolbar-overflow { min-width: 240px; }
 .toolbar-overflow .ds-menu__item { justify-content: flex-start; gap: var(--space-2); }

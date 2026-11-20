@@ -82,21 +82,22 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
   } | null>(null);
 
   const isObjectSelected = inSelectedGroup && selectedObjectId === object.id && selectedVolumeId === null && selectedRangeIndex === null;
+  const isObjectRenaming = renamingTarget === 'object';
 
   const getVolumeIcon = (type: VolumeType) => {
     switch (type) {
       case 'part':
-        return <PartIcon size={14} />;
+        return <PartIcon size={14} className="object-tree-type-icon" />;
       case 'negative':
-        return <NegativeIcon size={14} />;
+        return <NegativeIcon size={14} className="object-tree-type-icon" />;
       case 'modifier':
-        return <ModifierIcon size={14} />;
+        return <ModifierIcon size={14} className="object-tree-type-icon" />;
       case 'support_blocker':
-        return <SupportBlockerIcon size={14} />;
+        return <SupportBlockerIcon size={14} className="object-tree-type-icon" />;
       case 'support_enforcer':
-        return <SupportEnforcerIcon size={14} />;
+        return <SupportEnforcerIcon size={14} className="object-tree-type-icon" />;
       default:
-        return <PartIcon size={14} />;
+        return <PartIcon size={14} className="object-tree-type-icon" />;
     }
   };
 
@@ -156,15 +157,38 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
     setRenamingTarget(null);
   };
 
+  const objectRowClasses = [
+    'object-tree-row',
+    'object-tree-row--object',
+    isObjectSelected ? 'is-selected' : '',
+    dropEdge === 'above' ? 'drop-above' : dropEdge === 'below' ? 'drop-below' : ''
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className="object-tree-node" style={{ marginBottom: 2 }}>
+    <div className="object-tree-node">
       {/* Object Row */}
       <div
         id={`object-row-${object.id}${rowSuffix}`}
         data-testid={`object-row-${object.id}`}
         data-object-id={object.id}
         data-instance-ids={instanceIds?.join(',')}
+        role="button"
+        tabIndex={isObjectRenaming ? undefined : 0}
+        aria-pressed={isObjectSelected}
         onClick={() => selectItem(object.id, null)}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selectItem(object.id, null);
+          } else if (e.key === 'ArrowRight' && !isExpanded) {
+            e.preventDefault();
+            setIsExpanded(true);
+          } else if (e.key === 'ArrowLeft' && isExpanded) {
+            e.preventDefault();
+            setIsExpanded(false);
+          }
+        }}
         onContextMenu={(e) => handleContextMenu(e, true)}
         draggable={renamingTarget === null}
         onDragStart={(e) => {
@@ -188,26 +212,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
           const order = useObjectListStore.getState().objects.map((o) => o.id).filter((id) => id !== dragged);
           void moveObject(dragged, order.indexOf(object.id) + (edge === 'below' ? 1 : 0));
         }}
-        style={{
-          boxShadow: dropEdge === 'above' ? '0 -2px 0 0 #009688' : dropEdge === 'below' ? '0 2px 0 0 #009688' : undefined,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '6px 8px',
-          borderRadius: 4,
-          background: isObjectSelected ? 'rgba(0, 150, 136, 0.25)' : 'transparent',
-          border: isObjectSelected ? '1px solid rgba(0, 150, 136, 0.4)' : '1px solid transparent',
-          cursor: 'pointer',
-          color: 'var(--text-color)',
-          fontSize: '0.82rem',
-          userSelect: 'none'
-        }}
-        onMouseEnter={(e) => {
-          if (!isObjectSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-        }}
-        onMouseLeave={(e) => {
-          if (!isObjectSelected) e.currentTarget.style.background = 'transparent';
-        }}
+        className={objectRowClasses}
       >
         <button
           type="button"
@@ -217,22 +222,14 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
             e.stopPropagation();
             setIsExpanded(!isExpanded);
           }}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--text-muted)',
-            padding: 0,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center'
-          }}
+          className="object-tree-icon-btn"
         >
           {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
 
-        <ObjectIcon size={15} className="text-zinc-400" />
+        <ObjectIcon size={15} className="object-tree-object-icon" />
 
-        {renamingTarget === 'object' ? (
+        {isObjectRenaming ? (
           <input
             type="text"
             id={`rename-input-object-${object.id}${rowSuffix}`}
@@ -246,28 +243,13 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
             }}
             onClick={(e) => e.stopPropagation()}
             autoFocus
-            style={{
-              flex: 1,
-              background: 'var(--canvas-bg)',
-              border: '1px solid #009688',
-              borderRadius: 3,
-              color: '#fff',
-              fontSize: '0.8rem',
-              padding: '2px 4px',
-              outline: 'none'
-            }}
+            className="object-rename-input"
           />
         ) : (
           <span
             id={`object-name-${object.id}${rowSuffix}`}
             data-testid={`object-name-${object.id}`}
-            style={{
-              flex: 1,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontWeight: 500
-            }}
+            className="object-tree-name object-tree-name--object"
             onDoubleClick={() => handleStartRename('object', object.name)}
           >
             {object.name}
@@ -283,24 +265,11 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
             <span
               id={`badge-extruder-object-${object.id}${rowSuffix}`}
               data-testid={`badge-extruder-object-${object.id}`}
-              style={{
-                background: 'rgba(255, 255, 255, 0.1)',
-                color: 'var(--text-muted)',
-                fontSize: '0.65rem',
-                padding: '1px 4px',
-                borderRadius: 4,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4
-              }}
+              className="object-badge-extruder"
             >
               <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  backgroundColor: rawColors[effectiveExt - 1] || defaultColors[(effectiveExt - 1) % defaultColors.length]
-                }}
+                className="object-badge-swatch"
+                style={{ backgroundColor: rawColors[effectiveExt - 1] || defaultColors[(effectiveExt - 1) % defaultColors.length] }}
               />
               E{effectiveExt}
             </span>
@@ -312,14 +281,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
             id={`badge-overrides-object-${object.id}${rowSuffix}`}
             data-testid={`badge-overrides-object-${object.id}`}
             title={`${object.overrides.length} custom setting overrides`}
-            style={{
-              background: '#009688',
-              color: '#fff',
-              fontSize: '0.65rem',
-              padding: '1px 5px',
-              borderRadius: 8,
-              fontWeight: 600
-            }}
+            className="object-badge-overrides"
           >
             {object.overrides.length}
           </span>
@@ -333,17 +295,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
           aria-expanded={!!contextMenuState?.isObject}
           data-testid={`object-more-btn-${object.id}`}
           onClick={(e) => handleContextMenu(e, true)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--text-dim)',
-            padding: 2,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center'
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-dim)')}
+          className="object-tree-icon-btn"
         >
           <MoreDotsIcon size={14} />
         </button>
@@ -351,7 +303,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
 
       {/* Volumes Sub-tree */}
       {isExpanded && object.volumes && object.volumes.length > 0 && (
-        <div style={{ paddingLeft: 20, marginTop: 2 }}>
+        <div className="object-tree-subtree">
           {object.volumes.map((vol) => {
             const isVolSelected = inSelectedGroup && selectedObjectId === object.id && selectedVolumeId === vol.id;
             const isVolRenaming = renamingTarget === vol.id;
@@ -361,31 +313,22 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
                 key={vol.id}
                 id={`volume-row-${vol.id}${rowSuffix}`}
                 data-testid={`volume-row-${vol.id}`}
+                role="button"
+                tabIndex={isVolRenaming ? undefined : 0}
+                aria-pressed={isVolSelected}
                 onClick={(e) => {
                   e.stopPropagation();
                   selectItem(object.id, vol.id);
                 }}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectItem(object.id, vol.id);
+                  }
+                }}
                 onContextMenu={(e) => handleContextMenu(e, false, vol)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '4px 8px',
-                  borderRadius: 4,
-                  background: isVolSelected ? 'rgba(0, 150, 136, 0.25)' : 'transparent',
-                  border: isVolSelected ? '1px solid rgba(0, 150, 136, 0.4)' : '1px solid transparent',
-                  cursor: 'pointer',
-                  color: 'var(--text-color)',
-                  fontSize: '0.78rem',
-                  userSelect: 'none',
-                  marginTop: 1
-                }}
-                onMouseEnter={(e) => {
-                  if (!isVolSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-                }}
-                onMouseLeave={(e) => {
-                  if (!isVolSelected) e.currentTarget.style.background = 'transparent';
-                }}
+                className={`object-tree-row object-tree-row--volume${isVolSelected ? ' is-selected' : ''}`}
               >
                 {getVolumeIcon(vol.type)}
 
@@ -403,27 +346,13 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
                     }}
                     onClick={(e) => e.stopPropagation()}
                     autoFocus
-                    style={{
-                      flex: 1,
-                      background: 'var(--canvas-bg)',
-                      border: '1px solid #009688',
-                      borderRadius: 3,
-                      color: '#fff',
-                      fontSize: '0.75rem',
-                      padding: '1px 4px',
-                      outline: 'none'
-                    }}
+                    className="object-rename-input"
                   />
                 ) : (
                   <span
                     id={`volume-name-${vol.id}${rowSuffix}`}
                     data-testid={`volume-name-${vol.id}`}
-                    style={{
-                      flex: 1,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}
+                    className="object-tree-name"
                     onDoubleClick={() => handleStartRename(vol.id, vol.name)}
                   >
                     {vol.name}
@@ -434,24 +363,11 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
                   <span
                     id={`badge-extruder-${vol.id}${rowSuffix}`}
                     data-testid={`badge-extruder-${vol.id}`}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      color: 'var(--text-muted)',
-                      fontSize: '0.65rem',
-                      padding: '1px 4px',
-                      borderRadius: 4,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4
-                    }}
+                    className="object-badge-extruder"
                   >
                     <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        backgroundColor: rawColors[vol.extruder - 1] || defaultColors[(vol.extruder - 1) % defaultColors.length]
-                      }}
+                      className="object-badge-swatch"
+                      style={{ backgroundColor: rawColors[vol.extruder - 1] || defaultColors[(vol.extruder - 1) % defaultColors.length] }}
                     />
                     E{vol.extruder}
                   </span>
@@ -462,14 +378,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
                     id={`badge-overrides-volume-${vol.id}${rowSuffix}`}
                     data-testid={`badge-overrides-volume-${vol.id}`}
                     title={`${vol.overrides.length} custom setting overrides`}
-                    style={{
-                      background: '#009688',
-                      color: '#fff',
-                      fontSize: '0.65rem',
-                      padding: '1px 4px',
-                      borderRadius: 8,
-                      fontWeight: 600
-                    }}
+                    className="object-badge-overrides"
                   >
                     {vol.overrides.length}
                   </span>
@@ -483,17 +392,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
                   aria-expanded={contextMenuState?.volume?.id === vol.id}
                   data-testid={`volume-more-btn-${vol.id}`}
                   onClick={(e) => handleContextMenu(e, false, vol)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-dim)',
-                    padding: 2,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center'
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-dim)')}
+                  className="object-tree-icon-btn"
                 >
                   <MoreDotsIcon size={14} />
                 </button>
@@ -505,7 +404,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
 
       {/* Height Ranges (Layers) Sub-tree */}
       {isExpanded && object.layerRanges && object.layerRanges.length > 0 && (
-        <div style={{ paddingLeft: 20, marginTop: 2 }}>
+        <div className="object-tree-subtree">
           {/* Layers root header */}
           <div
             id={`layers-root-${object.id}${rowSuffix}`}
@@ -514,60 +413,26 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
               e.stopPropagation();
               selectItem(object.id, null, null);
             }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '4px 8px',
-              borderRadius: 4,
-              background: 'transparent',
-              border: '1px solid transparent',
-              cursor: 'pointer',
-              color: 'var(--text-color)',
-              fontSize: '0.78rem',
-              userSelect: 'none',
-              marginTop: 1
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-            }}
+            className="object-tree-row object-tree-row--layers-root"
           >
             <button
               type="button"
+              aria-label={t(isLayersExpanded ? 'Collapse layers' : 'Expand layers')}
+              aria-expanded={isLayersExpanded}
               onClick={(e) => {
                 e.stopPropagation();
                 setIsLayersExpanded(!isLayersExpanded);
               }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-muted)',
-                padding: 0,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center'
-              }}
+              className="object-tree-icon-btn"
             >
               {isLayersExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
 
-            <LayersIcon size={14} />
+            <LayersIcon size={14} className="object-tree-type-icon" />
 
-            <span style={{ flex: 1, fontWeight: 500 }}>{t('Layers')}</span>
+            <span className="object-tree-name object-tree-name--object">{t('Layers')}</span>
 
-            <span
-              style={{
-                background: 'rgba(255, 255, 255, 0.1)',
-                color: 'var(--text-muted)',
-                fontSize: '0.65rem',
-                padding: '1px 5px',
-                borderRadius: 8,
-                fontWeight: 600
-              }}
-            >
+            <span className="object-badge-layers-count">
               {object.layerRanges.length}
             </span>
 
@@ -575,23 +440,13 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
               type="button"
               id={`btn-add-layer-range-${object.id}${rowSuffix}`}
               data-testid={`btn-add-layer-range-${object.id}`}
+              aria-label={t('Add layer range')}
               title={t('Add layer range')}
               onClick={(e) => {
                 e.stopPropagation();
                 void addLayerRange(object.id);
               }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-dim)',
-                padding: '1px 4px',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                fontWeight: 'bold',
-                lineHeight: 1
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#fff')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-dim)')}
+              className="object-tree-icon-btn object-tree-icon-btn--plus"
             >
               +
             </button>
@@ -600,22 +455,13 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
               type="button"
               id={`btn-delete-layers-${object.id}${rowSuffix}`}
               data-testid={`btn-delete-layers-${object.id}`}
+              aria-label={t('Delete all layer ranges')}
               title={t('Delete all layer ranges')}
               onClick={(e) => {
                 e.stopPropagation();
                 void deleteAllLayerRanges(object.id);
               }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-dim)',
-                padding: 2,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center'
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-dim)')}
+              className="object-tree-icon-btn object-tree-icon-btn--danger"
             >
               <TrashIcon size={12} />
             </button>
@@ -632,42 +478,26 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
                 key={index}
                 id={`layer-range-row-${index}`}
                 data-testid={`layer-range-row-${index}`}
+                role="button"
+                tabIndex={0}
+                aria-pressed={isRangeSelected}
                 onClick={(e) => {
                   e.stopPropagation();
                   selectItem(object.id, null, index);
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '4px 8px 4px 20px',
-                  borderRadius: 4,
-                  background: isRangeSelected ? 'rgba(0, 150, 136, 0.25)' : 'transparent',
-                  border: isRangeSelected ? '1px solid rgba(0, 150, 136, 0.4)' : '1px solid transparent',
-                  cursor: 'pointer',
-                  color: 'var(--text-color)',
-                  fontSize: '0.78rem',
-                  userSelect: 'none',
-                  marginTop: 1
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectItem(object.id, null, index);
+                  }
                 }}
-                onMouseEnter={(e) => {
-                  if (!isRangeSelected) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
-                }}
-                onMouseLeave={(e) => {
-                  if (!isRangeSelected) e.currentTarget.style.background = 'transparent';
-                }}
+                className={`object-tree-row object-tree-row--range${isRangeSelected ? ' is-selected' : ''}`}
               >
                 <span
                   id={`range-span-${index}`}
                   data-testid={`range-span-${index}`}
-                  style={{
-                    flex: 1,
-                    fontFamily: 'monospace',
-                    fontSize: '0.75rem',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
-                  }}
+                  className="object-tree-range-span"
                 >
                   {`${range.minZ.toFixed(2)} - ${range.maxZ.toFixed(2)} mm`}
                 </span>
@@ -675,24 +505,11 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
                 {extNum > 0 && (
                   <span
                     id={`badge-extruder-range-${index}${rowSuffix}`}
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      color: 'var(--text-muted)',
-                      fontSize: '0.65rem',
-                      padding: '1px 4px',
-                      borderRadius: 4,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4
-                    }}
+                    className="object-badge-extruder"
                   >
                     <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        backgroundColor: rawColors[extNum - 1] || defaultColors[(extNum - 1) % defaultColors.length]
-                      }}
+                      className="object-badge-swatch"
+                      style={{ backgroundColor: rawColors[extNum - 1] || defaultColors[(extNum - 1) % defaultColors.length] }}
                     />
                     E{extNum}
                   </span>
@@ -703,14 +520,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
                     id={`badge-overrides-range-${index}${rowSuffix}`}
                     data-testid={`badge-overrides-range-${index}`}
                     title={`${overrideCount} custom setting overrides`}
-                    style={{
-                      background: '#009688',
-                      color: '#fff',
-                      fontSize: '0.65rem',
-                      padding: '1px 4px',
-                      borderRadius: 8,
-                      fontWeight: 600
-                    }}
+                    className="object-badge-overrides"
                   >
                     {overrideCount}
                   </span>
@@ -720,22 +530,13 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
                   type="button"
                   id={`btn-delete-range-${object.id}-${index}${rowSuffix}`}
                   data-testid={`btn-delete-range-${index}`}
+                  aria-label={t('Delete layer range')}
                   title={t('Delete layer range')}
                   onClick={(e) => {
                     e.stopPropagation();
                     void deleteLayerRange(object.id, index);
                   }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-dim)',
-                    padding: 2,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center'
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-dim)')}
+                  className="object-tree-icon-btn object-tree-icon-btn--danger"
                 >
                   <TrashIcon size={12} />
                 </button>
@@ -745,7 +546,7 @@ export const ObjectTreeItem: React.FC<ObjectTreeItemProps> = ({ object, groupIds
         </div>
       )}
 
-            {/* Context Menu Modal */}
+      {/* Context Menu Modal */}
       {contextMenuState && (
         <ContextMenu
           x={contextMenuState.x}

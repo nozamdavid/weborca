@@ -113,7 +113,7 @@ const PART_CATEGORIES: Record<string, string[]> = {
 };
 
 export const ObjectSettingsEditor: React.FC = () => {
-    const { t } = useTranslation();
+  const { t } = useTranslation();
   const {
     objects,
     selectedObjectId,
@@ -154,8 +154,9 @@ export const ObjectSettingsEditor: React.FC = () => {
 
   if (selectedObjectId === null) {
     return (
-      <div style={{ padding: 16, color: 'var(--text-dim)', fontSize: '0.85rem', textAlign: 'center' }}>
-        {t("Select an object or part to edit overrides")}</div>
+      <div className="object-settings-placeholder">
+        {t("Select an object or part to edit overrides")}
+      </div>
     );
   }
 
@@ -250,37 +251,23 @@ export const ObjectSettingsEditor: React.FC = () => {
     <div
       id="object-settings-editor"
       data-testid="object-settings-editor"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--canvas-bg)',
-        borderTop: '1px solid var(--panel-bg)'
-      }}
+      className="object-settings-editor"
     >
       {/* Header */}
-      <div
-        className="object-overrides-header"
-      >
-        <div style={{ overflow: 'hidden' }}>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+      <div className="object-overrides-header">
+        <div className="object-overrides-heading">
+          <div className="object-overrides-eyebrow">
             {isRange ? t('Layer Range Overrides') : isVolume ? t('Part Overrides') : t('Object Overrides')}
           </div>
           <div
-            style={{
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              color: 'var(--text-color)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap'
-            }}
+            className="object-overrides-target"
             title={targetName}
           >
             {targetName}
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, position: 'relative' }}>
+        <div className="object-overrides-actions">
           <button
             type="button"
             id="btn-add-setting"
@@ -292,18 +279,10 @@ export const ObjectSettingsEditor: React.FC = () => {
               setMenuPosition({ left: Math.max(8, box.right - 240), top: below >= height ? box.bottom + 4 : box.top - height - 4, maxHeight: height });
               setIsAddMenuOpen(!isAddMenuOpen);
             }}
-            style={{
-              background: '#009688',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              padding: '4px 8px',
-              fontSize: '0.78rem',
-              fontWeight: 500,
-              cursor: 'pointer'
-            }}
+            className="object-editor-btn object-editor-btn--primary"
           >
-            {t("+ Add Setting")}</button>
+            {t("+ Add Setting")}
+          </button>
 
           {overrideKeys.length > 0 && (
             <button
@@ -312,17 +291,10 @@ export const ObjectSettingsEditor: React.FC = () => {
               data-testid="btn-reset-overrides"
               onClick={handleResetAll}
               title={t("Reset all overrides")}
-              style={{
-                background: 'rgba(255, 255, 255, 0.08)',
-                color: '#f87171',
-                border: 'none',
-                borderRadius: 4,
-                padding: '4px 8px',
-                fontSize: '0.78rem',
-                cursor: 'pointer'
-              }}
+              className="object-editor-btn object-editor-btn--danger"
             >
-              {t("Reset All")}</button>
+              {t("Reset All")}
+            </button>
           )}
 
           {/* Add Setting Popup */}
@@ -330,41 +302,21 @@ export const ObjectSettingsEditor: React.FC = () => {
             <div
               id="add-setting-dropdown"
               data-testid="add-setting-dropdown"
-              style={{
-                position: 'fixed',
-                ...menuPosition,
-                width: 240,
-                background: 'var(--panel-bg)',
-                border: '1px solid var(--control-bg)',
-                borderRadius: 6,
-                boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-                zIndex: 10000,
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden'
-              }}
+              className="object-add-dropdown"
+              style={menuPosition}
             >
-              <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--control-bg)' }}>
+              <div className="object-add-filter-wrap">
                 <input
                   type="text"
                   placeholder={t("Filter settings...")}
                   value={searchFilter}
                   onChange={(e) => setSearchFilter(e.target.value)}
-                  style={{
-                    width: '100%',
-                    background: 'var(--canvas-bg)',
-                    border: '1px solid var(--control-bg)',
-                    borderRadius: 4,
-                    color: '#fff',
-                    padding: '3px 6px',
-                    fontSize: '0.75rem',
-                    outline: 'none'
-                  }}
+                  className="object-add-filter-input"
                   autoFocus
                 />
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+              <div className="object-add-options-scroll">
                 {Object.entries(availableCategories).map(([cat, keys]) => {
                   const filteredKeys = keys.filter((k) => {
                     if (currentOverrides[k] !== undefined) return false;
@@ -377,38 +329,24 @@ export const ObjectSettingsEditor: React.FC = () => {
                   if (filteredKeys.length === 0) return null;
 
                   return (
-                    <div key={cat} style={{ marginBottom: 4 }}>
-                      <div
-                        style={{
-                          fontSize: '0.7rem',
-                          color: '#009688',
-                          fontWeight: 600,
-                          padding: '3px 10px',
-                          textTransform: 'uppercase'
-                        }}
-                      >
+                    <div key={cat} className="object-add-category-group">
+                      <div className="object-add-category">
                         {cat}
                       </div>
                       {filteredKeys.map((k) => {
                         const def = configDefs[k];
                         const label = def?.label || k;
                         return (
-                          <div
+                          <button
+                            type="button"
                             key={k}
                             id={`add-setting-opt-${k}`}
                             data-testid={`add-setting-opt-${k}`}
                             onClick={() => handleAddOption(k)}
-                            style={{
-                              padding: '5px 12px',
-                              fontSize: '0.78rem',
-                              color: 'var(--text-color)',
-                              cursor: 'pointer'
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)')}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                            className="object-add-option"
                           >
                             {label}
-                          </div>
+                          </button>
                         );
                       })}
                     </div>
@@ -425,19 +363,11 @@ export const ObjectSettingsEditor: React.FC = () => {
         <div
           id="layer-range-bounds-bar"
           data-testid="layer-range-bounds-bar"
-          style={{
-            padding: '6px 12px',
-            background: 'rgba(0, 150, 136, 0.08)',
-            borderBottom: '1px solid var(--panel-bg)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: '0.78rem'
-          }}
+          className="object-range-bounds-bar"
         >
-          <span style={{ color: 'var(--text-muted)' }}>{t("Range:")}</span>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Min Z:</span>
+          <span className="object-range-prefix">{t("Range:")}</span>
+          <label className="object-range-field">
+            <span className="object-range-z-label">Min Z:</span>
             <input
               id="range-min-z-input"
               data-testid="range-min-z-input"
@@ -448,20 +378,12 @@ export const ObjectSettingsEditor: React.FC = () => {
               onChange={(e) => setLocalMinZ(e.target.value)}
               onBlur={handleCommitBounds}
               onKeyDown={(e) => e.key === 'Enter' && handleCommitBounds()}
-              style={{
-                width: 60,
-                background: 'var(--panel-bg)',
-                border: '1px solid var(--control-bg)',
-                color: '#fff',
-                borderRadius: 4,
-                padding: '2px 4px',
-                fontSize: '0.78rem'
-              }}
+              className="object-range-z-input"
             />
           </label>
-          <span>-</span>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-dim)' }}>Max Z:</span>
+          <span className="object-range-sep">-</span>
+          <label className="object-range-field">
+            <span className="object-range-z-label">Max Z:</span>
             <input
               id="range-max-z-input"
               data-testid="range-max-z-input"
@@ -472,33 +394,17 @@ export const ObjectSettingsEditor: React.FC = () => {
               onChange={(e) => setLocalMaxZ(e.target.value)}
               onBlur={handleCommitBounds}
               onKeyDown={(e) => e.key === 'Enter' && handleCommitBounds()}
-              style={{
-                width: 60,
-                background: 'var(--panel-bg)',
-                border: '1px solid var(--control-bg)',
-                color: '#fff',
-                borderRadius: 4,
-                padding: '2px 4px',
-                fontSize: '0.78rem'
-              }}
+              className="object-range-z-input"
             />
           </label>
-          <span style={{ color: 'var(--text-dim)', fontSize: '0.72rem' }}>mm</span>
-          <div style={{ flex: 1 }} />
+          <span className="object-range-unit">mm</span>
+          <div className="object-range-spacer" />
           <button
             type="button"
             id="btn-delete-layer-range"
             data-testid="btn-delete-layer-range"
             onClick={() => void deleteLayerRange(selectedObjectId, selectedRangeIndex)}
-            style={{
-              background: 'rgba(239, 68, 68, 0.15)',
-              color: '#f87171',
-              border: 'none',
-              borderRadius: 4,
-              padding: '2px 8px',
-              fontSize: '0.75rem',
-              cursor: 'pointer'
-            }}
+            className="object-range-delete-btn"
           >
             {t("Delete Range")}
           </button>
@@ -508,24 +414,18 @@ export const ObjectSettingsEditor: React.FC = () => {
         <div
           id="layer-range-error-banner"
           data-testid="layer-range-error-banner"
-          style={{
-            padding: '4px 12px',
-            background: 'rgba(239, 68, 68, 0.2)',
-            color: '#f87171',
-            fontSize: '0.72rem',
-            borderBottom: '1px solid rgba(239, 68, 68, 0.3)'
-          }}
+          className="object-range-error-banner"
         >
           {rangeError}
         </div>
       )}
 
       {/* List of active overrides */}
-      <div style={{ padding: '4px 0' }}>
+      <div className="object-overrides-list">
         {overrideKeys.length === 0 ? (
-          <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.8rem' }}>
+          <div className="object-overrides-empty">
             {t("No custom overrides set.")}<br />
-            {t("Click")}<strong>{t("+ Add Setting")}</strong> {t("to customize parameters for this")}{isVolume ? 'part' : 'object'}.
+            {t("Click")} <strong>{t("+ Add Setting")}</strong> {t("to customize parameters for this")} {isVolume ? t('part') : t('object')}.
           </div>
         ) : (
           overrideKeys.map((key) => (

@@ -69,6 +69,11 @@ export const GroupScale: React.FC<{ disabled?: boolean; idPrefix?: string }> = (
   return <div id={idPrefix === 'nt' ? 'numeric-transform' : `${idPrefix}-transform`} className={`numeric-transform${idPrefix === 'mobile-nt' ? ' numeric-transform-mobile' : ''}`} onPointerDown={e => e.stopPropagation()}>
     <p className="numeric-transform-note">{t('Group scale: whole instances, world axes, relative 100%.')}</p>
     {!axisSafe && <p className="numeric-transform-note">{t('Rotated selection: keep proportions to avoid shear.')}</p>}
+    <div className="numeric-transform-axes" aria-hidden="true">
+      {idPrefix !== 'mobile-nt' && <span />}
+      {AXES.map(a => <span key={a}>{a}</span>)}
+      {idPrefix !== 'mobile-nt' && <span />}
+    </div>
     {['Scale', 'Size'].map(kind => <div className="numeric-transform-row" key={kind}>
       <span className="numeric-transform-label">{t(kind)}</span>
       {AXES.map((a, i) => <NumberBox key={a} id={`${idPrefix}-${kind.toLowerCase()}-${a.toLowerCase()}`}
@@ -140,7 +145,11 @@ export const NumericTransform: React.FC<{ object: PlateObject; instance: PlateIn
   return (
     <div id={idPrefix === 'nt' ? 'numeric-transform' : `${idPrefix}-transform`} className={`numeric-transform${mode ? ' numeric-transform-mobile' : ''}`} onPointerDown={(e) => e.stopPropagation()}>
       {volumeId !== null && object.instances.length > 1 && <p className="numeric-transform-note">{t('Part changes apply to all copies of this object.')}</p>}
-      {mode && <div className="numeric-transform-axes" aria-hidden="true">{AXES.map(a => <span key={a}>{a}</span>)}</div>}
+      <div className="numeric-transform-axes" aria-hidden="true">
+        {!mode && <span />}
+        {AXES.map(a => <span key={a}>{a}</span>)}
+        {!mode && <span />}
+      </div>
       {mode !== 'scale' && row(t('Position'), 'mm', AXES.map((a, i) => (
         <NumberBox key={a} id={`${idPrefix}-pos-${a.toLowerCase()}`} label={`${t('Position')} ${a} (mm)`} value={instance.offset[i]} digits={2} disabled={!ready || (volumeId === null && i === 2)} onCommit={(v) => set({ offset: replace(instance.offset, i, v) })} />
       )))}

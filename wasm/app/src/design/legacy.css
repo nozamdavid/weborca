@@ -6,7 +6,7 @@
   background: var(--panel-bg) !important;
   border-color: var(--border-color) !important;
 }
-:root[data-theme="light"] .orca-object-list-panel > div:first-child {
+:root[data-theme="light"] .orca-object-list-panel > .object-list-header {
   background: var(--panel-header-bg) !important;
   border-color: var(--border-color) !important;
 }

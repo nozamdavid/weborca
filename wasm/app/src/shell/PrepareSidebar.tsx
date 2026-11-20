@@ -430,7 +430,7 @@ export const PrepareSidebar: React.FC = () => {
         <QuickToggles disabled={isBusy || !selectedProcess} multiFilament={activeFilaments.length > 1} />
 
         <Section id="objects" title={t("Objects")} badge={modelObjects?.length ? String(modelObjects.length) : undefined} className="sb-objects">
-          <div className="objects-wrap"><ObjectListPanel /></div>
+          <div className="objects-wrap"><ObjectListPanel hideHeader /></div>
         </Section>
 
         <div className="sb-settings"><SettingsPanel /></div>
