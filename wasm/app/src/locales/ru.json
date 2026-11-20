@@ -7928,5 +7928,10 @@
   "Printer Settings": "Настройки принтера",
   "Filament Settings": "Настройки материала",
   "Height range Modifier": "Добавить модификатор по высоте",
-  "Range:": "Диапазон:"
+  "Range:": "Диапазон:",
+  "Search models…": "Поиск моделей…",
+  "Clear search": "Очистить поиск",
+  "Likes": "Лайки",
+  "Downloads": "Загрузки",
+  "Upload date": "Дата загрузки"
 }

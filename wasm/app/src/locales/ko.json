@@ -7930,5 +7930,10 @@
   "Printer Settings": "프린터 설정",
   "Filament Settings": "필라멘트 설정",
   "Height range Modifier": "높이 범위 수정자",
-  "Range:": "범위:"
+  "Range:": "범위:",
+  "Search models…": "모델 검색…",
+  "Clear search": "검색 지우기",
+  "Likes": "좋아요",
+  "Downloads": "다운로드",
+  "Upload date": "업로드 날짜"
 }

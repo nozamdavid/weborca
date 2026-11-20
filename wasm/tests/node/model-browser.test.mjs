@@ -80,7 +80,10 @@ test('detail retains plain description and detail author name', async t => {
   });
   const model = await fetchModel(sample.items[0].id);
   assert.equal(model.description, 'Plain description'); assert.equal(model.author, 'RoyalGreen');
+  assert.equal(model.descriptionHtml, undefined);
   assert.deepEqual(model.categoryPath, ['Household', 'Decor']); assert.equal(model.observedAt, '2026-11-18T18:56:04.203Z');
+  globalThis.fetch = respond({ ...sample.items[0], descriptionHtml: '<p><strong>Formatted description</strong></p>' });
+  assert.equal((await fetchModel(sample.items[0].id)).descriptionHtml, '<p><strong>Formatted description</strong></p>');
 });
 test('stats maps named counts without requiring subcategory facets', async t => {
   t.mock.method(globalThis, 'fetch', async url => { assert.equal(new URL(url).pathname, '/stats'); return { ok: true, json: async () => ({ models: 2339502, formats: [{ name: 'stl', c: 911149 }], categories: [], authors: [], licenses: [] }) }; });
@@ -94,4 +97,54 @@ test('400/404 preserve safe server messages and status; aborts propagate', async
   const controller = new AbortController(); controller.abort();
   globalThis.fetch = async (_, { signal }) => { signal.throwIfAborted(); };
   await assert.rejects(fetchModels({}, controller.signal), { name: 'AbortError' });
+});
+
+const descriptionBundle = await build({ entryPoints: [new URL('../../app/src/models/descriptionHtml.tsx', import.meta.url).pathname], bundle: true, platform: 'node', format: 'esm', jsx: 'automatic', write: false });
+const { renderSafeDescriptionNodes } = await import(`data:text/javascript;base64,${Buffer.from(descriptionBundle.outputFiles[0].text).toString('base64')}`);
+const textNode = textContent => ({ nodeType: 3, textContent });
+const element = (localName, childNodes = [], attributes = {}) => ({ nodeType: 1, textContent: null, localName, childNodes, getAttribute: name => attributes[name] ?? null });
+
+test('description strips dangerous subtrees and unsafe link attributes while retaining link text', () => {
+  const nodes = renderSafeDescriptionNodes([
+    element('script', [textNode('bad script')]), element('style', [textNode('bad style')]),
+    element('a', [textNode('Safe text')], { href: 'javascript:alert(1)', onclick: 'bad()' }),
+    element('p', [textNode('Paragraph')], { style: 'color:red', class: 'bad', onclick: 'bad()' }),
+  ]);
+  assert.equal(nodes[0], null);
+  assert.equal(nodes[1], null);
+  assert.deepEqual(nodes[2].props.children, ['Safe text']);
+  assert.equal(typeof nodes[2].type, 'symbol');
+  assert.deepEqual(nodes[3].props, { children: 'Paragraph' });
+});
+
+test('description resolves relative and protocol-relative links against the model URL', () => {
+  const nodes = renderSafeDescriptionNodes([
+    element('a', [textNode('Model')], { href: '/en/models/123' }),
+    element('a', [textNode('Other')], { href: '//example.com/a' }),
+  ], 'https://makerworld.com/en/models/456');
+  assert.deepEqual(nodes.map(node => node.props.href), ['https://makerworld.com/en/models/123', 'https://example.com/a']);
+  assert.ok(nodes.every(node => node.props.target === '_blank' && node.props.rel === 'noopener noreferrer'));
+});
+
+test('description preserves separate table cells', () => {
+  const nodes = renderSafeDescriptionNodes([element('table', [element('tr', [element('td', [textNode('Nozzle')]), element('td', [textNode('0.4')])])])]);
+  assert.equal(nodes[0].type, 'table');
+  const row = nodes[0].props.children;
+  assert.equal(row.type, 'tr');
+  assert.deepEqual(row.props.children.map(cell => [cell.type, cell.props.children]), [['td', 'Nozzle'], ['td', '0.4']]);
+});
+
+test('description retains meaningful image alt text and omits images without alt', () => {
+  const nodes = renderSafeDescriptionNodes([element('img', [], { alt: ' Step 1 ', src: 'bad' }), element('img'), element('img', [], { alt: '  ' })]);
+  assert.equal(nodes[0].type, 'span');
+  assert.equal(nodes[0].props.className, 'model-modal-img-alt');
+  assert.equal(nodes[0].props.children.join(''), '[Step 1]');
+  assert.equal(nodes[0].props.src, undefined);
+  assert.deepEqual(nodes.slice(1), [null, null]);
+});
+
+test('description returns null when no visible content remains', () => {
+  for (const nodes of [[], [textNode('  ')], [element('p')], [element('script', [textNode('hidden')])]]) {
+    assert.equal(renderSafeDescriptionNodes(nodes), null);
+  }
 });

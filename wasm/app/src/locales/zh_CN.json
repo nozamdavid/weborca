@@ -7930,5 +7930,10 @@
   "Printer Settings": "打印机设置",
   "Filament Settings": "耗材丝设置",
   "Height range Modifier": "高度范围修改器",
-  "Range:": "范围:"
+  "Range:": "范围:",
+  "Search models…": "搜索模型…",
+  "Clear search": "清除搜索",
+  "Likes": "点赞",
+  "Downloads": "下载量",
+  "Upload date": "上传日期"
 }

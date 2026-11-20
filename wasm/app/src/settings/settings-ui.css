@@ -36,3 +36,157 @@
 .modified-settings-page { font-size: var(--text-sm); }
 .modified-settings-value { color: var(--warning-fg); }
 .modified-settings-modal .ds-dialog__foot { justify-content: space-between; }
+
+/* Dialog fields can use the full modal width without widening sidebar controls. */
+.settings-dialog-modal .setting-row--multiline {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1-5);
+  padding: var(--space-2);
+}
+.settings-dialog-modal .setting-row--multiline > .setting-label {
+  flex: none;
+  max-width: none;
+  white-space: normal;
+}
+.settings-dialog-modal .setting-row--multiline .setting-control-wrapper {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  align-items: flex-start;
+}
+.settings-dialog-modal .setting-textarea {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 112px;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--surface-1);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+}
+.settings-dialog-modal .setting-textarea:focus {
+  border-color: var(--accent-text);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.settings-dialog-modal .setting-text {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  height: var(--ctl-h);
+  box-sizing: border-box;
+  padding: 0 var(--space-2);
+}
+.settings-dialog-modal .setting-select { max-width: 280px; }
+.settings-dialog-modal .setting-control-wrapper > :is(.modified-indicator, .reset-arrow-btn, .setting-unit) { flex-shrink: 0; }
+@media (min-width: 801px) {
+  .settings-dialog-modal .setting-row:has(.setting-text) > .setting-control-wrapper {
+    flex: 0 1 380px;
+    width: min(380px, 56%);
+    min-width: 220px;
+  }
+}
+
+.settings-dialog-modal .settings-dialog-slots {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-default);
+  min-width: 0;
+}
+.settings-dialog-modal .settings-slots-label {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: var(--weight-semibold);
+}
+.settings-dialog-modal .settings-slots-viewport { position: relative; flex: 1; min-width: 0; }
+.settings-dialog-modal .settings-slots-track {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-padding-inline: var(--space-10);
+}
+.settings-dialog-modal .settings-slots-track::-webkit-scrollbar { display: none; }
+.settings-dialog-modal .settings-slots-viewport::before,
+.settings-dialog-modal .settings-slots-viewport::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--space-12);
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+}
+.settings-dialog-modal .settings-slots-viewport::before { left: 0; background: linear-gradient(to right, var(--surface-2), transparent); }
+.settings-dialog-modal .settings-slots-viewport::after { right: 0; background: linear-gradient(to left, var(--surface-2), transparent); }
+.settings-dialog-modal .can-scroll-left::before,
+.settings-dialog-modal .can-scroll-right::after { opacity: 1; }
+.settings-dialog-modal .settings-slot-chip,
+.settings-dialog-modal .settings-slots-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-height: var(--ctl-h-lg);
+  padding: var(--space-1) var(--space-2);
+  gap: var(--space-2);
+  background: var(--control-bg);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.settings-dialog-modal .settings-slot-chip:hover,
+.settings-dialog-modal .settings-slots-nav:hover { background: var(--control-bg-hover); border-color: var(--border-strong); }
+.settings-dialog-modal .settings-slot-chip[aria-pressed='true'] {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+.settings-dialog-modal .settings-slot-chip:focus-visible,
+.settings-dialog-modal .settings-slots-nav:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.settings-dialog-modal .settings-slot-swatch {
+  flex: none;
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--slot-color);
+  box-shadow: inset 0 0 0 1px var(--swatch-border);
+}
+.settings-dialog-modal .settings-slot-number { font-variant-numeric: tabular-nums; }
+.settings-dialog-modal .settings-slot-name { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-dialog-modal .settings-slots-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  width: var(--icon-btn);
+  padding: 0;
+}
+.settings-dialog-modal .settings-slots-nav--left { left: 0; }
+.settings-dialog-modal .settings-slots-nav--right { right: 0; }
+.settings-dialog-modal .settings-slots-nav svg { width: var(--space-4); height: var(--space-4); fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 800px) {
+  .settings-dialog-modal .settings-slot-chip,
+  .settings-dialog-modal .settings-slots-nav { min-height: calc(var(--space-10) + var(--space-1)); }
+  .settings-dialog-modal .setting-select { max-width: none; }
+}

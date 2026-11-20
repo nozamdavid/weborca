@@ -1,4 +1,9 @@
 {
+  "Search models…": "Search models…",
+  "Likes": "Likes",
+  "Downloads": "Downloads",
+  "Upload date": "Upload date",
+  "Remove filter: {{filter}}": "Remove filter: {{filter}}",
   "Bambu Cloud account": "Bambu Cloud account",
   "Sign in with your Bambu Cloud or MakerWorld account to download 3MF files and open them directly in the slicer.": "Sign in with your Bambu Cloud or MakerWorld account to download 3MF files and open them directly in the slicer.",
   "WebOrca does not store your email, password, or verification code. Your access and refresh tokens are saved only in this browser.": "WebOrca does not store your email, password, or verification code. Your access and refresh tokens are saved only in this browser.",

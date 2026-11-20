@@ -7929,5 +7929,10 @@
   "Printer Settings": "Drucker-Einstellungen",
   "Filament Settings": "Filamenteinstellungen",
   "Height range Modifier": "Höhen Modifizieren",
-  "Range:": "Reichweite:"
+  "Range:": "Reichweite:",
+  "Search models…": "Modelle suchen…",
+  "Clear search": "Suche löschen",
+  "Likes": "Gefällt mir",
+  "Downloads": "Downloads",
+  "Upload date": "Hochladedatum"
 }

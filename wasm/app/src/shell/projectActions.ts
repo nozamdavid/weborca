@@ -6,7 +6,8 @@ import { usePlateStore } from '../plate/plateStore';
 import { isDefaultPlateName } from '../plates/plateName';
 import { usePlatesStore } from '../plates/platesStore';
 import { usePreviewStore } from '../preview/previewStore';
-import { useAppStore } from '../store/appStore';
+import { persistLastSetup, useAppStore } from '../store/appStore';
+import { isAtStartupBaseline } from './autosave';
 import { showToast } from './toastStore';
 
 function projectActionBusy() {
@@ -20,6 +21,7 @@ async function approveProjectReplacement(confirmLabel: string) {
   if (projectActionBusy()) return false;
 
   const app = useAppStore.getState();
+  if (!app.modelFile && !app.sliceResult && usePlateStore.getState().objects.length === 0 && isAtStartupBaseline()) return true;
   const { plates } = usePlatesStore.getState();
   // There is no reliable saved/dirty marker. Protect populated projects and
   // workspace changes such as notes, custom plates and edited setup.
@@ -55,6 +57,7 @@ export async function requestNewProject() {
     await app.applyOptionChange('notes', '', 'print');
     app.invalidateSlicePreview();
     useAppStore.setState({ modelFile: null, modelObjects: null });
+    persistLastSetup();
     usePreviewStore.getState().resetGcodeAction();
     await useHistoryStore.getState().initHistory();
     await (await import('./autosave')).clearAutosave();

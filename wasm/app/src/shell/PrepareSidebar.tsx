@@ -6,6 +6,7 @@ import { FilamentSyncButton } from '../printers/FilamentSyncDialog';
 import React, { useEffect, useRef, useState } from 'react';
 import { ModifiedSettingsDialog } from '../settings/ModifiedSettingsDialog';
 import { modifiedSettings } from '../settings/modifiedSettings';
+import { normalizeSlotColor } from '../settings/slotColor';
 import { FlushVolumesDialog } from '../flush/FlushVolumesDialog';
 import { useHistoryStore } from '../history';
 import { ObjectListPanel } from '../objectlist/ObjectListPanel';
@@ -13,6 +14,7 @@ import { usePrinterConnectionStore } from '../printers/connectionStore';
 import { SavedPrinterSelector, bindDeviceProfile } from '../printers/SavedPrinterSelector';
 import { SettingsPanel } from '../settings/SettingsPanel';
 import { useAppStore, resolveDeviceVendor, pendingOptionKey, minimumFilamentSlots } from '../store/appStore';
+import { MAX_FILAMENT_SLOTS } from '../store/importedFilaments';
 import type { PresetKind } from '../presets/types';
 import { exportGcode } from './exportGcode';
 import { EditIcon, GearIcon, PlugIcon, SaveIcon, TrashIcon } from './glyphs';
@@ -185,23 +187,9 @@ export const PrepareSidebar: React.FC = () => {
   const sliceDisabledReason = useSliceReadiness();
   const canSlice = !sliceDisabledReason;
 
-  const extrudersCount = Math.max(1, (currentConfig['nozzle_diameter'] || '').split(',').length);
-  const isMultiMaterial = currentConfig['single_extruder_multi_material'] === '1' || currentConfig['single_extruder_multi_material'] === 'true' || selectedVendor === 'BBL' || extrudersCount === 1;
-  const maxFilaments = isMultiMaterial ? 16 : Math.min(16, extrudersCount);
+  const maxFilaments = MAX_FILAMENT_SLOTS;
 
-  const rawColors = (currentConfig['filament_colour'] || '').split(';').map((c) => c.trim());
-  const defaultColors = ['#16417C', '#58B957', '#F5D130', '#E53935', '#8E24AA', '#00ACC1', '#FB8C00', '#D81B60', '#3949AB', '#00897B', '#7CB342', '#C0CA33', '#FDD835', '#FFB300', '#F4511E', '#6D4C41'];
-  const getSlotColor = (idx: number) => {
-    if (rawColors[idx]) return rawColors[idx];
-    return defaultColors[idx % defaultColors.length];
-  };
-  const toHexColor = (col: string) => {
-    if (!col) return '#16417C';
-    let c = col.trim();
-    if (!c.startsWith('#')) c = '#' + c;
-    if (c.length > 7) c = c.substring(0, 7);
-    return c;
-  };
+  const rawColors = (currentConfig['filament_colour'] || '').split(';');
 
   const filamentHeaderActions = (
     <Toolbar label={t('Filament')}>
@@ -313,7 +301,7 @@ export const PrepareSidebar: React.FC = () => {
             {activeFilaments.map((filamentName, idx) => {
               const slotNumber = idx + 1;
               const selectId = idx === 0 ? 'filament-select' : `filament-select-${slotNumber}`;
-              const slotColor = getSlotColor(idx);
+              const slotColor = normalizeSlotColor(rawColors[idx], idx);
               const activeUser = activeUserPreset['filament'];
 
               return (
@@ -342,7 +330,7 @@ export const PrepareSidebar: React.FC = () => {
                       type="color"
                       id={`filament-color-input-${slotNumber}`}
                       data-testid={`filament-color-input-${slotNumber}`}
-                      value={toHexColor(slotColor)}
+                      value={slotColor}
                       disabled={isBusy}
                       onChange={(e) => void setSlotColor(idx, e.target.value)}
                       className="filament-color-input" tabIndex={-1}
