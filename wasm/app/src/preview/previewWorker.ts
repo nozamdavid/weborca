@@ -25,13 +25,14 @@ async function runtime(): Promise<any> {
   })().catch(error => { modulePromise = null; throw error; });
   return modulePromise;
 }
+void runtime().catch(() => {});
 scope.onmessage = async ({ data }: MessageEvent<{ id: number; bytes: ArrayBuffer }>) => {
   const input = `/preview_input_${data.id}`;
   const packet = `/preview_packet_${data.id}`;
   let mod: any;
   try {
     mod = await runtime();
-    mod.FS.writeFile(input, new Uint8Array(data.bytes));
+    mod.FS.writeFile(input, new Uint8Array(data.bytes), { canOwn: true });
     const stats = JSON.parse(mod.parseGcode(input, packet));
     if (stats.error) throw new Error(stats.error);
     const bytes = new Uint8Array(mod.FS.readFile(packet)).slice();

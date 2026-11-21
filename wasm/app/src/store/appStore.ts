@@ -9,7 +9,8 @@ import { storeRecentFile } from '../shell/recentFiles';
 import { clearExportGcodeCache } from '../shell/gcodeThumbnails';
 // Invalidation of a superseded in-flight G-code import must be synchronous at the
 // new import's initiation, before its file is being read.
-import { cancelPendingPreviewLoad } from '../preview/previewStore';
+import { cancelPendingPreviewLoad, usePreviewStore } from '../preview/previewStore';
+import { warmupPreviewWorker } from '../preview/previewWorkerClient';
 /**
  * @file appStore.ts
  * Zustand state store for OrcaSlicer Web.
@@ -1393,6 +1394,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       engineError: null,
       abortController
     });
+    usePreviewStore.getState().resetGcodeAction();
+    warmupPreviewWorker();
 
     try {
       const { usePrefsStore } = await import('../prefs/prefsStore');

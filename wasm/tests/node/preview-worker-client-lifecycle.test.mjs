@@ -70,7 +70,7 @@ const respond = (worker, stats, packet) => {
 
 test('failure of one worker rejects its pending request and a replacement serves the next request', async () => {
   const { client, FakeWorker } = await stack();
-  client.cancelPreviewWorker();
+  client.cancelPreviewWorker(true);
   const startInstances = FakeWorker.instances.length;
   const startCreated = FakeWorker.created;
   const bytes = new TextEncoder().encode('; gcode\n');
@@ -87,7 +87,7 @@ test('failure of one worker rejects its pending request and a replacement serves
 
 test('a late error from a replaced worker must not terminate its replacement or reject new requests', async () => {
   const { client, FakeWorker } = await stack();
-  client.cancelPreviewWorker();
+  client.cancelPreviewWorker(true);
   const startInstances = FakeWorker.instances.length;
   const startCreated = FakeWorker.created;
   const bytes = new TextEncoder().encode('; gcode\n');
@@ -109,7 +109,7 @@ test('a late error from a replaced worker must not terminate its replacement or 
 
 test('disposal rejects pending preparation; the later request runs on a fresh worker', async () => {
   const { client, previewModule, FakeWorker } = await stack();
-  client.cancelPreviewWorker();
+  client.cancelPreviewWorker(true);
   const startInstances = FakeWorker.instances.length;
   const startCreated = FakeWorker.created;
   const bytes = new TextEncoder().encode('; gcode\n');
@@ -127,7 +127,7 @@ test('disposal rejects pending preparation; the later request runs on a fresh wo
 
 test('an undecodable response rejects every pending request and allows recovery', async () => {
   const { client, FakeWorker } = await stack();
-  client.cancelPreviewWorker();
+  client.cancelPreviewWorker(true);
   const first = client.preparePreview(new Uint8Array([1]));
   const second = client.preparePreview(new Uint8Array([2]));
   const rejected = Promise.all([
@@ -139,4 +139,37 @@ test('an undecodable response rejects every pending request and allows recovery'
   const recovered = client.preparePreview(new Uint8Array([3]));
   respond(FakeWorker.instances.at(-1), statsJSON(3), new Uint8Array([3]));
   assert.equal((await recovered).stats.layers, 3);
+});
+
+test('idle worker survives soft cancel and warmup; force or pending cancel terminates it', async () => {
+  const { client, FakeWorker } = await stack();
+  client.cancelPreviewWorker(true);
+  const startCreated = FakeWorker.created;
+
+  client.warmupPreviewWorker();
+  assert.equal(FakeWorker.created - startCreated, 1, 'warmup spawns one worker eagerly');
+  const warmed = FakeWorker.instances.at(-1);
+  assert.equal(warmed.sent.length, 0, 'warmup sends no parse request');
+
+  client.cancelPreviewWorker();
+  assert.equal(warmed.terminated, 0, 'soft cancel keeps an idle worker alive');
+
+  const first = client.preparePreview(new Uint8Array([1]));
+  assert.equal(FakeWorker.created - startCreated, 1, 'preparePreview reuses the warmed worker');
+  respond(warmed, statsJSON(2), new Uint8Array([2]));
+  assert.equal((await first).stats.layers, 2);
+
+  client.cancelPreviewWorker();
+  assert.equal(warmed.terminated, 0, 'soft cancel keeps a completed idle worker alive');
+
+  const inFlight = client.preparePreview(new Uint8Array([3]));
+  inFlight.catch(() => {});
+  client.cancelPreviewWorker();
+  assert.equal(warmed.terminated, 1, 'soft cancel terminates a worker with pending work');
+  await assert.rejects(inFlight, error => error.name === 'AbortError');
+
+  client.warmupPreviewWorker();
+  const replacement = FakeWorker.instances.at(-1);
+  client.cancelPreviewWorker(true);
+  assert.equal(replacement.terminated, 1, 'forced cancel terminates even an idle worker');
 });
