@@ -266,8 +266,15 @@ export const PrepareSidebar: React.FC = () => {
           {devices.length > 0 && (
             <>
               <label className="field-label" htmlFor="device-select">{t("Device")}</label>
-              <select id="device-select" value={selectedDeviceId ?? ''} disabled={isBusy} onChange={(e) => selectDevice(e.target.value)}>
+              <select id="device-select" value={selectedDeviceId ?? ''} disabled={isBusy} onChange={(e) => {
+                if (e.target.value === '__add_printer__') {
+                  e.target.value = selectedDeviceId ?? '';
+                  usePrinterConnectionStore.getState().openDialog(null);
+                }
+                else selectDevice(e.target.value);
+              }}>
                 {devices.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                <option value="__add_printer__">{t('Add printer...')}</option>
               </select>
             </>
           )}

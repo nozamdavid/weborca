@@ -87,6 +87,11 @@
 }
 .printer-send { --dialog-w: 480px; }
 .printer-connection { --dialog-w: 760px; }
+.printer-connection--add { --dialog-w: 520px; }
+.printer-step-fields:not([hidden]) { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.printer-steps { margin: 0; color: var(--text-secondary); font-size: 0.75rem; }
+.printer-step-fields summary { cursor: pointer; padding-block: var(--space-2); font-size: 0.75rem; }
+.printer-connection .ds-dialog__foot { flex-wrap: wrap; }
 .printer-send .ds-dialog__body { display: flex; flex-direction: column; gap: var(--space-3); }
 .printer-connection-layout { display: flex; gap: var(--space-4); }
 .printer-connection-list { flex: 0 0 170px; display: flex; flex-direction: column; gap: var(--space-1-5); border-right: 1px solid var(--border-default); padding-right: var(--space-3); }
