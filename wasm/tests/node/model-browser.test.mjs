@@ -82,6 +82,8 @@ test('detail retains plain description and detail author name', async t => {
   assert.equal(model.description, 'Plain description'); assert.equal(model.author, 'RoyalGreen');
   assert.equal(model.descriptionHtml, undefined);
   assert.deepEqual(model.categoryPath, ['Household', 'Decor']); assert.equal(model.observedAt, '2026-11-18T18:56:04.203Z');
+  globalThis.fetch = respond({ ...sample.items[0], descriptionHTML: '<p><strong>Catalog HTML</strong></p>' });
+  assert.equal((await fetchModel(sample.items[0].id)).descriptionHtml, '<p><strong>Catalog HTML</strong></p>');
   globalThis.fetch = respond({ ...sample.items[0], descriptionHtml: '<p><strong>Formatted description</strong></p>' });
   assert.equal((await fetchModel(sample.items[0].id)).descriptionHtml, '<p><strong>Formatted description</strong></p>');
 });
