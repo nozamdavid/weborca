@@ -6,7 +6,8 @@ let worker: Worker | null = null;
 let nextId = 0;
 const pending = new Map<number, { resolve: (value: PreparedPreview) => void; reject: (error: Error) => void }>();
 
-export function cancelPreviewWorker(): void {
+export function cancelPreviewWorker(force = false): void {
+  if (!force && pending.size === 0) return;
   const stopping = worker;
   worker = null;
   stopping?.terminate();
@@ -14,6 +15,11 @@ export function cancelPreviewWorker(): void {
   error.name = 'AbortError';
   for (const request of pending.values()) request.reject(error);
   pending.clear();
+}
+
+export function warmupPreviewWorker(): void {
+  if (typeof Worker === 'undefined') return;
+  try { ensureWorker(); } catch { /* Best-effort warmup; preparePreview reports errors when needed. */ }
 }
 
 function ensureWorker(): Worker {

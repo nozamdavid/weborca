@@ -95,6 +95,8 @@ export const PrinterConnectionDialog: React.FC = () => {
   const selectedPreset = useAppStore((s) => s.selectedPrinter);
   const selectedVendor = useAppStore((s) => s.selectedVendor);
   const [draft, setDraft] = useState<PhysicalPrinter>(blank);
+  const [step, setStep] = useState(0);
+  const [attempted, setAttempted] = useState(false);
   const [baseline, setBaseline] = useState('');
   const [gateway, setGateway] = useState<GatewayStatus | null | undefined>(undefined);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -127,6 +129,8 @@ export const PrinterConnectionDialog: React.FC = () => {
     cloudLoginAbort.current?.abort();
     cloudLoginAbort.current = null;
     setTesting(false);
+    setStep(0);
+    setAttempted(false);
     setCloudPassword('');
     setCloudCode('');
     setCloudDevices([]);
@@ -281,10 +285,12 @@ export const PrinterConnectionDialog: React.FC = () => {
   };
 
   const save = () => {
+    if (error) { setAttempted(true); return; }
     savePrinter({ ...draft, use_gateway: true, name: draft.name.trim(), print_host: draft.print_host.trim() });
     closeDialog();
   };
 
+  const isSaved = Boolean(editingId) && printers.some((p) => p.id === draft.id);
   const cloudService = isSnapmakerCloud ? 'snapmaker-cloud' : isCrealityCloud ? 'creality-cloud' : isBambuCloud ? 'bambu-cloud' : isPrusaConnect ? 'prusa-connect' : undefined;
   const cloudGatewayMessage = isSnapmakerCloud ? 'This gateway does not allow Snapmaker Cloud. Enable snapmaker-cloud on the gateway.' : isCrealityCloud
     ? 'This gateway does not allow Creality Cloud. Enable ORCA_PRINTER_CLOUD=creality-cloud on the server.'
@@ -298,8 +304,8 @@ export const PrinterConnectionDialog: React.FC = () => {
 
   return (
     <Dialog className="ds-scrim" aria-modal="true" onClose={closeDialog} dirty={baseline !== '' && JSON.stringify(draft) !== baseline} dirtyWhat={translate("printer changes")} id="printer-connection-dialog" role="dialog" aria-label={translate("Printer connection")}>
-      <div className="ds-dialog printer-sheet printer-connection"><div className="ds-dialog__body printer-connection-layout">
-        <div className="printer-connection-list">
+      <div className={`ds-dialog printer-sheet printer-connection ${!editingId ? 'printer-connection--add' : ''}`}><div className="ds-dialog__body printer-connection-layout">
+        {editingId && <div className="printer-connection-list">
           <strong style={{ fontSize: '0.75rem' }}>{translate("Printers")}</strong>
           {printers.map((p) => (
             <button key={p.id} className={`ds-btn ${p.id === draft.id ? 'ds-btn--primary' : ''}`} style={{ textAlign: 'left' }} onClick={() => openPrinter(p.id)}>
@@ -307,10 +313,12 @@ export const PrinterConnectionDialog: React.FC = () => {
             </button>
           ))}
           <button className="ds-btn" id="pc-add" onClick={() => openPrinter(null)}>{translate("+ New printer")}</button>
-        </div>
+        </div>}
 
         <div className="printer-connection-fields">
-          <h2 className="ds-title ds-title--dialog">{translate(printers.some((p) => p.id === draft.id) ? 'Edit printer' : 'Add a printer')}</h2>
+          <h2 className="ds-title ds-title--dialog">{translate(isSaved ? 'Edit printer' : 'Add a printer')}</h2>
+          {!editingId && <p className="printer-steps" role="status">{step + 1} / 2 · {translate(step === 0 ? 'Printer' : 'Connection')}</p>}
+          <div id="pc-printer-step" className="printer-step-fields" hidden={!editingId && step !== 0}>
           {catalogLoading && <p role="status">{translate('Loading...')}</p>}
           {catalogError && <div role="alert"><p>{translate('Failed to load printer catalog. Check your connection and retry.')}</p><button className="ds-btn" onClick={() => void loadPrinterCatalog().catch(() => {})}>{translate('Retry')}</button></div>}
 
@@ -355,6 +363,8 @@ export const PrinterConnectionDialog: React.FC = () => {
               {(Object.keys(HOST_TYPE_LABELS) as HostType[]).map((t) => <option key={t} value={t}>{HOST_TYPE_LABELS[t]}</option>)}
             </MobileSelect>
           </Field>
+          </div>
+          <div id="pc-connection-step" className="printer-step-fields" hidden={!editingId && step !== 1}>
           {isCrealityCloud || isPrusaConnect || isSnapmakerCloud ? null : isBambuCloud ? (
             <Field label="Cloud Region" hint="Select the cloud region for your account.">
               <MobileSelect id="pc-host" className="ds-input" value={draft.print_host || 'us.mqtt.bambulab.com'} onValueChange={(value) => set('print_host', value)}>
@@ -369,9 +379,9 @@ export const PrinterConnectionDialog: React.FC = () => {
             </Field>
           )}
           {!isBambu && !isBambuCloud && !isFlashforge && !isCloud && (
-            <Field label="Device UI" hint="Address of the printer's web UI, shown in the Device tab. Leave empty to use the host.">
+            <details><summary>{translate('Device UI')}</summary><Field label="Device UI" hint="Address of the printer's web UI, shown in the Device tab. Leave empty to use the host.">
               <MobileInput id="pc-webui" className="ds-input" value={draft.print_host_webui ?? ''} onChange={(e) => set('print_host_webui', e.target.value)} placeholder="http://192.168.0.10" />
-            </Field>
+            </Field></details>
           )}
 
           {isCrealityCloud && draft.serial && <Field label="Device"><span id="pc-creality-device">{draft.serial}</span></Field>}
@@ -485,24 +495,29 @@ export const PrinterConnectionDialog: React.FC = () => {
             {translate('The API key and passwords are stored in this browser only.')}
           </div>
 
-          {printers.some(p => p.id === draft.id) ? <OctoEverywhereConnection key={draft.id} printer={draft} onChange={updated => setDraft(current => current === draft ? updated : current)} />
-            : <p className="oe-panel">Save this printer first, then optionally connect OctoEverywhere in printer settings.</p>}
+          {isSaved && <details><summary>OctoEverywhere</summary><OctoEverywhereConnection key={draft.id} printer={draft} onChange={updated => setDraft(current => current === draft ? updated : current)} /></details>}
           {result && (
             <div id="pc-test-result" data-ok={result.ok} className="printer-result">
               {result.ok ? '✓ ' : '✗ '}{translate(result.text)}
             </div>
           )}
-          {error && <div id="pc-validation" className="printer-warning">{translate(error)}</div>}
+          </div>
+          {error && (Boolean(editingId) || step === 1 || attempted) && <div id="pc-validation" role="alert" className="printer-warning">{translate(error)}</div>}
 
         </div>
         </div>
           <footer className="ds-dialog__foot">
-            {printers.some((p) => p.id === draft.id) && (
+            {isSaved && (
               <button className="ds-btn" id="pc-delete" style={{ marginRight: 'auto' }} onClick={() => { deletePrinter(draft.id); closeDialog(); }}>{translate("Delete")}</button>
             )}
-            <button className="ds-btn" id="pc-test" onClick={test} disabled={!!error || testing}>{translate(testing ? 'Testing...' : 'Test connection')}</button>
+            {!editingId && step === 1 && <button className="ds-btn" id="pc-back" onClick={() => { setStep(0); setAttempted(false); requestAnimationFrame(() => document.getElementById('pc-name')?.focus()); }}>{translate('Back')}</button>}
+            {(editingId || step === 1) && <button className="ds-btn" id="pc-test" onClick={test} disabled={!!error || testing}>{translate(testing ? 'Testing...' : 'Test connection')}</button>}
             <button className="ds-btn" id="pc-cancel" onClick={closeDialog}>{translate("Cancel")}</button>
-            <button className="ds-btn ds-btn--primary" id="pc-save" onClick={save} disabled={!!error}>{translate("Save")}</button>
+            {!editingId && step === 0 ? <button className="ds-btn ds-btn--primary" id="pc-next" onClick={() => {
+              if (!draft.name.trim()) { setAttempted(true); return; }
+              setStep(1); setAttempted(false);
+              requestAnimationFrame(() => document.querySelector<HTMLElement>('#pc-connection-step input, #pc-connection-step select, #pc-connection-step button')?.focus());
+            }}>{translate('Next')}</button> : <button className="ds-btn ds-btn--primary" id="pc-save" onClick={save} disabled={!!error}>{translate("Save")}</button>}
           </footer>
       </div>
     </Dialog>

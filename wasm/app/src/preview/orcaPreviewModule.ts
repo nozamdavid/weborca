@@ -95,6 +95,8 @@ function completedDraw(start: number, end: number): void {
 let loadedGcode: WeakRef<Uint8Array> | null = null;
 let bedPolygon: [number, number][] | null = null;
 let prepared: { source: WeakRef<Uint8Array>; packet: Uint8Array; stats: PreviewStatistics } | null = null;
+let pendingPrepare: { source: WeakRef<Uint8Array>; promise: Promise<{ stats: PreviewStatistics; packet: Uint8Array }> } | null = null;
+let appliedViewType: string | null = null;
 let loadGeneration = 0;
 
 export async function getPreviewModule(canvas?: HTMLCanvasElement): Promise<any> {
@@ -193,6 +195,7 @@ export async function initPreview(canvas: HTMLCanvasElement): Promise<any> {
     throw error;
   }
   previewInstance = instance;
+  appliedViewType = 'FeatureType';
 
   // Also expose on window for automated verification and debugging
   (window as any).preview = previewInstance;
@@ -203,13 +206,15 @@ export async function initPreview(canvas: HTMLCanvasElement): Promise<any> {
 
 export function disposePreview(): void {
   ++loadGeneration;
-  cancelPreviewWorker();
+  pendingPrepare = null;
+  cancelPreviewWorker(true);
   ++previewGeneration;
   resetPerformance();
   if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
   pendingFrame = null;
   previewInstance?.delete();
   previewInstance = null;
+  appliedViewType = null;
   bedPolygon = null;
   loadedGcode = null;
   if (typeof window !== 'undefined') (window as any).preview = null;
@@ -226,12 +231,14 @@ export function getPreviewInstance(): any {
  */
 export function cancelPendingGcodeLoad(): void {
   ++loadGeneration;
+  pendingPrepare = null;
   cancelPreviewWorker();
 }
 
 /** Discard a closed project's toolpaths while retaining the initialized viewer and bed. */
 export function clearGcode(): void {
   ++loadGeneration;
+  pendingPrepare = null;
   cancelPreviewWorker();
   prepared = null;
   resetPerformance();
@@ -259,7 +266,15 @@ export async function loadGcode(data: Uint8Array | ArrayBuffer | string, _name =
   const generation = ++loadGeneration;
   let result = prepared?.source.deref() === bytes ? prepared : null;
   if (!result) {
-    const converted = await preparePreview(bytes);
+    const entry = pendingPrepare?.source.deref() === bytes
+      ? pendingPrepare
+      : (pendingPrepare = { source: new WeakRef(bytes), promise: preparePreview(bytes) });
+    let converted: { stats: PreviewStatistics; packet: Uint8Array };
+    try {
+      converted = await entry.promise;
+    } finally {
+      if (pendingPrepare === entry) pendingPrepare = null;
+    }
     if (generation !== loadGeneration) {
       const error = new Error('Preview preparation canceled'); error.name = 'AbortError'; throw error;
     }
@@ -352,8 +367,9 @@ export function getLayerZ(layerIdx: number): number {
 }
 
 export function setViewType(viewType: string): void {
-  if (previewInstance) {
+  if (previewInstance && appliedViewType !== viewType) {
     previewInstance.setViewType(viewType);
+    appliedViewType = viewType;
   }
 }
 

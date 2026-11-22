@@ -117,7 +117,13 @@ test('PreviewView resets disposed metadata and tracks the current G-code load', 
     await page.evaluate(()=>window.loadPreview(5));
     await page.waitForFunction(()=>window.fixture.pendingLoads.length===3);
     const winningFrame = await page.evaluate(()=>window._previewFirstFrameTime);
+    assert.equal(await page.locator('#preview-loading-overlay').count(), 1, 'desktop shows loading overlay during in-flight load');
     await page.evaluate(()=>window.renderPreview(false));
+    await page.evaluate(()=>window.renderPreview(true));
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    assert.equal(await page.evaluate(()=>window.fixture.pendingLoads.length), 3,
+      'desktop active toggles must not restart an in-flight G-code load');
+    await page.evaluate(()=>window.loadPreview(6));
     await page.waitForFunction(()=>window.fixture.pendingLoads.length===4);
     await rejectPreparation(2, 'obsolete parser failure');
     assert.equal(await overlay(), null, 'a superseded failure must not write an error');
@@ -130,10 +136,16 @@ test('PreviewView resets disposed metadata and tracks the current G-code load', 
     assert.equal(await page.evaluate(()=>window.fixture.usePreviewStore.getState().isLoading), false);
     assert.equal(await page.evaluate(()=>window.fixture.getLoadedValue()), 4);
 
-    await page.evaluate(()=>window.loadPreview(6));
+    await page.evaluate(()=>window.fixture.usePreviewStore.getState().resetGcodeAction());
+    await page.evaluate(()=>window.fixture.useAppStore.setState({isSlicing:true,sliceResult:null}));
+    assert.equal(await page.locator('#preview-empty-prompt').count(), 0, 'empty prompt stays hidden while slicing');
+    await page.evaluate(()=>{window.fixture.useAppStore.setState({isSlicing:false});window.loadPreview(7);});
     await page.waitForFunction(()=>window.fixture.pendingLoads.length===5);
+    assert.equal(await page.locator('#preview-loading-overlay').count(), 1, 'desktop shows loading overlay when loading after clear');
+    assert.equal(await page.locator('#preview-empty-prompt').count(), 0, 'empty prompt stays hidden while G-code is loading');
     await rejectPreparation(4, 'current parser failure');
     assert.match(await overlay(), /Preview Initialization Error.*current parser failure/);
+    assert.equal(await page.locator('#preview-loading-overlay').count(), 0, 'loading overlay hides after load error');
 
     await page.evaluate(()=>window.root.unmount());
     assert.equal(await page.evaluate(()=>window.fixture.performanceListeners.size),0,'unmount removes the observer');

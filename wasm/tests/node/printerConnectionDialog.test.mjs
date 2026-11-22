@@ -83,7 +83,8 @@ before(async () => {
   const resolveDir = new URL('../../app', import.meta.url).pathname;
   const stubs = {
     appStore: `export const useAppStore = (select = s => s) => select(globalThis.__fixtureApp);
-      export const pendingOptionKey = (...parts) => parts.join(':');`,
+      export const pendingOptionKey = (...parts) => parts.join(':');
+      export const minimumFilamentSlots = () => 1;`,
     i18n: `export const translate = key => key;export const useTranslation = () => ({ t: translate });`,
     prefs: `export const usePrefsStore = select => select({display: {sidebarWidth: 280, sidebarSections: {}}});`,
     history: `export const useHistoryStore = select => select({isRestoring: false});`,
@@ -91,7 +92,7 @@ before(async () => {
     wizard: `export const useWizardStore = select => select({addedFilaments: []});`,
     systemProfiles: `export const systemProfiles = async () => [];`,
     printerCatalog: `export const loadPrinterCatalog = async () => {};
-      export const usePrinterCatalog = (select = s => s) => select({ vendors: [], loading: false, error: false });`,
+      export const usePrinterCatalog = (select = s => s) => select({ vendors: [{name: 'Prusa'}], loading: false, error: false });`,
     gatewayUrl: `export const DEFAULT_LOCAL_GATEWAY = 'http://gateway.invalid';
       export const fetchGatewayStatus = async () => null;
       export const discoverPrinters = () => { throw Error('unexpected discovery'); };
@@ -219,4 +220,49 @@ test('explicit Add stays blank and no selected saved connection opens Add', () =
   tree = dialog();
   assert.equal(control(tree, 'pc-host').value, '');
   assert.equal(control(tree, 'pc-host-type').value, 'moonraker');
+});
+
+test('add steps validate, preserve provider fields, reset on reopen and save the final draft', () => {
+  globalThis.requestAnimationFrame = () => {};
+  const store = client.usePrinterConnectionStore;
+  store.getState().openDialog(null);
+  const dialog = renderer(client.PrinterConnectionDialog);
+  let tree = dialog();
+  assert.equal(find(tree, item => item.props?.className === 'printer-connection-list'), undefined);
+  assert.equal(find(tree, item => item.props?.id === 'pc-validation'), undefined);
+  control(tree, 'pc-next').onClick();
+  tree = dialog();
+  assert.equal(control(tree, 'pc-connection-step').hidden, true);
+  assert.ok(control(tree, 'pc-validation'));
+  control(tree, 'pc-name').onChange({ target: { value: 'Synthetic steps' } });
+  tree = dialog();
+  control(tree, 'pc-host-type').onValueChange('prusalink');
+  tree = dialog();
+  control(tree, 'pc-next').onClick();
+  tree = dialog();
+  assert.equal(control(tree, 'pc-save').disabled, true);
+  assert.ok(control(tree, 'pc-validation'));
+  for (const [id, value] of Object.entries({ 'pc-host': 'https://steps.invalid', 'pc-user': 'synthetic-user', 'pc-password': 'synthetic-password', 'pc-apikey': 'synthetic-key' })) {
+    control(tree, id).onChange({ target: { value } }); tree = dialog();
+  }
+  assert.equal(find(tree, item => item.props?.id === 'pc-validation'), undefined);
+  assert.equal(control(tree, 'pc-save').disabled, false);
+  control(tree, 'pc-back').onClick(); tree = dialog();
+  assert.equal(control(tree, 'pc-name').value, 'Synthetic steps');
+  control(tree, 'pc-next').onClick(); tree = dialog();
+  assert.equal(control(tree, 'pc-password').value, 'synthetic-password');
+  control(tree, 'pc-save').onClick(); dialog();
+  const added = store.getState().printers.find(p => p.name === 'Synthetic steps');
+  assert.equal(added.printhost_password, 'synthetic-password');
+  assert.equal(added.printhost_user, 'synthetic-user');
+  assert.equal(added.printhost_apikey, 'synthetic-key');
+  assert.equal(added.preset, saved.preset);
+  store.getState().openDialog(null); tree = dialog();
+  control(tree, 'pc-name').onChange({ target: { value: 'Discard me' } }); tree = dialog();
+  control(tree, 'pc-cancel').onClick(); dialog();
+  store.getState().openDialog(null); tree = dialog();
+  assert.equal(control(tree, 'pc-name').value, '');
+  assert.equal(control(tree, 'pc-connection-step').hidden, true);
+  assert.equal(find(tree, item => item.props?.id === 'pc-validation'), undefined);
+  delete globalThis.requestAnimationFrame;
 });

@@ -5,6 +5,8 @@ import { getEngine, slice } from '../engine/orcaEngine';
 import { usePlateStore } from '../plate/plateStore';
 import { useHistoryStore } from '../history';
 import { useAppStore } from '../store/appStore';
+import { usePreviewStore } from '../preview/previewStore';
+import { warmupPreviewWorker } from '../preview/previewWorkerClient';
 import { slicePrerequisites } from '../shell/slicePrerequisites';
 import type { ProgressNotification, SliceResult } from '../engine/types';
 import { plateTitle } from './plateName';
@@ -195,6 +197,8 @@ export const usePlatesStore = create<PlatesStoreState>((set, get) => ({
       engineError: null,
       abortController
     });
+    usePreviewStore.getState().resetGcodeAction();
+    warmupPreviewWorker();
 
     try {
       const result: SliceResult = await slice({

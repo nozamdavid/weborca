@@ -49,6 +49,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
 
   // Preview store
   const isInitialized = usePreviewStore((s) => s.isInitialized);
+  const isLoadingGcode = usePreviewStore((s) => s.isLoading);
   const setInitialized = usePreviewStore((s) => s.setInitialized);
   const loadGcodeBytes = usePreviewStore((s) => s.loadGcodeBytes);
   const layersCount = usePreviewStore((s) => s.layersCount);
@@ -207,9 +208,10 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
   }, [bedConfigLoading, isInitialized, vendor, printer, userPresets, currentConfig?.printable_area, currentConfig?.bed_custom_model]);
 
   // 2. Load G-code when slice result is available
+  const shouldLoadGcode = !mobile || active;
   useEffect(() => {
     const gcode = sliceResult?.gcode;
-    if (!isInitialized || !gcode || isSlicing || (mobile && !active)) return;
+    if (!isInitialized || !gcode || isSlicing || !shouldLoadGcode) return;
     let current = true;
     setInitError(null);
     const tStart = performance.now();
@@ -249,7 +251,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
         console.error('[OrcaPreview] Failed to load G-code data:', err);
       });
     return () => { current = false; };
-  }, [isInitialized, sliceResult, isSlicing, loadGcodeBytes, updateCanvasSize, mobile, resetCamera, active]);
+  }, [isInitialized, sliceResult, isSlicing, loadGcodeBytes, updateCanvasSize, mobile, resetCamera, shouldLoadGcode]);
 
   // 3. Resize listener
   useLayoutEffect(() => {
@@ -548,7 +550,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
       )}
 
       {/* Loading & Status Overlays */}
-      {isLoadingModule && (
+      {(isLoadingModule || isLoadingGcode || (!!sliceResult?.gcode && layersCount === 0 && !initError && !isSlicing)) && (
         <div
           id="preview-loading-overlay"
           style={{
@@ -567,7 +569,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
           }}
         >
           <div className="spinner" style={{ width: 18, height: 18 }} />
-          <span>{t("Loading WebGL2 Preview Engine...")}</span>
+          <span>{t(isLoadingModule ? "Loading WebGL2 Preview Engine..." : "Loading...")}</span>
         </div>
       )}
 
@@ -594,7 +596,7 @@ export const PreviewView: React.FC<{ active?: boolean }> = ({ active = true }) =
       )}
 
       {/* Empty State Prompt if not sliced yet */}
-      {isInitialized && layersCount === 0 && !isLoadingModule && !initError && (
+      {isInitialized && layersCount === 0 && !isLoadingModule && !isLoadingGcode && !isSlicing && !sliceResult?.gcode && !initError && (
         <div
           id="preview-empty-prompt"
           className="desktop-preview-empty"

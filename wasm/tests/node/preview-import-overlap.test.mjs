@@ -105,7 +105,7 @@ const appStoreStubs = new Map([
     export const getOption = () => null;
     export const resetOptions = () => {};
     export const addModel = () => {};
-    export const slice = async () => {};`],
+    export const slice = async (opts) => globalThis.__sliceHook ? globalThis.__sliceHook(opts) : { gcode: new Uint8Array([1]), layers: 1, printTimeS: 1, filamentMm: 1, filamentG: 1, warnings: [] };`],
   ['ruleFixes.ts', `export const isNoRuleFix = () => false;`],
   ['slicingThreads.ts', `
     export const resolveSlicingThreads = () => 4;
@@ -128,13 +128,19 @@ const appStoreStubs = new Map([
   ['connectionStore.ts', `
     import { create } from 'zustand';
     export const usePrinterConnectionStore = create(() => ({ printers: [], selectedPrinterId: null, saveFilaments() {} }));`],
-  ['slicePrerequisites.ts', `export const slicePrerequisites = () => [];`],
+  ['slicePrerequisites.ts', `export const slicePrerequisites = () => null;`],
   ['toastStore.ts', `export const showToast = (message, kind) => { globalThis.__toasts.push({ message, kind }); };`],
   ['recentFiles.ts', `export const storeRecentFile = async () => {};`],
   ['gcodeThumbnails.ts', `export const clearExportGcodeCache = () => {};`],
-  ['platesStore.ts', `
-    import { create } from 'zustand';
-    export const usePlatesStore = create(() => ({ activePlateIndex: 0, plates: [] }));`]
+  ['plateStore.ts', `export const usePlateStore = { getState: () => ({ refreshObjects: async () => {} }) };`],
+  ['index.ts', `
+    export const useHistoryStore = { getState: () => ({ isRestoring: false }) };
+    export const capturePlateState = () => ({});
+    export const restorePlatesOnEmptyCanvas = async () => {};`],
+  ['prefsStore.ts', `
+    export const usePrefsStore = { getState: () => ({ general: { autosave: false, slicingThreads: 1 } }) };`],
+  ['objectListStore.ts', `
+    export const useObjectListStore = { getState: () => ({ objects: [] }) };`]
 ]);
 
 const entry = `
@@ -143,6 +149,7 @@ const entry = `
     globalThis.Worker = FakeWorker;
     export { useAppStore } from './src/store/appStore';
     export { usePreviewStore } from './src/preview/previewStore';
+    export { usePlatesStore } from './src/plates/platesStore';
     export * as previewModule from './src/preview/orcaPreviewModule';
     import { native } from 'native-fixture';
     import { FakeWorker } from 'worker-fixture';
@@ -170,7 +177,7 @@ before(async () => {
           if (args.path === 'worker-fixture') return { contents: workerFixture, loader: 'js', resolveDir: appDir };
           return { contents: nativeFixture, loader: 'js', resolveDir: appDir };
         });
-        b.onLoad({ filter: /\/(orcaEngine|ruleFixes|slicingThreads|effectivePreset|presetActions|presetStorage|printerCatalog|systemProfiles|connectionStore|slicePrerequisites|toastStore|recentFiles|gcodeThumbnails|platesStore)\.ts$/ }, (args) => {
+        b.onLoad({ filter: /\/(orcaEngine|ruleFixes|slicingThreads|effectivePreset|presetActions|presetStorage|printerCatalog|systemProfiles|connectionStore|slicePrerequisites|toastStore|recentFiles|gcodeThumbnails|plateStore|prefsStore|objectListStore)\.ts$|\/history\/index\.ts$/ }, (args) => {
           const base = args.path.slice(args.path.lastIndexOf('/') + 1);
           return appStoreStubs.has(base) ? { contents: appStoreStubs.get(base), loader: 'ts', resolveDir: appDir } : undefined;
         });
@@ -209,13 +216,13 @@ const loadWithReply = async (usePreviewStore, fixture, bytes, name, layers) => {
 };
 
 const freshState = async () => {
-  const { useAppStore, usePreviewStore, previewModule, fixture } = await stack();
+  const { useAppStore, usePreviewStore, usePlatesStore, previewModule, fixture } = await stack();
   await useAppStore.setState({ isEngineReady: true, isSlicing: false, sliceResult: null, gcodeUrl: null });
   usePreviewStore.setState({ stats: null, isLoading: false, layersCount: 0 });
   previewModule.disposePreview();
   fixture.native.reset();
   currentNative = fixture.native;
-  return { useAppStore, usePreviewStore, previewModule, fixture };
+  return { useAppStore, usePreviewStore, usePlatesStore, previewModule, fixture };
 };
 
 const initRenderer = (previewModule) => previewModule.initPreview({ width: 8, height: 8, id: '' });
@@ -326,4 +333,89 @@ test('a failing import keeps the previous valid output; no zero-statistics succe
   assert.equal(usePreviewStore.getState().stats.layers, baseStats.layers, 'zero statistics were never published');
   assert.ok(previewModule.isGcodeLoaded(bytesBase), 'previous loaded G-code preserved through the failed renderer load');
   native.loadError = null;
+});
+
+test('concurrent loadGcode for the same bytes shares one parse and skips redundant setViewType', async () => {
+  const { previewModule, fixture } = await freshState();
+  const { native, FakeWorker } = fixture;
+  const instance = await initRenderer(previewModule);
+  const bytes = encode('; shared\nG1 X1\n');
+
+  const first = previewModule.loadGcode(bytes, 'shared.gcode');
+  first.catch(() => {});
+  const second = previewModule.loadGcode(bytes, 'shared.gcode');
+  await settle();
+  const worker = FakeWorker.instances.at(-1);
+  assert.equal(worker.sent.length, 1, 'concurrent callers for identical bytes share one worker parse');
+
+  respond(worker, native.stats(6), Uint8Array.from([4, 5]));
+  await assert.rejects(first, error => error.name === 'AbortError');
+  const stats = await second;
+  assert.equal(stats.layers, 6);
+
+  previewModule.setViewType('FeatureType');
+  assert.equal(instance.calls.filter(c => c.name === 'setViewType').length, 0,
+    'initial FeatureType matches native default and skips redundant setViewType');
+  previewModule.setViewType('Speed');
+  previewModule.setViewType('Speed');
+  assert.deepEqual(instance.calls.filter(c => c.name === 'setViewType').map(c => c.arg), ['Speed'],
+    'setViewType runs once when changing view type and skips repeated calls');
+});
+
+test('startSlice clears old preview state immediately and keeps or warms the preview worker', async () => {
+  const { useAppStore, usePreviewStore, previewModule, fixture } = await freshState();
+  const { FakeWorker } = fixture;
+  const instance = await initRenderer(previewModule);
+  await loadWithReply(usePreviewStore, fixture, encode('; old\nG1 X1\n'), 'old.gcode', 9);
+  assert.equal(usePreviewStore.getState().layersCount, 9);
+  const workerBefore = FakeWorker.instances.at(-1);
+  const createdBefore = FakeWorker.created;
+
+  let releaseSlice;
+  globalThis.__sliceHook = () => new Promise(resolve => {
+    releaseSlice = () => resolve({ gcode: encode('; new\nG1 X2\n'), layers: 4, printTimeS: 20, filamentMm: 10, filamentG: 1, warnings: [] });
+  });
+  try {
+    const slicing = useAppStore.getState().startSlice();
+    await settle();
+    assert.equal(useAppStore.getState().isSlicing, true);
+    assert.equal(usePreviewStore.getState().layersCount, 0, 'startSlice clears old layers immediately');
+    assert.equal(usePreviewStore.getState().stats, null, 'startSlice clears old stats immediately');
+    assert.ok(instance.calls.some(c => c.name === 'clearGcode'), 'startSlice clears the native viewer immediately');
+    assert.equal(workerBefore.terminated, 0, 'idle warm worker stays alive across reslice');
+    assert.equal(FakeWorker.created, createdBefore, 'no extra worker spawned when one is already warm');
+    releaseSlice();
+    await slicing;
+  } finally {
+    delete globalThis.__sliceHook;
+  }
+});
+
+test('slicePlate clears old preview state immediately and keeps or warms the preview worker', async () => {
+  const { useAppStore, usePreviewStore, usePlatesStore, previewModule, fixture } = await freshState();
+  const { FakeWorker } = fixture;
+  const instance = await initRenderer(previewModule);
+  await loadWithReply(usePreviewStore, fixture, encode('; old\nG1 X1\n'), 'old.gcode', 9);
+  assert.equal(usePreviewStore.getState().layersCount, 9);
+  const workerBefore = FakeWorker.instances.at(-1);
+  const createdBefore = FakeWorker.created;
+
+  let releaseSlice;
+  globalThis.__sliceHook = () => new Promise(resolve => {
+    releaseSlice = () => resolve({ gcode: encode('; new\nG1 X2\n'), layers: 4, printTimeS: 20, filamentMm: 10, filamentG: 1, warnings: [] });
+  });
+  try {
+    const slicing = usePlatesStore.getState().slicePlate(0);
+    await settle();
+    assert.equal(useAppStore.getState().isSlicing, true);
+    assert.equal(usePreviewStore.getState().layersCount, 0, 'slicePlate clears old layers immediately');
+    assert.equal(usePreviewStore.getState().stats, null, 'slicePlate clears old stats immediately');
+    assert.ok(instance.calls.some(c => c.name === 'clearGcode'), 'slicePlate clears the native viewer immediately');
+    assert.equal(workerBefore.terminated, 0, 'idle warm worker stays alive across reslice');
+    assert.equal(FakeWorker.created, createdBefore, 'no extra worker spawned when one is already warm');
+    releaseSlice();
+    assert.equal(await slicing, true);
+  } finally {
+    delete globalThis.__sliceHook;
+  }
 });

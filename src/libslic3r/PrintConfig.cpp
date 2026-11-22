@@ -9841,6 +9841,18 @@ void PrintConfigDef::handle_legacy(t_config_option_key &opt_key, std::string &va
         value = "hollow";
     } else if (opt_key == "tree_support_wall_count" && value == "-1") {
         value = "0";
+    } else if (opt_key == "raft_first_layer_expansion") {
+        const char *start = value.c_str();
+        while (*start != '\0' && std::isspace(static_cast<unsigned char>(*start)))
+            ++start;
+        if (*start != '\0') {
+            char *end = nullptr;
+            double parsed = std::strtod(start, &end);
+            while (end != nullptr && *end != '\0' && std::isspace(static_cast<unsigned char>(*end)))
+                ++end;
+            if (end != start && end != nullptr && *end == '\0' && std::isfinite(parsed) && parsed == -1.0)
+                value = "0";
+        }
     } else if (opt_key == "different_settings_to_system") {
         std::string copy_value = value;
         copy_value.erase(std::remove(copy_value.begin(), copy_value.end(), '\"'), copy_value.end()); // remove '"' in string
@@ -10394,6 +10406,9 @@ void DynamicPrintConfig::normalize_fdm(int used_filaments)
         // Resolution will be above 1um.
         opt_gcode_resolution->value = std::max(opt_gcode_resolution->value, 0.001);
 
+    if (auto *opt = this->opt<ConfigOptionFloat>("raft_first_layer_expansion", false); opt && opt->value == -1.0)
+        opt->value = 0.0;
+
     // BBS
     ConfigOptionBool* ept_opt = this->option<ConfigOptionBool>("enable_prime_tower");
     if (used_filaments > 0 && ept_opt != nullptr) {
@@ -10471,6 +10486,9 @@ void DynamicPrintConfig::normalize_fdm_1()
     if (auto *opt_gcode_resolution = this->opt<ConfigOptionFloat>("resolution", false); opt_gcode_resolution)
         // Resolution will be above 1um.
         opt_gcode_resolution->value = std::max(opt_gcode_resolution->value, 0.001);
+
+    if (auto *opt = this->opt<ConfigOptionFloat>("raft_first_layer_expansion", false); opt && opt->value == -1.0)
+        opt->value = 0.0;
 
     return;
 }
