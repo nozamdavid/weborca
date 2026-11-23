@@ -9887,6 +9887,12 @@ void PrintConfigDef::handle_legacy(t_config_option_key &opt_key, std::string &va
         || opt_key == "extruder_variant_list") {
         ReplaceString(value, "Normal", "Standard");
         ReplaceString(value, "Big Traffic", "High Flow");
+        ReplaceString(value, "extra_high_flow", "Extra High Flow");
+        ReplaceString(value, "tpu_high_flow", "TPU High Flow");
+        ReplaceString(value, "e3d_high_flow", "E3D High Flow");
+        ReplaceString(value, "high_flow", "High Flow");
+        ReplaceString(value, "standard", "Standard");
+        ReplaceString(value, "hybrid", "Hybrid");
     }
     else if (opt_key == "extruder_type") {
         ReplaceString(value, "DirectDrive", "Direct Drive");

@@ -76,6 +76,24 @@ describe('Engine getPresetConfig', () => {
     await assert.rejects(core.call('resolvePreset', { kind: 'filament', name: 'No such preset' }), /Unknown preset/);
   });
 
+  test('normalizes and applies an imported printer hardened steel nozzle type', async () => {
+    // Snapmaker U1 (0.4 nozzle) - Timelapse.orca_printer uses these values.
+    const normalized = await core.call('normalizeOptions', {
+      options: {
+        nozzle_type: 'hardened_steel',
+        nozzle_volume_type: ['standard', 'standard', 'standard', 'standard']
+      }
+    });
+    assert.deepEqual(normalized.errors, []);
+    assert.equal(normalized.options.nozzle_type, 'hardened_steel');
+    assert.equal(normalized.options.nozzle_volume_type, 'Standard,Standard,Standard,Standard');
+    const applied = await core.call('setOptions', { options: normalized.options });
+    assert.deepEqual(applied.errors, []);
+    const cfg = await core.call('getConfig', {});
+    assert.equal(cfg.nozzle_type, 'hardened_steel');
+    assert.equal(cfg.nozzle_volume_type, 'Standard,Standard,Standard,Standard');
+  });
+
   test('unknown names and kinds are errors', async () => {
     await assert.rejects(core.call('getPresetConfig', { kind: 'process', name: 'No such preset' }), /Unknown process preset/);
     await assert.rejects(core.call('getPresetConfig', { kind: 'nope', name: 'x' }), /Unknown preset kind/);
