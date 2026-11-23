@@ -368,7 +368,7 @@
 .filament-section .sb-section-title { min-width: min(40%, 86px); }
 .filament-section .sb-head-extra { flex-shrink: 1; min-width: 0; padding-block: var(--space-1-5); }
 .filament-section .sb-head-extra > .ds-toolbar { max-width: 100%; }
-.sidebar .filament-flush-btn { flex: 0 1 auto; min-width: 0; max-width: 120px; height: auto; min-height: var(--ctl-h); white-space: normal; overflow-wrap: anywhere; line-height: 1.2; padding: var(--space-1-5) var(--space-2); font-size: var(--text-sm); }
+.sidebar .filament-flush-btn { flex: 0 1 auto; min-width: 0; max-width: 100%; height: var(--icon-btn); min-height: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 var(--space-2); font-size: var(--text-sm); }
 @container (max-width: 244px) {
   .filament-section .sb-head:has(.filament-flush-btn) { flex-direction: column; align-items: stretch; gap: 0; }
   .filament-section .sb-head-extra:has(.filament-flush-btn) { padding: 0 var(--space-2) var(--space-1-5); }
