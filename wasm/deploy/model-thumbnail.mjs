@@ -12,11 +12,16 @@ function normalize(body) {
     child.stdin.on('error', () => {}); child.stdin.end(body);
   });
 }
-// Public MakerWorld catalog images only; no caller headers or credentials are forwarded.
+// Public MakerWorld and Printables catalog images only; no caller headers or credentials are forwarded.
 export function thumbnailUrl(value) {
   const url = new URL(value);
-  if (url.protocol !== 'https:' || url.hostname !== 'makerworld.bblmw.com' || url.port || url.username || url.password || url.hash ||
-      !/^\/makerworld\/model\/[A-Za-z0-9_-]+\/design\/[A-Za-z0-9_-]+\.(png|jpe?g|jfif|gif|webp)$/i.test(url.pathname) || url.search) throw new Error('Invalid thumbnail');
+  if (url.protocol !== 'https:' || url.port || url.username || url.password || url.hash || url.search) throw new Error('Invalid thumbnail');
+  const makerworld = url.hostname === 'makerworld.bblmw.com' &&
+    /^\/makerworld\/model\/[A-Za-z0-9_-]+\/design\/[A-Za-z0-9_-]+\.(png|jpe?g|jfif|gif|webp)$/i.test(url.pathname);
+  const printables = url.hostname === 'media.printables.com' &&
+    /^\/media\/prints\/.+\.(png|jpe?g|jfif|gif|webp)$/i.test(url.pathname) &&
+    !url.pathname.split('/').includes('..') && !/%2e/i.test(url.pathname);
+  if (!makerworld && !printables) throw new Error('Invalid thumbnail');
   return url.href;
 }
 export function createThumbnailHandler(fetchImage = fetch) {
@@ -42,7 +47,10 @@ export function createThumbnailHandler(fetchImage = fetch) {
         await new Promise(resolve => waiting.push(resolve));
       } else active++;
       try {
-        const response = await fetchImage(url + '?x-oss-process=image/resize,m_lfit,w_300,h_300/format,webp', { redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(15000) });
+        const fetchUrl = new URL(url).hostname === 'makerworld.bblmw.com'
+          ? url + '?x-oss-process=image/resize,m_lfit,w_300,h_300/format,webp'
+          : url;
+        const response = await fetchImage(fetchUrl, { redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(15000) });
         let type = response.headers.get('content-type')?.split(';')[0].trim().toLowerCase();
         if (response.status !== 200 || !['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'binary/octet-stream', 'application/octet-stream'].includes(type) || Number(response.headers.get('content-length')) > limit) { await response.body?.cancel(); throw new Error(); }
         const reader = response.body.getReader(), chunks = [];

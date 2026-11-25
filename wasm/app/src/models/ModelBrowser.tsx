@@ -10,7 +10,8 @@ import { useHelpStore } from '../shell/HelpDialogs';
 import { accountPrinter, useBambuAccount } from '../printers/bambuAccount';
 import { usePrinterConnectionStore } from '../printers/connectionStore';
 
-const platformName = (source: string) => source === 'makerworld' ? 'MakerWorld' : source;
+const platformName = (source: string) => source === 'makerworld' ? 'MakerWorld' : source === 'printables' ? 'Printables' : source;
+const modelKey = (model: Pick<Model, 'source' | 'id'>) => `${model.source}:${model.id}`;
 
 function ModelFacts({ model, compact = false }: { model: Model; compact?: boolean }) {
   const { t } = useTranslation();
@@ -32,7 +33,7 @@ function Thumbnail({ url }: { url?: string }) {
   const direct = directThumbnail(url);
   useEffect(() => { setFailed(false); setRelay(false); }, [url]);
   return url && !failed
-    ? <img src={!relay && direct ? direct : url} referrerPolicy="no-referrer" loading="lazy" alt="" onLoad={event => { const img = event.currentTarget; if (img.naturalWidth > 300 || img.naturalHeight > 300) { if (!relay && direct) setRelay(true); else setFailed(true); } }} onError={() => { if (!relay && direct) setRelay(true); else setFailed(true); }} />
+    ? <img src={!relay && direct ? direct : url} referrerPolicy="no-referrer" loading="lazy" alt="" onLoad={event => { const img = event.currentTarget; if ((img.naturalWidth > 300 || img.naturalHeight > 300) && (relay || !direct || direct.includes('x-oss-process='))) { if (!relay && direct) setRelay(true); else setFailed(true); } }} onError={() => { if (!relay && direct) setRelay(true); else setFailed(true); }} />
     : <span className="model-thumbnail-placeholder">{t('No preview available')}</span>;
 }
 
@@ -41,12 +42,12 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
   const [criteria, setCriteria] = useState<CatalogQuery>({ page: 1, pageSize: 24, sort: 'newest' });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filterLabels = {
-    q: 'Search models', category: 'Category', author: 'Author (exact)', license: 'License (exact)', subcategory: 'Subcategory (exact)',
+    q: 'Search models', source: 'Provider', category: 'Category', author: 'Author (exact)', license: 'License (exact)', subcategory: 'Subcategory (exact)',
     minLikes: 'Minimum likes', maxLikes: 'Maximum likes', minDownloads: 'Minimum downloads', maxDownloads: 'Maximum downloads',
     uploadedAfter: 'Uploaded after', uploadedBefore: 'Uploaded before', hasThumbnail: 'Thumbnail',
   } as const;
   const activeFilters = (Object.keys(filterLabels) as (keyof typeof filterLabels)[]).filter(key => criteria[key] !== undefined && criteria[key] !== '');
-  const advancedCount = activeFilters.filter(key => key !== 'q' && key !== 'category').length + (criteria.formats?.length || 0);
+  const advancedCount = activeFilters.filter(key => key !== 'q' && key !== 'category' && key !== 'source').length + (criteria.formats?.length || 0);
   const hasFilters = activeFilters.length > 0 || !!criteria.formats?.length || criteria.sort !== 'newest';
   const grid = useRef<HTMLDivElement>(null);
   const browser = useRef<HTMLElement>(null);
@@ -77,7 +78,7 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
   const detailsRequest = useRef<AbortController>();
   const [details, setDetails] = useState<{ id: string; text: string; html?: string }>();
   const [infoModel, setInfoModel] = useState<Model>();
-  const descriptionHtml = details?.id === infoModel?.id ? details?.html : undefined;
+  const descriptionHtml = infoModel && details?.id === modelKey(infoModel) ? details?.html : undefined;
   const renderedDescription = useMemo(() => descriptionHtml ? renderSafeDescriptionHtml(descriptionHtml, infoModel?.url) : null, [descriptionHtml, infoModel?.url]);
   const change = (patch: Partial<CatalogQuery>) => { setCriteria(current => ({ ...current, ...patch, page: 1 })); setDetails(undefined); detailsRequest.current?.abort(); };
   const [downloadStatus, setDownloadStatus] = useState('');
@@ -97,14 +98,14 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
       return;
     }
     setDownloadStatus(open ? '' : 'Preparing download…');
-    if (open) setOpening({ id: model.id, phase: 'preparing' });
+    if (open) setOpening({ id: modelKey(model), phase: 'preparing' });
     setBusy(true);
     const controller = new AbortController();
     transfer.current = controller;
     try {
       if (open) {
         const file = await makerWorldFile(printer, id, controller.signal, percent => {
-          if (!controller.signal.aborted) setOpening({ id: model.id, phase: 'downloading', percent });
+          if (!controller.signal.aborted) setOpening({ id: modelKey(model), phase: 'downloading', percent });
         });
         setOpening(undefined);
         setInfoModel(undefined);
@@ -126,7 +127,7 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
   };
   const openingLabel = opening?.phase === 'downloading' ? t('Downloading...') : t('Preparing download…');
   const openButton = (model: Model, classes: string) => {
-    const working = opening?.id === model.id;
+    const working = opening?.id === modelKey(model);
     return <button className={classes} disabled={busy} aria-busy={working} onClick={() => void download(model, true)}>
       {working && opening.percent === undefined && <span className="ds-spinner" aria-hidden="true" />}
       {working ? openingLabel : t('Open in slicer')}{working && opening.percent !== undefined && ` ${opening.percent}%`}
@@ -172,18 +173,19 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
   const fetchDescription = async (model: Model) => {
     detailsRequest.current?.abort();
     const controller = new AbortController(); detailsRequest.current = controller;
-    setDetails({ id: model.id, text: t('Loading description…') });
+    const key = modelKey(model);
+    setDetails({ id: key, text: t('Loading description…') });
     try {
-      const result = await fetchModel(model.id, controller.signal);
+      const result = await fetchModel(model.id, controller.signal, model.source);
       if (!controller.signal.aborted) setDetails(result.descriptionHtml?.trim()
-        ? { id: model.id, text: result.description || '', html: result.descriptionHtml }
-        : { id: model.id, text: result.description || t('No description available.') });
-    } catch { if (!controller.signal.aborted) setDetails({ id: model.id, text: t('Could not load description. Try again.') }); }
+        ? { id: key, text: result.description || '', html: result.descriptionHtml }
+        : { id: key, text: result.description || t('No description available.') });
+    } catch { if (!controller.signal.aborted) setDetails({ id: key, text: t('Could not load description. Try again.') }); }
   };
   const closeInfo = () => setInfoModel(undefined);
   const openInfo = (model: Model) => {
     setInfoModel(model);
-    if (details?.id !== model.id) void fetchDescription(model);
+    if (details?.id !== modelKey(model)) void fetchDescription(model);
   };
   return <section ref={browser} className="model-browser" aria-labelledby="models-title" aria-busy={status === 'loading'}>
     <header className="model-header"><h1 id="models-title" className="ds-title--page">{t('Models')}</h1>
@@ -199,6 +201,11 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
       </div>
       <label>{t('Sort')}<select className="ds-select" value={criteria.sort} onChange={event => change({ sort: event.target.value as CatalogQuery['sort'] })}>
         {['newest', 'oldest', 'relevance', 'likes', 'downloads'].map(value => <option key={value} value={value}>{t(value)}</option>)}
+      </select></label>
+      <label>{t('Provider')}<select className="ds-select" value={criteria.source || ''} onChange={event => change({ source: (event.target.value || undefined) as CatalogQuery['source'] })}>
+        <option value="">{t('All providers')}</option>
+        <option value="makerworld">MakerWorld</option>
+        <option value="printables">Printables</option>
       </select></label>
       <label>{t('Category')}<select className="ds-select" value={criteria.category || ''} onChange={event => change({ category: event.target.value })}>
         <option value="">{t('All categories')}</option>{stats?.categories.map(choice => <option key={choice.name}>{choice.name}</option>)}
@@ -230,21 +237,26 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
       {status === 'ready' && (total ? t('{{count}} models', { count: total.toLocaleString() }) : t('No models found. Try another search or clear the filters.'))}
     </div>
     {hasFilters && <div className="model-active-filters">
-      {activeFilters.map(key => <button className="model-active-filter" type="button" key={key} onClick={() => change({ [key]: undefined })} aria-label={t('Remove filter: {{filter}}', { filter: t(filterLabels[key]) })}>{t(filterLabels[key])}: {key === 'hasThumbnail' ? t(criteria.hasThumbnail ? 'With thumbnail' : 'Without thumbnail') : String(criteria[key])}<span aria-hidden="true">×</span></button>)}
+      {activeFilters.map(key => <button className="model-active-filter" type="button" key={key} onClick={() => change({ [key]: undefined })} aria-label={t('Remove filter: {{filter}}', { filter: t(filterLabels[key]) })}>{t(filterLabels[key])}: {key === 'hasThumbnail' ? t(criteria.hasThumbnail ? 'With thumbnail' : 'Without thumbnail') : key === 'source' ? platformName(String(criteria.source)) : String(criteria[key])}<span aria-hidden="true">×</span></button>)}
       {criteria.formats?.map(format => <button className="model-active-filter" type="button" key={format} aria-label={t('Remove filter: {{filter}}', { filter: `.${format}` })} onClick={() => change({ formats: criteria.formats?.filter(value => value !== format) })}>.{format}<span aria-hidden="true">×</span></button>)}
       {criteria.sort !== 'newest' && <button className="model-active-filter" type="button" aria-label={t('Remove filter: {{filter}}', { filter: t('Sort') })} onClick={() => change({ sort: 'newest' })}>{t('Sort')}: {t(criteria.sort || 'newest')}<span aria-hidden="true">×</span></button>}
     </div>}
     {downloadStatus && <p role="status">{t(downloadStatus)}</p>}
     {opening && !infoModel && <span className="ds-visually-hidden" role="status">{openingLabel}</span>}
     </div>
-    <div className="model-grid" ref={grid}>{models.map(model => <div key={model.id} className="model-cell"><a className="model-card" href={model.url} target="_blank" rel="noopener noreferrer"
+    <div className="model-grid" ref={grid}>{models.map(model => <div key={modelKey(model)} className="model-cell"><a className="model-card" href={model.url} target="_blank" rel="noopener noreferrer"
       onClick={event => { if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openInfo(model); }}>
       <div className="model-thumbnail"><Thumbnail url={model.thumbnail} /></div>
       <div className="model-card-copy"><h2>{model.title}</h2><ModelFacts model={model} compact /></div>
     </a><div className="model-card-actions">
-      {openButton(model, 'ds-btn ds-btn--sm ds-btn--primary model-card-open')}
-      <button className="ds-btn ds-btn--sm ds-btn--subtle" onClick={() => openInfo(model)}>{t('More info')}</button>
-      <button className="ds-btn ds-btn--sm ds-btn--subtle" disabled={busy} onClick={() => void download(model)}>{t('Download 3MF')}</button>
+      {model.source === 'printables' ? <>
+        <a className="ds-btn ds-btn--sm ds-btn--primary model-card-open" href={model.url} target="_blank" rel="noopener noreferrer">{t('Open in {{platform}}', { platform: platformName(model.source) })}</a>
+        <button className="ds-btn ds-btn--sm ds-btn--subtle" onClick={() => openInfo(model)}>{t('More info')}</button>
+      </> : <>
+        {openButton(model, 'ds-btn ds-btn--sm ds-btn--primary model-card-open')}
+        <button className="ds-btn ds-btn--sm ds-btn--subtle" onClick={() => openInfo(model)}>{t('More info')}</button>
+        <button className="ds-btn ds-btn--sm ds-btn--subtle" disabled={busy} onClick={() => void download(model)}>{t('Download 3MF')}</button>
+      </>}
     </div></div>)}</div>
     {status === 'ready' && pages > 0 && <nav className="model-pagination" aria-label={t('Model pages')}><button className="ds-btn" disabled={(criteria.page || 1) <= 1} onClick={() => setCriteria(current => ({ ...current, page: (current.page || 1) - 1 }))}>{t('Previous')}</button><span>{t('Page {{page}} of {{pages}}', { page: criteria.page || 1, pages })}</span><button className="ds-btn" disabled={(criteria.page || 1) >= pages} onClick={() => {
       setCriteria(current => ({ ...current, page: (current.page || 1) + 1 }));
@@ -260,18 +272,20 @@ export function ModelBrowser({ active, onPrepare }: { active: boolean; onPrepare
           <div className="model-thumbnail model-detail-thumbnail"><Thumbnail url={infoModel.thumbnail} /></div>
           <div className="model-detail-copy">
             <ModelFacts model={infoModel} />
-            {details?.id === infoModel.id && details.html
+            {details?.id === modelKey(infoModel) && details.html
               ? <div className="model-modal-description model-modal-description--html">{renderedDescription || details.text || t('No description available.')}</div>
-              : details?.id === infoModel.id
+              : details?.id === modelKey(infoModel)
                 ? <p className="model-modal-description">{details.text}</p>
                 : <p className="model-modal-description" role="status">{t('Loading description…')}</p>}
             {downloadStatus && <p className="model-modal-status" role="status">{t(downloadStatus)}</p>}
           </div>
         </div>
         <footer className="ds-dialog__foot">
-          <a className="ds-btn ds-btn--subtle" href={infoModel.url} target="_blank" rel="noopener noreferrer">{t('Open in {{platform}}', { platform: platformName(infoModel.source) })}</a>
-          <button className="ds-btn" disabled={busy} onClick={() => void download(infoModel)}>{t('Download 3MF')}</button>
-          {openButton(infoModel, 'ds-btn ds-btn--primary')}
+          <a className={`ds-btn ${infoModel.source === 'printables' ? 'ds-btn--primary' : 'ds-btn--subtle'}`} href={infoModel.url} target="_blank" rel="noopener noreferrer">{t('Open in {{platform}}', { platform: platformName(infoModel.source) })}</a>
+          {infoModel.source !== 'printables' && <>
+            <button className="ds-btn" disabled={busy} onClick={() => void download(infoModel)}>{t('Download 3MF')}</button>
+            {openButton(infoModel, 'ds-btn ds-btn--primary')}
+          </>}
           {opening && <span className="ds-visually-hidden" role="status">{openingLabel}</span>}
         </footer>
       </div>

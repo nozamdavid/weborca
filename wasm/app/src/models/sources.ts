@@ -8,10 +8,17 @@ export function directThumbnail(relay?: string): string | undefined {
   try {
     if ([...new URL(relay, 'https://localhost').searchParams.keys()].join() !== 'url') return;
     const url = new URL(new URL(relay, 'https://localhost').searchParams.get('url')!);
-    if (url.protocol !== 'https:' || url.hostname !== 'makerworld.bblmw.com' || url.port || url.username || url.password || url.search || url.hash ||
-        !/^\/makerworld\/model\/[A-Za-z0-9_-]+\/design\/[A-Za-z0-9_-]+\.(png|jpe?g|jfif|gif|webp)$/i.test(url.pathname)) return;
-    if (/\.jfif$/i.test(url.pathname)) return;
-    return url.href + '?x-oss-process=image/resize,m_lfit,w_300,h_300/format,webp';
+    if (url.protocol !== 'https:' || url.port || url.username || url.password || url.search || url.hash) return;
+    if (url.hostname === 'makerworld.bblmw.com') {
+      if (!/^\/makerworld\/model\/[A-Za-z0-9_-]+\/design\/[A-Za-z0-9_-]+\.(png|jpe?g|jfif|gif|webp)$/i.test(url.pathname)) return;
+      if (/\.jfif$/i.test(url.pathname)) return;
+      return url.href + '?x-oss-process=image/resize,m_lfit,w_300,h_300/format,webp';
+    }
+    if (url.hostname === 'media.printables.com' &&
+        /^\/media\/prints\/.+\.(png|jpe?g|jfif|gif|webp)$/i.test(url.pathname) &&
+        !url.pathname.split('/').includes('..')) {
+      return url.href;
+    }
   } catch { return; }
 }
 
@@ -24,7 +31,7 @@ export interface Model {
   categoryPath?: string[]; observedAt?: string; searchText: string;
 }
 export interface CatalogQuery {
-  q?: string; formats?: string[]; category?: string; subcategory?: string; author?: string; license?: string;
+  q?: string; source?: 'all' | 'makerworld' | 'printables'; formats?: string[]; category?: string; subcategory?: string; author?: string; license?: string;
   minLikes?: number; maxLikes?: number; minDownloads?: number; maxDownloads?: number;
   uploadedAfter?: string; uploadedBefore?: string; hasThumbnail?: boolean;
   sort?: 'relevance' | 'newest' | 'oldest' | 'likes' | 'downloads'; page?: number; pageSize?: number;
@@ -69,7 +76,7 @@ export function preloadModelThumbnails(models: Model[]) {
       if (direct && image.src === direct) image.src = relay;
     };
     image.onerror = fallback;
-    image.onload = () => { if (image.naturalWidth > 300 || image.naturalHeight > 300) fallback(); };
+    image.onload = () => { if (direct?.includes('x-oss-process=') && (image.naturalWidth > 300 || image.naturalHeight > 300)) fallback(); };
     image.src = direct || relay;
   }
 }
@@ -95,19 +102,29 @@ function trustedUrl(value: unknown, thumbnail = false): string | undefined {
   if (typeof value !== 'string') return;
   try {
     const url = new URL(value);
-    const trusted = thumbnail ? ['makerworld.bblmw.com', 'makerworld.bambulab.com'].includes(url.hostname) : url.hostname === 'makerworld.com';
+    const trusted = thumbnail
+      ? ['makerworld.bblmw.com', 'makerworld.bambulab.com', 'media.printables.com'].includes(url.hostname)
+      : ['makerworld.com', 'www.printables.com', 'printables.com'].includes(url.hostname);
     if (url.protocol === 'https:' && trusted && !url.username && !url.password && !url.port) return url.href;
   } catch { /* Untrusted metadata is never used as a link. */ }
 }
 function model(value: unknown): Model {
   const item = record(value);
   const id = String(number(item.id));
+  if (item.source !== undefined && item.source !== 'makerworld' && item.source !== 'printables') throw new Error('Invalid catalog model');
+  const source = item.source ?? 'makerworld';
   const url = trustedUrl(item.url);
-  if (id === '0' || !url || !new URL(url).pathname.startsWith(`/en/models/${id}-`) && new URL(url).pathname !== `/en/models/${id}` || typeof item.title !== 'string') throw new Error('Invalid catalog model');
+  const parsedUrl = url ? new URL(url) : undefined;
+  const validUrl = parsedUrl && (source === 'printables'
+    ? (parsedUrl.hostname === 'www.printables.com' || parsedUrl.hostname === 'printables.com') &&
+      (parsedUrl.pathname.startsWith(`/model/${id}-`) || parsedUrl.pathname === `/model/${id}`)
+    : parsedUrl.hostname === 'makerworld.com' &&
+      (parsedUrl.pathname.startsWith(`/en/models/${id}-`) || parsedUrl.pathname === `/en/models/${id}`));
+  if (id === '0' || !validUrl || typeof item.title !== 'string') throw new Error('Invalid catalog model');
   const fileFormats = [...new Set(strings(item.fileFormats).map(v => v.toLowerCase().replace(/^\./, '')))];
   const author = string(item.author) ?? string(item.authorUsername) ?? '';
   return {
-    id, title: item.title, source: 'makerworld', url, thumbnail: trustedUrl(item.thumbnailUrl, true) ? `/_model-thumbnail/v300?url=${encodeURIComponent(item.thumbnailUrl as string)}` : undefined,
+    id, title: item.title, source, url: parsedUrl.href, thumbnail: trustedUrl(item.thumbnailUrl, true) ? `/_model-thumbnail/v300?url=${encodeURIComponent(item.thumbnailUrl as string)}` : undefined,
     fileFormats, estimatedFileFormats: item.estimated3mf === true && !fileFormats.includes('3mf') ? ['3mf'] : [],
     author, license: string(item.license), tags: [...new Set(strings(item.tags))], category: string(item.category), subcategory: string(item.subcategory),
     likes: number(item.likes), downloads: number(item.downloads), uploadedAt: string(item.uploadedAt),
@@ -147,6 +164,9 @@ export async function fetchStats(signal?: AbortSignal): Promise<CatalogStats> {
   };
   return { models: number(data.models), formats: counts('formats'), categories: counts('categories'), authors: counts('authors'), licenses: counts('licenses') };
 }
-export async function fetchModel(id: string | number, signal?: AbortSignal): Promise<Model> {
-  return model(await request(`/models/${encodeURIComponent(String(id))}`, signal));
+export async function fetchModel(id: string | number, signal?: AbortSignal, source?: string): Promise<Model> {
+  const path = source === 'printables'
+    ? `/models/printables/${encodeURIComponent(String(id))}`
+    : `/models/${encodeURIComponent(String(id))}`;
+  return model(await request(path, signal));
 }
