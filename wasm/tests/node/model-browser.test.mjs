@@ -87,6 +87,39 @@ test('detail retains plain description and detail author name', async t => {
   globalThis.fetch = respond({ ...sample.items[0], descriptionHtml: '<p><strong>Formatted description</strong></p>' });
   assert.equal((await fetchModel(sample.items[0].id)).descriptionHtml, '<p><strong>Formatted description</strong></p>');
 });
+test('Printables models map source, URLs, thumbnails and query/detail transport', async t => {
+  const printablesItem = {
+    ...sample.items[0],
+    id: 424242,
+    source: 'printables',
+    url: 'https://www.printables.com/model/424242-test-model',
+    thumbnailUrl: 'https://media.printables.com/media/prints/424242/images/cover.webp',
+  };
+  t.mock.method(globalThis, 'fetch', async url => {
+    const parsed = new URL(url);
+    assert.equal(parsed.pathname, '/models');
+    assert.equal(parsed.searchParams.get('source'), 'printables');
+    return { ok: true, json: async () => ({ ...sample, items: [printablesItem] }) };
+  });
+  const { items: [model] } = await fetchModels({ source: 'printables' });
+  assert.equal(model.source, 'printables');
+  assert.equal(model.url, printablesItem.url);
+  assert.equal(model.thumbnail, `/_model-thumbnail/v300?url=${encodeURIComponent(printablesItem.thumbnailUrl)}`);
+
+  globalThis.fetch = async url => {
+    assert.equal(new URL(url).pathname, '/models/printables/424242');
+    return { ok: true, json: async () => printablesItem };
+  };
+  assert.equal((await fetchModel(424242, undefined, 'printables')).source, 'printables');
+
+  for (const bad of [
+    { ...printablesItem, url: 'https://evil.printables.com/model/424242-test-model' },
+    { ...printablesItem, url: 'https://www.printables.com/model/999999-other' },
+  ]) {
+    globalThis.fetch = respond({ ...sample, items: [bad] });
+    await assert.rejects(fetchModels(), /Invalid catalog model/);
+  }
+});
 test('stats maps named counts without requiring subcategory facets', async t => {
   t.mock.method(globalThis, 'fetch', async url => { assert.equal(new URL(url).pathname, '/stats'); return { ok: true, json: async () => ({ models: 2339502, formats: [{ name: 'stl', c: 911149 }], categories: [], authors: [], licenses: [] }) }; });
   assert.deepEqual(await fetchStats(), { models: 2339502, formats: [{ name: 'stl', count: 911149 }], categories: [], authors: [], licenses: [] });
