@@ -3,12 +3,18 @@ import { sanitizeSlicingThreads, type SlicingThreadsPreference } from './slicing
 
 export const PREFS_STORAGE_KEY = 'orcaslicer_preferences_v1';
 
+export function sanitizeImportSimplifyThreshold(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 250_000;
+}
+
 export interface GeneralPreferences {
   slicingThreads: SlicingThreadsPreference;
   language: string;
   units: 'metric' | 'imperial';
   rememberRecentFiles: boolean;
   autoArrangeOnImport: boolean;
+  /** Triangle count per volume that triggers the import offer; zero disables it. */
+  importSimplifyThreshold: number;
   autoSliceAfterChange: boolean;
   /** Back up the project so a closed tab can be recovered. */
   autosave: boolean;
@@ -61,6 +67,7 @@ export const DEFAULT_PREFERENCES: PreferencesData = {
     units: 'metric',
     rememberRecentFiles: true,
     autoArrangeOnImport: false,
+    importSimplifyThreshold: 250_000,
     autoSliceAfterChange: false,
     autosave: true,
     autosaveIntervalSeconds: 60,
@@ -107,7 +114,8 @@ function loadStoredPreferences(): PreferencesData {
     return {
       general: {
         ...DEFAULT_PREFERENCES.general, ...(parsed.general || {}),
-        slicingThreads: sanitizeSlicingThreads(parsed.general?.slicingThreads)
+        slicingThreads: sanitizeSlicingThreads(parsed.general?.slicingThreads),
+        importSimplifyThreshold: sanitizeImportSimplifyThreshold(parsed.general?.importSimplifyThreshold)
       },
       camera: { ...DEFAULT_PREFERENCES.camera, ...(parsed.camera || {}) },
       display: {
@@ -176,6 +184,7 @@ export const usePrefsStore = create<PrefsStoreState>((set, get) => ({
     set((state) => {
       const nextGeneral = { ...state.general, [key]: value };
       if (key === 'slicingThreads') nextGeneral.slicingThreads = sanitizeSlicingThreads(value);
+      if (key === 'importSimplifyThreshold') nextGeneral.importSimplifyThreshold = sanitizeImportSimplifyThreshold(value);
       saveStoredPreferences({ general: nextGeneral, camera: state.camera, display: state.display });
       return { general: nextGeneral };
     });

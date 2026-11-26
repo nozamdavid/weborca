@@ -9,6 +9,7 @@ import * as api from './editOpsApi';
 import { usePlateStore } from '../plate/plateStore';
 import { useHistoryStore } from '../history/historyStore';
 import { useObjectListStore } from '../objectlist/objectListStore';
+import { usePrefsStore } from '../prefs/prefsStore';
 import type {
   PlanarFacetCluster,
   MeshBooleanMode,
@@ -18,8 +19,6 @@ import type {
 export type ActiveEditTool = 'flatten' | 'brimears' | null;
 export type ActiveEditDialog = 'boolean' | 'simplify' | 'svg' | 'texture' | null;
 
-// An offer threshold, not an import limit. Small meshes need no extra decision.
-export const IMPORT_SIMPLIFY_TRIANGLES = 100_000;
 interface ImportedMesh {
   objectId: number;
   volumeId: number;
@@ -452,6 +451,8 @@ export const useEditOpsStore = create<EditOpsState>((set, get) => ({
   },
 
   offerImportSimplification: async (objectIds) => {
+    const threshold = usePrefsStore.getState().general.importSimplifyThreshold;
+    if (threshold === 0) return;
     try {
       const { getEngine } = await import('../engine/orcaEngine');
       const { getMeshHealth } = await import('../repair/repairApi');
@@ -462,7 +463,7 @@ export const useEditOpsStore = create<EditOpsState>((set, get) => ({
         if (!objectIds.includes(object.id)) continue;
         for (const volume of object.volumes) {
           const health = await getMeshHealth(object.id, volume.id);
-          if (health.facetsCount >= IMPORT_SIMPLIFY_TRIANGLES) {
+          if (health.facetsCount >= threshold) {
             candidates.push({ objectId: object.id, volumeId: volume.id,
               name: object.volumes.length > 1 ? `${object.name} / ${volume.name}` : object.name,
               triangleCount: health.facetsCount });

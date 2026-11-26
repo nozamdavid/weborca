@@ -10,7 +10,7 @@ import { exportGcode } from '../shell/exportGcode';
 import { Dialog } from '../components/Dialog';
 import { PlateRenameDialog } from './PlateRenameDialog';
 import { isDefaultPlateName } from '../plates/plateName';
-import { requestOpenProject } from '../shell/projectActions';
+import { importDroppedFiles } from './dropFiles';
 import { usePlatesStore } from '../plates/platesStore';
 import { addBoxSelection } from './boxSelection';
 import { PlateSelectorBar } from '../plates/PlateSelectorBar';
@@ -840,17 +840,8 @@ export const PlateView: React.FC = () => {
     e.stopPropagation();
     setIsDragOver(false);
 
-    const app = useAppStore.getState();
-    if (!app.isEngineReady || app.isSlicing || app.isModelLoading || useHistoryStore.getState().isRestoring) return;
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      const ext = file.name.split('.').pop()?.toLowerCase();
-      if (ext === '3mf') {
-        await requestOpenProject(file);
-      } else if (ext && ['stl', 'obj', 'amf', 'step', 'stp', 'svg', 'zip'].includes(ext)) {
-        app.requestImportFile(file);
-      }
-    }
+    // Snapshot the drag data before awaiting imports or user dialogs.
+    await importDroppedFiles(Array.from(e.dataTransfer.files ?? []));
   };
 
   const selectedObject = objects.find((o) => o.id === selectedObjectId);

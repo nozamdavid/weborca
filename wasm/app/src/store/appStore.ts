@@ -182,9 +182,9 @@ export interface AppState {
   addFilamentSlot: (presetName?: string) => Promise<void>;
   removeFilamentSlot: (slotIndex?: number) => Promise<void>;
   setSlotColor: (slotIndex: number, color: string) => Promise<void>;
-  stepImportState: { file: File } | null;
-  setStepImportState: (state: { file: File } | null) => void;
-  requestImportFile: (file: File) => void;
+  stepImportState: { file: File; onComplete?: () => void } | null;
+  setStepImportState: (state: { file: File; onComplete?: () => void } | null) => void;
+  requestImportFile: (file: File) => Promise<void>;
   importModelFile: (file: File, options?: StepImportOptions, inArchive?: boolean, context?: { source: 'builtin-handy' }) => Promise<void>;
   openProjectFile: (file: File) => Promise<boolean>;
   saveProjectFile: (fileName?: string) => Promise<Uint8Array | null>;
@@ -999,13 +999,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   stepImportState: null,
   setStepImportState: (state) => set({ stepImportState: state }),
-  requestImportFile: (file: File) => {
-    if (!get().isEngineReady) { showToast('Wait for the current operation to finish.', 'error'); return; }
+  requestImportFile: async (file: File) => {
+    if (!get().isEngineReady || get().stepImportState) { showToast('Wait for the current operation to finish.', 'error'); return; }
     const ext = file.name.split(".").pop()?.toLowerCase();
     if (ext === "step" || ext === "stp") {
-      get().setStepImportState({ file });
+      await new Promise<void>(onComplete => get().setStepImportState({ file, onComplete }));
     } else {
-      get().importModelFile(file);
+      await get().importModelFile(file);
     }
   },
   openProjectFile: async (file: File) => {
