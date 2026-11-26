@@ -19,7 +19,8 @@ export const DeviceSplit: React.FC<{
   collapsed: boolean;
   status: React.ReactNode;
   webUi: React.ReactNode;
-}> = ({ active, collapsed, status, webUi }) => {
+  footer?: React.ReactNode;
+}> = ({ active, collapsed, status, webUi, footer }) => {
   const { t } = useTranslation();
   const body = useRef<HTMLDivElement>(null);
   const drag = useRef<{ element: HTMLDivElement; pointerId: number; offset: number } | null>(null);
@@ -95,6 +96,7 @@ export const DeviceSplit: React.FC<{
       onPointerUp={release} onPointerCancel={release} onLostPointerCapture={release}
     />}
     {webUi}
+    {footer}
     {dragging && <div className="device-drag-shield" aria-hidden="true" />}
   </div>;
 };

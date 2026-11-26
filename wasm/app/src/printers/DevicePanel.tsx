@@ -8,13 +8,15 @@ import { getCurrentPrinterApi, reconnectPrinterSession } from './session';
 import type { PrinterApi } from './types';
 import type { PrinterConnectionStatus } from './connectionStore';
 import { HOST_TYPE_LABELS } from './types';
-import { OctoEverywhereApi, getEffectivePrinterCapabilities, safeOctoEverywhereUserUrl } from './octoEverywhere';
+import { OctoEverywhereApi, getEffectivePrinterCapabilities } from './octoEverywhere';
+import { safeOctoEverywhereUserUrl } from './octoEverywhereMapping';
 import { OctoEverywhereConnection } from './OctoEverywhereConnection';
 import { OctoEverywherePanel } from './OctoEverywherePanel';
 import { deviceExtruderReadings } from './deviceExtruders';
 import { ExtruderCards } from './ExtruderCards';
 import { DeviceFreshness } from './DeviceFreshness';
 import { DeviceSplit } from './DeviceSplit';
+import { useMobile } from '../mobile/useMobile';
 import './DevicePanel.css';
 import { useTranslation } from "../i18n";
 
@@ -758,6 +760,7 @@ const UI_COLLAPSED_KEY = 'orca.device.webUiCollapsed';
 /** The Device tab: a native status dashboard on the left and the printer's own web UI on the right. */
 export const DevicePanel: React.FC<{ active: boolean }> = ({ active }) => {
     const { t } = useTranslation();
+  const mobile = useMobile();
   const { printers, selectedPrinterId, status, error, liveState, cachedState, lastRefreshedAt, monitoringPaused, selectPrinter, openDialog, setDeviceTabActive, savePrinter } = usePrinterConnectionStore();
   const printer = useMemo(() => printers.find((p) => p.id === selectedPrinterId), [printers, selectedPrinterId]);
   const [uiCollapsed, setUiCollapsedState] = useState(() => {
@@ -767,6 +770,17 @@ export const DevicePanel: React.FC<{ active: boolean }> = ({ active }) => {
     setUiCollapsedState(collapsed);
     try { localStorage.setItem(UI_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch { /* Storage may be blocked. */ }
   };
+
+  const isOeRemote = printer?.octoeverywhere?.mode === 'remote';
+  const connUrl = isOeRemote ? safeOctoEverywhereUserUrl(printer.octoeverywhere?.connection?.userFacingUrl) : undefined;
+  const infoUrl = isOeRemote ? safeOctoEverywhereUserUrl(liveState?.octoeverywhere?.info?.UserFacingPrinterUrl) : undefined;
+  const oeWebUiUrl = connUrl && connUrl !== 'https://octoeverywhere.com/' ? connUrl : (infoUrl ?? connUrl);
+
+  const [remoteTab, setRemoteTab] = useState<'remote' | 'webui'>('remote');
+
+  useEffect(() => {
+    setRemoteTab('remote');
+  }, [printer?.id]);
 
   useEffect(() => {
     setDeviceTabActive(active);
@@ -784,47 +798,127 @@ export const DevicePanel: React.FC<{ active: boolean }> = ({ active }) => {
     );
   }
 
+  const connectionSettings = printer && (
+    <details className="oe-panel device-connection-settings"><summary>Remote connection · {isOeRemote ? 'OctoEverywhere' : 'Local'}</summary>
+      <OctoEverywhereConnection key={printer.id} printer={printer} onChange={updated => {
+        const current = usePrinterConnectionStore.getState();
+        if (current.selectedPrinterId === printer.id && current.printers.find(p => p.id === printer.id) === printer) savePrinter(updated);
+      }} />
+    </details>
+  );
+  const printerSettings = <button className="btn btn-secondary" id="device-edit-printer" onClick={() => openDialog(selectedPrinterId)}>{t("Printer settings")}</button>;
+  const mobileSettings = mobile && <div className="device-mobile-settings">
+    {connectionSettings}
+    {printerSettings}
+  </div>;
+
   return (
     <div className="device-panel" id="device-panel">
       <div className="device-header">
-        <select id="device-printer-select" value={selectedPrinterId ?? ''} onChange={(e) => selectPrinter(e.target.value)} aria-label={t("Printer")}>
+        <div className="device-printer-select-wrap">
+        <select id="device-printer-select" value={selectedPrinterId ?? ''} onChange={(e) => {
+          if (mobile && e.target.value === '__add_printer__') {
+            e.currentTarget.value = selectedPrinterId ?? '';
+            openDialog(null);
+          } else selectPrinter(e.target.value);
+        }} aria-label={t("Printer")} aria-describedby="device-connection-status">
           {printers.map((p) => <option key={p.id} value={p.id}>{p.name} ({HOST_TYPE_LABELS[p.host_type]})</option>)}
+          {mobile && <option value="__add_printer__">{t('Add printer')}</option>}
         </select>
-        <span className="device-status-dot" data-status={status} id="device-connection-dot" />
+        <span className="device-status-dot" data-status={mobile && monitoringPaused ? 'paused' : status} id="device-connection-dot" aria-hidden="true" />
+        </div>
         <span id="device-connection-status">{monitoringPaused ? t('Monitoring paused') : status === 'online' ? t('Connected') : status === 'connecting' ? t('Refreshing…') : status === 'error' ? t('Not connected') : t('Waiting for the printer...')}</span>
-        <DeviceFreshness active={active} paused={monitoringPaused} saved={!liveState && !!cachedState} refreshedAt={lastRefreshedAt} />
+        {mobile
+          ? !liveState && cachedState && <span className="device-saved-label">{t('Saved readings')}</span>
+          : <DeviceFreshness active={active} paused={monitoringPaused} saved={!liveState && !!cachedState} refreshedAt={lastRefreshedAt} />}
         {status === 'error' && error && <span className="device-error" id="device-connection-error">{error}</span>}
-        {status === 'error' && printer?.host_type === 'snapmaker-cloud' && (
+        {status === 'error' && (printer?.host_type === 'snapmaker-cloud' || printer?.octoeverywhere?.mode === 'remote') && (
           <button className="btn btn-secondary" id="device-reconnect" onClick={reconnectPrinterSession}>{t('Retry')}</button>
         )}
         <span className="device-spacer" />
-        <button className="btn btn-secondary" id="device-edit-printer" onClick={() => openDialog(selectedPrinterId)}>{t("Printer settings")}</button>
+        {!mobile && printerSettings}
         <button className="btn btn-secondary" id="device-add-another" onClick={() => openDialog(null)}>{t("Add printer")}</button>
       </div>
-      {printer && <details className="oe-panel" style={{ padding: '0 16px' }}><summary>Remote connection · {printer.octoeverywhere?.mode === 'remote' ? 'OctoEverywhere' : 'Local'}</summary>
-        <OctoEverywhereConnection key={printer.id} printer={printer} onChange={updated => {
-          const current = usePrinterConnectionStore.getState();
-          if (current.selectedPrinterId === printer.id && current.printers.find(p => p.id === printer.id) === printer) savePrinter(updated);
-        }} />
-      </details>}
-      {printer && (
-        <DeviceSplit active={active} collapsed={uiCollapsed}
+      {!mobile && !isOeRemote && connectionSettings}
+      {printer && (isOeRemote ? (
+        <div className="device-remote-body">
+          <div className="device-oe-tabs" role="tablist" aria-label={t('Remote printer views')}>
+            <button
+              type="button"
+              id="device-oe-tab-remote"
+              className="device-oe-tab"
+              role="tab"
+              aria-selected={remoteTab === 'remote'}
+              onClick={() => setRemoteTab('remote')}
+            >
+              {t('Remote tools')}
+            </button>
+            <button
+              type="button"
+              id="device-oe-tab-webui"
+              className="device-oe-tab"
+              role="tab"
+              aria-selected={remoteTab === 'webui'}
+              onClick={() => setRemoteTab('webui')}
+            >
+              {t('Web UI')}
+            </button>
+          </div>
+          {remoteTab === 'remote' && (
+            <OctoEverywherePanel
+              key={printer.id + printer.octoeverywhere?.connection?.connectionId}
+              printer={printer}
+              state={liveState}
+              cachedState={cachedState}
+              active={active && remoteTab === 'remote'}
+              controls={<ControlsCard printer={printer} state={liveState} status={status} />}
+            />
+          )}
+          <div className="device-ui-col" id="device-webui" hidden={remoteTab !== 'webui'}>
+            {oeWebUiUrl ? (
+              <div className="device-oe-webui-card">
+                <p className="device-oe-webui-url" title={oeWebUiUrl}>{oeWebUiUrl}</p>
+                <p className="device-oe-webui-note">
+                  {t('OctoEverywhere opens in a separate browser tab using your OctoEverywhere login session because it blocks cross-site framing.')}
+                </p>
+                <div>
+                  <a
+                    href={oeWebUiUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-primary"
+                    id="device-webui-open"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    {t('Open in OctoEverywhere')}
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div className="device-notice">
+                {t('No OctoEverywhere Web UI URL is available for this printer.')}
+              </div>
+            )}
+          </div>
+          {mobile ? mobileSettings : connectionSettings}
+        </div>
+      ) : (
+        <DeviceSplit active={active} collapsed={uiCollapsed} footer={mobileSettings}
           status={<StatusColumn key={printer.id + (printer.octoeverywhere?.mode ?? 'local')} printer={printer} state={liveState ?? cachedState} liveState={liveState} status={status} active={active && !monitoringPaused && !!liveState} />}
           webUi={<div className="device-ui-side">
             <button
               id="device-webui-toggle" className="device-ui-toggle" aria-expanded={!uiCollapsed}
               title={uiCollapsed ? 'Show the printer web UI' : 'Hide the printer web UI'} onClick={() => setUiCollapsed(!uiCollapsed)}
             >
-              {printer.octoeverywhere?.mode === 'remote' ? (uiCollapsed ? 'Show remote tools' : 'Hide remote tools') : (uiCollapsed ? '◂ Web UI' : 'Hide web UI ▸')}
+              {uiCollapsed ? '◂ Web UI' : 'Hide web UI ▸'}
             </button>
             {/* Stays mounted while hidden so the printer's UI keeps its session and does not reload. */}
             <div className="device-ui-hold">
-              {printer.octoeverywhere?.mode === 'remote' ? <OctoEverywherePanel key={printer.id + printer.octoeverywhere.connection?.connectionId} printer={printer} state={liveState} active={active && !uiCollapsed} />
-                : <WebUiColumn printer={printer} active={active && !uiCollapsed} />}
+              <WebUiColumn printer={printer} active={active && !uiCollapsed} />
             </div>
           </div>}
         />
-      )}
+      ))}
     </div>
   );
 };

@@ -5,7 +5,7 @@
 .oe-panel .ds-btn { text-decoration: none; white-space: normal; }
 .oe-panel .ds-btn[aria-pressed=true] { border-color: var(--accent-color); color: var(--accent-color); }
 .oe-panel label { display: grid; gap: 4px; margin: 8px 0; min-width: 0; }
-.oe-panel input:not([type=checkbox]), .oe-panel select { min-width: 0; width: 100%; box-sizing: border-box; }
+.oe-panel :is(input:not([type=checkbox]), select):not(#device-controls *) { min-width: 0; width: 100%; box-sizing: border-box; }
 .oe-panel details { border-top: 1px solid var(--border-color); padding: 12px 0; }
 .oe-panel summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .oe-panel :focus-visible { outline: 2px solid var(--focus-ring, var(--accent-color)); outline-offset: 2px; }
@@ -14,9 +14,11 @@
 .oe-panel dd { margin: 2px 0 8px; }
 .oe-file { padding: 10px 0; border-bottom: 1px solid var(--border-color); }
 .oe-camera { overflow: hidden; }
-.oe-camera-view { display: grid; place-items: center; width: 100%; max-width: 420px; aspect-ratio: 1; overflow: hidden; }
+.oe-camera-view { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; background: var(--panel-bg); }
 .oe-camera img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; }
+.oe-camera-view[data-quarter-turn=true] img { width: 56.25%; }
 .oe-remote { padding: 16px; width: 100%; box-sizing: border-box; overflow: auto; }
+.device-remote-body > .oe-remote { padding: 0; overflow: visible; }
 .oe-connection { margin: 12px 0; }
 .oe-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 0 12px; }
 .oe-options label:has(input[type=checkbox]) { display: flex; align-items: center; }
@@ -26,3 +28,41 @@
   .oe-panel summary { box-sizing: border-box; padding-block: 12px; }
 }
 @media (max-width: 480px) { .oe-remote { padding: 12px; } .oe-actions > * { max-width: 100%; } }
+
+.oe-dashboard { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.oe-dashboard > * { min-width: 0; }
+.oe-dashboard .oe-surface, .oe-dashboard > details { border: 1px solid var(--border-color); border-radius: 6px; padding: 16px; background: var(--panel-header-bg); }
+.oe-dashboard h4, .oe-dashboard summary { font-size: 14px; }
+.oe-dashboard .oe-camera { grid-column: 1; grid-row: 1 / span 2; }
+.oe-camera-view, .oe-camera-empty { margin-top: 8px; }
+.oe-camera > p { font-size: 12px; }
+.oe-camera-empty { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; aspect-ratio: 16 / 9; padding: 16px; box-sizing: border-box; background: var(--panel-bg); }
+.oe-camera-empty p { max-width: 32ch; }
+.oe-job { grid-column: 2; grid-row: 1; }
+.oe-section-heading, .oe-progress-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+.oe-section-heading > strong { text-transform: capitalize; }
+.oe-job-file { font-weight: 600; color: var(--text-primary, var(--text-color)); }
+.oe-job progress { width: 100%; height: 8px; margin: 8px 0; accent-color: var(--accent-color); }
+.oe-job-times { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.oe-job-times dd, .oe-thermals strong { font-variant-numeric: tabular-nums; }
+.oe-thermals { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(110px, 100%), 1fr)); gap: 12px; border-top: 1px solid var(--border-color); padding-top: 12px; }
+.oe-thermals > div { display: grid; gap: 4px; }
+.oe-thermals span { color: var(--text-secondary); font-size: 12px; }
+.oe-live-controls { grid-column: 2; grid-row: 2 / span 2; display: grid; gap: 16px; }
+.oe-live-controls:empty { display: none; }
+.oe-live-controls > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.oe-material { grid-column: 1; }
+.oe-material-description { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.oe-material-swatch { flex: 0 0 20px; width: 20px; height: 20px; border: 1px solid var(--text-secondary); border-radius: 3px; box-shadow: inset 0 0 0 2px var(--panel-header-bg); }
+.oe-files, .oe-limits, .oe-sharing { grid-column: 1 / -1; }
+.oe-limits { order: 1; }
+.oe-sharing { order: 2; }
+.oe-panel input { accent-color: var(--accent-color); caret-color: var(--accent-color); }
+@media (max-width: 1000px) {
+  .oe-dashboard { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .oe-dashboard > .oe-camera, .oe-job, .oe-live-controls, .oe-material { grid-column: 1; grid-row: auto; }
+}
+@media (max-width: 480px) {
+  .oe-dashboard .oe-surface, .oe-dashboard > details { padding: 12px; }
+  .oe-camera .oe-actions > .ds-btn { flex: 1 1 110px; }
+}

@@ -99,7 +99,8 @@
 .printer-field { display: flex; flex-direction: column; gap: var(--space-1); color: var(--text-secondary); font-size: var(--text-sm); }
 .printer-field-pair { display: flex; gap: var(--space-2); }
 .printer-field-pair > * { flex: 1; min-width: 0; }
-.printer-result { font-size: var(--text-sm); color: var(--danger-fg); }
+.printer-result { font-size: var(--text-sm); }
+.printer-result[data-ok=false] { color: var(--danger-fg); }
 .printer-result[data-ok=true] { color: var(--success-fg); }
 .printer-warning { color: var(--warning-fg); font-size: var(--text-sm); }
 .prusa-connect-login { margin-block: var(--space-2); }

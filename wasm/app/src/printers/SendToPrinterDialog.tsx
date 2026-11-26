@@ -11,6 +11,7 @@ import { usePrinterConnectionStore } from './connectionStore';
 import { useTranslation } from '../i18n';
 import { Dialog } from '../components/Dialog';
 import { getExportGcodePayload } from '../shell/exportGcode';
+import { UploadProgress } from './UploadProgress';
 
 /**
  * "Send to printer" after slicing, like desktop's upload dialog. Starting a print is a separate, confirmed
@@ -24,13 +25,20 @@ export const SendToPrinterDialog: React.FC<{ getGcode: () => Uint8Array | null; 
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [confirmPrint, setConfirmPrint] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [message, setMessage] = useState<{ ok?: boolean; text: string } | null>(null);
   const filenameInputRef = useRef<HTMLInputElement>(null);
+  const transfer = useRef<{ cancelled: boolean; api?: PrinterApi }>();
   const mobile = useMobile();
+
+  useEffect(() => () => {
+    if (transfer.current) { transfer.current.cancelled = true; transfer.current.api?.dispose?.(); }
+    transfer.current = undefined;
+  }, [sendDialogOpen]);
 
   useEffect(() => {
     if (!sendDialogOpen) return;
     setFilename(defaultFilename);
+    setBusy(false);
     setMessage(null);
     setConfirmPrint(false);
     setProgress(null);
@@ -61,25 +69,37 @@ export const SendToPrinterDialog: React.FC<{ getGcode: () => Uint8Array | null; 
 
   const send = async (print: boolean) => {
     const rawGcode = getGcode();
-    if (!rawGcode || !printer || uploadDisabled || (print && printDisabled) || busy) return;
+    if (!rawGcode || !printer || uploadDisabled || (print && printDisabled) || busy || transfer.current) return;
+    const operation: { cancelled: boolean; api?: PrinterApi } = { cancelled: false };
+    transfer.current = operation;
+    const current = () => transfer.current === operation;
     setBusy(true);
     setMessage(null);
     setProgress(0);
     let api: PrinterApi | undefined;
     try {
       const prepared = await getExportGcodePayload();
+      if (!current() || operation.cancelled) return;
       if (!prepared || getGcode() !== rawGcode) return;
       const gcode = prepared.gcode;
       if (usePrinterConnectionStore.getState().printers.find(p => p.id === printer.id) !== printer) return;
       api = createPrinterApi(printer);
-      await api.upload({ filename: filename.trim(), gcode, print, onProgress: setProgress });
+      operation.api = api;
+      await api.upload({ filename: filename.trim(), gcode, print, onProgress: value => {
+        if (current() && !operation.cancelled) setProgress(value);
+      } });
+      if (!current() || operation.cancelled) return;
       setMessage({ ok: true, text: t(print ? 'Sent to {{printer}}. The print is starting.' : 'Sent to {{printer}}.', { printer: printer.name }) });
       setConfirmPrint(false);
     } catch (e) {
-      setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      if (current() && !operation.cancelled) setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
     } finally {
       api?.dispose?.();
-      setBusy(false);
+      if (current()) {
+        if (operation.cancelled) setMessage({ text: 'Upload cancelled. The file may already be in Printer files.' });
+        transfer.current = undefined;
+        setBusy(false);
+      }
     }
   };
 
@@ -117,10 +137,10 @@ export const SendToPrinterDialog: React.FC<{ getGcode: () => Uint8Array | null; 
                 disabled={busy}
               />
             </label>
-            {progress != null && busy && (
-              <div className="device-progress" role="progressbar" aria-valuenow={Math.round(progress * 100)}><div style={{ width: `${progress * 100}%` }} /></div>
-            )}
-            {message && <div id="send-result" data-ok={message.ok} className="printer-result">{message.text}</div>}
+            {progress != null && busy && <UploadProgress fraction={progress} waitForPrinter={remote} onCancel={remote ? () => {
+              if (transfer.current) { transfer.current.cancelled = true; transfer.current.api?.dispose?.(); }
+            } : undefined} />}
+            {message && <div id="send-result" role="status" data-ok={message.ok} className="printer-result">{message.text}</div>}
             {monitorOnly && <div id="send-monitor-only">{t('This cloud connection supports monitoring. Export the G-code to send it using the printer’s app.')}</div>}
             {remote && <p>{remoteCaps?.sendReason || t(uploadDisabled ? 'File transfers are not available for this remote printer.' : 'Upload stores the G-code. To start separately, use Device → Printer files.')}</p>}
             {confirmPrint && <div id="send-confirm-text" className="printer-warning">{t('This uploads the file and starts printing on {{printer}} right away.', { printer: printer?.name ?? '' })}</div>}
