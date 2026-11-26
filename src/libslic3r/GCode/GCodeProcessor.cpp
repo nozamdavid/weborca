@@ -2955,11 +2955,6 @@ bool GCodeProcessor::check_multi_extruder_gcode_valid(const int                 
 
     m_result.limit_filament_maps.resize(filament_map.size(), 0);
 
-    auto to_2d = [](const Vec3d &pos) -> Point {
-        Point ps(scale_(pos.x()), scale_(pos.y()));
-        return ps;
-    };
-
     // Belt-printer post-gcode shear/scale/post_remap is applied as the final
     // step of BeltKinematics::to_machine, so MoveVertex.position is
     // in the printer's machine frame.  Undo it here so the XY area check
@@ -2988,31 +2983,23 @@ bool GCodeProcessor::check_multi_extruder_gcode_valid(const int                 
 
     struct GCodePosInfo
     {
-        Points pos;
-        Points pos_custom;
-        float  max_print_z;
-        float  max_print_z_custom;
+        BoundingBox bounds;
+        float       max_print_z = 0.f;
     };
-    std::map<int, std::map<int, GCodePosInfo>> gcode_path_pos; // object_id, filament_id, pos
+    std::map<int, std::map<int, GCodePosInfo>> gcode_path_pos; // object_id, filament_id, bounds
     for (const GCodeProcessorResult::MoveVertex &move : m_result.moves) {
-        // sometimes, the start line extrude was outside the edge of plate a little, this is allowed, so do not include into the gcode_path_pos
-        if (move.type == EMoveType::Extrude /* && move.extrusion_role != ExtrusionRole::erFlush || move.type == EMoveType::Travel*/) {
-            const Vec3d cp = compare_pos(move);
-            // For belt printers we read Z from the inverse-transformed position
-            // (post-origin-snap, pre-machine-frame).  Otherwise keep the
-            // original print_z source (the slicer's layer-Z comment) so
-            // non-belt behaviour is bit-for-bit unchanged.
-            const float z_for_height = machine_frame_active ? float(cp.z()) : move.print_z;
-            if (move.extrusion_role == ExtrusionRole::erCustom) {
-                gcode_path_pos[move.object_label_id][int(move.extruder_id)].pos_custom.emplace_back(to_2d(cp));
-                gcode_path_pos[move.object_label_id][int(move.extruder_id)].max_print_z_custom =
-                    std::max(gcode_path_pos[move.object_label_id][int(move.extruder_id)].max_print_z_custom, z_for_height);
-            } else {
-                gcode_path_pos[move.object_label_id][int(move.extruder_id)].pos.emplace_back(to_2d(cp));
-                gcode_path_pos[move.object_label_id][int(move.extruder_id)].max_print_z = std::max(gcode_path_pos[move.object_label_id][int(move.extruder_id)].max_print_z,
-                                                                                                   z_for_height);
-            }
-        }
+        if (move.type != EMoveType::Extrude)
+            continue;
+        GCodePosInfo &path = gcode_path_pos[move.object_label_id][int(move.extruder_id)];
+        // Custom extrusion such as the start line may extend past the bed edge.
+        if (move.extrusion_role == ExtrusionRole::erCustom)
+            continue;
+
+        const Vec3d cp = compare_pos(move);
+        // Use the inverse-transformed Z for belt printers and the layer Z otherwise.
+        const float z_for_height = machine_frame_active ? float(cp.z()) : move.print_z;
+        path.bounds.merge(Point(scale_(cp.x()), scale_(cp.y())));
+        path.max_print_z = std::max(path.max_print_z, z_for_height);
     }
 
     bool valid = true;
@@ -3052,11 +3039,12 @@ bool GCodeProcessor::check_multi_extruder_gcode_valid(const int                 
             // filament's extruder, so leave that filament unchecked.
             if (extruder_id < 0)
                 continue;
-            Points iter_points;//temp points
-            iter_points.insert(iter_points.end(), iter->second.pos.begin(), iter->second.pos.end());// put object/wipetower extrude position in
-            Polygon     path_poly(iter_points);
-            if (path_poly.empty()) continue;
-            BoundingBox bbox = path_poly.bounding_box();
+            const BoundingBox &bounds = iter->second.bounds;
+            // Merging points marks even a single point as defined. Keep checking these paths,
+            // and restore the same positive-area definition as Polygon::bounding_box().
+            if (!bounds.defined)
+                continue;
+            const BoundingBox bbox(bounds.min, bounds.max);
             if (plate_printable_bbox.defined) {
                 if (!plate_printable_bbox.contains(bbox)) { // out of the bed area
                     m_result.gcode_check_result.error_code |= (1<<2);
@@ -3092,11 +3080,6 @@ bool GCodeProcessor::check_multi_extruder_gcode_valid(const int                 
             // }
 
             if (extruder_size > 1) {// in multi extruder condition
-                /*//iter_points.insert(iter_points.end(), iter->second.pos_custom.begin(), iter->second.pos_custom.end()); // put custom extrude position in
-                //Polygon     path_poly_custom(iter_points);
-                //BoundingBox bbox_custom = path_poly_custom.bounding_box();
-                //bbox_custom.offset(-scale_(1.0)); // Narrow the range to provide a tolerance for the custom gcode
-                //bbox.merge(bbox_custom);          // merge the custom gcode pos with other pos*/
                 const uint64_t unprintable_mask = unprintable_extruders(bbox);
                 // check printable area
                 if ((extruder_id < unprintable_areas.size()) && (unprintable_mask & (uint64_t(1) << extruder_id))) {

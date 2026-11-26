@@ -45,6 +45,13 @@ try {
   await core.call('slice', { outPath: '/out/transformed-inside.gcode', threads: 2, plateIndex: 0 });
   assert.equal(objectLabels(core.readFile('/out/transformed-inside.gcode')).length, 2, 'inside transformed mirrored copy still slices');
   console.log('PASS inside transformed mirrored copy retained');
+  // The copy's double-precision extent is inside, but the scaled float
+  // transform rounds its right edge from 300000017 to 300000032.
+  await core.call('setOptions', { options: { printable_area: '0x0,300.000018x0,300.000018x100,0x100' } });
+  await move(copy.instanceId, 290.000017, 40, { rotation: [0,0,0], scale: [1,1,1] });
+  await core.call('slice', { outPath: '/out/float-edge.gcode', threads: 2, plateIndex: 0 });
+  assert.equal(objectLabels(core.readFile('/out/float-edge.gcode')).length, 1, 'scaled float footprint crosses the bed edge');
+  console.log('PASS exact projection at float-rounded edge');
   await core.call('setOptions', { options: { printable_area: '0x50,50x0,100x50,50x100' } });
   await move(inst, 50, 50);
   await move(copy.instanceId, 85, 85, { rotation: [0,0,0], scale: [1,1,1] });

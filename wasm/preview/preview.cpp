@@ -759,6 +759,7 @@ public:
         auto& data = packet.data;
         auto& bed_polygon = packet.bed;
         m_extrusion_bounds_valid = false;
+        m_shadow_map_valid = false;
         m_viewer.reset_default_extrusion_roles_colors();
         m_viewer.load(std::move(data));
 
@@ -1054,35 +1055,44 @@ public:
 
     void toggleExtrusionRole(int role) {
         if (!m_initialized) return;
+        m_shadow_map_valid = false;
         m_viewer.toggle_extrusion_role_visibility(static_cast<libvgcode::EGCodeExtrusionRole>(role));
     }
 
     void setExtrusionRoleVisible(int role, bool visible) {
         if (!m_initialized) return;
         auto r = static_cast<libvgcode::EGCodeExtrusionRole>(role);
-        if (m_viewer.is_extrusion_role_visible(r) != visible) {
-            m_viewer.toggle_extrusion_role_visibility(r);
-        }
+        if (m_viewer.is_extrusion_role_visible(r) != visible)
+            toggleExtrusionRole(role);
     }
 
     void toggleOption(int opt) {
         if (!m_initialized) return;
-        m_viewer.toggle_option_visibility(static_cast<libvgcode::EOptionType>(opt));
+        const auto type = static_cast<libvgcode::EOptionType>(opt);
+        if (type == libvgcode::EOptionType::Travels || type == libvgcode::EOptionType::Wipes)
+            m_shadow_map_valid = false;
+        m_viewer.toggle_option_visibility(type);
     }
 
     void setOptionVisible(int opt, bool visible) {
         if (!m_initialized) return;
         auto o = static_cast<libvgcode::EOptionType>(opt);
-        if (m_viewer.is_option_visible(o) != visible) {
-            m_viewer.toggle_option_visibility(o);
-        }
+        if (m_viewer.is_option_visible(o) != visible)
+            toggleOption(opt);
     }
 
     void setClippingPlane(float x, float y, float z, float offset) {
-        m_viewer.set_clipping_plane({ x, y, z, offset });
+        const std::array<float, 4> plane{ x, y, z, offset };
+        if (plane != m_clipping_plane) {
+            m_clipping_plane = plane;
+            m_shadow_map_valid = false;
+            m_viewer.set_clipping_plane(plane);
+        }
     }
 
     void setLowQuality(bool enabled) {
+        if (m_low_quality != enabled)
+            m_shadow_map_valid = false;
         m_low_quality = enabled;
         m_viewer.set_low_quality(enabled);
     }
@@ -1220,13 +1230,23 @@ public:
         do_render(view, proj);
     }
 
-    void setShadowsEnabled(bool enabled) { m_shadows_enabled = enabled; }
-    void setLightingEnabled(bool enabled) { m_lighting_enabled = enabled; }
+    void setShadowsEnabled(bool enabled) {
+        if (m_shadows_enabled != enabled)
+            m_shadow_map_valid = false;
+        m_shadows_enabled = enabled;
+    }
+
+    void setLightingEnabled(bool enabled) {
+        if (m_lighting_enabled != enabled)
+            m_shadow_map_valid = false;
+        m_lighting_enabled = enabled;
+    }
 
     void clearGcode() {
         if (!m_initialized) return;
         emscripten_webgl_make_context_current(m_ctx);
         m_extrusion_bounds_valid = false;
+        m_shadow_map_valid = false;
         m_viewer.reset();
         m_cached_stats_json.clear();
     }
@@ -1246,6 +1266,16 @@ private:
     bool render_shadows(libvgcode::Mat4x4& light_vp) {
         if (!m_lighting_enabled || !m_shadows_enabled || m_low_quality || m_shadow_failed || !m_extrusion_bounds_valid || m_viewer.get_vertices_count() == 0)
             return false;
+
+        // The light targets the loaded extrusion bounds. Top layer scrubbing also
+        // draws from the full range, and spiral vase draws depend on the layer range.
+        const std::array ranges{ m_viewer.get_layers_view_range(), m_viewer.get_view_full_range(),
+                                 m_viewer.get_view_visible_range() };
+        if (m_shadow_map_valid && m_shadow_fbo && m_shadow_ranges == ranges) {
+            light_vp = m_shadow_light_vp;
+            return true;
+        }
+        m_shadow_map_valid = false;
 
         auto bounds = m_extrusion_bounds;
         for (int axis = 0; axis < 3; ++axis)
@@ -1346,6 +1376,9 @@ private:
             glClearDepthf(1.0f);
             glClear(GL_DEPTH_BUFFER_BIT);
             m_viewer.render_shadow_casters(light_view, light_proj, light_position);
+            m_shadow_ranges = ranges;
+            m_shadow_light_vp = light_vp;
+            m_shadow_map_valid = true;
         }
 
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_fbo);
@@ -1420,6 +1453,10 @@ private:
     static constexpr libvgcode::Vec3 LIGHT_DIRECTION{-0.4574957f, 0.4574957f, 0.7624929f};
     bool m_shadows_enabled = true;
     bool m_lighting_enabled = true;
+    std::array<float, 4> m_clipping_plane{ 0.0f, 0.0f, 0.0f, 1.0f };
+    std::array<libvgcode::Interval, 3> m_shadow_ranges{};
+    libvgcode::Mat4x4 m_shadow_light_vp{};
+    bool m_shadow_map_valid = false;
     bool m_shadow_failed = false;
     GLuint m_shadow_fbo = 0;
     GLuint m_shadow_texture = 0;

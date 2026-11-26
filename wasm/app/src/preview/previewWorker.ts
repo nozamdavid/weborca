@@ -35,8 +35,9 @@ scope.onmessage = async ({ data }: MessageEvent<{ id: number; bytes: ArrayBuffer
     mod.FS.writeFile(input, new Uint8Array(data.bytes), { canOwn: true });
     const stats = JSON.parse(mod.parseGcode(input, packet));
     if (stats.error) throw new Error(stats.error);
-    const bytes = new Uint8Array(mod.FS.readFile(packet)).slice();
-    scope.postMessage({ id: data.id, stats, packet: bytes.buffer }, [bytes.buffer]);
+    // MEMFS readFile returns a fresh, exact-sized buffer that can be transferred directly.
+    const { buffer } = mod.FS.readFile(packet) as Uint8Array;
+    scope.postMessage({ id: data.id, stats, packet: buffer }, [buffer]);
   } catch (error) {
     scope.postMessage({ id: data.id, error: error instanceof Error ? error.message : String(error) });
   } finally {

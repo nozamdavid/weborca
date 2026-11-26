@@ -16,7 +16,11 @@ Prepare accepts several model files in one drop. Files import in order, includin
 
 Preferences → General sets the import simplification threshold in triangles per volume. The default is 250,000, and 0 turns off the import prompt. Chromium verified the cutoff, saved settings across reloads, and manual Simplify on `weborca-private:demo-20261126-simplify-threshold`.
 
-Place on face draws a rounded, filled highlight inside each visible candidate face. The model hides rear highlights, and the patch under the pointer brightens. Chromium verified all 12 dodecahedron candidates and placed the clicked face flat on the bed. The Tailscale demo serves `weborca-private:demo-20261126-face-highlights`. The rollback container is `weborca-models-demo-before-face-highlights-20261126`. [Private demo](https://server-1.barbel-hops.ts.net:18974/prepare)
+Place on face draws a rounded, filled highlight inside each visible candidate face. The model hides rear highlights, and the patch under the pointer brightens. In `weborca-private:demo-20261126-face-highlights`, Chromium verified all 12 dodecahedron candidates and placed the clicked face flat on the bed.
+
+WebOrca uses mesh bounds to skip exact footprint projection for volumes safely inside rectangular beds. A four-Benchy plate recomputed in 1.25 s instead of 1.37 s in the paired WebAssembly benchmark. An unchanged reslice took 10.5 ms instead of 100 ms. Helium verified matching G-code and a rendered Preview on both app fixtures. [Engine review and verification](wasm/reports/slicing-preview-performance-20261126.md)
+
+G-code export validates extrusion bounds in one pass. Preview reuses the fixed-light shadow map during camera motion and removes three full copies of each prepared toolpath packet. The Tailscale demo serves `weborca-private:demo-20261126-slicing-preview-followups`, with rollback container `weborca-models-demo-before-slicing-preview-followups-20261126`. [Follow-up benchmarks and verification](wasm/reports/slicing-preview-followups-20261126.md) · [Private demo](https://server-1.barbel-hops.ts.net:18974/prepare)
 
 The 2026-11-19 build shows download progress on Models → Open in slicer and uses the existing loading overlay during import. New Project, Open Project, recent projects, and single 3MF drops ask before replacing a workspace that contains work. The active plate’s translucent prime tower follows the pointer during a drag and checks placement when released. Invalid drops restore the earlier position. Tower moves are saved per plate and support undo.
 

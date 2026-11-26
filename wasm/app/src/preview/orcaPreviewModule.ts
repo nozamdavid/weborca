@@ -285,8 +285,8 @@ export async function loadGcode(data: Uint8Array | ArrayBuffer | string, _name =
   const vfsPath = `/preview_${Date.now()}.packet`;
 
   try {
-    // Stage the prepared packet, then release the temporary MEMFS file below.
-    previewModule.FS.writeFile(vfsPath, result.packet);
+    // MEMFS borrows the cached packet during the synchronous, read-only load.
+    previewModule.FS.writeFile(vfsPath, result.packet, { canOwn: true });
     loadedGcode = null;
     const resStr = previewInstance.loadParsedGcode(vfsPath);
     const stats: PreviewStatistics = JSON.parse(resStr);

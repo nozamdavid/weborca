@@ -2823,6 +2823,87 @@ void Engine::Impl::reset_retained_print() {
     m_last_export_warnings = json::array();
 }
 
+namespace {
+
+// Keep coordinate differences and XY cross products within the projection's
+// integer range, and all bed coordinates exactly representable as doubles.
+constexpr double bed_preflight_coordinate_limit = double(int64_t{1} << 30);
+
+Slic3r::BoundingBox rectangular_bed_bounds(const Slic3r::Points& points)
+{
+    if (points.size() != 4)
+        return {};
+
+    // Four alternating, nonzero horizontal and vertical edges form a rectangle
+    // in either winding and from any starting corner.
+    int fixed_axis = points[0].x() == points[1].x() ? 0 : 1;
+    for (size_t i = 0; i < points.size(); ++i) {
+        const auto& a = points[i];
+        const auto& b = points[(i + 1) % points.size()];
+        if (a(fixed_axis) != b(fixed_axis) || a(1 - fixed_axis) == b(1 - fixed_axis))
+            return {};
+        fixed_axis = 1 - fixed_axis;
+    }
+    return Slic3r::BoundingBox(points);
+}
+
+bool mesh_strictly_inside_rectangular_bed(const Slic3r::TriangleMesh& mesh,
+                                         const Slic3r::Transform3d& transform,
+                                         const Slic3r::BoundingBox& bed)
+{
+    const auto& stats = mesh.stats();
+    if (mesh.its.vertices.empty() || mesh.its.indices.empty() ||
+        stats.number_of_facets != mesh.its.indices.size() || !std::isfinite(stats.volume) ||
+        !stats.min.allFinite() || !stats.max.allFinite() || (stats.min.array() > stats.max.array()).any() ||
+        !transform.matrix().allFinite() ||
+        transform.matrix().row(3) != Slic3r::Transform3d::Identity().matrix().row(3))
+        return false;
+
+    const double determinant = transform.linear().determinant();
+    const double scale = scale_(1.);
+    if (determinant == 0. || !std::isfinite(determinant) || !(scale > 0.) || !std::isfinite(scale))
+        return false;
+
+    // Match transform_mesh_vertices_for_slicing, which scales the XY rows
+    // before casting the coefficients to float.
+    auto scaled = transform;
+    scaled.prescale(Slic3r::Vec3d(scale, scale, 1.));
+    constexpr double float_max = std::numeric_limits<float>::max();
+    if (!(scaled.matrix().cwiseAbs().array() <= float_max).all())
+        return false;
+    const Slic3r::Transform3f matrix = scaled.cast<float>();
+
+    for (int axis = 0; axis < 3; ++axis) {
+        double lower = matrix.translation()(axis);
+        double upper = lower;
+        double magnitude = std::abs(lower);
+        for (int component = 0; component < 3; ++component) {
+            const double coefficient = matrix.linear()(axis, component);
+            const double a = coefficient * stats.min(component);
+            const double b = coefficient * stats.max(component);
+            lower += std::min(a, b);
+            upper += std::max(a, b);
+            magnitude += std::max(std::abs(a), std::abs(b));
+        }
+
+        // The sum of absolute terms bounds float intermediates even under
+        // cancellation. Allow for three products and three additions in any
+        // order, plus one scaled unit for conversion to integer XY.
+        if (magnitude >= float_max / 2.)
+            return false;
+        const double margin = 8. * std::numeric_limits<float>::epsilon() * magnitude + 1.;
+        // Keeping Z between project_mesh's slab planes avoids generating
+        // vertices at intersections with those planes.
+        const double bed_min = axis < 2 ? double(bed.min(axis)) : -1e10;
+        const double bed_max = axis < 2 ? double(bed.max(axis)) : 1e10;
+        if (lower - margin <= bed_min || upper + margin >= bed_max)
+            return false;
+    }
+    return true;
+}
+
+} // namespace
+
 std::string Engine::Impl::op_slice(int jobId, const json& args) {
     struct SliceCleanupGuard {
         Engine::Impl* impl;
@@ -2960,8 +3041,16 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
             ? OrcaEngine::computePlateOrigin(plate_index, m_plate_data.size(), bed_w, bed_d)
             : Slic3r::Vec3d(0., 0., 0.);
         Slic3r::Polygon bed;
-        for (const auto& point : config.opt<Slic3r::ConfigOptionPoints>("printable_area")->values)
+        const auto& bed_shape = config.opt<Slic3r::ConfigOptionPoints>("printable_area")->values;
+        bool may_be_rectangle = bed_shape.size() == 4;
+        for (const auto& point : bed_shape) {
+            if (may_be_rectangle) {
+                const Slic3r::Vec2d scaled = scale_(point);
+                may_be_rectangle = (scaled.cwiseAbs().array() < bed_preflight_coordinate_limit).all();
+            }
             bed.points.push_back(Slic3r::Point::new_scale(point.x(), point.y()));
+        }
+        const auto rectangle = may_be_rectangle ? rectangular_bed_bounds(bed.points) : Slic3r::BoundingBox{};
 
         // Cooperative cancellation while projecting bed containment: between
         // instances/volumes and inside the slab projection itself.
@@ -2989,7 +3078,12 @@ std::string Engine::Impl::op_slice(int jobId, const json& args) {
                     if (!volume->is_model_part()) continue;
                     Slic3r::Transform3d transform = mo->instances[ii]->get_matrix() * volume->get_matrix();
                     transform.translation() -= origin;
-                    const auto footprint = Slic3r::project_mesh(volume->mesh().its, transform, throw_on_cancel);
+                    const auto& mesh = volume->mesh();
+                    if (rectangle.defined && mesh_strictly_inside_rectangular_bed(mesh, transform, rectangle)) {
+                        throw_on_cancel();
+                        continue;
+                    }
+                    const auto footprint = Slic3r::project_mesh(mesh.its, transform, throw_on_cancel);
                     throw_on_cancel();
                     if (!Slic3r::diff(footprint, Slic3r::Polygons{bed}).empty()) {
                         is_on_plate = false;

@@ -50,7 +50,7 @@ const nativeFixture = `
       return {
         FS: {
           mkdirTree() {},
-          writeFile(path, bytes) { native.files.set(path, Uint8Array.from(bytes)); },
+          writeFile(path, bytes, options) { native.files.set(path, options?.canOwn ? bytes : Uint8Array.from(bytes)); },
           readFile(path) { const bytes = native.files.get(path); if (!bytes) throw new Error(path + ' absent'); return bytes; },
           unlink(path) { native.unlinked.push(path); native.files.delete(path); }
         },
@@ -63,7 +63,7 @@ const nativeFixture = `
           setLowQuality(v) { this.call('setLowQuality', v); }
           loadParsedGcode(path) {
             const bytes = native.files.get(path);
-            native.loads.push({ path, bytes: bytes ? Uint8Array.from(bytes) : null });
+            native.loads.push({ path, bytes });
             if (native.loadError) return JSON.stringify({ ...native.stats(1), error: native.loadError });
             return JSON.stringify(native.nextStats);
           }
@@ -227,12 +227,22 @@ const freshState = async () => {
 
 const initRenderer = (previewModule) => previewModule.initPreview({ width: 8, height: 8, id: '' });
 
-test('statistics arrive before the viewer exists; the same bytes then render from the same packet with exactly one parse', async () => {
+test('statistics arrive before mounting, then the viewer borrows the packet on mount and remount', async () => {
   const { usePreviewStore, previewModule, fixture } = await freshState();
   const { native, FakeWorker } = fixture;
-  const bytesA = encode('; one\nG1 X1\n');
+  const source = encode('!; one\nG1 X1\n!');
+  const bytesA = source.subarray(1, -1);
 
-  const first = await loadWithReply(usePreviewStore, fixture, bytesA, 'one.gcode', 7);
+  const packet = Uint8Array.from(bytesA).reverse();
+  const loading = usePreviewStore.getState().loadGcodeBytes(bytesA, 'one.gcode');
+  await settle();
+  const worker = FakeWorker.instances.at(-1);
+  const { message, transfer } = worker.sent[0];
+  const workerInput = structuredClone(message, { transfer });
+  assert.deepEqual(new Uint8Array(workerInput.bytes), bytesA, 'the worker receives just the source view');
+  assert.equal(new TextDecoder().decode(source), '!; one\nG1 X1\n!', 'the app retains its source buffer');
+  respond(worker, native.stats(7), packet);
+  const first = await loading;
   assert.equal(first.layers, 7, 'worker statistics publish before any viewer exists');
   assert.equal(usePreviewStore.getState().stats.layers, 7);
   assert.equal(usePreviewStore.getState().isLoading, false);
@@ -246,9 +256,17 @@ test('statistics arrive before the viewer exists; the same bytes then render fro
   assert.equal(FakeWorker.created, 1, 'mounting reused the retained packet: no new worker');
   assert.equal(FakeWorker.instances[0].sent.length, 1, 'exactly one parse served both loads');
   assert.equal(native.loads.length, 1);
-  assert.deepEqual([...native.loads[0].bytes], [...Uint8Array.from(bytesA).reverse()],
-    'the renderer consumed the packet the worker returned');
+  assert.equal(native.loads[0].bytes.buffer, packet.buffer, 'the renderer borrowed the worker packet');
   assert.ok(native.unlinked.some(path => path.endsWith('.packet')), 'the mount staging file was removed');
+  assert.equal(native.files.size, 0);
+
+  previewModule.disposePreview();
+  await initRenderer(previewModule);
+  await usePreviewStore.getState().loadGcodeBytes(bytesA, 'one.gcode');
+  assert.equal(FakeWorker.created, 1, 'remount did not start a worker');
+  assert.equal(native.loads.length, 2);
+  assert.equal(native.loads[1].bytes, native.loads[0].bytes, 'remount borrowed the same packet');
+  assert.equal(native.files.size, 0);
 });
 
 test('overlapping imports: B starts while A parses and B reads slowly; A cannot commit to renderer or stores', async () => {
