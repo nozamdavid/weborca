@@ -1963,14 +1963,11 @@ void GCodeProcessor::run_post_process()
 // lines, then re-shifts every move's gcode_id by the inserted-line count before it (see
 // handle_offsets_of_second_process). It runs only when m_enable_pre_heating — the byte-frozen fleet
 // (X1/P1/A1/H2S) never sets the flag, so it never enters this pass. The PreCoolingInjector (below)
-// fills the map; when the injector produces no lines (no idle windows / no usage blocks) the map is
-// empty and the pass is a byte-for-byte identity rewrite of the finished file.
+// fills the map. The file is rewritten only when the injector adds lines.
 void GCodeProcessor::run_second_pass_injection()
 {
     // The ordered map of M632/M400/M104/M633 lines to splice into the finished g-code, keyed on the
-    // final output line id. Populated by the PreCoolingInjector below. If the injector produces
-    // nothing (no idle windows / no usage blocks), the map stays empty and the rewrite below is a
-    // byte-for-byte identity pass.
+    // final output line id. Populated by the PreCoolingInjector below.
     TimeProcessor::InsertedLinesMap inserted_operation_lines;
 
     // The enable_pre_heating orchestration block. Build the injector from the reconciled first-pass
@@ -1988,9 +1985,8 @@ void GCodeProcessor::run_second_pass_injection()
             }
         }
         // Reach the concrete layer-aware grouping (get_nozzle_from_id / is_support_dynamic_nozzle_map
-        // are not on the base interface). Orca: nil-guard it — on a slicing path that never populated
-        // the grouping, skip injection → empty map → identity rewrite. The shared_ptr local keeps the
-        // object alive for the injector's const ref.
+        // are not on the base interface). Slicing paths without a grouping skip injection.
+        // The shared_ptr local keeps the object alive for the injector's const ref.
         auto layered_ngr = std::dynamic_pointer_cast<MultiNozzleUtils::LayeredNozzleGroupResult>(m_result.nozzle_group_result);
         if (layered_ngr) {
             constexpr float inject_time_threshold = 0.f; // threshold hardcoded to 0
@@ -2052,6 +2048,9 @@ void GCodeProcessor::run_second_pass_injection()
         }
     }
 
+    if (inserted_operation_lines.empty())
+        return;
+
     FilePtr in{ boost::nowide::fopen(m_result.filename.c_str(), "rb") };
     if (in.f == nullptr)
         throw Slic3r::RuntimeError(_u8L("G-code processor pre-heat injection pass failed.\nCannot open file for reading.\n"));
@@ -2061,15 +2060,11 @@ void GCodeProcessor::run_second_pass_injection()
     if (out.f == nullptr)
         throw Slic3r::RuntimeError(_u8L("G-code processor pre-heat injection pass failed.\nCannot open file for writing.\n"));
 
-    // The rewrite may shift byte positions (once the injector inserts lines), so rebuild lines_ends from scratch.
-    // With an empty map the scanned '\n' offsets reproduce the current lines_ends exactly.
+    // Inserted lines shift byte positions, so rebuild lines_ends from scratch.
     m_result.lines_ends.clear();
     GCodeFileWriter writer(out, out_path, m_result.lines_ends, "GCode processor pre-heat injection pass failed.\nIs the disk full?\n");
 
-    // Orca: read/split lines with EOL-preserving semantics (keep the original \r and \n bytes, and
-    // synthesize no trailing newline). This is required for the empty-map identity: normalizing every
-    // line ending to "\n" would not be byte-identical if the finished file used \r\n or lacked a
-    // final newline.
+    // Preserve the original \r and \n bytes and whether the finished file has a trailing newline.
     std::string gcode_line;
     unsigned int line_id = 0;
     auto op_it = inserted_operation_lines.begin();
@@ -2124,7 +2119,7 @@ void GCodeProcessor::run_second_pass_injection()
     out.close();
     in.close();
 
-    // Re-shift the moves by the inserted-line counts (no-op with an empty map).
+    // Re-shift the moves by the inserted-line counts.
     handle_offsets_of_second_process(inserted_operation_lines);
 
     if (rename_file(out_path, m_result.filename))
@@ -2955,11 +2950,6 @@ bool GCodeProcessor::check_multi_extruder_gcode_valid(const int                 
 
     m_result.limit_filament_maps.resize(filament_map.size(), 0);
 
-    auto to_2d = [](const Vec3d &pos) -> Point {
-        Point ps(scale_(pos.x()), scale_(pos.y()));
-        return ps;
-    };
-
     // Belt-printer post-gcode shear/scale/post_remap is applied as the final
     // step of BeltKinematics::to_machine, so MoveVertex.position is
     // in the printer's machine frame.  Undo it here so the XY area check
@@ -2988,31 +2978,23 @@ bool GCodeProcessor::check_multi_extruder_gcode_valid(const int                 
 
     struct GCodePosInfo
     {
-        Points pos;
-        Points pos_custom;
-        float  max_print_z;
-        float  max_print_z_custom;
+        BoundingBox bounds;
+        float       max_print_z = 0.f;
     };
-    std::map<int, std::map<int, GCodePosInfo>> gcode_path_pos; // object_id, filament_id, pos
+    std::map<int, std::map<int, GCodePosInfo>> gcode_path_pos; // object_id, filament_id, bounds
     for (const GCodeProcessorResult::MoveVertex &move : m_result.moves) {
-        // sometimes, the start line extrude was outside the edge of plate a little, this is allowed, so do not include into the gcode_path_pos
-        if (move.type == EMoveType::Extrude /* && move.extrusion_role != ExtrusionRole::erFlush || move.type == EMoveType::Travel*/) {
-            const Vec3d cp = compare_pos(move);
-            // For belt printers we read Z from the inverse-transformed position
-            // (post-origin-snap, pre-machine-frame).  Otherwise keep the
-            // original print_z source (the slicer's layer-Z comment) so
-            // non-belt behaviour is bit-for-bit unchanged.
-            const float z_for_height = machine_frame_active ? float(cp.z()) : move.print_z;
-            if (move.extrusion_role == ExtrusionRole::erCustom) {
-                gcode_path_pos[move.object_label_id][int(move.extruder_id)].pos_custom.emplace_back(to_2d(cp));
-                gcode_path_pos[move.object_label_id][int(move.extruder_id)].max_print_z_custom =
-                    std::max(gcode_path_pos[move.object_label_id][int(move.extruder_id)].max_print_z_custom, z_for_height);
-            } else {
-                gcode_path_pos[move.object_label_id][int(move.extruder_id)].pos.emplace_back(to_2d(cp));
-                gcode_path_pos[move.object_label_id][int(move.extruder_id)].max_print_z = std::max(gcode_path_pos[move.object_label_id][int(move.extruder_id)].max_print_z,
-                                                                                                   z_for_height);
-            }
-        }
+        if (move.type != EMoveType::Extrude)
+            continue;
+        GCodePosInfo &path = gcode_path_pos[move.object_label_id][int(move.extruder_id)];
+        // Custom extrusion such as the start line may extend past the bed edge.
+        if (move.extrusion_role == ExtrusionRole::erCustom)
+            continue;
+
+        const Vec3d cp = compare_pos(move);
+        // Use the inverse-transformed Z for belt printers and the layer Z otherwise.
+        const float z_for_height = machine_frame_active ? float(cp.z()) : move.print_z;
+        path.bounds.merge(Point(scale_(cp.x()), scale_(cp.y())));
+        path.max_print_z = std::max(path.max_print_z, z_for_height);
     }
 
     bool valid = true;
@@ -3052,11 +3034,12 @@ bool GCodeProcessor::check_multi_extruder_gcode_valid(const int                 
             // filament's extruder, so leave that filament unchecked.
             if (extruder_id < 0)
                 continue;
-            Points iter_points;//temp points
-            iter_points.insert(iter_points.end(), iter->second.pos.begin(), iter->second.pos.end());// put object/wipetower extrude position in
-            Polygon     path_poly(iter_points);
-            if (path_poly.empty()) continue;
-            BoundingBox bbox = path_poly.bounding_box();
+            const BoundingBox &bounds = iter->second.bounds;
+            // Merging points marks even a single point as defined. Keep checking these paths,
+            // and restore the same positive-area definition as Polygon::bounding_box().
+            if (!bounds.defined)
+                continue;
+            const BoundingBox bbox(bounds.min, bounds.max);
             if (plate_printable_bbox.defined) {
                 if (!plate_printable_bbox.contains(bbox)) { // out of the bed area
                     m_result.gcode_check_result.error_code |= (1<<2);
@@ -3092,11 +3075,6 @@ bool GCodeProcessor::check_multi_extruder_gcode_valid(const int                 
             // }
 
             if (extruder_size > 1) {// in multi extruder condition
-                /*//iter_points.insert(iter_points.end(), iter->second.pos_custom.begin(), iter->second.pos_custom.end()); // put custom extrude position in
-                //Polygon     path_poly_custom(iter_points);
-                //BoundingBox bbox_custom = path_poly_custom.bounding_box();
-                //bbox_custom.offset(-scale_(1.0)); // Narrow the range to provide a tolerance for the custom gcode
-                //bbox.merge(bbox_custom);          // merge the custom gcode pos with other pos*/
                 const uint64_t unprintable_mask = unprintable_extruders(bbox);
                 // check printable area
                 if ((extruder_id < unprintable_areas.size()) && (unprintable_mask & (uint64_t(1) << extruder_id))) {
@@ -4038,10 +4016,8 @@ void GCodeProcessor::finalize(bool post_process)
 
     if (post_process){
         run_post_process();
-        // Additive pre-heat/pre-cool injection second pass. Gated on m_enable_pre_heating so the
-        // byte-frozen fleet (X1/P1/A1/H2S) never enters it. When the injector produces no lines the
-        // InsertedLinesMap is empty, so this is a byte-for-byte identity rewrite; it exercises the
-        // merge/offset machinery on the multi-nozzle fleet (H2D/X2D/H2D-Pro/H2C).
+        // Run the pre-heat/pre-cool injector on printers that enable it. It rewrites the file
+        // and adjusts move offsets only when lines are inserted.
         if (m_enable_pre_heating)
             run_second_pass_injection();
     }

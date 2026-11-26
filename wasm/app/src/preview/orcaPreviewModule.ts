@@ -94,10 +94,36 @@ function completedDraw(start: number, end: number): void {
 // This is a parse identity marker, not an owner of the potentially large source.
 let loadedGcode: WeakRef<Uint8Array> | null = null;
 let bedPolygon: [number, number][] | null = null;
-let prepared: { source: WeakRef<Uint8Array>; packet: Uint8Array; stats: PreviewStatistics } | null = null;
+// Pin the source only during a same-plate re-slice so the next result can be
+// compared byte-for-byte. Otherwise the cache holds only a weak source identity.
+let prepared: { source: WeakRef<Uint8Array>; pinnedSource?: Uint8Array; packet: Uint8Array; stats: PreviewStatistics } | null = null;
 let pendingPrepare: { source: WeakRef<Uint8Array>; promise: Promise<{ stats: PreviewStatistics; packet: Uint8Array }> } | null = null;
 let appliedViewType: string | null = null;
 let loadGeneration = 0;
+
+/**
+ * Compare the complete source views, including unaligned views and tail bytes.
+ */
+function sourcesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  const lanes = a.length >>> 2;
+  if (lanes > 0) {
+    const viewA = new DataView(a.buffer, a.byteOffset, lanes * 4);
+    const viewB = new DataView(b.buffer, b.byteOffset, lanes * 4);
+    for (let i = 0; i < lanes; i++) if (viewA.getUint32(i * 4, true) !== viewB.getUint32(i * 4, true)) return false;
+  }
+  for (let i = lanes * 4; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * Release the source pin and cached packet when the slice result is invalidated,
+ * without touching the renderer or pending loads.
+ */
+export function dropRetainedPrepared(): void {
+  prepared = null;
+}
 
 export async function getPreviewModule(canvas?: HTMLCanvasElement): Promise<any> {
   if (previewModule) return previewModule;
@@ -232,6 +258,7 @@ export function getPreviewInstance(): any {
 export function cancelPendingGcodeLoad(): void {
   ++loadGeneration;
   pendingPrepare = null;
+  prepared = null;
   cancelPreviewWorker();
 }
 
@@ -253,6 +280,23 @@ export function clearGcode(): void {
   requestRender();
 }
 
+/**
+ * Clear the viewer for a same-plate re-slice while retaining one prepared packet
+ * and pinning its source until the result can be compared or the attempt ends.
+ */
+export function retainPreparedAcrossSliceStart(): void {
+  if (prepared) prepared.pinnedSource = prepared.source.deref() ?? prepared.pinnedSource;
+  ++loadGeneration;
+  pendingPrepare = null;
+  cancelPreviewWorker();
+  resetPerformance();
+  if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
+  pendingFrame = null;
+  previewInstance?.clearGcode();
+  loadedGcode = null;
+  requestRender();
+}
+
 export async function loadGcode(data: Uint8Array | ArrayBuffer | string, _name = 'print.gcode'): Promise<PreviewStatistics> {
   let bytes: Uint8Array;
   if (typeof data === 'string') {
@@ -265,6 +309,16 @@ export async function loadGcode(data: Uint8Array | ArrayBuffer | string, _name =
 
   const generation = ++loadGeneration;
   let result = prepared?.source.deref() === bytes ? prepared : null;
+  if (!result) {
+    // Re-slicing returns a fresh array. Reuse only byte-identical output and
+    // release a mismatched entry before preparing the new packet.
+    const pinnedSource = prepared?.pinnedSource;
+    if (pinnedSource && sourcesEqual(pinnedSource, bytes)) {
+      result = { ...prepared!, source: new WeakRef(bytes), pinnedSource: undefined };
+    } else if (prepared) {
+      prepared = null;
+    }
+  }
   if (!result) {
     const entry = pendingPrepare?.source.deref() === bytes
       ? pendingPrepare
@@ -285,8 +339,8 @@ export async function loadGcode(data: Uint8Array | ArrayBuffer | string, _name =
   const vfsPath = `/preview_${Date.now()}.packet`;
 
   try {
-    // Stage the prepared packet, then release the temporary MEMFS file below.
-    previewModule.FS.writeFile(vfsPath, result.packet);
+    // MEMFS borrows the cached packet during the synchronous, read-only load.
+    previewModule.FS.writeFile(vfsPath, result.packet, { canOwn: true });
     loadedGcode = null;
     const resStr = previewInstance.loadParsedGcode(vfsPath);
     const stats: PreviewStatistics = JSON.parse(resStr);

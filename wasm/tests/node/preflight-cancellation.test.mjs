@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { strFromU8, unzipSync } from '../../app/node_modules/fflate/esm/browser.js';
 import { createEngineCore } from '../../web/engine-core.js';
 
 // A dense flat surface keeps containment projection active long enough to observe
@@ -33,9 +34,23 @@ try {
   await core.call('addModel',{path:'/models/cube.obj'});
   core.writeFile('/models/preflight.stl',bytes);
   await core.call('addModel',{path:'/models/preflight.stl'});
-  const objects = await core.call('listObjects');
-  for (const object of objects) for (const instance of object.instances)
-    await core.call('setInstanceTransform',{objectId:object.id,instanceId:instance.id,offset:[80,80,0]});
+  const [cube, dense] = await core.call('listObjects');
+  const move = (object, x) => core.call('setInstanceTransform', {
+    objectId: object.id, instanceId: object.instances[0].id, offset: [x, 80, 0]
+  });
+  // The cube crosses the right edge. The dense surface then takes the exact
+  // projection path at the left edge.
+  await move(cube, 295);
+  await move(dense, 5);
+  const printableFlags = async () => {
+    const projectPath = '/out/preflight-flags.3mf';
+    const modelPath = '3D/3dmodel.model';
+    await core.call('saveProject', {path: projectPath, compressionLevel: 1});
+    const archive = unzipSync(core.readFile(projectPath), {filter: file => file.name === modelPath});
+    return Array.from(strFromU8(archive[modelPath]).matchAll(/<item\b[^>]*\bprintable="([01])"/g), match => match[1]);
+  };
+  const beforeFlags = await printableFlags();
+  assert.deepEqual(beforeFlags, ['1', '1']);
   const before = await core.call('listObjects');
   const controller = new AbortController();
   let observed = false, abortAt = 0;
@@ -49,10 +64,12 @@ try {
       }
     }
   }), error => error.name === 'AbortError');
-  assert.ok(observed,'cancel must occur during running containment, not before native job starts');
+  assert.ok(observed,'native containment must report progress before cancellation');
   const elapsedMs = performance.now() - abortAt;
   assert.deepEqual(await core.call('listObjects'),before,'cancellation restores model state');
-  await core.call('deleteObject',{objectId:objects[1].id});
+  assert.deepEqual(await printableFlags(), beforeFlags, 'cancellation restores printable flags');
+  await core.call('deleteObject',{objectId:dense.id});
+  await move(cube, 80);
   await core.call('slice',{outPath:'/out/recovered.gcode',threads:2,plateIndex:0});
   assert.match(new TextDecoder().decode(core.readFile('/out/recovered.gcode')),/; printing object /);
   console.log(JSON.stringify({preflightCanceled:true,triangles:divisions*divisions*2,elapsedMs,recovery:true}));

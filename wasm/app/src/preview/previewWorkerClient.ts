@@ -53,6 +53,7 @@ function ensureWorker(): Worker {
 export function preparePreview(bytes: Uint8Array): Promise<PreparedPreview> {
   const target = ensureWorker();
   const id = ++nextId;
+  // The app retains the source for export and G-code line display.
   const copy = bytes.slice().buffer;
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });

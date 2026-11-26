@@ -1,6 +1,7 @@
 #pragma once
 #include "GCodeInputData.hpp"
 #include <fstream>
+#include <limits>
 #include <type_traits>
 #include <stdexcept>
 #include <string>
@@ -26,10 +27,19 @@ template<class T> void read(std::istream& in, T& value) {
     if (!in.read(reinterpret_cast<char*>(&value), sizeof(T))) fail();
 }
 template<class C> void write_array(std::ostream& out, const C& values) {
+    static_assert(std::is_trivially_copyable_v<typename C::value_type>);
     write(out, uint64_t(values.size()));
-    for (const auto& v : values) write(out, v);
+    const char* data = reinterpret_cast<const char*>(values.data());
+    uint64_t bytes = uint64_t(values.size()) * sizeof(typename C::value_type);
+    constexpr uint64_t chunk_max = uint64_t(std::numeric_limits<std::streamsize>::max());
+    while (bytes > 0) {
+        const std::streamsize chunk = std::streamsize(bytes > chunk_max ? chunk_max : bytes);
+        if (!out.write(data, chunk)) fail();
+        data += chunk; bytes -= uint64_t(chunk);
+    }
 }
 template<class C> void read_array(std::istream& in, C& values, uint64_t& remaining) {
+    static_assert(std::is_trivially_copyable_v<typename C::value_type>);
     if (remaining < sizeof(uint64_t)) fail();
     remaining -= sizeof(uint64_t);
     uint64_t count; read(in, count);
@@ -37,7 +47,15 @@ template<class C> void read_array(std::istream& in, C& values, uint64_t& remaini
     if (count > remaining / sizeof(T) || count > 100000000) fail();
     remaining -= count * sizeof(T);
     values.resize(count);
-    for (auto& v : values) read(in, v);
+    // Chunked so the byte count never overflows a 32-bit std::streamsize (wasm32).
+    char* data = reinterpret_cast<char*>(values.data());
+    uint64_t bytes = count * sizeof(T);
+    constexpr uint64_t chunk_max = uint64_t(std::numeric_limits<std::streamsize>::max());
+    while (bytes > 0) {
+        const std::streamsize chunk = std::streamsize(bytes > chunk_max ? chunk_max : bytes);
+        if (!in.read(data, chunk)) fail();
+        data += chunk; bytes -= uint64_t(chunk);
+    }
 }
 }
 inline void save_packet(const std::string& path, const PreviewPacket& p) {

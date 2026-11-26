@@ -9,7 +9,7 @@ import { storeRecentFile } from '../shell/recentFiles';
 import { clearExportGcodeCache } from '../shell/gcodeThumbnails';
 // Invalidation of a superseded in-flight G-code import must be synchronous at the
 // new import's initiation, before its file is being read.
-import { cancelPendingPreviewLoad, usePreviewStore } from '../preview/previewStore';
+import { cancelPendingPreviewLoad, usePreviewStore, dropRetainedPreviewPrepared } from '../preview/previewStore';
 import { warmupPreviewWorker } from '../preview/previewWorkerClient';
 /**
  * @file appStore.ts
@@ -1180,6 +1180,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     // preview stores while this file is being read; any previously valid rendered
     // G-code is preserved if this import fails.
     cancelPendingPreviewLoad();
+    // An imported G-code replaces any retained re-slice packet.
+    dropRetainedPreviewPrepared();
     try {
       const buffer = await file.arrayBuffer();
       if (sequence !== gcodeImportSequence) return;
@@ -1394,7 +1396,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       engineError: null,
       abortController
     });
-    usePreviewStore.getState().resetGcodeAction();
+    usePreviewStore.getState().retainPreparedForResliceAction();
     warmupPreviewWorker();
 
     try {
@@ -1482,6 +1484,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           abortController: null
         });
       }
+      // A failed attempt has no result to compare; release its source pin.
+      dropRetainedPreviewPrepared();
     }
   },
 
@@ -1489,6 +1493,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { abortController } = get();
     if (abortController) {
       abortController.abort();
+      // Release the pinned source and packet synchronously with the abort.
+      dropRetainedPreviewPrepared();
     }
   },
 
@@ -1499,6 +1505,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         URL.revokeObjectURL(gcodeUrl);
       } catch (_) {}
     }
+    // The slice result backing the retained packet has been invalidated.
+    dropRetainedPreviewPrepared();
     set({
       sliceResult: null,
       gcodeUrl: null,
