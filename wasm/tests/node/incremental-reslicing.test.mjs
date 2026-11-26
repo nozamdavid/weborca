@@ -437,7 +437,9 @@ describe('Retained Print incremental reslicing', () => {
 
     const plate0Res = await core.slice({ plateIndex: 0, outPath: '/out/multi_p0.gcode', threads: THREADS });
     const plate1Res = await core.slice({ plateIndex: 1, outPath: '/out/multi_p1.gcode', threads: THREADS });
-    const plate0Again = await core.slice({ plateIndex: 0, outPath: '/out/multi_p0_again.gcode', threads: THREADS });
+    // A returning plate must export again even when the old path and size match.
+    core.FS.writeFile('/out/multi_p0.gcode', new Uint8Array(plate0Res.gcodeBytes));
+    const plate0Again = await core.slice({ plateIndex: 0, outPath: '/out/multi_p0.gcode', threads: THREADS });
     assert.notEqual(normalizeGcode(plate0Res.gcode), normalizeGcode(plate1Res.gcode));
     assert.equal(normalizeGcode(plate0Again.gcode), normalizeGcode(plate0Res.gcode));
 
