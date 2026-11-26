@@ -1,29 +1,45 @@
 import { HOST_CAPABILITIES, type HostType, type PhysicalPrinter, type PrinterState } from './types';
 import type { OctoEverywhereCapabilities, OctoEverywhereCameraList, OctoEverywhereConnection, OctoEverywhereInfo, OctoEverywhereStatus } from './octoEverywhereTypes';
 
+const OCTOEVERYWHERE_SUBDOMAIN_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.octoeverywhere\.com$/i;
+
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 export function isOctoEverywhereConnection(value: unknown): value is OctoEverywhereConnection {
-  if (!value || typeof value !== 'object') return false;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const c = value as OctoEverywhereConnection;
   const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 4096 && !/[\u0000-\u001f\u007f]/.test(v);
   if (![c.connectionId, c.appApiToken, c.printerName].every(text)) return false;
+  if ((c.printerId !== undefined && !text(c.printerId)) ||
+      (c.nativeApiKey !== undefined && !text(c.nativeApiKey)) ||
+      (c.lastKnownLocalIp !== undefined && !text(c.lastKnownLocalIp))) return false;
   try {
     const url = new URL(c.url);
-    if (url.protocol !== 'https:' || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.octoeverywhere\.com$/i.test(url.hostname) ||
+    if (url.protocol !== 'https:' || !OCTOEVERYWHERE_SUBDOMAIN_RE.test(url.hostname) ||
         url.username || url.password || url.port || url.pathname !== '/' || url.search || url.hash) return false;
     if (!safeOctoEverywhereUserUrl(c.userFacingUrl)) return false;
   } catch { return false; }
-  return !!c.auth && (c.auth.type === 'bearer' ? text(c.auth.token) :
-    c.auth.type === 'basic' && text(c.auth.username) && !c.auth.username.includes(':') && text(c.auth.password));
+  return !!c.auth && (c.auth.type === 'none' || (c.auth.type === 'bearer' ? text(c.auth.token) :
+    c.auth.type === 'basic' && text(c.auth.username) && !c.auth.username.includes(':') && text(c.auth.password)));
 }
 
-/** Normal user page only; excludes connection hosts and URL credentials. */
+/** Normal user page only; excludes URL credentials, queries, hashes, and unsafe paths. */
 export function safeOctoEverywhereUserUrl(value: string | undefined): string | undefined {
   if (!value) return;
   try {
     const u = new URL(value);
-    if (u.protocol === 'https:' && u.hostname === 'octoeverywhere.com' && !u.port && !u.username && !u.password &&
-        !u.search && !u.hash && /^\/view\/[^/]+\/?$/.test(u.pathname)) return u.href;
+    if (u.protocol !== 'https:' || u.port || u.username || u.password || u.search || u.hash) return;
+    const raw = /^https:\/\/[^/?#]+(\/[^?#]*)?$/i.exec(value);
+    if (!raw) return;
+    const rawPath = raw[1] ?? '';
+    if (u.hostname === 'octoeverywhere.com') {
+      if (u.pathname === '/' && (rawPath === '' || rawPath === '/')) return u.href;
+      const match = /^\/view\/([^/]+)\/?$/.exec(rawPath);
+      if (!match) return;
+      const segment = decodeURIComponent(match[1]);
+      if (!segment || segment === '.' || segment === '..' || /[\u0000-\u001f\u007f/\\@?#%]/.test(segment)) return;
+      return u.href;
+    }
+    if (OCTOEVERYWHERE_SUBDOMAIN_RE.test(u.hostname) && u.pathname === '/' && (rawPath === '' || rawPath === '/')) return u.href;
   } catch { /* Invalid external URL. */ }
 }
 

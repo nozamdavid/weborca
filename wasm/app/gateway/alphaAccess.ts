@@ -169,7 +169,8 @@ export function createAlphaAccess({ env = process.env, webRoot, forbiddenDataRoo
   function json(res: ServerResponse, status: number, value: unknown) {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
       'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
-      'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' });
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': String(res.getHeader('Cross-Origin-Embedder-Policy') || 'require-corp') });
     res.end(JSON.stringify(value));
   }
   const error = (res: ServerResponse, status: number, message: string) => json(res, status, { error: message });
@@ -373,7 +374,7 @@ export function createAlphaAccess({ env = process.env, webRoot, forbiddenDataRoo
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    if (!res.getHeader('Cross-Origin-Embedder-Policy')) res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
     let pathname: string;
     try { pathname = decodeURIComponent(new URL(req.url || '/', 'http://localhost').pathname); }
     catch { error(res, 400, 'Invalid path'); return true; }

@@ -266,3 +266,70 @@ test('add steps validate, preserve provider fields, reset on reopen and save the
   assert.equal(find(tree, item => item.props?.id === 'pc-validation'), undefined);
   delete globalThis.requestAnimationFrame;
 });
+
+test('new printer can be configured and saved in remote OctoEverywhere mode without a local host or Bambu LAN credentials', () => {
+  globalThis.requestAnimationFrame = () => {};
+  const store = client.usePrinterConnectionStore;
+  const oeConnection = {
+    connectionId: 'synthetic-oe',
+    url: 'https://synthetic.octoeverywhere.com/',
+    appApiToken: 'synthetic-app-token',
+    auth: { type: 'bearer', token: 'synthetic-bearer' },
+    printerName: 'Remote Bambu',
+    userFacingUrl: 'https://octoeverywhere.com/view/Synthetic'
+  };
+  store.getState().openDialog(null);
+  const dialog = renderer(client.PrinterConnectionDialog);
+  let tree = dialog();
+  control(tree, 'pc-name').onChange({ target: { value: 'Remote Bambu' } });
+  tree = dialog();
+  control(tree, 'pc-host-type').onValueChange('bambu');
+  tree = dialog();
+  control(tree, 'pc-next').onClick();
+  tree = dialog();
+  const findOe = t => find(t, item => item.type?.name === 'OctoEverywhereConnection');
+  let oe = findOe(tree);
+  assert.ok(oe, 'OctoEverywhereConnection must be rendered in Step 2 for a new printer');
+  assert.equal(control(tree, 'pc-save').disabled, true, 'local mode without print_host must be rejected');
+  assert.ok(control(tree, 'pc-validation'));
+
+  oe.props.onChange({ ...oe.props.printer, octoeverywhere: { mode: 'remote', connection: oeConnection } });
+  tree = dialog();
+  assert.equal(find(tree, item => item.props?.id === 'pc-validation'), undefined);
+  assert.equal(control(tree, 'pc-save').disabled, false, 'remote OE mode must allow saving without print_host or Bambu LAN credentials');
+  assert.equal(control(tree, 'pc-gateway-status').children, 'Using OctoEverywhere remote gateway.');
+  const oeDetails = find(tree, item => item.type === 'details' && find(item.props?.children, c => c?.type?.name === 'OctoEverywhereConnection'));
+  assert.equal(oeDetails?.props.open, true);
+
+  oe = findOe(tree);
+  oe.props.onConfig({ enabled: false, portalAvailable: false });
+  tree = dialog();
+  assert.equal(control(tree, 'pc-gateway-status').children, 'OctoEverywhere gateway is disabled on this server.');
+
+  control(tree, 'pc-host').onChange({ target: { value: 'not a valid host' } });
+  tree = dialog();
+  assert.equal(control(tree, 'pc-save').disabled, true, 'invalid print_host must still be rejected in remote OE mode');
+  assert.ok(control(tree, 'pc-validation'));
+
+  control(tree, 'pc-host').onChange({ target: { value: '' } });
+  tree = dialog();
+  assert.equal(control(tree, 'pc-save').disabled, false);
+
+  oe = findOe(tree);
+  oe.props.onChange({ ...oe.props.printer, octoeverywhere: { mode: 'local', connection: oeConnection } });
+  tree = dialog();
+  assert.equal(control(tree, 'pc-save').disabled, true, 'switching back to local mode without print_host must reject save');
+
+  oe = findOe(tree);
+  oe.props.onChange({ ...oe.props.printer, octoeverywhere: { mode: 'remote', connection: oeConnection } });
+  tree = dialog();
+  control(tree, 'pc-save').onClick();
+  dialog();
+  const added = store.getState().printers.find(p => p.name === 'Remote Bambu');
+  assert.ok(added, 'new remote OE printer must be saved');
+  assert.equal(added.host_type, 'bambu');
+  assert.equal(added.print_host, '');
+  assert.equal(added.octoeverywhere?.mode, 'remote');
+  assert.equal(added.octoeverywhere?.connection?.connectionId, 'synthetic-oe');
+  delete globalThis.requestAnimationFrame;
+});

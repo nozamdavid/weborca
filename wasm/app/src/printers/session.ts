@@ -9,6 +9,8 @@ let currentScope = '';
 let currentApi: PrinterApi | undefined;
 let generation = 0;
 let monitoring = false;
+let connectionAttempted = false;
+let startupFocus = true;
 let failed = false;
 let retry: ReturnType<typeof setTimeout> | undefined;
 let refreshWait: ReturnType<typeof setTimeout> | undefined;
@@ -20,7 +22,8 @@ let resync = false;
 let previousPrinters: PhysicalPrinter[] | undefined;
 const store = usePrinterConnectionStore;
 const refreshIntervalMs = 15_000;
-const signedOut = (p: PhysicalPrinter) => ['snapmaker-cloud', 'prusaconnect', 'bambu-cloud', 'creality-cloud'].includes(p.host_type) && !p.printhost_apikey;
+const signedOut = (p: PhysicalPrinter) => p.octoeverywhere?.mode !== 'remote' &&
+  ['snapmaker-cloud', 'prusaconnect', 'bambu-cloud', 'creality-cloud'].includes(p.host_type) && !p.printhost_apikey;
 // Filament choices and display names do not restart the transport.
 const connectionKey = (p?: PhysicalPrinter) => p ? JSON.stringify({ ...p, name: undefined, preset: undefined, vendor: undefined,
   filamentPresets: undefined, filamentColors: undefined, filamentTypes: undefined }) : '';
@@ -28,8 +31,12 @@ const connectionKey = (p?: PhysicalPrinter) => p ? JSON.stringify({ ...p, name: 
 export function getCurrentPrinterApi(): PrinterApi | undefined { return currentApi; }
 
 function active(): boolean {
-  return store.getState().deviceTabActive && (typeof document === 'undefined' ||
-    (!document.hidden && (typeof document.hasFocus !== 'function' || document.hasFocus())));
+  const state = store.getState();
+  const remote = state.printers.find(p => p.id === state.selectedPrinterId)?.octoeverywhere?.mode === 'remote';
+  // Reload can report no focus before any browser focus event. Allow the visible
+  // remote session to start, then obey the normal focus lifecycle.
+  return state.deviceTabActive && (typeof document === 'undefined' ||
+    (!document.hidden && (typeof document.hasFocus !== 'function' || document.hasFocus() || (remote && startupFocus))));
 }
 function watchFrameFocus() {
   const state = store.getState();
@@ -87,6 +94,7 @@ function syncOnce() {
   }
   if (key !== currentKey) {
     stopMonitoring();
+    connectionAttempted = false;
     failed = false;
     currentApi?.dispose?.();
     currentApi = undefined;
@@ -94,9 +102,16 @@ function syncOnce() {
     store.setState({ liveState: null, error: undefined, status: printer ? 'connecting' : 'none', activeApi: null });
     if (printer) {
       try { currentApi = createPrinterApi(printer); }
-      catch {
+      catch (err) {
         failed = true;
-        store.setState({ status: 'error', error: 'Reconnect OctoEverywhere in printer settings, or choose Local.' });
+        const error = printer.octoeverywhere?.mode === 'remote'
+          ? 'Reconnect OctoEverywhere in printer settings, or choose Local.'
+          : !printer.print_host.trim()
+            ? 'Add a local printer address in Printer settings, or connect OctoEverywhere.'
+            : err instanceof Error && err.message
+              ? err.message
+              : 'Printer configuration is invalid.';
+        store.setState({ status: 'error', error });
         retryLater();
       }
       store.setState({ activeApi: currentApi ?? null });
@@ -120,7 +135,7 @@ function syncOnce() {
   const remaining = lastRefreshedAt === null ? 0 : refreshIntervalMs - (Date.now() - lastRefreshedAt);
   // A resumed session keeps its display snapshot until a fresh read is due.
   // Error recovery (including manual Retry) must still reconnect immediately.
-  if (status !== 'error' && remaining > 0) {
+  if ((printer.octoeverywhere?.mode !== 'remote' || connectionAttempted) && status !== 'error' && remaining > 0) {
     if (refreshWait === undefined) {
       const epoch = generation;
       refreshWait = setTimeout(() => {
@@ -135,6 +150,7 @@ function syncOnce() {
   const api = currentApi;
   const epoch = ++generation;
   monitoring = true;
+  connectionAttempted = true;
   store.setState({ liveState: null, status: 'connecting', error: undefined });
   const current = () => {
     const s = store.getState();
@@ -176,8 +192,12 @@ export function startPrinterSession() {
   started = true;
   store.subscribe(sync);
   if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-    window.addEventListener('blur', sync);
-    window.addEventListener('focus', sync);
+    const focusChanged = (event: Event) => {
+      if (event.type === 'blur' || (typeof document !== 'undefined' && document.hasFocus?.())) startupFocus = false;
+      sync();
+    };
+    window.addEventListener('blur', focusChanged);
+    window.addEventListener('focus', focusChanged);
     window.addEventListener('pageshow', sync);
   }
   if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {

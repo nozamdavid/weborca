@@ -130,8 +130,13 @@ async function busy(form: HTMLFormElement, submit: HTMLButtonElement, work: () =
 }
 function rememberTarget() {
   let current = location.pathname + location.search + location.hash;
-  const captured = (window as Window & { __orcaCloudCallback?: string }).__orcaCloudCallback;
-  if (location.pathname === '/orca-cloud/callback' && captured) {
+  const win = window as Window & { __orcaCloudCallback?: string; __octoEverywhereCallback?: string };
+  const captured = location.pathname === '/orca-cloud/callback'
+    ? win.__orcaCloudCallback
+    : location.pathname === '/octoeverywhere/callback'
+      ? win.__octoEverywhereCallback
+      : undefined;
+  if (captured) {
     const callback = new URL(captured, location.origin);
     if (callback.origin === location.origin) current = callback.pathname + callback.search + callback.hash;
   }
