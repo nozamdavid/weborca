@@ -35,6 +35,7 @@ import { TopBar } from './shell/TopBar';
 import { SlicingGuard } from './shell/SlicingGuard';
 import { RecoveryDialog } from './shell/RecoveryDialog';
 import { requestOpenProject } from './shell/projectActions';
+import { importDroppedFiles, isDroppedModelFile } from './plate/dropFiles';
 import { ProjectNotesDialog } from './shell/ProjectNotesDialog';
 import { SlicingWarningsDialog } from './shell/SlicingWarningsDialog';
 import { ToastContainer } from './shell/Toast';
@@ -132,8 +133,13 @@ export const App: React.FC = () => {
     const onDrop = async (e: DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      const file = e.dataTransfer?.files?.[0];
+      const files = e.dataTransfer?.files;
+      const file = files?.[0];
       if (!file) return;
+      if (files && activeTab === 'prepare' && (files.length > 1 || isDroppedModelFile(file))) {
+        await importDroppedFiles(Array.from(files));
+        return;
+      }
 
       const ext = file.name.split('.').pop()?.toLowerCase();
       if (ext === '3mf') {
@@ -153,7 +159,7 @@ export const App: React.FC = () => {
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('drop', onDrop);
     };
-  }, [setActiveTab]);
+  }, [activeTab, setActiveTab]);
 
   if (!isIsolated) return <IsolationNotice />;
 

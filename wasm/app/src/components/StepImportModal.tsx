@@ -23,13 +23,22 @@ export const StepImportModal: React.FC = () => {
   const linearOk = inRange(linearDeflection, LINEAR);
   const angleOk = inRange(angleDeflection, ANGLE);
 
-  const handleImport = () => {
+  const handleCancel = () => {
     setStepImportState(null);
-    void importModelFile(file, { linearDeflection, angleDeflection });
+    stepImportState.onComplete?.();
+  };
+
+  const handleImport = async () => {
+    setStepImportState(null);
+    try {
+      await importModelFile(file, { linearDeflection, angleDeflection });
+    } finally {
+      stepImportState.onComplete?.();
+    }
   };
 
   return (
-    <Dialog onClose={() => setStepImportState(null)} dirty={linear !== LINEAR.def || angle !== ANGLE.def} dirtyWhat="import options" data-testid="step-import-modal">
+    <Dialog onClose={handleCancel} dirty={linear !== LINEAR.def || angle !== ANGLE.def} dirtyWhat="import options" data-testid="step-import-modal">
       <div className="modal-content ds-dialog">
         <h3>{t("STEP Import Options")}</h3>
         <p>
@@ -65,7 +74,7 @@ export const StepImportModal: React.FC = () => {
         </div>
 
         <div className="modal-actions ds-dialog__foot" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button className="ds-btn" onClick={() => setStepImportState(null)}>
+          <button className="ds-btn" onClick={handleCancel}>
             {t("Cancel")}</button>
           <button className="ds-btn ds-btn--primary" onClick={handleImport} disabled={!linearOk || !angleOk}>
             {t("Import")}</button>
