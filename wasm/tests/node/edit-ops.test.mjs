@@ -78,6 +78,14 @@ test('Edit Ops', async (t) => {
         await engine.call('setInstanceTransform', { objectId: objId, instanceId: instId, rotation: [0.3, 0.2, 0] });
         const tilted = await engine.call('checkMeshHealth', { objectId: objId });
         assert.ok(tilted.boundingBox[5] - tilted.boundingBox[2] > 25, 'the tilted cube is taller than its 20 mm edge');
+        const candidates = await engine.call('getPlanarFacets', { objectId: objId, instanceId: instId });
+        for (const cluster of candidates.clusters) {
+            assert.ok(cluster.outline.length >= 3);
+            for (const vertex of cluster.outline) {
+                const distance = vertex.reduce((sum, value, axis) => sum + (value - cluster.center[axis]) * cluster.normal[axis], 0);
+                assert.ok(Math.abs(distance) < 0.001, 'candidate outline and normal/center share mesh coordinates on a tilted cube');
+            }
+        }
 
         res = await engine.call('placeOnFace', { objectId: objId, instanceId: instId, facetIndex: smallestFacetIndex });
         assert.equal(res.success, true);

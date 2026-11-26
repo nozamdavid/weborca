@@ -105,8 +105,10 @@ json getPlanarFacets(Slic3r::Model& model, const json& args) {
     json clusters = json::array();
     for (const auto& p : planes) {
         json outline = json::array();
+        const Slic3r::Transform3d to_mesh = inst_matrix.inverse() * p.to_plane_frame.inverse();
         for (const auto& pt : p.outline) {
-            outline.push_back({pt.x(), pt.y(), pt.z()});
+            const Slic3r::Vec3d vertex = to_mesh * pt;
+            outline.push_back({vertex.x(), vertex.y(), vertex.z()});
         }
         clusters.push_back({
             {"normal", {p.normal.x(), p.normal.y(), p.normal.z()}},
