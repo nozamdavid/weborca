@@ -15,8 +15,14 @@ const VIEW_TYPES: readonly PreviewViewType[] = [
 ];
 let loadSequence = 0;
 
+/** Release the prepared packet retained for a re-slice. */
+export function dropRetainedPreviewPrepared(): void {
+  previewModule.dropRetainedPrepared();
+}
+
 export function cancelPendingPreviewLoad(): void {
   ++loadSequence;
+  previewModule.dropRetainedPrepared();
   previewModule.cancelPendingGcodeLoad();
   usePreviewStore.setState({ isLoading: false });
 }
@@ -56,6 +62,7 @@ export interface PreviewStoreState {
   resetLayersAction: () => void;
   resetCameraAction: () => void;
   resetGcodeAction: () => void;
+  retainPreparedForResliceAction: () => void;
   toggleStatsPanelAction: () => void;
   toggleGcodeWindowAction: () => void;
   setShowGcodeWindowAction: (val: boolean) => void;
@@ -81,6 +88,16 @@ export const usePreviewStore = create<PreviewStoreState>((set, get) => ({
   resetGcodeAction: () => {
     ++loadSequence;
     previewModule.clearGcode();
+    set({ stats: null, layersCount: 0, layersZs: [], minLayer: 0, maxLayer: 0,
+      minMove: 0, maxMove: 0, currentMove: 0, isLoading: false, showGcodeWindow: false,
+      legend: previewModule.getLegendData(),
+      resetVersion: get().resetVersion + 1 });
+  },
+
+  // Reset visible state while retaining the packet for an exact re-slice match.
+  retainPreparedForResliceAction: () => {
+    ++loadSequence;
+    previewModule.retainPreparedAcrossSliceStart();
     set({ stats: null, layersCount: 0, layersZs: [], minLayer: 0, maxLayer: 0,
       minMove: 0, maxMove: 0, currentMove: 0, isLoading: false, showGcodeWindow: false,
       legend: previewModule.getLegendData(),

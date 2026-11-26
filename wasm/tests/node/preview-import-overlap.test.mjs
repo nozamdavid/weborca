@@ -380,18 +380,19 @@ test('concurrent loadGcode for the same bytes shares one parse and skips redunda
     'setViewType runs once when changing view type and skips repeated calls');
 });
 
-test('startSlice clears old preview state immediately and keeps or warms the preview worker', async () => {
+test('startSlice clears the viewer and reuses its prepared packet for an exact repeat', async () => {
   const { useAppStore, usePreviewStore, previewModule, fixture } = await freshState();
   const { FakeWorker } = fixture;
   const instance = await initRenderer(previewModule);
-  await loadWithReply(usePreviewStore, fixture, encode('; old\nG1 X1\n'), 'old.gcode', 9);
+  const bytes = encode('; old\nG1 X1\n');
+  await loadWithReply(usePreviewStore, fixture, bytes, 'old.gcode', 9);
   assert.equal(usePreviewStore.getState().layersCount, 9);
   const workerBefore = FakeWorker.instances.at(-1);
   const createdBefore = FakeWorker.created;
 
   let releaseSlice;
   globalThis.__sliceHook = () => new Promise(resolve => {
-    releaseSlice = () => resolve({ gcode: encode('; new\nG1 X2\n'), layers: 4, printTimeS: 20, filamentMm: 10, filamentG: 1, warnings: [] });
+    releaseSlice = () => resolve({ gcode: bytes.slice(), layers: 9, printTimeS: 20, filamentMm: 10, filamentG: 1, warnings: [] });
   });
   try {
     const slicing = useAppStore.getState().startSlice();
@@ -404,23 +405,30 @@ test('startSlice clears old preview state immediately and keeps or warms the pre
     assert.equal(FakeWorker.created, createdBefore, 'no extra worker spawned when one is already warm');
     releaseSlice();
     await slicing;
+    const repeated = useAppStore.getState().sliceResult.gcode;
+    assert.notEqual(repeated, bytes, 'the engine returns a new source array');
+    const stats = await usePreviewStore.getState().loadGcodeBytes(repeated, 'repeat.gcode');
+    assert.equal(stats.layers, 9);
+    assert.equal(workerBefore.sent.length, 1, 'the repeat does not send another parse request');
+    assert.equal(fixture.native.loads[1].bytes, fixture.native.loads[0].bytes, 'the viewer reuses the packet');
   } finally {
     delete globalThis.__sliceHook;
   }
 });
 
-test('slicePlate clears old preview state immediately and keeps or warms the preview worker', async () => {
+test('slicePlate clears the viewer and reuses its prepared packet for an exact repeat', async () => {
   const { useAppStore, usePreviewStore, usePlatesStore, previewModule, fixture } = await freshState();
   const { FakeWorker } = fixture;
   const instance = await initRenderer(previewModule);
-  await loadWithReply(usePreviewStore, fixture, encode('; old\nG1 X1\n'), 'old.gcode', 9);
+  const bytes = encode('; old\nG1 X1\n');
+  await loadWithReply(usePreviewStore, fixture, bytes, 'old.gcode', 9);
   assert.equal(usePreviewStore.getState().layersCount, 9);
   const workerBefore = FakeWorker.instances.at(-1);
   const createdBefore = FakeWorker.created;
 
   let releaseSlice;
   globalThis.__sliceHook = () => new Promise(resolve => {
-    releaseSlice = () => resolve({ gcode: encode('; new\nG1 X2\n'), layers: 4, printTimeS: 20, filamentMm: 10, filamentG: 1, warnings: [] });
+    releaseSlice = () => resolve({ gcode: bytes.slice(), layers: 9, printTimeS: 20, filamentMm: 10, filamentG: 1, warnings: [] });
   });
   try {
     const slicing = usePlatesStore.getState().slicePlate(0);
@@ -433,7 +441,42 @@ test('slicePlate clears old preview state immediately and keeps or warms the pre
     assert.equal(FakeWorker.created, createdBefore, 'no extra worker spawned when one is already warm');
     releaseSlice();
     assert.equal(await slicing, true);
+    const repeated = useAppStore.getState().sliceResult.gcode;
+    assert.notEqual(repeated, bytes, 'the engine returns a new source array');
+    const stats = await usePreviewStore.getState().loadGcodeBytes(repeated, 'repeat.gcode');
+    assert.equal(stats.layers, 9);
+    assert.equal(workerBefore.sent.length, 1, 'the repeat does not send another parse request');
+    assert.equal(fixture.native.loads[1].bytes, fixture.native.loads[0].bytes, 'the viewer reuses the packet');
   } finally {
     delete globalThis.__sliceHook;
   }
+});
+
+test('retained packets compare complete source views and are dropped on invalidation', async () => {
+  const { useAppStore, usePreviewStore, previewModule, fixture } = await freshState();
+  await initRenderer(previewModule);
+  const backing = encode('!G1 X1\n!');
+  const bytes = backing.subarray(1, -1);
+  await loadWithReply(usePreviewStore, fixture, bytes, 'base.gcode', 9);
+  const worker = fixture.FakeWorker.instances.at(-1);
+  usePreviewStore.getState().retainPreparedForResliceAction();
+  await usePreviewStore.getState().loadGcodeBytes(bytes.slice(), 'repeat.gcode');
+  assert.equal(worker.sent.length, 1, 'unaligned source views match equal standalone arrays');
+
+  let current = bytes.slice();
+  for (const offset of [0, current.length - 1]) {
+    usePreviewStore.getState().retainPreparedForResliceAction();
+    const changed = current.slice();
+    changed[offset]++;
+    const requests = worker.sent.length;
+    await loadWithReply(usePreviewStore, fixture, changed, 'changed.gcode', 9);
+    assert.equal(worker.sent.length, requests + 1, 'changes in a uint32 lane or tail require a fresh parse');
+    current = changed;
+  }
+
+  usePreviewStore.getState().retainPreparedForResliceAction();
+  useAppStore.getState().invalidateSlicePreview();
+  const requests = worker.sent.length;
+  await loadWithReply(usePreviewStore, fixture, current.slice(), 'invalidated.gcode', 9);
+  assert.equal(worker.sent.length, requests + 1, 'invalidation drops even a byte-identical retained packet');
 });
