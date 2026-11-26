@@ -126,6 +126,19 @@ export const PreferencesDialog: React.FC = () => {
                 onChange={(e) => setGeneralPref('autosaveIntervalSeconds', Math.max(5, Math.min(3600, Number(e.target.value) || 60)))} />
 
               <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label htmlFor="pref-import-simplify-threshold">{t("Import simplification threshold (triangles per volume)")}</label>
+                <input id="pref-import-simplify-threshold" type="number" min={0} max={Number.MAX_SAFE_INTEGER} step={1}
+                  aria-describedby="pref-import-simplify-help" value={general.importSimplifyThreshold}
+                  onChange={(e) => {
+                    const value = e.target.valueAsNumber;
+                    if (Number.isSafeInteger(value) && value >= 0) setGeneralPref('importSimplifyThreshold', value);
+                  }} />
+                <span id="pref-import-simplify-help" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  {t("Offer to simplify imported volumes at or above this triangle count. Set to 0 to disable the import prompt. Manual Simplify is always available.")}
+                </span>
+              </div>
+
+              <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <label htmlFor="pref-units" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                   {t("Units")}</label>
                 <select

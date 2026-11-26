@@ -19,6 +19,35 @@ function loadPreferences() {
   return module.exports;
 }
 
+test('import simplification threshold migrates, validates and persists', t => {
+  const previousWindow = globalThis.window;
+  const storage = new Map();
+  globalThis.window = { localStorage: {
+    getItem: key => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value)
+  } };
+  t.after(() => { if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow; });
+  const { usePrefsStore, PREFS_STORAGE_KEY } = loadPreferences();
+  assert.equal(usePrefsStore.getState().general.importSimplifyThreshold, 250000);
+  for (const value of [undefined, null, -1, 1.5, '250000', Number.MAX_SAFE_INTEGER + 1]) {
+    storage.set(PREFS_STORAGE_KEY, JSON.stringify({ general: { language: 'es', importSimplifyThreshold: value } }));
+    const state = loadPreferences().usePrefsStore.getState();
+    assert.equal(state.general.importSimplifyThreshold, 250000);
+    assert.equal(state.general.language, 'es');
+  }
+  for (const value of [0, 100000, 250000]) {
+    usePrefsStore.getState().setGeneralPref('importSimplifyThreshold', value);
+    assert.equal(loadPreferences().usePrefsStore.getState().general.importSimplifyThreshold, value);
+  }
+  for (const value of [-1, 1.5, NaN, Infinity]) {
+    usePrefsStore.getState().setGeneralPref('importSimplifyThreshold', value);
+    assert.equal(usePrefsStore.getState().general.importSimplifyThreshold, 250000);
+  }
+  usePrefsStore.getState().setGeneralPref('importSimplifyThreshold', 0);
+  usePrefsStore.getState().resetDefaults();
+  assert.equal(loadPreferences().usePrefsStore.getState().general.importSimplifyThreshold, 250000);
+});
+
 test('preview lighting defaults on and persists independently of quality', () => {
   const previousWindow = globalThis.window;
   const storage = new Map();

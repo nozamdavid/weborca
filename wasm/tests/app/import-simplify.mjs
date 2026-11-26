@@ -57,6 +57,12 @@ try {
   assert.equal(await page.locator('#simplify-dialog').count(), 0, 'ordinary cube has no offer');
 
   const high = sphere();
+  assert.equal(await page.evaluate(() => window.__prefsStore.getState().general.importSimplifyThreshold), 250000);
+  await importBytes('below-default.obj', high);
+  assert.equal(await page.locator('#simplify-dialog').count(), 0, '114720 triangles is below the default threshold');
+  await page.evaluate(() => window.__prefsStore.getState().setGeneralPref('importSimplifyThreshold', 0));
+  await importBytes('disabled.obj', high);
+  assert.equal(await page.locator('#simplify-dialog').count(), 0, 'zero disables the import offer');
   await importBytes('high.obj', high, { source: 'builtin-handy' });
   const handyId = await page.evaluate(() => window.__plateStore.getState().objects.at(-1).id);
   const handyFacets = await facets(handyId);
@@ -66,6 +72,7 @@ try {
   await page.locator('#simplify-dialog').waitFor();
   assert.equal(await page.locator('#simplify-current-count').textContent(), String(handyFacets), 'manual Simplify still sees original example geometry');
   await page.evaluate(() => window.__editOpsStore.getState().closeSimplifyDialog());
+  await page.evaluate(() => window.__prefsStore.getState().setGeneralPref('importSimplifyThreshold', 100000));
   await importBytes('high.obj', high);
   await page.locator('#import-simplify-mesh').waitFor();
   const firstId = await page.evaluate(() => window.__editOpsStore.getState().simplifyObjectId);
@@ -112,7 +119,7 @@ try {
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#simplify-dialog').count(), 0, 'dismiss keeps all remaining originals');
   for (const mesh of pending) assert.equal(await facets(mesh.objectId), before);
-  console.log(`PASS import simplification: threshold 100000, native ${before} -> ${after}, Undo restored; multiple imports kept`);
+  console.log(`PASS import simplification: default 250000, disabled at zero, configured 100000; native ${before} -> ${after}, Undo restored; multiple imports kept`);
 } finally {
   await browser?.close();
   await stopServer(port);
