@@ -1963,14 +1963,11 @@ void GCodeProcessor::run_post_process()
 // lines, then re-shifts every move's gcode_id by the inserted-line count before it (see
 // handle_offsets_of_second_process). It runs only when m_enable_pre_heating — the byte-frozen fleet
 // (X1/P1/A1/H2S) never sets the flag, so it never enters this pass. The PreCoolingInjector (below)
-// fills the map; when the injector produces no lines (no idle windows / no usage blocks) the map is
-// empty and the pass is a byte-for-byte identity rewrite of the finished file.
+// fills the map. The file is rewritten only when the injector adds lines.
 void GCodeProcessor::run_second_pass_injection()
 {
     // The ordered map of M632/M400/M104/M633 lines to splice into the finished g-code, keyed on the
-    // final output line id. Populated by the PreCoolingInjector below. If the injector produces
-    // nothing (no idle windows / no usage blocks), the map stays empty and the rewrite below is a
-    // byte-for-byte identity pass.
+    // final output line id. Populated by the PreCoolingInjector below.
     TimeProcessor::InsertedLinesMap inserted_operation_lines;
 
     // The enable_pre_heating orchestration block. Build the injector from the reconciled first-pass
@@ -1988,9 +1985,8 @@ void GCodeProcessor::run_second_pass_injection()
             }
         }
         // Reach the concrete layer-aware grouping (get_nozzle_from_id / is_support_dynamic_nozzle_map
-        // are not on the base interface). Orca: nil-guard it — on a slicing path that never populated
-        // the grouping, skip injection → empty map → identity rewrite. The shared_ptr local keeps the
-        // object alive for the injector's const ref.
+        // are not on the base interface). Slicing paths without a grouping skip injection.
+        // The shared_ptr local keeps the object alive for the injector's const ref.
         auto layered_ngr = std::dynamic_pointer_cast<MultiNozzleUtils::LayeredNozzleGroupResult>(m_result.nozzle_group_result);
         if (layered_ngr) {
             constexpr float inject_time_threshold = 0.f; // threshold hardcoded to 0
@@ -2052,6 +2048,9 @@ void GCodeProcessor::run_second_pass_injection()
         }
     }
 
+    if (inserted_operation_lines.empty())
+        return;
+
     FilePtr in{ boost::nowide::fopen(m_result.filename.c_str(), "rb") };
     if (in.f == nullptr)
         throw Slic3r::RuntimeError(_u8L("G-code processor pre-heat injection pass failed.\nCannot open file for reading.\n"));
@@ -2061,15 +2060,11 @@ void GCodeProcessor::run_second_pass_injection()
     if (out.f == nullptr)
         throw Slic3r::RuntimeError(_u8L("G-code processor pre-heat injection pass failed.\nCannot open file for writing.\n"));
 
-    // The rewrite may shift byte positions (once the injector inserts lines), so rebuild lines_ends from scratch.
-    // With an empty map the scanned '\n' offsets reproduce the current lines_ends exactly.
+    // Inserted lines shift byte positions, so rebuild lines_ends from scratch.
     m_result.lines_ends.clear();
     GCodeFileWriter writer(out, out_path, m_result.lines_ends, "GCode processor pre-heat injection pass failed.\nIs the disk full?\n");
 
-    // Orca: read/split lines with EOL-preserving semantics (keep the original \r and \n bytes, and
-    // synthesize no trailing newline). This is required for the empty-map identity: normalizing every
-    // line ending to "\n" would not be byte-identical if the finished file used \r\n or lacked a
-    // final newline.
+    // Preserve the original \r and \n bytes and whether the finished file has a trailing newline.
     std::string gcode_line;
     unsigned int line_id = 0;
     auto op_it = inserted_operation_lines.begin();
@@ -2124,7 +2119,7 @@ void GCodeProcessor::run_second_pass_injection()
     out.close();
     in.close();
 
-    // Re-shift the moves by the inserted-line counts (no-op with an empty map).
+    // Re-shift the moves by the inserted-line counts.
     handle_offsets_of_second_process(inserted_operation_lines);
 
     if (rename_file(out_path, m_result.filename))
@@ -4021,10 +4016,8 @@ void GCodeProcessor::finalize(bool post_process)
 
     if (post_process){
         run_post_process();
-        // Additive pre-heat/pre-cool injection second pass. Gated on m_enable_pre_heating so the
-        // byte-frozen fleet (X1/P1/A1/H2S) never enters it. When the injector produces no lines the
-        // InsertedLinesMap is empty, so this is a byte-for-byte identity rewrite; it exercises the
-        // merge/offset machinery on the multi-nozzle fleet (H2D/X2D/H2D-Pro/H2C).
+        // Run the pre-heat/pre-cool injector on printers that enable it. It rewrites the file
+        // and adjusts move offsets only when lines are inserted.
         if (m_enable_pre_heating)
             run_second_pass_injection();
     }
