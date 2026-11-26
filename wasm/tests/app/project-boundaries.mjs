@@ -28,7 +28,7 @@ async function suite(browserType) {
     await page.evaluate(() => window.__platesStore.getState().addPlate());
     await page.click('#plate-tab-0');
     console.log(`${browserType.name()}: slice and switch plate`);
-    await page.click('#slice-btn');
+    await page.locator('#slice-plate-btn:visible, #slice-btn:visible').first().click();
     await page.waitForFunction(() => !!window.__appStore.getState().sliceResult && !window.__appStore.getState().isSlicing, null, { timeout: 180000 });
     assert.equal(await page.evaluate(() => window.__appStore.getState().sliceResult.plateIndex), 0);
     await page.click('#tab-prepare');

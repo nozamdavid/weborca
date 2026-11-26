@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Browser test of autosave and recovery: a backup is offered after a reload, restores the objects, and Discard drops it. */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { chromium, firefox } from 'playwright';
 import { startServer, stopServer } from './lib/dist.mjs';
 
@@ -39,6 +40,52 @@ async function runSuite(browserType, name) {
 
     log('an empty plate writes no backup');
     assert.equal(await page.evaluate(() => window.__autosave.writeAutosave()), false);
+
+    log('desktop import and filament checkpoints persist before the periodic interval');
+    await page.evaluate(() => window.__prefsStore.getState().setGeneralPref('autosaveIntervalSeconds', 60));
+    await page.evaluate(async bytes => {
+      await window.__appStore.getState().importModelFile(new File([new Uint8Array(bytes)], 'cube.obj'));
+    }, [...readFileSync(new URL('../../../tests/data/20mm_cube.obj', import.meta.url))]);
+    assert.equal(await page.evaluate(async () => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented || (await window.__autosave.readAutosave())?.objects === 1;
+    }), true, 'completed import is durable or warns before leaving');
+    await waitForBackup(async () => (await window.__autosave.readAutosave())?.objects === 1);
+    await page.evaluate(() => window.__appStore.setState({ pendingOptions: { notes: { value: '', requestId: 1 } } }));
+    const selectedFilament = await page.evaluate(async () => {
+      const app = window.__appStore.getState();
+      const next = app.filaments.find(item => item.name.includes('Generic ABS'))?.name;
+      if (!next) throw new Error('Generic ABS fixture missing');
+      await app.chooseFilament(next);
+      return next;
+    });
+    assert.equal(await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }), true, 'a busy engine retains the pending filament checkpoint and unload warning');
+    const filamentType = await page.evaluate(() => window.__appStore.getState().currentConfig.filament_type);
+    assert.match(filamentType, /ABS/);
+    await page.evaluate(() => window.__appStore.setState({ pendingOptions: {} }));
+    await waitForBackup(() => window.__autosave.readAutosave().then(record => record?.setup?.filaments[0]?.includes('Generic ABS')));
+    assert.equal(await page.evaluate(async () => (await window.__autosave.readAutosave())?.setup?.presetConfig?.filament_type), filamentType);
+    assert.equal(await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }), false, 'persisted checkpoints allow reload without a warning');
+    await ready();
+    await page.locator('#recovery-restore').click();
+    await page.waitForSelector('#recovery-dialog', { state: 'detached' });
+    assert.equal(await page.evaluate(() => window.__plateStore.getState().objects.length), 1);
+    assert.equal(await page.evaluate(() => window.__appStore.getState().selectedFilaments[0]), selectedFilament);
+    assert.equal(await page.evaluate(() => window.__appStore.getState().currentConfig.filament_type), filamentType);
+    await page.evaluate(async () => {
+      await window.__plateStore.getState().deleteAll();
+      await window.__autosave.clearAutosave();
+    });
+    await ready();
 
     log('remembered user presets are an untouched startup baseline');
     await page.evaluate(async () => {

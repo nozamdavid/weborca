@@ -257,14 +257,30 @@ function canFlushAutosave(): boolean {
     !Object.keys(app.pendingOptions).length && !useHistoryStore.getState().isRestoring;
 }
 
-/** Writes completed changes on the configured interval, and flushes when the tab is hidden. */
+/** Periodic edits plus prompt recovery checkpoints for imports and filament changes. */
 export function startAutosave(intervalMs?: number, baseline = captureAutosaveBaseline()): () => void {
   let revision = 0;
   let savedRevision = 0;
   let saving = false;
   let urgentSave = false;
   let stopped = false;
-  let firstSave: ReturnType<typeof setTimeout> | undefined;
+  let checkpointRevision = 0;
+  let guardingUnload = false;
+  let completedFilaments = [...useAppStore.getState().selectedFilaments];
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  const onBeforeUnload = (event: BeforeUnloadEvent) => {
+    void flush();
+    event.preventDefault();
+    event.returnValue = '';
+  };
+  const syncUnloadGuard = () => {
+    const needed = !stopped && usePrefsStore.getState().general.autosave &&
+      checkpointRevision > savedRevision && !useHistoryStore.getState().isRestoring;
+    if (needed === guardingUnload) return;
+    guardingUnload = needed;
+    if (needed) window.addEventListener('beforeunload', onBeforeUnload);
+    else window.removeEventListener('beforeunload', onBeforeUnload);
+  };
   const flush = async () => {
     if (stopped || saving || revision === savedRevision || !canFlushAutosave()) return;
     const pending = revision;
@@ -279,25 +295,31 @@ export function startAutosave(intervalMs?: number, baseline = captureAutosaveBas
       console.warn('[autosave] failed:', err);
     } finally {
       saving = false;
+      syncUnloadGuard();
       if (urgentSave) void flush();
     }
   };
-  const markDirty = () => {
+  const markDirty = (checkpoint = false) => {
     revision++;
-    // Make the first recovery point promptly after adding a model, even with a long interval.
-    if (savedRevision === 0) {
-      clearTimeout(firstSave);
-      firstSave = setTimeout(() => void flush(), 500);
+    if (checkpoint && usePrefsStore.getState().general.autosave && !useHistoryStore.getState().isRestoring) {
+      checkpointRevision = revision;
+      urgentSave = true;
+      syncUnloadGuard();
+    }
+    if (savedRevision === 0 || checkpointRevision === revision) {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => void flush(), urgentSave ? 0 : 500);
     }
   };
   const onClear = () => {
     savedRevision = revision;
     urgentSave = false;
-    clearTimeout(firstSave);
+    clearTimeout(saveTimer);
+    syncUnloadGuard();
   };
   clearListeners.add(onClear);
   const unsubscribePlate = usePlateStore.subscribe((state, previous) => {
-    if (state.objects !== previous.objects) markDirty();
+    if (state.objects !== previous.objects) markDirty(state.objects.length > previous.objects.length);
     // Replace the geometry backup with the remaining settings immediately.
     if (state.objects.length === 0 && previous.objects.length > 0) {
       urgentSave = true;
@@ -305,7 +327,17 @@ export function startAutosave(intervalMs?: number, baseline = captureAutosaveBas
     }
   });
   const unsubscribeApp = useAppStore.subscribe((state, previous) => {
-    if (state.currentConfig !== previous.currentConfig) markDirty();
+    const configChanged = state.currentConfig !== previous.currentConfig;
+    let filamentChanged = false;
+    if (configChanged) {
+      // System selection publishes its label before awaiting native config.
+      // Checkpoint only the completed config publication, never that mixed state.
+      filamentChanged = state.selectedFilaments.length !== completedFilaments.length ||
+        state.selectedFilaments.some((name, slot) => name !== completedFilaments[slot]);
+      if (filamentChanged) completedFilaments = [...state.selectedFilaments];
+    }
+    const imported = previous.isModelLoading && !state.isModelLoading && usePlateStore.getState().objects.length > 0;
+    if (configChanged || imported) markDirty(filamentChanged || imported);
     if (urgentSave) void flush();
   });
   const unsubscribePlates = usePlatesStore.subscribe((state, previous) => {
@@ -313,6 +345,7 @@ export function startAutosave(intervalMs?: number, baseline = captureAutosaveBas
   });
   const unsubscribeHistory = useHistoryStore.subscribe((state, previous) => {
     if (state.currentSnapshot !== previous.currentSnapshot) markDirty();
+    syncUnloadGuard();
     if (urgentSave) void flush();
   });
   const unsubscribePreview = usePreviewStore.subscribe((state, previous) => {
@@ -326,6 +359,7 @@ export function startAutosave(intervalMs?: number, baseline = captureAutosaveBas
   const period = () => intervalMs ?? Math.max(5, Math.min(3600, usePrefsStore.getState().general.autosaveIntervalSeconds || 60)) * 1000;
   let timer = setInterval(() => void flush(), period());
   const unsubscribePrefs = usePrefsStore.subscribe((state, previous) => {
+    syncUnloadGuard();
     if (state.general.autosaveIntervalSeconds !== previous.general.autosaveIntervalSeconds) {
       clearInterval(timer);
       timer = setInterval(() => void flush(), period());
@@ -338,9 +372,10 @@ export function startAutosave(intervalMs?: number, baseline = captureAutosaveBas
   window.addEventListener('pagehide', onPageHide);
   return () => {
     stopped = true;
+    syncUnloadGuard();
     clearListeners.delete(onClear);
     clearInterval(timer);
-    clearTimeout(firstSave);
+    clearTimeout(saveTimer);
     unsubscribePlate(); unsubscribeApp(); unsubscribePlates(); unsubscribeHistory(); unsubscribePreview(); unsubscribePrefs();
     document.removeEventListener('visibilitychange', onHidden);
     window.removeEventListener('pagehide', onPageHide);
