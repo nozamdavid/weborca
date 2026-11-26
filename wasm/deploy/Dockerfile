@@ -50,7 +50,7 @@ const required = [
   'engine/step/step_tessellate.mjs', 'engine/step/step_tessellate.wasm', 'step-worker.js',
   'orca_preview.js', 'orca_preview.wasm',
   'preview/orca_preview.js', 'preview/orca_preview.wasm',
-  'profiles/index.json', 'settings/layout.json', 'engine-worker.js', 'orca-cloud-bridge.mjs', 'printer-cloud-bridge.mjs', 'alpha-access.mjs'
+  'profiles/index.json', 'settings/layout.json', 'engine-worker.js', 'orca-cloud-bridge.mjs', 'printer-cloud-bridge.mjs', 'octoeverywhere-bridge.mjs', 'alpha-access.mjs'
 ];
 for (const file of required) {
   const info = statSync(`dist/${file}`);

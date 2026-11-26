@@ -60,6 +60,7 @@ before(async () => {
       }`],
     ['./App', `export default function App() { return null; }`],
     ['./orcaCloud/CloudCallback', `export function CloudCallback(props) { globalThis.__startup.callbackProps = props; return null; }`],
+    ['./printers/OctoEverywhereCallback', `export function OctoEverywhereCallback() { return null; }`],
     ['./store/appStore', `const state = { isSlicing: false, isModelLoading: false, isSelectingPreset: false,
         pendingOptions: {}, sessionRecovery: 'idle', isEngineReady: false };
       export const useAppStore = { getState: () => state, setState() {} };

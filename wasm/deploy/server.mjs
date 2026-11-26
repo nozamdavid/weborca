@@ -187,7 +187,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') return reply(res, 405, 'Method not allowed');
-    if (pathname === '/orca-cloud/callback') {
+    if (pathname === '/orca-cloud/callback' || pathname === '/octoeverywhere/callback' || pathname.startsWith('/octoeverywhere/callback/')) {
       res.setHeader('Referrer-Policy', 'no-referrer');
       res.setHeader('Cache-Control', 'no-store');
     }
@@ -262,7 +262,9 @@ server.on('upgrade', (req, socket, head) => {
   }
   if (req.url?.startsWith('/_octoeverywhere/')) {
     if (!octoEverywhere) return socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
-    void octoEverywhere.handleUpgrade(req, socket, head);
+    void Promise.resolve(octoEverywhere.handleUpgrade(req, socket, head)).then(handled => {
+      if (!handled && !socket.destroyed) socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+    }, () => { if (!socket.destroyed) socket.destroy(); });
     return;
   }
   // Exact raw route only: no decoded paths, query credentials, generic proxy or other provider upgrades.

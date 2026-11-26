@@ -7,6 +7,9 @@
       if (location.pathname === '/orca-cloud/callback') {
         window.__orcaCloudCallback = location.href;
         history.replaceState(null, '', '/orca-cloud/callback');
+      } else if (location.pathname.startsWith('/octoeverywhere/callback/')) {
+        window.__octoEverywhereCallback = location.href;
+        history.replaceState(null, '', '/octoeverywhere/callback');
       }
     </script>
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />

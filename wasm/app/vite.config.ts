@@ -433,7 +433,11 @@ export default defineConfig(({ mode }) => {
     });
     // Other gateways own their upgrade listeners. Observe only this provider's route.
     server.httpServer?.prependListener('upgrade', (req: any, socket: any, head: Buffer) => {
-      if (req.url?.startsWith('/_octoeverywhere/')) void gateway.handleUpgrade(req, socket, head);
+      if (req.url?.startsWith('/_octoeverywhere/')) {
+        void Promise.resolve(gateway.handleUpgrade(req, socket, head)).then(handled => {
+          if (!handled && !socket.destroyed) socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+        }, () => { if (!socket.destroyed) socket.destroy(); });
+      }
     });
     server.httpServer?.once('close', () => gateway.close());
   };
@@ -441,7 +445,8 @@ export default defineConfig(({ mode }) => {
   const mobileSliceSteps = process.env.MOBILE_SLICE_STEPS ?? env.MOBILE_SLICE_STEPS ??
     'layer_height,wall_loops,sparse_infill_density,sparse_infill_pattern,enable_support,support_type';
   const mobileConfigMiddleware = (server: any) => { server.middlewares.use((req: any, res: any, next: () => void) => {
-    if (req.url?.split('?')[0] === '/orca-cloud/callback') {
+    const pathname = req.url?.split('?')[0] || '';
+    if (pathname === '/orca-cloud/callback' || pathname === '/octoeverywhere/callback' || pathname.startsWith('/octoeverywhere/callback/')) {
       res.setHeader('Referrer-Policy', 'no-referrer');
       res.setHeader('Cache-Control', 'no-store');
       // Vite's HTML fallback sets no-cache later; callback credentials must never
@@ -450,14 +455,14 @@ export default defineConfig(({ mode }) => {
       res.setHeader = (name: string, value: string | number | readonly string[]) =>
         setHeader(name, name.toLowerCase() === 'cache-control' ? 'no-store' : value);
     }
-    if (req.url?.split('?')[0] !== '/app-config.json') return next();
+    if (pathname !== '/app-config.json') return next();
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Cache-Control', 'no-store');
     res.end(JSON.stringify({ mobileSliceSteps }));
   }); };
   return {
   define: { 'import.meta.env.VITE_MOBILE_SLICE_STEPS': JSON.stringify(mobileSliceSteps) },
-  plugins: [{ name: 'compatible-coep', configureServer: compatibleCoep, configurePreviewServer: compatibleCoep }, { name: 'alpha-access', enforce: 'pre', configureServer: (server: any) => attachAlpha(server),
+  plugins: [{ name: 'compatible-coep', enforce: 'pre', configureServer: compatibleCoep, configurePreviewServer: compatibleCoep }, { name: 'alpha-access', enforce: 'pre', configureServer: (server: any) => attachAlpha(server),
     configurePreviewServer: (server: any) => attachAlpha(server, true) },
     react(), orcaAssetsPlugin(), printerGatewayPlugin(), {
     name: 'octoeverywhere-gateway', configureServer: attachOctoEverywhere, configurePreviewServer: attachOctoEverywhere

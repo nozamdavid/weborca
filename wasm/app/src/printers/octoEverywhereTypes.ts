@@ -4,11 +4,12 @@ export interface OctoEverywhereConnection {
   connectionId: string;
   url: string;
   appApiToken: string;
-  auth: { type: 'bearer'; token: string } | { type: 'basic'; username: string; password: string };
+  auth: { type: 'bearer'; token: string } | { type: 'basic'; username: string; password: string } | { type: 'none' };
   printerName: string;
   userFacingUrl: string;
   printerId?: string;
   nativeApiKey?: string;
+  lastKnownLocalIp?: string;
 }
 export interface OctoEverywhereSettings {
   mode: 'local' | 'remote';
@@ -16,7 +17,8 @@ export interface OctoEverywhereSettings {
   userFacingUrl?: string;
 }
 export interface OctoEverywhereConfig { enabled: boolean; appId?: string; portalAvailable: boolean }
-export interface OctoEverywhereFlow { portalUrl: string; flowId: string; pollToken: string }
+export interface OctoEverywherePortalFlow { flowId: string; portalUrl: string; expiresAt: number }
+export type OctoEverywhereFlow = OctoEverywherePortalFlow;
 export type OctoEverywherePortalResult = { status: 'pending' } | { status: 'complete'; connection: OctoEverywhereConnection } | { status: 'failed'; error: string };
 export interface OctoEverywhereInfo {
   PrinterName?: string;
@@ -107,4 +109,3 @@ export interface OctoEverywhereGadget { State: 0 | 1 | 2 | 3 | 4; Status?: strin
 export interface OctoEverywhereLiveOptions { ExpirationHours?: number; EndWhenCurrentPrintIsComplete?: boolean }
 export interface OctoEverywhereLiveLink { LiveId: string; Url: string; ShortUrl: string }
 export interface OctoEverywhereWebhook { WebhookUrl: string; InclusiveEventTypesFilter?: number[] }
-export interface OctoEverywhereTicket { url: string; expiresAt: number }

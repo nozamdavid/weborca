@@ -5,13 +5,21 @@ import { checkCloudSession } from './orcaCloud/account';
 
 export async function start() {
   const root = ReactDOM.createRoot(document.getElementById('root')!);
-  const callbackWindow = window as Window & { __orcaCloudCallback?: string };
+  const callbackWindow = window as Window & { __orcaCloudCallback?: string; __octoEverywhereCallback?: string };
   if (location.pathname === '/orca-cloud/callback') {
     const callbackUrl = callbackWindow.__orcaCloudCallback || location.href;
     delete callbackWindow.__orcaCloudCallback;
     history.replaceState(null, '', '/orca-cloud/callback');
     const { CloudCallback } = await import('./orcaCloud/CloudCallback');
     root.render(<CloudCallback callbackUrl={callbackUrl} />);
+    return () => root.unmount();
+  }
+  if (location.pathname === '/octoeverywhere/callback' || location.pathname.startsWith('/octoeverywhere/callback/')) {
+    const callbackUrl = callbackWindow.__octoEverywhereCallback || location.href;
+    delete callbackWindow.__octoEverywhereCallback;
+    history.replaceState(null, '', '/octoeverywhere/callback');
+    const { OctoEverywhereCallback } = await import('./printers/OctoEverywhereCallback');
+    root.render(<OctoEverywhereCallback callbackUrl={callbackUrl} />);
     return () => root.unmount();
   }
   const { default: App } = await import('./App');
