@@ -30,7 +30,9 @@ test('paint exit restores Prepare color regions for every volume; re-entry and r
     clearToolOverlays() { rendered = []; clearPaintOverlay(mesh); },
     updateToolOverlay(...args) { rendered.push(args); renderPaintOverlay(mesh, ...args.slice(1)); },
   };
+  const objects = [];
   const state = { sceneRef: { current: scene }, isPaintingActive: false, selectedObjectId: 1,
+    isRestoring: false, objects, displayedObjects: { current: objects },
     selectedVolumeId: null, paintLayer: 'color', isEngineReady: true,
     objectTree: [{ id: 1, volumes: [{ id: 10 }, { id: 11 }] }], filamentColours: '#009688;#ff0000',
     usePaintToolsStore: { getState: () => ({ filamentColors: ['#009688', '#ff0000'] }) },
@@ -52,6 +54,16 @@ test('paint exit restores Prepare color regions for every volume; re-entry and r
   assert.ok(regions.every(region => region.material.polygonOffsetFactor < 0), 'regions draw over Prepare volume surfaces');
   assert.equal(mesh.material.visible, false, 'Prepare keeps its normal volume/selection materials');
   cleanup();
+  for (const guard of ['restoring', 'pending objects']) {
+    state.isRestoring = guard === 'restoring';
+    state.displayedObjects.current = guard === 'pending objects' ? [] : objects;
+    assert.equal(run(), undefined, `${guard} skips the overlay effect`);
+    await flush();
+    assert.equal(calls.length, 2, `${guard} cannot request stale overlays`);
+    assert.equal(rendered.length, 1, `${guard} preserves the displayed overlay`);
+  }
+  state.isRestoring = false;
+  state.displayedObjects.current = objects;
   state.isPaintingActive = true; state.selectedVolumeId = 10;
   cleanup = run(); await flush();
   assert.equal(rendered[0][1].triangleCount, 1, 're-entry uses the active-volume overlay');

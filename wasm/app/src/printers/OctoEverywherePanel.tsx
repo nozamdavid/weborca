@@ -1,20 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { confirmDialog } from '../components/ModalBackdrop';
 import { usePrinterConnectionStore } from './connectionStore';
-import { OctoEverywhereApi, type OctoEverywhereFile, type OctoEverywhereFileDetails, type OctoEverywhereStartOptions } from './octoEverywhere';
+import { useMobile } from '../mobile/useMobile';
+import { OctoEverywhereApi, type OctoEverywhereCamera, type OctoEverywhereFile, type OctoEverywhereFileDetails, type OctoEverywhereStartOptions } from './octoEverywhere';
 import type { PhysicalPrinter, PrinterState } from './types';
 import { formatBytes, formatDuration } from './format';
+import { UploadProgress } from './UploadProgress';
 import './OctoEverywhere.css';
 
 const flatten = (files: OctoEverywhereFile[]): OctoEverywhereFile[] => files.flatMap(file => file.Type === 'folder' ? flatten(file.Children ?? []) : [file]);
 
-export const OctoEverywherePanel: React.FC<{ printer: PhysicalPrinter; state: PrinterState | null; active: boolean }> = ({ printer, state, active }) => {
+export const OctoEverywherePanel: React.FC<{
+  printer: PhysicalPrinter;
+  state: PrinterState | null;
+  cachedState?: PrinterState | null;
+  active: boolean;
+  controls?: React.ReactNode;
+}> = ({ printer, state, cachedState, active, controls }) => {
+  const mobile = useMobile();
   const adapter = usePrinterConnectionStore(s => s.activeApi);
+  const connectionStatus = usePrinterConnectionStore(s => s.status);
   const api = adapter instanceof OctoEverywhereApi ? adapter : undefined;
   const remote = state?.octoeverywhere;
   const caps = api?.capabilities;
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [root, setRoot] = useState('gcode');
   const [files, setFiles] = useState<OctoEverywhereFile[]>();
   const [details, setDetails] = useState<OctoEverywhereFileDetails>();
@@ -22,27 +33,48 @@ export const OctoEverywherePanel: React.FC<{ printer: PhysicalPrinter; state: Pr
   const [storage, setStorage] = useState('');
   const [options, setOptions] = useState<OctoEverywhereStartOptions>({});
   const [mapping, setMapping] = useState('');
-  const [camera, setCamera] = useState(0);
+  const [camera, setCamera] = useState<number>();
+  const [listedCameras, setListedCameras] = useState<OctoEverywhereCamera[]>();
   const [image, setImage] = useState<string>();
   const [streaming, setStreaming] = useState(false);
   const imageRef = useRef<HTMLImageElement>(null);
   const stopStream = useRef<() => void>(() => {});
-  const imageTimer = useRef<ReturnType<typeof setTimeout>>();
+  const revokeImage = useRef<(() => void) | undefined>(undefined);
   const cameraEpoch = useRef(0);
+  const autoSnapshotAttempted = useRef(false);
   const [hours, setHours] = useState(1);
   const [endWithPrint, setEndWithPrint] = useState(true);
   const [liveLink, setLiveLink] = useState<string>();
   const [webhook, setWebhook] = useState('');
   const [events, setEvents] = useState('');
   const epoch = useRef(0);
-  useEffect(() => () => { epoch.current++; }, [api]);
-  const stopCamera = () => {
+  const uploadController = useRef<AbortController>();
+  useEffect(() => {
+    setListedCameras(undefined);
+    setCamera(undefined);
+    setBusy(false);
+    setUploadProgress(null);
+    return () => { epoch.current++; uploadController.current?.abort(); uploadController.current = undefined; };
+  }, [api]);
+  const cameras = listedCameras ?? remote?.cameras ?? [];
+  const selectedCamera = (camera !== undefined ? cameras.find(c => c.index === camera) : undefined)
+    ?? cameras.find(c => c.enabled !== false)
+    ?? cameras[0];
+  const activeCameraIndex = selectedCamera?.index ?? 0;
+  const cameraRotation = selectedCamera?.rotation ?? 0;
+  const clearCamera = () => {
     cameraEpoch.current++;
     stopStream.current(); stopStream.current = () => {};
-    clearTimeout(imageTimer.current);
+    const prev = revokeImage.current; revokeImage.current = undefined;
+    if (prev) prev();
     imageRef.current?.removeAttribute('src'); setImage(undefined); setStreaming(false);
   };
-  useEffect(() => { stopCamera(); return stopCamera; }, [api, camera, active]); // eslint-disable-line react-hooks/exhaustive-deps
+  const stopCamera = () => {
+    autoSnapshotAttempted.current = true;
+    clearCamera();
+  };
+  useEffect(() => { clearCamera(); return clearCamera; }, [api, activeCameraIndex, active]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { autoSnapshotAttempted.current = false; }, [api, active]);
   const isCurrent = () => !!api && usePrinterConnectionStore.getState().activeApi === api;
   const run = async (action: (api: OctoEverywhereApi) => Promise<void>) => {
     if (!api || busy || !isCurrent()) return;
@@ -70,45 +102,126 @@ export const OctoEverywherePanel: React.FC<{ printer: PhysicalPrinter; state: Pr
     }
     await client.startFile(path, startOptions); setMessage('Print start requested.');
   });
-  const selectedCamera = remote?.cameras.find(c => c.index === camera);
+  const refreshCameras = () => run(async client => {
+    const result = await client.listCameras();
+    if (!isCurrent()) return;
+    setListedCameras(result);
+    if (!result.length) setMessage('No cameras reported by OctoEverywhere. You can still try the default camera.');
+  });
+  const snapshot = async (client: OctoEverywhereApi, generation: number) => {
+    const result = await client.getSnapshot(activeCameraIndex);
+    if (generation !== cameraEpoch.current || !active || !isCurrent()) { result.revoke(); return; }
+    const prev = revokeImage.current;
+    revokeImage.current = result.revoke;
+    setImage(result.url);
+    if (prev) prev();
+  };
+  useEffect(() => {
+    if (!api || !active || busy || autoSnapshotAttempted.current || connectionStatus !== 'online'
+      || remote?.health !== 'online' || selectedCamera?.enabled === false || !isCurrent()) return;
+    autoSnapshotAttempted.current = true;
+    const generation = cameraEpoch.current;
+    void snapshot(api, generation).catch(() => {
+      if (generation === cameraEpoch.current && isCurrent()) setMessage('Camera image could not be loaded. Check the printer webcam in OctoEverywhere.');
+    });
+  }, [api, active, busy, connectionStatus, remote?.health, activeCameraIndex, selectedCamera?.enabled]); // eslint-disable-line react-hooks/exhaustive-deps
   const takeCamera = (stream: boolean) => run(async client => {
     stopCamera();
     const generation = cameraEpoch.current;
-    const closed = () => { imageRef.current?.removeAttribute('src'); setImage(undefined); setStreaming(false); };
     if (stream) {
-      const result = await client.openCameraStream(camera, closed);
+      const result = await client.openCameraStream(
+        activeCameraIndex,
+        (url, revoke) => {
+          if (generation !== cameraEpoch.current || !active) { revoke(); return; }
+          const prev = revokeImage.current;
+          revokeImage.current = revoke;
+          setImage(url);
+          // Revoke previous frame after the next frame starts swapping cleanly
+          if (prev) setTimeout(prev, 250);
+        },
+        () => {
+          if (generation !== cameraEpoch.current) return;
+          stopStream.current = () => {};
+          const prev = revokeImage.current; revokeImage.current = undefined;
+          if (prev) prev();
+          imageRef.current?.removeAttribute('src');
+          setImage(undefined);
+          setStreaming(false);
+        },
+        () => {
+          if (generation !== cameraEpoch.current) return;
+          setMessage('Camera stream could not be loaded. Check the printer webcam in OctoEverywhere.');
+        }
+      );
       if (generation !== cameraEpoch.current || !active) { result.close(); return; }
-      stopStream.current = result.close; setImage(result.url); setStreaming(true);
+      stopStream.current = result.close; setStreaming(true);
     } else {
-      const result = await client.getSnapshot(camera);
-      if (generation !== cameraEpoch.current || !active) return;
-      setImage(result.url);
-      imageTimer.current = setTimeout(closed, Math.max(0, result.expiresAt - Date.now()));
+      await snapshot(client, generation);
     }
   });
   const limits = remote?.info?.PrinterLimits;
-  const material = remote?.materialSystem;
+  const readings = state ?? cachedState;
+  const material = readings?.octoeverywhere?.materialSystem;
   const bambu = printer.host_type === 'bambu' || printer.host_type === 'bambu-cloud';
-  return <div className="oe-panel oe-remote" aria-label="OctoEverywhere remote tools" aria-busy={busy}>
-    <h4>Remote printer</h4>
-    <p>{remote?.health ?? 'unknown'} · {remote?.recovery ? `Recovery: ${remote.recovery}` : 'OctoEverywhere connection'}</p>
-    {remote?.gadget && <p>Gadget: {remote.gadget.Status || `State ${remote.gadget.State}`}{remote.gadget.Rating != null ? ` · Rating ${remote.gadget.Rating}` : ''}</p>}
-    <details><summary>Connection limits</summary><dl>
+  const progress = readings?.progress != null && Number.isFinite(readings.progress) ? Math.round(Math.min(1, Math.max(0, readings.progress)) * 100) : undefined;
+  return <div className="oe-panel oe-remote" aria-label="OctoEverywhere remote tools" aria-busy={busy && uploadProgress === null}>
+    <div className="oe-dashboard">
+    <section className="oe-job oe-surface" aria-label="Print status"><div className="oe-section-heading"><h4>Print status</h4><strong>{readings?.state ?? 'unknown'}</strong></div>
+      <p className="oe-job-file">{readings?.file || 'No active file reported'}</p>
+      {readings?.message && <p>{readings.message}</p>}
+      {remote?.recovery && <p>Recovery: {remote.recovery}</p>}
+      {remote?.gadget && <p>Gadget: {remote.gadget.Status || `State ${remote.gadget.State}`}{remote.gadget.Rating != null ? ` · Rating ${remote.gadget.Rating}` : ''}</p>}
+      {progress != null && <>
+        <div className="oe-progress-label"><span>Progress</span><strong>{progress}%</strong></div>
+        <progress aria-label="Print progress" max={100} value={progress} />
+      </>}
+      {(readings?.elapsed != null || readings?.remaining != null || readings?.layer) && (
+        <dl className="oe-job-times">
+          {readings.elapsed != null && <div><dt>Elapsed</dt><dd>{formatDuration(readings.elapsed)}</dd></div>}
+          {readings.remaining != null && <div><dt>Remaining</dt><dd>{formatDuration(readings.remaining)}</dd></div>}
+          {readings.layer && <div><dt>Layer</dt><dd>{readings.layer.current}{readings.layer.total != null ? ` / ${readings.layer.total}` : ''}</dd></div>}
+        </dl>
+      )}
+      <div className="oe-thermals" role="group" aria-label="Temperatures">
+        {readings?.heaters.length ? readings.heaters.map(heater => (
+          <div key={heater.id}>
+            <span>{heater.label}</span>
+            <strong>{Number.isFinite(heater.current) ? `${heater.current.toFixed(1)} °C` : 'Unknown'}</strong>
+            <span>Target {Number.isFinite(heater.target) ? `${heater.target} °C` : 'Unknown'}</span>
+          </div>
+        )) : <p>Temperature readings unavailable.</p>}
+      </div>
+    </section>
+    <details className="oe-camera" open onToggle={event => { if (!event.currentTarget.open) stopCamera(); }}><summary>Cameras</summary>
+      {!image && <div className="oe-camera-empty"><p>{selectedCamera?.enabled === false ? 'This camera is disabled.' : 'Choose Snapshot or Start stream to view your printer.'}</p></div>}
+      {image && <div className="oe-camera-view" data-quarter-turn={cameraRotation % 180 !== 0}><img ref={imageRef} src={image} alt={selectedCamera?.name || 'Printer camera'} referrerPolicy="no-referrer" onError={() => { stopCamera(); setMessage('Camera image could not be loaded. Check the printer webcam in OctoEverywhere.'); }}
+        style={{ transform: `rotate(${cameraRotation}deg) scale(${selectedCamera?.flipH ? -1 : 1}, ${selectedCamera?.flipV ? -1 : 1})` }} /></div>}
+      {cameras.length > 0 && <label>Camera<select className="ds-select" aria-label="Camera" value={activeCameraIndex} onChange={event => setCamera(Number(event.target.value))}>{cameras.map(cam => <option key={cam.index} value={cam.index} disabled={cam.enabled === false}>{cam.name}{cam.enabled === false ? ' (disabled)' : ''}</option>)}</select></label>}
+      <div className="oe-actions"><button className="ds-btn" disabled={busy || !active || selectedCamera?.enabled === false} onClick={() => takeCamera(false)}>Snapshot</button>
+        <button className="ds-btn" disabled={busy || !active || selectedCamera?.enabled === false} onClick={() => takeCamera(true)}>{streaming ? 'Reconnect stream' : 'Start stream'}</button>
+        <button className="ds-btn" onClick={stopCamera}>Stop camera</button>
+        <button className="ds-btn" disabled={busy} onClick={refreshCameras}>Refresh cameras</button></div>
+      {streaming && <p>Streams expire at the account limit. Reconnect when the stream stops.</p>}
+    </details>
+    <div className="oe-live-controls">{controls}
+    {caps?.lights && !!remote?.lights?.length && <section className="oe-surface" aria-label="Printer lights"><h4>Lights</h4>{remote.lights.map(light => <div className="oe-actions" key={light.Name}><span>{light.Name}: {light.On == null ? 'Unknown' : light.On ? 'On' : 'Off'}</span>
+      <button className="ds-btn" disabled={busy} onClick={() => run(client => client.setLight(light.Name, true))}>Turn on</button>
+      <button className="ds-btn" disabled={busy} onClick={() => run(client => client.setLight(light.Name, false))}>Turn off</button></div>)}</section>}
+    </div>
+    <details className="oe-limits"><summary>Connection limits</summary><dl>
       <dt>Upload</dt><dd>{limits?.MaxUploadFileSizeBytes == null ? 'Unknown' : formatBytes(limits.MaxUploadFileSizeBytes)}</dd>
       <dt>Download</dt><dd>{limits?.MaxDownloadFileSizeBytes == null ? 'Unknown' : formatBytes(limits.MaxDownloadFileSizeBytes)}</dd>
       <dt>Camera stream</dt><dd>{limits?.MaxSingleWebcamStreamLengthSeconds == null ? 'Unknown; streams are bounded' : formatDuration(limits.MaxSingleWebcamStreamLengthSeconds)}</dd>
     </dl><p>Account and plugin capabilities determine available operations. Reconnect in printer settings after renewing authorization.</p></details>
-    {caps?.lights && remote?.lights?.map(light => <div className="oe-actions" key={light.Name}><span>{light.Name}: {light.On == null ? 'Unknown' : light.On ? 'On' : 'Off'}</span>
-      <button className="ds-btn" disabled={busy} onClick={() => run(client => client.setLight(light.Name, true))}>Turn on</button>
-      <button className="ds-btn" disabled={busy} onClick={() => run(client => client.setLight(light.Name, false))}>Turn off</button></div>)}
-    <details><summary>Material and tools</summary>
+    <details className="oe-material oe-surface" open><summary>{mobile ? 'Materials' : 'Material and tools'}</summary>
       {!material ? <p>Material topology unavailable.</p> : <>
-        {material.Tools?.map(tool => <p key={tool.Id}>{tool.Name || tool.Id}{tool.IsActive ? ' · Active' : ''} · {tool.ActualCelsius ?? 'Unknown'} / {tool.TargetCelsius ?? 'Unknown'} °C</p>)}
+        {!mobile && material.Tools?.map(tool => <p key={tool.Id}>{tool.Name || tool.Id}{tool.IsActive ? ' · Active' : ''} · {tool.ActualCelsius ?? 'Unknown'} / {tool.TargetCelsius ?? 'Unknown'} °C</p>)}
+        {mobile && !material.Sources?.length && <p>No material sources reported.</p>}
         {material.Sources?.map(source => {
           const unit = material.Units?.find(unit => unit.Id === source.UnitId);
           const routes = material.Routes?.filter(route => route.SourceId === source.Id);
           return <div className="oe-file" key={source.Id}>{source.Name || source.Id} · {source.IsEmpty === true ? 'Empty' : source.IsEmpty === false ? 'Present' : 'Presence unknown'}
-            <p>{source.Material?.Name || source.Material?.Type || 'Unknown material'}{source.Material?.ColorHex ? ` · ${source.Material.ColorHex}` : ''}{source.Material?.RemainingPercent != null ? ` · ${source.Material.RemainingPercent}% remaining` : ''}</p>
+            <p className="oe-material-description">{source.Material?.ColorHex && /^#?[0-9a-f]{6}$/i.test(source.Material.ColorHex) && <span className="oe-material-swatch" role="img" aria-label={`Material color ${source.Material.ColorHex}`} style={{ backgroundColor: `#${source.Material.ColorHex.replace(/^#/, '')}` }} />}{source.Material?.Name || source.Material?.Type || 'Unknown material'}{source.Material?.ColorHex ? ` · ${source.Material.ColorHex}` : ''}{source.Material?.RemainingPercent != null ? ` · ${source.Material.RemainingPercent}% remaining` : ''}</p>
             {unit && <p>{unit.Name || unit.Id} · Humidity {unit.HumidityPercent ?? 'Unknown'}% · {unit.TemperatureCelsius ?? 'Unknown'} °C{unit.IsDrying == null ? '' : unit.IsDrying ? ' · Drying' : ' · Not drying'}</p>}
             {routes?.map(route => <p key={route.ToolId}>→ {material.Tools?.find(tool => tool.Id === route.ToolId)?.Name || route.ToolId} · {route.State || 'Route state unknown'}</p>)}
             {source.PrintMappingValue != null && <p>AMS mapping value: {source.PrintMappingValue}</p>}
@@ -116,16 +229,7 @@ export const OctoEverywherePanel: React.FC<{ printer: PhysicalPrinter; state: Pr
         })}
       </>}
     </details>
-    {!!remote?.cameras.length && <details className="oe-camera" onToggle={event => { if (!event.currentTarget.open) stopCamera(); }}><summary>Cameras</summary>
-      <label>Camera<select className="ds-select" aria-label="Camera" value={camera} onChange={event => setCamera(Number(event.target.value))}>{remote.cameras.map(cam => <option key={cam.index} value={cam.index} disabled={cam.enabled === false}>{cam.name}{cam.enabled === false ? ' (disabled)' : ''}</option>)}</select></label>
-      <div className="oe-actions"><button className="ds-btn" disabled={busy || !active || selectedCamera?.enabled === false} onClick={() => takeCamera(false)}>Snapshot</button>
-        <button className="ds-btn" disabled={busy || !active || selectedCamera?.enabled === false} onClick={() => takeCamera(true)}>{streaming ? 'Reconnect stream' : 'Start stream'}</button>
-        <button className="ds-btn" onClick={stopCamera}>Stop camera</button></div>
-      <p>Streams expire at the account limit. Reconnect explicitly when a stream stops.</p>
-      {image && <div className="oe-camera-view"><img ref={imageRef} src={image} alt={selectedCamera?.name || 'Printer camera'} referrerPolicy="no-referrer" onError={stopCamera} onLoad={() => { if (streaming) stopCamera(); }}
-        style={{ transform: `rotate(${selectedCamera?.rotation ?? 0}deg) scale(${selectedCamera?.flipH ? -1 : 1}, ${selectedCamera?.flipV ? -1 : 1})` }} /></div>}
-    </details>}
-    <details><summary>Printer files</summary>
+    <details className="oe-files oe-surface" open><summary>Printer files</summary>
       {caps?.files ? <>
         <label>File root<select className="ds-select" value={root} onChange={event => { setRoot(event.target.value); setFiles(undefined); setDetails(undefined); }}>{caps.fileRoots.list.map(item => <option key={item}>{item}</option>)}</select></label>
         <button className="ds-btn" disabled={busy} onClick={() => run(refresh)}>Refresh files</button>
@@ -161,8 +265,34 @@ export const OctoEverywherePanel: React.FC<{ printer: PhysicalPrinter; state: Pr
         </dl>}
         {caps.fileRoots.upload.includes(root) && <label>Upload file only<input type="file" disabled={busy} onChange={event => {
           const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
-          void run(async client => { const result = await client.uploadFile(`${root}/${file.name}`, new Uint8Array(await file.arrayBuffer())); if (!isCurrent()) return; setPath(result.VirtualPath); setMessage('Uploaded. Review print options before starting.'); await refresh(client); });
+          void run(async client => {
+            const controller = new AbortController();
+            uploadController.current = controller;
+            const generation = epoch.current;
+            const current = () => generation === epoch.current && isCurrent();
+            setUploadProgress(0);
+            try {
+              const bytes = new Uint8Array(await file.arrayBuffer());
+              if (!current()) return;
+              if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+              const result = await client.uploadFile(`${root}/${file.name}`, bytes, fraction => {
+                if (current() && !controller.signal.aborted) setUploadProgress(fraction);
+              }, controller.signal);
+              if (!current()) return;
+              setPath(result.VirtualPath);
+              setMessage('Uploaded. Review print options before starting.');
+            } catch (error) {
+              if (!controller.signal.aborted) throw error;
+              if (current()) setMessage('Upload cancelled. The file may already be in Printer files.');
+            } finally {
+              if (uploadController.current === controller) uploadController.current = undefined;
+              if (current()) setUploadProgress(null);
+            }
+            if (controller.signal.aborted) return;
+            await refresh(client);
+          });
         }} /></label>}
+        {uploadProgress !== null && <UploadProgress fraction={uploadProgress} waitForPrinter onCancel={() => uploadController.current?.abort()} />}
       </> : <p>Common file browsing and transfers are unavailable for this host or plugin. {printer.host_type === 'prusalink' ? 'You can start an existing printer path below when supported.' : 'Use the printer’s own app.'}</p>}
       {caps?.start && <>
         <label>Existing virtual path<input className="ds-input" value={path} onChange={event => setPath(event.target.value)} placeholder={bambu ? 'gcode/compatible-project.3mf' : 'gcode/filename.gcode'} /></label>
@@ -174,7 +304,7 @@ export const OctoEverywherePanel: React.FC<{ printer: PhysicalPrinter; state: Pr
         <button className="ds-btn" disabled={busy || !path.trim() || (bambu && !/\.3mf$/i.test(path))} onClick={start}>Start print…</button>
       </>}
     </details>
-    <details><summary>Sharing and notifications</summary>
+    <details className="oe-sharing"><summary>Sharing and notifications</summary>
       <p>Live Links grant temporary access to this printer. Create a link only when you intend to share it.</p>
       <label>Expiration (hours)<input className="ds-input" type="number" min="1" max="24" value={hours} onChange={event => setHours(Number(event.target.value))} /></label>
       <label><span><input type="checkbox" checked={endWithPrint} onChange={event => setEndWithPrint(event.target.checked)} /> End when the current print finishes</span></label>
@@ -197,6 +327,7 @@ export const OctoEverywherePanel: React.FC<{ printer: PhysicalPrinter; state: Pr
         <button className="ds-btn" disabled={busy} onClick={() => run(async client => { if (await confirm('Send test notification?', 'Deliver a test event to the registered public callback?', 'Send test')) { await client.testNotificationWebhook(); setMessage('Test notification requested.'); } })}>Test webhook</button>
       </div>
     </details>
+    </div>
     {message && <p role="status">{message}</p>}
   </div>;
 };

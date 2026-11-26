@@ -323,3 +323,42 @@ test('iframe focus loss and return reconcile without a second parent focus event
   store.getState().setDeviceTabActive(false);
   assert.equal(timers.size,0,'leaving Device removes the focus check');
 });
+
+test('remote reload connects before focus and cached age without native cloud credentials', async t => {
+  const bundled = await build({ stdin: { contents: "export * from './src/printers/session'; export {usePrinterConnectionStore} from './src/printers/connectionStore'; export {saveDisplay} from './src/printers/stateCache'; export const reloadFixture=true;", resolveDir: new URL('../../app', import.meta.url).pathname }, bundle:true, platform:'node', format:'esm', write:false,
+    plugins:[{ name:'api-fixture', setup(b) { b.onResolve({filter:/^\.\/api$/}, () => ({path:'api',namespace:'fixture'})); b.onLoad({filter:/.*/,namespace:'fixture'}, () => ({contents:'export const createPrinterApi=()=>globalThis.__sessionFixture.create();'})); } }] });
+  const storage = new Map(), timers = new Map(), events = new EventTarget();
+  let focused = false, timerId = 0, starts = 0, stops = 0;
+  t.mock.method(Date, 'now', () => 10000);
+  t.mock.property(globalThis, 'localStorage', { getItem: k => storage.get(k) ?? null, setItem: (k,v) => storage.set(k,v) });
+  t.mock.property(globalThis, 'document', { hidden:false, hasFocus:() => focused, addEventListener:events.addEventListener.bind(events) });
+  t.mock.property(globalThis, 'window', { addEventListener:events.addEventListener.bind(events) });
+  t.mock.method(globalThis, 'setTimeout', (fn,delay) => { timers.set(++timerId,{fn,delay}); return timerId; });
+  t.mock.method(globalThis, 'clearTimeout', id => timers.delete(id));
+  t.mock.property(globalThis, '__sessionFixture', {create:() => ({connect(onState) {
+    starts++; onState({state:'ready',heaters:[],fans:[]}); return () => { stops++; };
+  }})});
+  const {startPrinterSession, saveDisplay, usePrinterConnectionStore:store} = await import(`data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].text).toString('base64')}`);
+  const printer = {id:'reload',name:'Reload',host_type:'octoprint',print_host:'fixture.invalid',octoeverywhere:{mode:'remote'}};
+  saveDisplay(printer, {state:'ready',heaters:[],fans:[]}, 9000);
+  store.setState({printers:[printer],selectedPrinterId:printer.id,deviceTabActive:true});
+  startPrinterSession(); startPrinterSession();
+  t.after(() => store.getState().setDeviceTabActive(false));
+  assert.equal(starts,1,'visible remote reload starts immediately despite initial false focus, recent cache and absent native credential');
+  assert.equal(store.getState().status,'online');
+  focused = true; events.dispatchEvent(new Event('focus'));
+  assert.equal(starts,1,'initial focus cannot duplicate the monitor');
+  focused = false; events.dispatchEvent(new Event('blur'));
+  assert.equal(stops,1,'subsequent blur still pauses');
+  focused = true; events.dispatchEvent(new Event('focus'));
+  assert.equal(starts,1,'ordinary returns retain refresh throttling');
+  document.hidden = true; events.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(timers.size,0,'hidden tabs cancel pending reads');
+  // A fresh local selection must continue to respect desktop focus.
+  focused = false; document.hidden = false;
+  store.setState({printers:[{...printer,id:'local',host_type:'octoprint',octoeverywhere:undefined}],selectedPrinterId:'local'});
+  assert.equal(starts,1,'local printer never bypasses focus');
+  focused = true;
+  store.setState({printers:[{...printer,id:'cloud',host_type:'bambu-cloud'}],selectedPrinterId:'cloud'});
+  assert.equal(starts,2,'remote cloud printer connects without native cloud credentials');
+});

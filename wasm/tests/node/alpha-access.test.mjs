@@ -262,7 +262,7 @@ test('invites track only successful validation, keep raw secrets out of state, a
   assert.equal(restored.json().valid, true);
   assert.ok(restored.headers['set-cookie'][0].startsWith(`orca_alpha=${token};`));
   assert.equal((await f.call('/web/engine-worker.js', { headers: { cookie: `orca_alpha=${token}` } })).status, 200);
-  for (const route of ['/orca-cloud/callback?code=synthetic', '/_octoeverywhere/callback?code=synthetic']) {
+  for (const route of ['/orca-cloud/callback?code=synthetic', '/octoeverywhere/callback/flow-1?success=true']) {
     assert.equal((await f.call(route, { headers: { cookie: restored.headers['set-cookie'][0].split(';')[0], accept: 'text/html' } })).text, 'DOWNSTREAM');
   }
   assert.equal((await f.call('/_alpha/admin/invites', { token })).status, 401);
@@ -303,6 +303,10 @@ test('spoofed local state/tokens never unlock protected assets, APIs or callback
   assert.equal((await f.call('/alpha-public/%2e%2e%2fassets/app.js')).status, 401);
   assert.equal((await f.call('/_alpha/config')).json().enabled, true);
   assert.equal((await f.call('/healthz', { headers: { host: 'localhost' } })).status, 200);
+  const octoDoc = await f.call('/octoeverywhere/callback/flow_1?success=true', { headers: { origin: 'https://octoeverywhere.com', 'sec-fetch-site': 'cross-site', accept: 'text/html' } });
+  assert.equal(octoDoc.status, 200); assert.match(octoDoc.text, /PUBLIC_LOGIN/); assert.doesNotMatch(octoDoc.text, /PROTECTED_APP/);
+  assert.equal((await f.call('/_octoeverywhere/config')).status, 401);
+  assert.equal((await f.call('/_octoeverywhere/plugin/status')).status, 401);
   assert.equal((await f.call('/_alpha/admin/invites')).status, 401);
   const admin = await login(f); const created = await invite(f, admin);
   const token = (await validate(f, created.code)).json().token;
@@ -519,8 +523,9 @@ test('Vite middleware runs before app/assets/providers and blocks upgrade dispat
   const loaded = await loadConfigFromFile({ command: 'serve', mode: 'development' },
     new URL('../../app/vite.config.ts', import.meta.url).pathname);
   const plugins = loaded.config.plugins.flat();
-  const alpha = plugins.find(plugin => plugin?.name === 'alpha-access');
-  assert.equal(plugins[0], alpha); assert.equal(alpha.enforce, 'pre');
+  const [coep, alpha] = plugins;
+  assert.equal(coep.name, 'compatible-coep'); assert.equal(coep.enforce, 'pre');
+  assert.equal(alpha.name, 'alpha-access'); assert.equal(alpha.enforce, 'pre');
   const stack = [];
   const upgrades = http.createServer((req, res) => stack[0](req, res, () => {
     if (req.url.endsWith('/synthetic-stream')) {
@@ -568,4 +573,56 @@ test('Vite middleware runs before app/assets/providers and blocks upgrade dispat
   await active.closed(); await other.alive();
   await bounded(new Promise(resolve => server.close(resolve)), 'Vite shutdown waited on authenticated sockets');
   await other.closed();
+});
+
+test('alpha.guard and alpha.handle preserve pre-set credentialless COEP and default to require-corp', async t => {
+  const f = files();
+  const gate = createAlphaAccess({ env: f.env, webRoot: f.root });
+  const server = http.createServer(async (req, res) => {
+    if (req.headers['x-preset-coep']) res.setHeader('Cross-Origin-Embedder-Policy', String(req.headers['x-preset-coep']));
+    if (req.headers['x-handle-only'] === '1') {
+      if (await gate.handle(req, res)) return;
+      res.end('NOT_HANDLED');
+      return;
+    }
+    if (await gate.guard(req, res)) return;
+    res.end('DOWNSTREAM');
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(async () => {
+    gate.close(); server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve)); f.clean();
+  });
+  const call = (route, options) => request(server.address().port, route, options);
+  const preset = { 'x-preset-coep': 'credentialless' };
+
+  const cfgPreset = await call('/_alpha/config', { headers: { ...preset, 'x-handle-only': '1' } });
+  assert.equal(cfgPreset.status, 200);
+  assert.equal(cfgPreset.headers['cross-origin-embedder-policy'], 'credentialless');
+  const cfgDefault = await call('/_alpha/config', { headers: { 'x-handle-only': '1' } });
+  assert.equal(cfgDefault.status, 200);
+  assert.equal(cfgDefault.headers['cross-origin-embedder-policy'], 'require-corp');
+
+  const docPreset = await call('/', { headers: { ...preset, accept: 'text/html' } });
+  assert.equal(docPreset.status, 200);
+  assert.equal(docPreset.headers['cross-origin-embedder-policy'], 'credentialless');
+  const docDefault = await call('/', { headers: { accept: 'text/html' } });
+  assert.equal(docDefault.status, 200);
+  assert.equal(docDefault.headers['cross-origin-embedder-policy'], 'require-corp');
+
+  const errPreset = await call('/_octoeverywhere/config', { headers: preset });
+  assert.equal(errPreset.status, 401);
+  assert.equal(errPreset.headers['cross-origin-embedder-policy'], 'credentialless');
+  const errDefault = await call('/_octoeverywhere/config');
+  assert.equal(errDefault.status, 401);
+  assert.equal(errDefault.headers['cross-origin-embedder-policy'], 'require-corp');
+
+  const admin = (await call('/_alpha/admin/login', { method: 'POST', body: { password: PASSWORD }, headers: preset })).json().token;
+  const app = (await call('/_alpha/admin/open-slicer', { method: 'POST', body: {}, token: admin, headers: preset })).json().token;
+  const authedPreset = await call('/assets/app.js', { token: app, headers: preset });
+  assert.equal(authedPreset.status, 200);
+  assert.equal(authedPreset.headers['cross-origin-embedder-policy'], 'credentialless');
+  const authedDefault = await call('/assets/app.js', { token: app });
+  assert.equal(authedDefault.status, 200);
+  assert.equal(authedDefault.headers['cross-origin-embedder-policy'], 'require-corp');
 });

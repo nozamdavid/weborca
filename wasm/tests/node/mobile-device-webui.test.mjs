@@ -81,6 +81,8 @@ test('Device Web UI fills a separate mobile row and retains desktop layout and h
         }
         try {
           if(width<=800) {
+            assert.equal(await page.locator('#device-body #device-edit-printer').count(), 1, 'settings are inside the scrollable Device body');
+            assert.equal(await page.locator('.device-header #device-add-another').isVisible(), false, 'adding is offered in the picker');
             assert.ok(bounds.side.top>=bounds.status.bottom-1 && bounds.webui.top>=bounds.controls.bottom,`${width}: Web UI below status/controls`);
             assert.ok(Math.abs(bounds.webui.width-bounds.available)<=1,`${width}: Web UI full available width`);
             if(bounds.frame) {
@@ -88,6 +90,8 @@ test('Device Web UI fills a separate mobile row and retains desktop layout and h
               assert.ok(bounds.frame.height>=200,`${width}: usable iframe height`);
             }
           } else {
+            assert.equal(await page.locator('.device-header #device-edit-printer').isVisible(), true, 'desktop settings stay in the header');
+            assert.equal(await page.locator('.device-header #device-add-another').isVisible(), true, 'desktop add stays in the header');
             assert.ok(bounds.side.left>=bounds.status.right, 'desktop side by side');
             assert.ok(Math.abs(bounds.side.top-bounds.status.top)<=1,'desktop same row');
           }

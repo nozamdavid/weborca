@@ -125,23 +125,23 @@ confirm, because it starts a real machine. Moonraker uses `POST /server/files/up
 
 ## OctoEverywhere optional remote connection
 
-Implemented in the locally verified immutable candidate
-`wasm/build/tests-octoeverywhere-20261105/candidate-final` on 2026-11-05; **not deployed**.
-The [integrated report](../build/tests-octoeverywhere-20261105/integrated.md) records
-synthetic client → packaged gateway → loopback provider verification. A production App ID
-and real provider acceptance remain pending. OctoEverywhere App Connections currently require
-the printer owner's [Supporter Perks](https://docs.octoeverywhere.com/app-connections/overview/),
+Configured with the assigned production App ID `weborca`. OctoEverywhere App Connections currently
+require the printer owner's [Supporter Perks](https://docs.octoeverywhere.com/app-connections/overview/),
 plus a supported printer with OctoEverywhere installed/configured and connected.
 
-1. Add and save the printer normally, keeping its underlying host type, address, credentials and preset.
-2. Open the saved printer's settings or the Device/Operate remote-connection section and connect
-   OctoEverywhere. The server must have the [optional gateway configuration](../deploy/README.md#optional-octoeverywhere-remote-connection).
+1. Open **Add a printer** (Step 2) to connect directly through OctoEverywhere without needing a local
+   IP address, or open an existing saved printer's settings / the Device remote-connection section to
+   add OctoEverywhere while keeping its underlying host type, local address, credentials and preset.
+2. The server must have the [optional gateway configuration](../deploy/README.md#optional-octoeverywhere-remote-connection)
+   (`ORCA_OCTOEVERYWHERE_ENABLED=1`, `ORCA_PUBLIC_ORIGIN`, and `ORCA_OCTOEVERYWHERE_APP_ID=weborca`,
+   which is the default when enabled).
 3. Authorize a printer in the external provider portal. Keep the original WebOrca page open;
-   it polls for completion. Confirm that the returned physical printer matches this saved printer
-   before saving the connection. Cancel discards the pending authorization in WebOrca.
-4. Choose Local or OctoEverywhere explicitly. Local retains the authorized link. Detach removes
-   the WebOrca link and returns to the native configuration; revoke provider access separately
-   on OctoEverywhere. Open printer uses the user-facing provider page and its login session.
+   it polls for completion. Confirm that the returned physical printer matches before saving the
+   connection. Cancel discards the pending authorization in WebOrca.
+4. Choose Local or OctoEverywhere explicitly. Local retains the authorized link (available when a
+   local address is configured). Detach removes the WebOrca link and returns to the native
+   configuration; revoke provider access separately on OctoEverywhere. Open printer uses the
+   user-facing provider page and its login session.
 
 The common adapter exposes only supported runtime operations:
 
@@ -161,7 +161,11 @@ The common adapter exposes only supported runtime operations:
   confirmed action in Printer files, using the returned VirtualPath. Bambu start requires a compatible
   existing `.3mf` and explicit plate/AMS/calibration choices; this integration does not package slicer
   G-code as a Bambu project or validate a preset/AMS workflow.
-- Cameras support selection, snapshots, reported transforms and explicit MJPEG start/stop/reconnect.
+- The OctoEverywhere Device dashboard shows print status, temperatures, cameras, controls, material, and files.
+  Reported filament colors appear as swatches. Opening Device for an online printer loads one camera snapshot.
+  On mobile, the printer picker shows connection status and ends with Add printer. Printer settings sit at the bottom of Device,
+  and the Materials panel focuses on filament while the temperatures panel shows hotend readings.
+  Cameras support selection, fresh snapshots, reported transforms and explicit MJPEG start, stop and reconnect.
   Streams stop after at most five minutes, further reduced by the reported provider limit; unknown
   limits use a conservative 20-second client bound. No automatic reconnection bypasses provider limits.
   Transfers use current Info byte limits with a 5 GiB gateway safety ceiling, not marketing plan quotas.
@@ -169,10 +173,11 @@ The common adapter exposes only supported runtime operations:
   require a public HTTPS receiver and renewal within 180 days; WebOrca adds no receiver or browser push
   service. Native HTTP/WebSocket/MQTT relay infrastructure has bounded allowlists, without a command console.
 
-Provider connection credentials follow the saved-printer browser-storage model; gateway credentials
-are held only in bounded RAM sessions (30 minutes). Camera/socket tickets are single-use and expire
-within 30 seconds. Local/cloud credentials are kept separate. Explicit remote mode with invalid
-authorization fails safely; commands are not replayed on a local transport.
+Provider connection credentials follow the saved-printer browser-storage model; the `/_octoeverywhere`
+gateway is stateless and retains no credentials, sessions, flows, or tickets in server RAM between
+requests (snapshots and MJPEG streams are fetched directly with per-request headers and rendered via
+revocable browser `Blob` URLs). Local/cloud credentials are kept separate. Explicit remote mode with
+invalid authorization fails safely; commands are not replayed on a local transport.
 
 The final candidate's [manifest](../build/tests-octoeverywhere-20261105/candidate-final.sha256)
 contains 1,097 files; manifest SHA-256 is

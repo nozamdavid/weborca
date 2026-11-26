@@ -98,6 +98,11 @@ compile C++ inside Docker. The following build inputs must already exist:
 - `wasm/build/web/profiles/`, including `index.json`, covers and bed assets
 - `wasm/build/settings/layout.json`
 
+Build the standalone STEP module with the seam-patched OCCT 8.0.1 prefix produced by
+`wasm/deps/build_occt.sh`. After running `wasm/scripts/build_step_module.sh`,
+verify the packaged input with
+`node --test --test-name-pattern='tilted cone seam' wasm/tests/node/step-module.test.mjs`.
+
 Required packaged outputs and matching root/preview module aliases are checked during the image build. The dedicated Dockerfile ignore file
 excludes native source/build trees, node_modules and environment files. Rebuild the Release engines
 before rebuilding the image when C++ slicing or preview code changes.
@@ -492,19 +497,18 @@ Runtime configuration, verified against `wasm/app/gateway/octoEverywhere.ts` and
 
 ```sh
 ORCA_OCTOEVERYWHERE_ENABLED=1
-ORCA_OCTOEVERYWHERE_APP_ID='<assigned-production-app-id>'
+ORCA_OCTOEVERYWHERE_APP_ID=weborca
 ORCA_PUBLIC_ORIGIN=https://your-weborca-host.example
 ```
 
-Replace the placeholders with the assigned production App ID and canonical browser origin. The
-origin includes any nonstandard external port and has no path, query, fragment or trailing slash.
-HTTPS is required except for HTTP loopback development. No production App ID is available yet;
-there is no demo fallback, and the provider demo ID is rejected. Missing App ID exposes
-`portalAvailable:false` and refuses portal creation with HTTP 503; saved sessions can still operate
-when otherwise enabled. Missing/invalid origin fails enabled startup. Without the explicit `=1`
-opt-in, remote gateway operations remain disabled. This opt-in is independent of `ORCA_CLOUD_ENABLED`,
-`ORCA_PRINTER_CLOUD` and LAN proxy settings. With Compose, pass these variables through an
-operator-managed environment override; the base file does not forward them.
+`ORCA_OCTOEVERYWHERE_APP_ID` defaults to the assigned production App ID `weborca` when omitted; set
+`ORCA_OCTOEVERYWHERE_APP_ID=''` to disable portal creation while still allowing saved sessions, and
+note that `devtest` is always rejected. Replace `ORCA_PUBLIC_ORIGIN` with the canonical browser
+origin (including any nonstandard external port and no path, query, fragment or trailing slash).
+HTTPS is required except for HTTP loopback development. Missing/invalid origin fails enabled startup.
+Without the explicit `=1` opt-in, remote gateway operations remain disabled. This opt-in is
+independent of `ORCA_CLOUD_ENABLED`, `ORCA_PRINTER_CLOUD` and LAN proxy settings. With Compose, pass
+these variables through an operator-managed environment override; the base file does not forward them.
 
 The enabled packaged server loads `octoeverywhere-bridge.mjs` from `ORCA_ROOT` and fails startup if
 it cannot load it. It serves the same-origin `/_octoeverywhere` routes, validates canonical
@@ -516,10 +520,13 @@ use the app's same-origin gateway for authenticated images and sockets.
 Saved-printer setup and capability-dependent features/limits are documented in
 [Printer connections](../app/PRINTERS.md#octoeverywhere-optional-remote-connection).
 App Connections require the printer owner's Supporter Perks. Credentials persist with the saved
-printer in browser storage; server sessions retain credentials in bounded RAM only. The provider's
-portal callback contains one-time credentials in query parameters by its documented contract.
-The gateway immediately redirects to a clean URL; configure any deploying reverse proxy/access
-logging to exclude callback query strings from logs and analytics.
+printer in browser storage only; the `/_octoeverywhere` gateway is stateless and stores no tokens,
+sessions, portal flows, or tickets in server RAM between requests (each browser request passes
+per-request headers that are validated, forwarded, and discarded immediately). Portal callbacks land
+on the frontend `/octoeverywhere/callback/<flowId>` route, which strips query parameters via
+`history.replaceState` before React boots and serves `Referrer-Policy: no-referrer` and
+`Cache-Control: no-store`; configure any deploying reverse proxy/access logging to exclude callback
+query strings and request auth headers from logs and analytics.
 
 Before production acceptance, obtain an assigned App ID and confirm provider callback registration
 and preservation of custom returnUrl correlation parameters. Real Supporter/account/plugin/platform

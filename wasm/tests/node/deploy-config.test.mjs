@@ -25,7 +25,9 @@ before(async () => {
   fs.writeFileSync(path.join(tmp, 'dist', 'assets', 'a.wasm'), Buffer.from([0, 0x61, 0x73, 0x6d]));
   fs.writeFileSync(path.join(tmp, 'dist', 'preview', 'orca_preview.js'), 'export default {};');
   port = await freePort();
-  fs.copyFileSync(serverSource, path.join(tmp, 'server.mjs'));
+  for (const file of ['server.mjs', 'coep.mjs', 'model-thumbnail.mjs']) {
+    fs.copyFileSync(path.join(path.dirname(serverSource), file), path.join(tmp, file));
+  }
 });
 
 after(() => {

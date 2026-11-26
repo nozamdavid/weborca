@@ -7,6 +7,8 @@ import { loadPrinterCatalog, usePrinterCatalog } from '../presets/printerCatalog
 import type { PresetItem } from '../engine/types';
 import { createPrinterApi } from './api';
 import { OctoEverywhereConnection } from './OctoEverywhereConnection';
+import { isOctoEverywhereConnection } from './octoEverywhereMapping';
+import type { OctoEverywhereConfig } from './octoEverywhereTypes';
 import type { PrinterApi } from './types';
 import { usePrinterConnectionStore } from './connectionStore';
 import type { GatewayStatus } from './gatewayUrl';
@@ -36,15 +38,20 @@ const HOST_PLACEHOLDER: Record<HostType, string> = {
 
 const blank = (): PhysicalPrinter => ({ id: crypto.randomUUID(), name: '', host_type: 'moonraker', print_host: '', use_gateway: true });
 
+const isOctoEverywhereRemote = (p: PhysicalPrinter) =>
+  p.octoeverywhere?.mode === 'remote' && isOctoEverywhereConnection(p.octoeverywhere.connection);
+
 function validate(p: PhysicalPrinter): string | undefined {
   if (!p.name.trim()) return 'Enter a name for the printer.';
-  if (!p.print_host.trim()) return 'Enter the printer\'s hostname, IP address or URL.';
+  const oeRemote = isOctoEverywhereRemote(p);
+  if (!oeRemote && !p.print_host.trim()) return 'Enter the printer\'s hostname, IP address or URL.';
   try {
-    parseHost(p.print_host);
+    if (p.print_host.trim()) parseHost(p.print_host);
     if (p.print_host_webui?.trim()) parseHost(p.print_host_webui);
   } catch {
     return 'The address is not valid. Use a hostname, an IP address or an http(s) URL.';
   }
+  if (oeRemote) return undefined;
   if (p.host_type === 'bambu-cloud') {
     if (!p.printhost_apikey?.trim() || !/^u_\d+$/.test(p.printhost_user || '')) return 'Log in to the cloud account first.';
     if (!p.serial?.trim()) return 'Choose a printer bound to the cloud account.';
@@ -99,6 +106,8 @@ export const PrinterConnectionDialog: React.FC = () => {
   const [attempted, setAttempted] = useState(false);
   const [baseline, setBaseline] = useState('');
   const [gateway, setGateway] = useState<GatewayStatus | null | undefined>(undefined);
+  const [oeConfig, setOeConfig] = useState<OctoEverywhereConfig | undefined>(undefined);
+  const [oeOpen, setOeOpen] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
   const [cloudPassword, setCloudPassword] = useState('');
@@ -140,6 +149,7 @@ export const PrinterConnectionDialog: React.FC = () => {
     const existing = printers.find((p) => p.id === editingId);
     const initial = existing ?? { ...blank(), preset: selectedPreset || undefined, vendor: selectedVendor || undefined };
     setDraft(initial);
+    setOeOpen(initial.octoeverywhere?.mode === 'remote');
     setBaseline(JSON.stringify(initial));
     setBrand(initial.vendor || selectedVendor);
     setResult(null);
@@ -201,7 +211,7 @@ export const PrinterConnectionDialog: React.FC = () => {
   }, [dialogOpen, brand, selectedVendor, appPrinters]);
 
   useEffect(() => {
-    if (!dialogOpen) return;
+    if (!dialogOpen) { setOeConfig(undefined); return; }
     setGateway(undefined);
     fetchGatewayStatus().then((s) => setGateway(s ?? null));
   }, [dialogOpen]);
@@ -227,7 +237,7 @@ export const PrinterConnectionDialog: React.FC = () => {
       printhost_user: undefined, serial: undefined, cloud_device_id: undefined, cloud_team_id: undefined } : {}), [key]: value }));
     setResult(null);
   };
-  const error = validate(draft) ?? (draft.host_type === 'snapmaker-cloud' &&
+  const error = validate(draft) ?? (!isOctoEverywhereRemote(draft) && draft.host_type === 'snapmaker-cloud' &&
     (!snapmakerSelection || snapmakerSelection !== draft.cloud_device_id || sessionStatus !== 'idle') ? 'Choose a printer bound to the cloud account.' : undefined);
   const isBambu = draft.host_type === 'bambu';
   const isFlashforge = draft.host_type === 'flashforge';
@@ -295,7 +305,9 @@ export const PrinterConnectionDialog: React.FC = () => {
   const cloudGatewayMessage = isSnapmakerCloud ? 'This gateway does not allow Snapmaker Cloud. Enable snapmaker-cloud on the gateway.' : isCrealityCloud
     ? 'This gateway does not allow Creality Cloud. Enable ORCA_PRINTER_CLOUD=creality-cloud on the server.'
     : isBambuCloud ? 'This gateway does not allow Bambu Cloud. Enable ORCA_PRINTER_CLOUD=bambu-cloud on the server.' : 'This gateway does not allow Prusa Connect. Enable ORCA_PRINTER_CLOUD=prusa-connect on the server.';
-  const gatewayNote = gateway === undefined ? 'Checking the gateway...'
+  const gatewayNote = draft.octoeverywhere?.mode === 'remote'
+    ? oeConfig?.enabled === false ? 'OctoEverywhere gateway is disabled on this server.' : 'Using OctoEverywhere remote gateway.'
+    : gateway === undefined ? 'Checking the gateway...'
     : gateway === null ? 'This server has no printer gateway.'
     : cloudService && !gateway.cloud?.includes(cloudService) ? cloudGatewayMessage
     : !gateway.enabled ? gateway.message ?? 'The printer gateway is off.'
@@ -495,7 +507,7 @@ export const PrinterConnectionDialog: React.FC = () => {
             {translate('The API key and passwords are stored in this browser only.')}
           </div>
 
-          {isSaved && <details><summary>OctoEverywhere</summary><OctoEverywhereConnection key={draft.id} printer={draft} onChange={updated => setDraft(current => current === draft ? updated : current)} /></details>}
+          {(isSaved || step === 1) && <details open={oeOpen} onToggle={e => setOeOpen(e.currentTarget.open)}><summary>OctoEverywhere</summary><OctoEverywhereConnection key={draft.id} printer={draft} onChange={updated => { if (updated.octoeverywhere?.mode === 'remote') setOeOpen(true); setDraft(current => current === draft ? updated : current); }} onConfig={setOeConfig} /></details>}
           {result && (
             <div id="pc-test-result" data-ok={result.ok} className="printer-result">
               {result.ok ? '✓ ' : '✗ '}{translate(result.text)}
