@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createFlattenPatch, hoverFlattenPatch, pickFlattenPatch } from './flattenPatches';
 import { boxSelection, selectionRect } from './boxSelection';
 import './boxSelection.css';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -1747,24 +1748,13 @@ export class PlateScene {
     this.updateViewerVisibility();
     const mesh = this.getSelectedMesh();
     if (!mesh) return;
-
+    mesh.updateWorldMatrix(true, false);
     for (let i = 0; i < clusters.length; i++) {
       const c = clusters[i];
       if (c.outline && c.outline.length >= 3) {
-        const pts: THREE.Vector3[] = [];
-        const norm = new THREE.Vector3(...c.normal).normalize().applyQuaternion(mesh.quaternion);
-        for (const pt of c.outline) {
-          const v = new THREE.Vector3(pt[0], pt[1], pt[2]);
-          v.applyMatrix4(mesh.matrixWorld);
-          v.addScaledVector(norm, 0.2);
-          pts.push(v);
-        }
-        pts.push(pts[0].clone());
-        const geo = new THREE.BufferGeometry().setFromPoints(pts);
-        const mat = new THREE.LineBasicMaterial({ color: 0x00e676, linewidth: 2 });
-        const line = new THREE.Line(geo, mat);
-        line.userData = { clusterIndex: i };
-        this.flattenGroup.add(line);
+        const patch = createFlattenPatch(c.outline, mesh.matrixWorld);
+        patch.userData = { clusterIndex: i };
+        this.flattenGroup.add(patch);
       }
     }
   }
@@ -1772,7 +1762,7 @@ export class PlateScene {
   public clearFlattenClusters(): void {
     this.requestDraw();
     while (this.flattenGroup.children.length > 0) {
-      const child = this.flattenGroup.children[0] as THREE.Line;
+      const child = this.flattenGroup.children[0] as THREE.Mesh;
       child.geometry.dispose();
       if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
       else child.material.dispose();
@@ -2426,6 +2416,10 @@ export class PlateScene {
 
   private onPointerMove = (e: PointerEvent, modelTouch = false): void => {
     this.requestDraw();
+    if (this.flattenClusters.length) {
+      const mesh = this.getSelectedMesh();
+      hoverFlattenPatch(this.flattenGroup, mesh ? pickFlattenPatch(this.pointerRay(e), this.flattenGroup, mesh) : null);
+    }
     if (this.boxDrag?.pointerId === e.pointerId) {
       const drag = this.boxDrag;
       drag.end = { x: e.clientX, y: e.clientY };
@@ -2546,39 +2540,13 @@ export class PlateScene {
     }
 
     if (this.flattenClusters.length > 0) {
+      if (e.button !== 0) return;
       const selectedMesh = this.getSelectedMesh();
       if (selectedMesh) {
-        const rect = this.renderer.domElement.getBoundingClientRect();
-        const mouse = new THREE.Vector2(
-          ((e.clientX - rect.left) / rect.width) * 2 - 1,
-          -((e.clientY - rect.top) / rect.height) * 2 + 1
-        );
-        const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(mouse, this.camera);
-        const hits = raycaster.intersectObject(selectedMesh, false);
-        if (hits.length > 0 && hits[0].face) {
-          const hitPoint = hits[0].point;
-          const hitNormal = hits[0].face.normal.clone().transformDirection(selectedMesh.matrixWorld);
-          let bestIdx = -1;
-          let bestDist = Infinity;
-          for (let i = 0; i < this.flattenClusters.length; i++) {
-            const cl = this.flattenClusters[i];
-            const cNorm = new THREE.Vector3(...cl.normal).normalize().applyQuaternion(selectedMesh.quaternion);
-            if (hitNormal.dot(cNorm) > 0.8) {
-              const cCenter = new THREE.Vector3(...cl.center).applyMatrix4(selectedMesh.matrixWorld);
-              const dist = hitPoint.distanceTo(cCenter);
-              if (dist < bestDist) {
-                bestDist = dist;
-                bestIdx = i;
-              }
-            }
-          }
-          if (bestIdx >= 0) {
-            this.callbacks.onFlattenFacetClick?.(bestIdx);
-            return;
-          }
-        }
+        const index = pickFlattenPatch(this.pointerRay(e), this.flattenGroup, selectedMesh);
+        if (index !== null) this.callbacks.onFlattenFacetClick?.(index);
       }
+      return;
     }
 
     if (this.brimEarsActive) {
@@ -2718,6 +2686,7 @@ export class PlateScene {
 
   private onPointerLeave = (): void => {
     this.requestDraw();
+    if (this.flattenClusters.length) hoverFlattenPatch(this.flattenGroup, null);
     this.paintCursor.setVisible(false);
     if (this.isPaintingStroke) {
       this.isPaintingStroke = false;
