@@ -103,7 +103,7 @@ export function MobilePreview({ canvas, active, loading, error, resetCamera }: {
           <h2>{t('No G-code toolpaths loaded')}</h2>
           <p>{t('Slice a plate or open a G-code file to inspect the toolpath.')}</p>
           {engineError && <p>{engineError}</p>}
-          <button className="mp-primary" onClick={() => { window.history.pushState(null, '', '/prepare'); window.dispatchEvent(new PopStateEvent('popstate')); }}>{t('Go to Prepare')}</button>
+          <button className="mp-primary" onClick={() => { window.history.pushState(null, '', /^\/slicer(?:\/|$)/.test(window.location.pathname) ? '/slicer/prepare' : '/prepare'); window.dispatchEvent(new PopStateEvent('popstate')); }}>{t('Go to Prepare')}</button>
         </>}
       </div>}
       {ready && <span className="mp-caption">{t('Layers')} {p.minLayer + 1}–{p.maxLayer + 1} · Z {p.layersZs[p.maxLayer]?.toFixed(2) ?? '—'} mm</span>}

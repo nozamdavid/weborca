@@ -14,7 +14,7 @@ async function bundle(mode = 'main') {
     bundle: true, write: false, outdir: '/virtual', platform: 'browser', format: 'iife', metafile: true,
     define: { 'import.meta.env.VITE_ALPHA_GATE_ENABLED': JSON.stringify(mode === 'off' ? '0' : '1') },
     plugins: [{ name: 'inert-heavy-app', setup(b) {
-      b.onResolve({ filter: /^\.\/appEntry$/ }, () => ({ path: 'app', namespace: 'fixture' }));
+      b.onResolve({ filter: /^(?:\.\/|\.\.\/)appEntry$/ }, () => ({ path: 'app', namespace: 'fixture' }));
       b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: `export async function start(){
         window.mounted=(window.mounted||0)+1;
         document.getElementById('root').innerHTML='<p>APP MOUNTED</p><div data-alpha-access-slot></div>';
@@ -61,6 +61,17 @@ async function fixture(t, { mode = 'main', token, path = '/', unavailableStorage
   return { page, requests, output, close: () => browser.close() };
 }
 async function has(page, text) { await page.getByRole('heading', { name: text, exact: true }).waitFor(); }
+
+test('guest slicer starts without tester validation only when the server opts in', async t => {
+  const guest = await fixture(t, { path: '/slicer/preview', handler: () => ({ body: { enabled: true, guestSlicer: true } }) });
+  await guest.page.getByText('APP MOUNTED', { exact: true }).waitFor();
+  assert.deepEqual(guest.requests.map(req => req.path), ['/_alpha/config']);
+  assert.equal(await guest.page.evaluate(() => localStorage.getItem('orca-alpha-session')), null);
+  await guest.close();
+  const closed = await fixture(t, { path: '/slicer', handler: () => ({ body: { enabled: true } }) });
+  await has(closed.page, 'Alpha access');
+  assert.equal(await closed.page.evaluate(() => window.mounted || 0), 0);
+});
 
 for (const staleStatus of [401, 200]) test(`late old-session ${staleStatus} cannot remove a new login or unmount it`, async t => {
   let release, entered, delay = false;

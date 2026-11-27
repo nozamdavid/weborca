@@ -19,10 +19,13 @@ function files() {
   const root = path.join(tmp, 'web'); fs.mkdirSync(root);
   fs.mkdirSync(path.join(root, 'assets'));
   fs.mkdirSync(path.join(root, 'alpha-public'));
+  fs.mkdirSync(path.join(root, 'resources', 'handy_models'), { recursive: true });
   fs.writeFileSync(path.join(root, 'index.html'), '<title>PROTECTED_APP</title>');
   fs.writeFileSync(path.join(root, 'alpha-bootstrap.html'), '<title>PUBLIC_LOGIN</title>');
   fs.writeFileSync(path.join(root, 'assets/app.js'), 'PROTECTED_JS');
+  fs.writeFileSync(path.join(root, 'engine-worker.js'), 'STATIC_WORKER');
   fs.writeFileSync(path.join(root, 'alpha-public/bootstrap.js'), 'PUBLIC_JS');
+  fs.writeFileSync(path.join(root, 'resources/handy_models/OrcaBadge.3mf'), 'PACKAGED_MODEL');
   const file = path.join(tmp, 'state.json');
   const env = { ORCA_ALPHA_GATE_ENABLED: '1', ORCA_ALPHA_ADMIN_PASSWORD: PASSWORD,
     ORCA_ALPHA_DATA_FILE: file, ORCA_PUBLIC_ORIGIN: ORIGIN };
@@ -394,8 +397,9 @@ test('missing/invalid settings and corrupt state fail closed, including uncertai
   assert.equal((await live.call('/engine/x.wasm', { token: 'A'.repeat(43) })).status, 503);
 });
 
-async function production(t, enabled = true, syntheticProvider = false) {
+async function production(t, enabled = true, syntheticProvider = false, guestSlicer = false) {
   const f = files();
+  if (guestSlicer) f.env.ORCA_ALPHA_GUEST_SLICER_ENABLED = '1';
   if (syntheticProvider) {
     await build({ stdin: { contents: `
       import { WebSocketServer } from 'ws';
@@ -435,6 +439,36 @@ async function production(t, enabled = true, syntheticProvider = false) {
   return { ...f, port, call: (route, options) => request(port, route, options), output: () => output,
     shutdown: async () => { child.kill('SIGTERM'); await bounded(exited, 'Server shutdown waited on authenticated sockets'); } };
 }
+
+test('guest slicer is opt-in, exposes static runtime only and preserves the ordinary gate', async t => {
+  const closed = await production(t);
+  assert.match((await closed.call('/slicer', { headers: { accept: 'text/html' } })).text, /PUBLIC_LOGIN/);
+  assert.equal((await closed.call('/engine-worker.js')).status, 401);
+  const f = await production(t, true, false, true);
+  const before = fs.readFileSync(f.file, 'utf8');
+  assert.equal((await f.call('/_alpha/config')).json().guestSlicer, true);
+  for (const route of ['/slicer', '/slicer/', '/slicer/preview', '/slicer/prepare']) {
+    const response = await f.call(route, { headers: { accept: 'text/html' } });
+    assert.match(response.text, /PROTECTED_APP/);
+    assert.equal(response.headers['set-cookie'], undefined);
+  }
+  for (const route of ['/assets/app.js', '/engine-worker.js', '/resources/handy_models/OrcaBadge.3mf']) {
+    assert.equal((await f.call(route)).status, 200);
+  }
+  for (const route of ['/', '/prepare', '/preview', '/slicer/unknown']) {
+    assert.match((await f.call(route, { headers: { accept: 'text/html' } })).text, /PUBLIC_LOGIN/);
+  }
+  for (const route of ['/_alpha/session', '/_alpha/admin/invites', '/_printer/status', '/_octoeverywhere/config', '/_orca-cloud/status', '/_gw/status', '/index.html', '/alpha-access.mjs']) {
+    assert.equal((await f.call(route)).status, 401, route);
+  }
+  assert.equal((await f.call('/assets/app.js', { method: 'POST' })).status, 401);
+  assert.equal((await f.call('/_printer/snapmaker-cloud/monitor', { headers: { connection: 'Upgrade', upgrade: 'websocket' } })).status, 401);
+  assert.equal(fs.readFileSync(f.file, 'utf8'), before);
+  const admin = await login(f);
+  assert.equal((await f.call('/_alpha/admin/invites', { token: admin })).status, 200);
+  const open = await production(t, false);
+  assert.match((await open.call('/slicer')).text, /PROTECTED_APP/);
+});
 
 test('packaged server terminates existing synthetic provider traffic on logout/revocation and shutdown', async t => {
   const f = await production(t, true, true), admin = await login(f);

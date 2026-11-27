@@ -47,7 +47,7 @@ import type { TabId } from './shell/TopBar';
 const TAB_IDS: TabId[] = ['models', 'prepare', 'preview', 'device'];
 
 function tabFromPath(): TabId {
-  const name = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  const name = window.location.pathname.replace(/^\/slicer(?:\/|$)/, '/').replace(/^\/+|\/+$/g, '');
   return TAB_IDS.find((id) => id === name) ?? 'prepare';
 }
 
@@ -83,7 +83,8 @@ export const App: React.FC = () => {
   // The tab is part of the address (/prepare, /preview, ...), so a reload or a shared link opens the same screen.
   const setActiveTab = useCallback((tab: TabId) => {
     setActiveTabState(tab);
-    if (tabFromPath() !== tab) window.history.pushState(null, '', `/${tab}`);
+    const prefix = /^\/slicer(?:\/|$)/.test(window.location.pathname) ? '/slicer' : '';
+    if (tabFromPath() !== tab) window.history.pushState(null, '', `${prefix}/${tab}`);
   }, []);
   useEffect(() => {
     const onPop = () => {

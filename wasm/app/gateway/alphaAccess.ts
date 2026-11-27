@@ -53,6 +53,7 @@ export function createAlphaAccess({ env = process.env, webRoot, forbiddenDataRoo
     throw new Error('ORCA_ALPHA_GATE_ENABLED must be 0 or 1');
   }
   const enabled = env.ORCA_ALPHA_GATE_ENABLED === '1';
+  const guestSlicer = enabled && env.ORCA_ALPHA_GUEST_SLICER_ENABLED === '1';
   let origin!: URL;
   let file = '';
   let password = '';
@@ -255,7 +256,7 @@ export function createAlphaAccess({ env = process.env, webRoot, forbiddenDataRoo
     if (pathname !== '/_alpha' && !pathname.startsWith('/_alpha/')) return false;
     if (pathname === '/_alpha/config' && req.method === 'GET') {
       if (enabled && !sameOrigin(req)) error(res, 403, 'Same origin required');
-      else json(res, 200, { enabled });
+      else json(res, 200, { enabled, ...(guestSlicer ? { guestSlicer: true } : {}) });
       return true;
     }
     if (!enabled) { error(res, 403, 'Alpha gate is disabled'); return true; }
@@ -381,6 +382,13 @@ export function createAlphaAccess({ env = process.env, webRoot, forbiddenDataRoo
     if (pathname === '/healthz' && ['GET', 'HEAD'].includes(req.method || '')) return false;
     if (req.headers.host !== origin.host) { error(res, 403, 'Same origin required'); return true; }
     const read = ['GET', 'HEAD'].includes(req.method || '');
+    // Guest entry exposes only the static app runtime. It never authorizes a session,
+    // backend handler or upgrade, and ordinary app documents retain their gate.
+    const guestDocument = /^\/slicer(?:\/(?:models|prepare|preview|device))?\/?$/.test(pathname);
+    const guestAsset = /^\/(?:assets|engine|preview|profiles|resources|settings|fonts|icons|calibration|web)\/.+\.(?:js|mjs|wasm|json|png|jpg|jpeg|svg|webp|ico|woff2?|ttf|drc|stl|3mf|txt|css)$/.test(pathname) ||
+      /^\/(?:engine-worker\.js|step-worker\.js|engine-core\.js|engine-assets\.js|orca-engine\.js|native-engine-transport\.js|orca_preview\.(?:js|wasm)|layout\.json)$/.test(pathname);
+    if (guestSlicer && read && (guestDocument || guestAsset) &&
+        !pathname.includes('\\') && !pathname.split('/').some(part => part.startsWith('.'))) return false;
     const bootstrap = ['/_alpha/login', '/_alpha/admin', '/alpha-bootstrap.html'].includes(pathname);
     if (read && /^\/alpha-public\/[A-Za-z0-9_./-]+$/.test(pathname) &&
         !pathname.split('/').some(part => part.startsWith('.'))) return false;
